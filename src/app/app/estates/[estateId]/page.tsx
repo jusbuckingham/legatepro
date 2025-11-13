@@ -2,8 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connectToDatabase } from "../../../../lib/db";
 import { Estate } from "../../../../models/Estate";
-import { LabelBadge } from "@/components/ui/LabelBadge";
-import { StatusDot } from "@/components/ui/StatusDot";
+import { LabelBadge } from "../../../../components/ui/LabelBadge";
+import { StatusDot } from "../../../../components/ui/StatusDot";
 
 export const dynamic = "force-dynamic";
 
