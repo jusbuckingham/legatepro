@@ -2,8 +2,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+interface Contact {
+  _id: string;
+  name: string;
+  role?: string;
+  email?: string;
+  phone?: string;
+  notes?: string;
+}
+
 // Fetch contacts for this estate
-async function fetchContacts(estateId: string) {
+async function fetchContacts(estateId: string): Promise<Contact[]> {
   const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/api/contacts?estateId=${estateId}`, {
     cache: "no-store",
   });
@@ -12,7 +21,7 @@ async function fetchContacts(estateId: string) {
     return [];
   }
 
-  const data = await res.json();
+  const data = (await res.json()) as { contacts?: Contact[] };
   return data.contacts || [];
 }
 
@@ -46,7 +55,7 @@ export default async function EstateContactsPage({ params }: PageProps) {
         <p className="text-gray-500 text-sm">No contacts found for this estate.</p>
       ) : (
         <div className="space-y-4">
-          {contacts.map((c: any) => (
+          {contacts.map((c: Contact) => (
             <div
               key={c._id}
               className="border rounded-lg p-4 flex flex-col gap-1 bg-white shadow-sm"
