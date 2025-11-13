@@ -1,43 +1,81 @@
-import { Schema, model, models } from "mongoose";
+import mongoose, { Schema, Document, Model, Types } from "mongoose";
 
-const EstateDocumentSchema = new Schema(
+export type EstateDocumentSubject =
+  | "BANKING"
+  | "AUTO"
+  | "MEDICAL"
+  | "INCOME_TAX"
+  | "PROPERTY"
+  | "INSURANCE"
+  | "IDENTITY"
+  | "LEGAL"
+  | "ESTATE_ACCOUNTING"
+  | "RECEIPTS"
+  | "OTHER";
+
+export interface IEstateDocument {
+  ownerId: string; // user who owns this record
+  estateId: Types.ObjectId; // required
+
+  subject: EstateDocumentSubject;
+  label: string; // human‑friendly description
+
+  location?: string; // e.g. "Google Drive", "iCloud", "Physical safe"
+  url?: string; // digital link
+
+  tags?: string[];
+  notes?: string;
+
+  isSensitive?: boolean;
+
+  // Optional metadata if uploaded through LegatePro
+  fileName?: string;
+  fileType?: string;
+  fileSizeBytes?: number;
+
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface EstateDocumentDocument
+  extends IEstateDocument,
+    Document {}
+
+const EstateDocumentSchema = new Schema<EstateDocumentDocument>(
   {
+    ownerId: { type: String, required: true, index: true },
+
     estateId: {
       type: Schema.Types.ObjectId,
       ref: "Estate",
       required: true,
+      index: true,
     },
 
-    // High-level subject/category for the document
-    // e.g. BANKING, AUTO, MEDICAL, INCOME_TAX, PROPERTY, INSURANCE, IDENTITY, OTHER
     subject: {
       type: String,
       required: true,
+      enum: [
+        "BANKING",
+        "AUTO",
+        "MEDICAL",
+        "INCOME_TAX",
+        "PROPERTY",
+        "INSURANCE",
+        "IDENTITY",
+        "LEGAL",
+        "ESTATE_ACCOUNTING",
+        "RECEIPTS",
+        "OTHER",
+      ],
       trim: true,
     },
 
-    // Where this document is stored in the real world
-    // e.g. "Google Drive", "iCloud Drive", "Dropbox", "Physical file cabinet"
-    location: {
-      type: String,
-      trim: true,
-    },
+    label: { type: String, required: true, trim: true },
 
-    // Human-friendly label/description for the doc index
-    // e.g. "Chase Checking 1234 Statements 2022–2023"
-    label: {
-      type: String,
-      required: true,
-      trim: true,
-    },
+    location: { type: String, trim: true },
+    url: { type: String, trim: true },
 
-    // Direct link/URL to the document (if digital)
-    url: {
-      type: String,
-      trim: true,
-    },
-
-    // Optional tags for filtering/search (e.g. ["Banking", "Chase", "Statements"])
     tags: [
       {
         type: String,
@@ -45,22 +83,31 @@ const EstateDocumentSchema = new Schema(
       },
     ],
 
-    // Any extra notes the personal representative wants to remember
-    notes: {
-      type: String,
-      trim: true,
-    },
+    notes: { type: String, trim: true },
 
-    // Whether this document contains especially sensitive info
-    isSensitive: {
-      type: Boolean,
-      default: false,
-    },
+    isSensitive: { type: Boolean, default: false },
+
+    // Upload metadata
+    fileName: { type: String, trim: true },
+    fileType: { type: String, trim: true },
+    fileSizeBytes: { type: Number },
   },
   {
     timestamps: true,
   }
 );
 
-export const EstateDocument =
-  models.EstateDocument || model("EstateDocument", EstateDocumentSchema);
+let EstateDocumentModel: Model<EstateDocumentDocument>;
+
+try {
+  EstateDocumentModel = mongoose.model<EstateDocumentDocument>(
+    "EstateDocument"
+  );
+} catch {
+  EstateDocumentModel = mongoose.model<EstateDocumentDocument>(
+    "EstateDocument",
+    EstateDocumentSchema
+  );
+}
+
+export const EstateDocument = EstateDocumentModel;

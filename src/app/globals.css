@@ -1,0 +1,147 @@
+/* =========================================================
+   LegatePro Global Styles
+   - Minimal reset
+   - Dark theme base
+   - Nice defaults for typography, links, forms
+   ========================================================= */
+
+/* 1. Reset / base box model */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+/* 2. Root + body defaults */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  background-color: #020617; /* slate-950 */
+  color: #f8fafc; /* slate-50 */
+  font-family: var(--font-geist-sans), system-ui, -apple-system, BlinkMacSystemFont,
+    "SF Pro Text", "SF Pro Display", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 3. Typography defaults */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin: 0;
+  font-weight: 600;
+}
+
+p {
+  margin: 0;
+}
+
+/* Provide a little default space between stacked elements */
+p + p {
+  margin-top: 0.5rem;
+}
+
+/* 4. Links */
+a {
+  color: inherit;
+  text-decoration: none;
+  transition: color 0.15s ease, background-color 0.15s ease, opacity 0.15s ease;
+}
+
+a:hover {
+  opacity: 0.9;
+}
+
+/* 5. Images */
+img,
+picture,
+video,
+canvas,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+/* 6. Forms / inputs baseline */
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* Prevent textareas from growing huge */
+textarea {
+  resize: vertical;
+}
+
+/* 7. Scrollbar styling (WebKit-based browsers) */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background-color: #020617; /* slate-950 */
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: #1f2937; /* slate-800 */
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #334155; /* slate-700 */
+}
+
+/* 8. Utility-like helpers (a tiny taste of Tailwind-ish) */
+.page-container {
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 64rem; /* ~1024px */
+  padding: 1.5rem 1rem;
+}
+
+/* Simple subtle card base if needed in plain HTML */
+.card {
+  border-radius: 0.75rem;
+  border: 1px solid #020617;
+  background-color: rgba(15, 23, 42, 0.8); /* slate-900/80 */
+  padding: 1rem;
+}
+
+/* Small text helper */
+.text-xs {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+/* 9. Focus styles (accessible but not loud) */
+:focus-visible {
+  outline: 2px solid #22c55e; /* emerald-500 */
+  outline-offset: 2px;
+}

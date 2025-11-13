@@ -1,15 +1,22 @@
+"use client";
+
 import type { ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 
-export default function AppLayout({
-  children,
-}: {
-  children: ReactNode;
-}) {
+const navItems = [
+  { label: "Estates", href: "/app/estates" },
+  { label: "Billing", href: "/app/billing" },
+  { label: "Settings", href: "/app/settings" },
+];
+
+export default function AppLayout({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-50">
-      <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur">
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-20 border-b border-slate-800 bg-slate-900/80 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <Link href="/app/estates" className="flex items-center gap-2">
             <Image
@@ -24,16 +31,27 @@ export default function AppLayout({
             </span>
           </Link>
 
-          <nav className="flex items-center gap-4 text-sm text-slate-300">
-            <Link href="/app/estates" className="hover:text-slate-50">
-              Estates
-            </Link>
-            <Link href="/app/billing" className="hover:text-slate-50">
-              Billing
-            </Link>
-            <Link href="/app/settings" className="hover:text-slate-50">
-              Settings
-            </Link>
+          <nav className="flex items-center gap-2 text-sm">
+            {navItems.map((item) => {
+              const isActive =
+                pathname === item.href || pathname.startsWith(item.href + "/");
+
+              const baseClasses =
+                "rounded-full px-3 py-1 transition-colors hover:text-slate-50";
+              const activeClasses = isActive
+                ? " bg-slate-800 text-slate-50 border border-slate-700"
+                : " text-slate-300 hover:bg-slate-800/70";
+
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={baseClasses + activeClasses}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
           </nav>
         </div>
       </header>

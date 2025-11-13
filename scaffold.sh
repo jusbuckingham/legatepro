@@ -1,127 +1,57 @@
 #!/bin/bash
 
-echo "🧱 Scaffolding full LegatePro project structure..."
+set -e
 
-# ------------ #
-#  APP ROUTES  #
-# ------------ #
+echo "🧹 Cleaning and normalizing LegatePro app structure..."
 
-BASE="src/app/app" # authenticated area
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 
-# Ensure folder exists
-mkdir -p $BASE
+echo "Project root: $PROJECT_ROOT"
 
-# Core folders
-mkdir -p $BASE/estates
-mkdir -p $BASE/settings
-mkdir -p $BASE/billing
+# 1. If a root-level app/ directory exists, migrate its layout/page to src/app
+if [ -d "$PROJECT_ROOT/app" ]; then
+  echo "📦 Found root-level app/ directory. Migrating key files to src/app/..."
 
-# Estate routes
-mkdir -p $BASE/estates/new
-mkdir -p $BASE/estates/[estateId]
-mkdir -p $BASE/estates/[estateId]/tasks
-mkdir -p $BASE/estates/[estateId]/expenses
-mkdir -p $BASE/estates/[estateId]/documents
-mkdir -p $BASE/estates/[estateId]/properties
-mkdir -p $BASE/estates/[estateId]/properties/[propertyId]
-mkdir -p $BASE/estates/[estateId]/rent
-mkdir -p $BASE/estates/[estateId]/utilities
-mkdir -p $BASE/estates/[estateId]/contacts
-mkdir -p $BASE/estates/[estateId]/time
-mkdir -p $BASE/estates/[estateId]/settings
+  mkdir -p "$PROJECT_ROOT/src/app"
 
-# Layout files
-touch $BASE/layout.tsx
-touch $BASE/estates/[estateId]/layout.tsx
+  for f in layout.tsx page.tsx; do
+    if [ -f "$PROJECT_ROOT/app/$f" ]; then
+      echo "→ Moving app/$f to src/app/$f"
 
-# Estate pages
-touch $BASE/estates/page.tsx
-touch $BASE/estates/new/page.tsx
-touch $BASE/estates/[estateId]/page.tsx
+      # If src/app/$f already exists and is non-empty, back it up
+      if [ -f "$PROJECT_ROOT/src/app/$f" ] && [ -s "$PROJECT_ROOT/src/app/$f" ]; then
+        echo "  Backing up existing src/app/$f to src/app/$f.bak"
+        cp "$PROJECT_ROOT/src/app/$f" "$PROJECT_ROOT/src/app/$f.bak"
+      fi
 
-# Estate tab pages
-touch $BASE/estates/[estateId]/tasks/page.tsx
-touch $BASE/estates/[estateId]/expenses/page.tsx
-touch $BASE/estates/[estateId]/documents/page.tsx
-touch $BASE/estates/[estateId]/properties/page.tsx
-touch $BASE/estates/[estateId]/rent/page.tsx
-touch $BASE/estates/[estateId]/utilities/page.tsx
-touch $BASE/estates/[estateId]/contacts/page.tsx
-touch $BASE/estates/[estateId]/time/page.tsx
-touch $BASE/estates/[estateId]/settings/page.tsx
-touch $BASE/settings/page.tsx
-touch $BASE/billing/page.tsx
+      mv "$PROJECT_ROOT/app/$f" "$PROJECT_ROOT/src/app/$f"
+    fi
+  done
 
-# ------------- #
-#   COMPONENTS   #
-# ------------- #
+  # Keep a backup of the old app directory just in case
+  if [ ! -d "$PROJECT_ROOT/app_legacy_backup" ]; then
+    echo "📁 Renaming app/ → app_legacy_backup for safety"
+    mv "$PROJECT_ROOT/app" "$PROJECT_ROOT/app_legacy_backup"
+  else
+    echo "⚠️ app_legacy_backup already exists, leaving app/ in place."
+  fi
+else
+  echo "✅ No root-level app/ directory found. Using src/app as the only app root."
+fi
 
-mkdir -p src/components/ui
-mkdir -p src/components/estate
-mkdir -p src/components/forms
-mkdir -p src/components/navigation
+# 2. Ensure src/app exists and run scaffold to fill in any missing files
+echo "🧱 Ensuring src/app structure via scaffold.sh..."
 
-touch src/components/ui/Button.tsx
-touch src/components/ui/Input.tsx
-touch src/components/ui/Table.tsx
-touch src/components/ui/Badge.tsx
-touch src/components/ui/Card.tsx
-touch src/components/navigation/AppShell.tsx
+if [ ! -f "$PROJECT_ROOT/scaffold.sh" ]; then
+  echo "❌ scaffold.sh not found in project root. Aborting."
+  exit 1
+fi
 
-# ------------ #
-#   MODELS     #
-# ------------ #
+bash "$PROJECT_ROOT/scaffold.sh"
 
-mkdir -p src/models
-
-MODELS=(
-  Estate
-  Task
-  Expense
-  EstateDocument
-  EstateProperty
-  RentPayment
-  UtilityAccount
-  Contact
-  TimeEntry
-  User
-)
-
-for model in "${MODELS[@]}"; do
-  touch "src/models/$model.ts"
-done
-
-# ----------- #
-#   LIB/UTIL  #
-# ----------- #
-
-mkdir -p src/lib
-touch src/lib/db.ts
-touch src/lib/auth.ts
-touch src/lib/stripe.ts
-touch src/lib/utils.ts
-touch src/lib/validators.ts
-
-# ------------ #
-#   API ROUTES #
-# ------------ #
-
-mkdir -p src/app/api/estates
-mkdir -p src/app/api/tasks
-mkdir -p src/app/api/expenses
-mkdir -p src/app/api/documents
-mkdir -p src/app/api/properties
-mkdir -p src/app/api/rent
-mkdir -p src/app/api/utilities
-mkdir -p src/app/api/contacts
-mkdir -p src/app/api/time
-mkdir -p src/app/api/auth
-mkdir -p src/app/api/billing
-
-for group in estates tasks expenses documents properties rent utilities contacts time auth billing
-do
-  touch "src/app/api/$group/route.ts"
-done
-
-echo "✨ LegatePro scaffold complete!"
-echo "You can now fill in each file one by one."
+echo ""
+echo "✅ Cleanup complete."
+echo "Next steps:"
+echo "  1. Restart your dev server: npm run dev (or yarn/pnpm equivalent)."
+echo "  2. Visit: http://localhost:3000/app/estates"
+echo "  3. Open src/app/layout.tsx and src/app/page.tsx to confirm they contain your desired root layout and landing page."

@@ -1,70 +1,109 @@
-import { Schema, model, models } from "mongoose";
+import mongoose, { Schema, Document, Model, Types } from "mongoose";
 
-const ExpenseSchema = new Schema(
+export type ExpenseCategory =
+  | "FUNERAL"
+  | "PROBATE"
+  | "PROPERTY"
+  | "UTILITIES"
+  | "TAXES"
+  | "MAINTENANCE"
+  | "INSURANCE"
+  | "LEGAL"
+  | "ACCOUNTING"
+  | "OTHER";
+
+export interface IExpense {
+  ownerId: string; // user who owns this expense
+  estateId: Types.ObjectId; // required
+
+  date: Date;
+  category: ExpenseCategory;
+  description: string;
+  amount: number;
+
+  payee?: string;
+  notes?: string;
+
+  isPaid?: boolean;
+
+  propertyId?: Types.ObjectId;
+  utilityAccountId?: Types.ObjectId;
+  documentId?: Types.ObjectId;
+
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface ExpenseDocument extends IExpense, Document {}
+
+const ExpenseSchema = new Schema<ExpenseDocument>(
   {
+    ownerId: { type: String, required: true, index: true },
+
     estateId: {
       type: Schema.Types.ObjectId,
       ref: "Estate",
       required: true,
+      index: true,
     },
 
-    // Core fields
-    date: {
-      type: Date,
-      required: true,
-    },
+    date: { type: Date, required: true },
+
     category: {
       type: String,
-      enum: ["FUNERAL", "PROBATE", "PROPERTY", "UTILITIES", "TAXES", "OTHER"],
+      enum: [
+        "FUNERAL",
+        "PROBATE",
+        "PROPERTY",
+        "UTILITIES",
+        "TAXES",
+        "MAINTENANCE",
+        "INSURANCE",
+        "LEGAL",
+        "ACCOUNTING",
+        "OTHER",
+      ],
+      required: true,
       default: "OTHER",
-      required: true,
-    },
-    description: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    amount: {
-      type: Number,
-      required: true,
-      min: 0,
     },
 
-    // Who was paid
-    payee: {
-      type: String,
-      trim: true,
-    },
+    description: { type: String, required: true, trim: true },
+    amount: { type: Number, required: true, min: 0 },
 
-    // Optional notes (e.g. "paid by estate account", "reimbursable", "related to Tuller")
-    notes: {
-      type: String,
-      trim: true,
-    },
+    payee: { type: String, trim: true },
+    notes: { type: String, trim: true },
 
-    // Status
-    isPaid: {
-      type: Boolean,
-      default: true,
-    },
+    isPaid: { type: Boolean, default: true },
 
-    // Optional relational hooks for later (properties, utilities, docs, etc.)
     propertyId: {
       type: Schema.Types.ObjectId,
       ref: "EstateProperty",
+      required: false,
     },
+
     utilityAccountId: {
       type: Schema.Types.ObjectId,
       ref: "UtilityAccount",
+      required: false,
     },
+
     documentId: {
       type: Schema.Types.ObjectId,
       ref: "EstateDocument",
+      required: false,
     },
   },
   {
     timestamps: true,
-  },
+  }
 );
 
-export const Expense = models.Expense || model("Expense", ExpenseSchema);
+let ExpenseModel: Model<ExpenseDocument>;
+
+try {
+  ExpenseModel = mongoose.model<ExpenseDocument>("Expense");
+} catch {
+  ExpenseModel = mongoose.model<ExpenseDocument>("Expense", ExpenseSchema);
+}
+
+export const Expense = ExpenseModel;
