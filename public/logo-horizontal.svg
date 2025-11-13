@@ -1,0 +1,44 @@
+<svg width="700" height="200" viewBox="0 0 700 200" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- ICON -->
+  <rect x="20" y="30" width="140" height="140" rx="12" fill="#7A1E1E"/>
+  <path d="M60 50 v100" stroke="#E6D7C3" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="115" cy="100" r="18" fill="#E6D7C3"/>
+  <rect x="111" y="120" width="8" height="25" fill="#E6D7C3" rx="4"/>
+
+  <!-- WORDMARK -->
+  <text x="200" y="115" font-family="Georgia, serif" font-size="64" fill="#1A1A1A" letter-spacing="3">
+    LEGATE
+  </text>
+
+  <text x="470" y="115" font-family="Inter, sans-serif" font-weight="700" font-size="64" fill="#7A1E1E">
+    PRO
+  </text>
+
+</svg>
+<svg width="700" height="200" viewBox="0 0 700 200" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- ICON -->
+  <rect x="20" y="30" width="140" height="140" rx="10" fill="#732020"/>
+  <path d="M60 50 v100" stroke="#EADFCC" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="115" cy="100" r="17" fill="#EADFCC"/>
+  <rect x="111.5" y="118" width="9" height="26" fill="#EADFCC" rx="4.5"/>
+
+  <!-- WORDMARK -->
+  <text x="200" y="118"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-size="64"
+        fill="#111111"
+        letter-spacing="3">
+    LEGATE
+  </text>
+
+  <text x="470" y="118"
+        font-family="Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
+        font-weight="700"
+        font-size="64"
+        fill="#732020">
+    PRO
+  </text>
+
+</svg>

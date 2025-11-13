@@ -1,0 +1,13 @@
+<svg width="512" height="512" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background square -->
+  <rect x="6" y="6" width="88" height="88" rx="8" ry="8" fill="#732020"/>
+
+  <!-- Vertical "L" bar -->
+  <path d="M30 20 v60" stroke="#EADFCC" stroke-width="7" stroke-linecap="round"/>
+
+  <!-- Keyhole circle -->
+  <circle cx="56" cy="48" r="9" fill="#EADFCC"/>
+
+  <!-- Keyhole stem -->
+  <rect x="53.5" y="57" width="5" height="14" fill="#EADFCC" rx="2.5"/>
+</svg>

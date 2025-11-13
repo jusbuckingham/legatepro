@@ -1,0 +1,26 @@
+<svg width="300" height="360" viewBox="0 0 300 360" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- ICON -->
+  <rect x="80" y="20" width="140" height="140" rx="10" fill="#732020"/>
+  <path d="M120 40 v100" stroke="#EADFCC" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="175" cy="90" r="17" fill="#EADFCC"/>
+  <rect x="171.5" y="108" width="9" height="26" fill="#EADFCC" rx="4.5"/>
+
+  <!-- WORDMARK -->
+  <text x="38" y="262"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-size="58"
+        fill="#111111"
+        letter-spacing="3">
+    LEGATE
+  </text>
+
+  <text x="182" y="262"
+        font-family="Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
+        font-weight="700"
+        font-size="58"
+        fill="#732020">
+    PRO
+  </text>
+
+</svg>
