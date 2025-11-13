@@ -1,13 +1,22 @@
 
 
-import { connectToDatabase } from "@/lib/db";
-import { Task } from "@/models/Task";
 import { redirect } from "next/navigation";
+import { connectToDatabase } from "../../../../../lib/db";
+import { Task } from "../../../../../models/Task";
 
 interface EstateTasksPageProps {
   params: {
     estateId: string;
   };
+}
+
+interface TaskItem {
+  _id: { toString(): string };
+  status?: string;
+  date?: string | Date;
+  priority?: string;
+  subject?: string;
+  description?: string;
 }
 
 export const dynamic = "force-dynamic";
@@ -61,10 +70,9 @@ export default async function EstateTasksPage({ params }: EstateTasksPageProps) 
   const { estateId } = params;
 
   await connectToDatabase();
-
-  const tasks = await Task.find({ estateId })
+  const tasks = (await Task.find({ estateId })
     .sort({ date: 1, createdAt: 1 })
-    .lean();
+    .lean()) as TaskItem[];
 
   return (
     <div className="space-y-6">
@@ -170,7 +178,7 @@ export default async function EstateTasksPage({ params }: EstateTasksPageProps) 
               </tr>
             </thead>
             <tbody>
-              {tasks.map((task: any) => {
+              {tasks.map((task: TaskItem) => {
                 const isDone = task.status === "DONE";
                 const date = task.date
                   ? new Date(task.date).toLocaleDateString()

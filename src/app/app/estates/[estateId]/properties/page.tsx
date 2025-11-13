@@ -1,11 +1,26 @@
-import { connectToDatabase } from "@/lib/db";
-import { EstateProperty } from "@/models/EstateProperty";
+import { connectToDatabase } from "../../../../../lib/db";
+import { EstateProperty } from "../../../../../models/EstateProperty";
 import { redirect } from "next/navigation";
 
 interface EstatePropertiesPageProps {
   params: {
     estateId: string;
   };
+}
+
+interface EstatePropertyItem {
+  _id: { toString(): string };
+  estateId: string;
+  label: string;
+  addressLine1?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  propertyType: string;
+  bedrooms?: number;
+  bathrooms?: number;
+  monthlyRentTarget?: number;
+  notes?: string;
 }
 
 export const dynamic = "force-dynamic";
@@ -60,9 +75,9 @@ export default async function EstatePropertiesPage({
 
   await connectToDatabase();
 
-  const properties = await EstateProperty.find({ estateId })
+  const properties = (await EstateProperty.find({ estateId })
     .sort({ label: 1 })
-    .lean();
+    .lean()) as EstatePropertyItem[];
 
   return (
     <div className="space-y-6">
@@ -273,7 +288,7 @@ export default async function EstatePropertiesPage({
               </tr>
             </thead>
             <tbody>
-              {properties.map((property: any) => {
+              {properties.map((property: EstatePropertyItem) => {
                 const addressParts = [
                   property.addressLine1,
                   property.city,

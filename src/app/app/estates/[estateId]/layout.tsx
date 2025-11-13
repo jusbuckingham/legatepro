@@ -1,16 +1,11 @@
-
-
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useParams } from "next/navigation";
 import type { ReactNode } from "react";
 
 interface EstateLayoutProps {
   children: ReactNode;
-  params: {
-    estateId: string;
-  };
 }
 
 function getNavItems(estateId: string) {
@@ -25,8 +20,8 @@ function getNavItems(estateId: string) {
   ];
 }
 
-export default function EstateLayout({ children, params }: EstateLayoutProps) {
-  const { estateId } = params;
+export default function EstateLayout({ children }: EstateLayoutProps) {
+  const { estateId } = useParams<{ estateId: string }>();
   const pathname = usePathname();
   const navItems = getNavItems(estateId);
 

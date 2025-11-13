@@ -1,11 +1,22 @@
-import { connectToDatabase } from "@/lib/db";
-import { EstateDocument } from "@/models/EstateDocument";
+import { connectToDatabase } from "../../../../../lib/db";
+import { EstateDocument } from "../../../../../models/EstateDocument";
 import { redirect } from "next/navigation";
 
 interface EstateDocumentsPageProps {
   params: {
     estateId: string;
   };
+}
+
+interface EstateDocumentItem {
+  _id: { toString(): string };
+  subject: string;
+  label: string;
+  location?: string;
+  url?: string;
+  tags?: string[];
+  notes?: string;
+  isSensitive?: boolean;
 }
 
 export const dynamic = "force-dynamic";
@@ -54,9 +65,9 @@ export default async function EstateDocumentsPage({
 
   await connectToDatabase();
 
-  const documents = await EstateDocument.find({ estateId })
+  const documents = (await EstateDocument.find({ estateId })
     .sort({ subject: 1, label: 1 })
-    .lean();
+    .lean()) as EstateDocumentItem[];
 
   return (
     <div className="space-y-6">
@@ -196,7 +207,7 @@ export default async function EstateDocumentsPage({
               </tr>
             </thead>
             <tbody>
-              {documents.map((doc: any) => {
+              {documents.map((doc: EstateDocumentItem) => {
                 const tags = Array.isArray(doc.tags) ? doc.tags : [];
 
                 return (
