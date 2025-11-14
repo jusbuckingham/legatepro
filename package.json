@@ -9,10 +9,12 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "clsx": "^2.1.1",
     "mongoose": "^8.19.3",
     "next": "16.0.2",
     "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "react-dom": "19.2.0",
+    "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
     "@types/mongoose": "^5.11.96",
