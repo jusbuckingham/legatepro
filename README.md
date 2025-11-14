@@ -1,49 +1,51 @@
 # 🏛️ LegatePro  
-**A modern, elegant, AI-powered probate management platform.**
+**A modern, elegant, AI‑powered probate management platform.**
 
-LegatePro streamlines the entire probate process for Personal Representatives (executors), inspired by the workflows, documents, and real-world lessons learned from managing complex estates.  
-Built with **Next.js, TypeScript, MongoDB, Vercel, and Stripe**, LegatePro aims to become the “TurboTax for probate”—simple, guided, automated.
+LegatePro simplifies the probate process for Personal Representatives (executors) through guided workflows, automation, and structured estate management.  
+Inspired by real‑world estate administration, LegatePro aims to become the **TurboTax for probate** — calm, accurate, and empowering.
 
 ---
 
-## ✨ Features (MVP)
+## ✨ Core Features (MVP)
 
 ### 📂 Estate Management  
-- Create, track, and manage multiple estates  
-- Store decedent information, court details, compensation structure  
-- Clean estate-level dashboard with tasks, expenses, documents, and more  
+- Create & manage multiple estates  
+- Decedent details, court info, PR compensation structure  
+- Organized dashboard with tasks, expenses, rent, documents, and more  
 
 ### ✅ Task Tracking  
-- Tasks modeled after real probate workflows  
-- Priorities, dates, notes, statuses  
-- Fully filterable and exportable  
+- Full CRUD task management  
+- Status, priority, dates, notes  
+- Filterable task views  
 
 ### 💵 Expense Tracking  
-- Organize expenses by category (Funeral, Probate, Income Tax, etc.)  
-- Upload receipts + supporting documents  
-- Automatic totals and summaries  
+- Category‑based expense organization (Funeral, Probate, Insurance, Taxes, etc.)  
+- Upload receipts (PDF, HEIC, images)  
+- Automated totals and summaries  
 
 ### 🧾 Document Index  
-- Centralized index linking to PDF, HEIC, and image documents  
-- Clean tagging system (Banking, Auto, Medical, Income Tax, etc.)  
-- Links out to Google Drive, iCloud Drive, Dropbox, etc.  
+- Unified index for all estate‑related documents  
+- Tagging system (Banking, Auto, Insurance, Medical, etc.)  
+- Designed to link out to Google Drive, iCloud, Dropbox, etc.  
 
-### 🏠 Property & Rent Tracking  
-- Track rental properties, tenants, payment history, repairs, expenses  
-- Auto‑summaries for each property  
-- Link receipts, rent ledgers, and Zillow values  
+### 🏠 Property & Rent Management  
+- Track rental properties inside an estate  
+- Tenant names, rent history, periods, methods, reference numbers  
+- Property‑level ledgers + estate‑wide summaries  
 
-### 🔌 Utilities Manager  
-- Track utility accounts, contact info, service addresses, and close-out status  
+### 🔌 Utilities Tracker  
+- Manage all utility accounts tied to each property  
+- Service addresses, account numbers, contact details  
+- Track open/closed status for final accounting  
 
 ### 📇 Contacts Directory  
-- Attorneys, heirs, insurers, creditors, vendors  
-- Bar ID, retainer fees, claim numbers, contract numbers, and more  
+- Attorneys, heirs, creditors, insurers, vendors  
+- Notes, phone numbers, bar IDs, claim IDs, retainer fees  
 
-### ⏱️ Time Tracking  
-- Personal Representative timecard  
-- Auto-calculated compensation summaries  
-- Export for court filings  
+### ⏱️ PR Time Tracking  
+- Court‑friendly timecard for Personal Representative hours  
+- Auto‑calculates totals  
+- Export‑ready for court filings  
 
 ---
 
@@ -51,12 +53,11 @@ Built with **Next.js, TypeScript, MongoDB, Vercel, and Stripe**, LegatePro aims 
 
 - **Next.js (App Router)**  
 - **TypeScript**  
-- **TailwindCSS**  
-- **MongoDB Atlas**  
-- **Mongoose Models**  
+- **Tailwind CSS**  
+- **MongoDB + Mongoose**  
 - **Server Actions**  
 - **Stripe Billing** (coming soon)  
-- **Kinde or NextAuth** for authentication (TBD)
+- **Kinde or NextAuth** (TBD)  
 
 ---
 
@@ -67,38 +68,36 @@ Built with **Next.js, TypeScript, MongoDB, Vercel, and Stripe**, LegatePro aims 
 npm install
 ```
 
-### 2. Configure Environment Variables
-Create a `.env.local` file:
+### 2. Environment Variables  
+Create `.env.local`:
 
 ```
-MONGODB_URI="your-mongodb-connection"
+MONGODB_URI=""
 STRIPE_SECRET_KEY=""
 STRIPE_WEBHOOK_SECRET=""
 NEXTAUTH_SECRET=""
 NEXTAUTH_URL="http://localhost:3000"
 ```
 
-(Add keys as features are implemented.)
-
-### 3. Run the Development Server
+### 3. Start the Dev Server
 ```bash
 npm run dev
 ```
 
-Then open:  
+Then visit:  
 👉 http://localhost:3000
 
 ---
 
-## 📁 Project Structure (Simplified)
+## 📁 Project Structure
 
 ```
 src/
   app/
-    app/                 # Authenticated app shell
+    app/                 # Authenticated application shell
       estates/
-        new/            # Create estate
-        [estateId]/     # Estate dashboard (tabs)
+        new/             # Create estate
+        [estateId]/      # Estate workspace
           tasks/
           expenses/
           documents/
@@ -108,71 +107,56 @@ src/
           contacts/
           time/
           settings/
-    page.tsx            # Marketing landing page
-  models/               # Mongoose models
-  lib/                  # db, auth, stripe helpers
-  components/           # UI + shared components
+    page.tsx             # Marketing landing page
+  models/                # MongoDB/Mongoose models
+  lib/                   # db connection, auth helpers, utils
+  components/            # UI components and shared blocks
 ```
 
 ---
 
-## 🛠️ Development Philosophy
+## 🛠️ Design & Development Philosophy
 
-LegatePro is built with three principles:
+### **1. Radical Simplicity**  
+Probate is overwhelming — the UI should be calm, minimal, and obvious.
 
-### **1. Absolute Simplicity**  
-Probate is overwhelming. LegatePro should feel calm, clean, and clearly structured.
+### **2. Real‑World Accuracy**  
+Every workflow is modeled from actual estate administration:  
+rent ledgers, funeral invoices, PR timecards, utilities, legal filings.
 
-### **2. Real-World Accuracy**  
-Everything is based on actual estate administration workflows, from rental ledgers to court timecards.
-
-### **3. AI-Augmented Help**  
-Eventually, the platform will offer:
-- document generation (receipts, accounting reports, notices)
-- data extraction from uploaded documents
-- task suggestions based on probate stage
+### **3. AI‑Assisted Probate** (coming soon)  
+- Automated document generation (receipts, letters, notices)  
+- Smart suggestions based on probate stage  
+- Auto‑classification of uploaded documents  
 
 ---
 
-## 🎨 Logo (Coming Soon)
-
-We will design a logo that reflects:
-- clean modern aesthetic  
-- minimal elegance  
-- themes of order, clarity, legacy, and structure  
-- your personal taste: refined, modern, slightly artistic, with a nod to Black renaissance design  
-
-Logo ideas on deck:
-- geometric keyhole + book  
-- minimalist courthouse silhouette  
-- abstract “L” monogram  
-- red/black/gold palette (optional based on preference)
+## 🎨 Logo  
+The LegatePro logo is currently in design. Guiding principles:  
+- Geometric keyhole symbol (legacy + security)  
+- Minimal modern lines  
+- Red + sandstone palette  
+- Tone: refined, structured, Black Renaissance inspired  
 
 ---
 
 ## 📌 Roadmap
 
-- [ ] Full CRUD for tasks  
-- [ ] Expense + receipt upload  
-- [ ] Document index  
-- [ ] Property + rent tools  
-- [ ] Utilities module  
+- [ ] Full CRUD tasks  
+- [ ] Expense receipt uploads  
+- [ ] Enhanced document index  
+- [ ] Property management + rent exports  
+- [ ] Utility workflows  
 - [ ] Contacts system  
-- [ ] Timecard + auto-compensation  
+- [ ] PR timecard exports  
 - [ ] Authentication  
-- [ ] Stripe billing  
+- [ ] Stripe billing integration  
 - [ ] PDF generation  
-- [ ] AI assistants  
+- [ ] AI assistants & automation  
 
 ---
 
-## 📝 License
-This project is currently private and proprietary.
-
----
-
-## ✉️ Author
-Built by **Jus K. Buckingham**  
-Los Angeles.
-
----
+## ✉️ Author  
+**Jus K. Buckingham**  
+Los Angeles  
+Private & Proprietary Project
