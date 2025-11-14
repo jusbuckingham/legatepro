@@ -1,6 +1,6 @@
-import { connectToDatabase } from "@/lib/db";
-import { EstateProperty } from "@/models/EstateProperty";
-import { RentPayment } from "@/models/RentPayment";
+import { connectToDatabase } from "../../../../../lib/db";
+import { EstateProperty } from "../../../../../models/EstateProperty";
+import { RentPayment } from "../../../../../models/RentPayment";
 import { redirect } from "next/navigation";
 
 interface EstateRentPageProps {
@@ -10,6 +10,50 @@ interface EstateRentPageProps {
 }
 
 export const dynamic = "force-dynamic";
+
+interface PropertyDoc {
+  _id: unknown;
+  label: string;
+}
+
+interface RentPaymentDoc {
+  _id: unknown;
+  estateId: unknown;
+  propertyId?: unknown;
+  tenantName: string;
+  periodMonth: number;
+  periodYear: number;
+  amount: number;
+  paymentDate?: string | Date;
+  method?: string;
+  reference?: string;
+  notes?: string;
+}
+
+function formatCurrency(value: number | undefined | null) {
+  if (value == null || Number.isNaN(value)) return "$0.00";
+  return value.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  });
+}
+
+function formatDate(value?: string | Date) {
+  if (!value) return "—";
+  const d = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString();
+}
+
+function formatPeriod(month: number, year: number) {
+  if (!month || !year) return "—";
+  const date = new Date(year, month - 1, 1);
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    year: "numeric",
+  });
+}
 
 async function recordRentPayment(formData: FormData) {
   "use server";
@@ -67,38 +111,52 @@ export default async function EstateRentPage({ params }: EstateRentPageProps) {
 
   await connectToDatabase();
 
-  const [properties, rentPayments] = await Promise.all([
-    EstateProperty.find({ estateId }).sort({ label: 1 }).lean(),
+  const [propertyDocs, rentPaymentDocs] = await Promise.all([
+    EstateProperty.find({ estateId })
+      .sort({ label: 1 })
+      .lean<PropertyDoc[]>(),
     RentPayment.find({ estateId })
       .sort({ periodYear: -1, periodMonth: -1, paymentDate: -1 })
-      .lean(),
+      .lean<RentPaymentDoc[]>(),
   ]);
 
-  const totals = rentPayments.reduce(
-    (acc: { total: number }, payment: any) => {
-      acc.total += Number(payment.amount) || 0;
-      return acc;
-    },
-    { total: 0 }
-  );
+  const propertiesById = new Map<string, PropertyDoc>();
+  for (const p of propertyDocs) {
+    propertiesById.set(String(p._id), p);
+  }
+
+  const payments = (rentPaymentDocs ?? []).map((p) => ({
+    ...p,
+    _id: String(p._id),
+    estateId: String(p.estateId),
+    propertyId: p.propertyId ? String(p.propertyId) : undefined,
+    amount: Number(p.amount ?? 0),
+  }));
+
+  const totalCollected = payments.reduce((sum, payment) => {
+    return sum + (payment.amount || 0);
+  }, 0);
 
   return (
     <div className="space-y-6">
+      {/* Header + summary */}
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-xl font-semibold tracking-tight">Rent ledger</h2>
+          <h2 className="text-xl font-semibold tracking-tight text-slate-50">
+            Rent ledger
+          </h2>
           <p className="text-sm text-slate-400">
             Record rent received for any rental properties in this estate so you
-            can report income cleanly at the end.
+            can report income cleanly in your final accounting.
           </p>
         </div>
 
-        <div className="text-sm text-slate-300">
-          <span className="text-xs uppercase tracking-wide text-slate-400">
+        <div className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-sm">
+          <span className="text-xs uppercase tracking-wide text-emerald-300">
             Total collected:{" "}
           </span>
-          <span className="font-semibold text-emerald-300">
-            ${totals.total.toFixed(2)}
+          <span className="font-semibold text-emerald-200">
+            {formatCurrency(totalCollected)}
           </span>
         </div>
       </div>
@@ -141,11 +199,8 @@ export default async function EstateRentPage({ params }: EstateRentPageProps) {
               defaultValue=""
             >
               <option value="">Not linked</option>
-              {properties.map((property: any) => (
-                <option
-                  key={property._id.toString()}
-                  value={property._id.toString()}
-                >
+              {propertyDocs.map((property) => (
+                <option key={String(property._id)} value={String(property._id)}>
                   {property.label}
                 </option>
               ))}
@@ -288,7 +343,7 @@ export default async function EstateRentPage({ params }: EstateRentPageProps) {
       </form>
 
       {/* Rent payments table */}
-      {rentPayments.length === 0 ? (
+      {payments.length === 0 ? (
         <p className="text-sm text-slate-400">
           No rent payments recorded yet. Use this ledger to track all rent
           received while you&apos;re serving as personal representative.
@@ -307,26 +362,18 @@ export default async function EstateRentPage({ params }: EstateRentPageProps) {
               </tr>
             </thead>
             <tbody>
-              {rentPayments.map((payment: any) => {
-                const property = properties.find(
-                  (p: any) => p._id.toString() === payment.propertyId?.toString()
-                );
-
-                const periodLabel = `${payment.periodMonth
-                  .toString()
-                  .padStart(2, "0")}/${payment.periodYear}`;
-
-                const paymentDate = payment.paymentDate
-                  ? new Date(payment.paymentDate).toLocaleDateString()
-                  : "—";
+              {payments.map((payment) => {
+                const property = payment.propertyId
+                  ? propertiesById.get(payment.propertyId)
+                  : undefined;
 
                 return (
                   <tr
-                    key={payment._id.toString()}
+                    key={payment._id}
                     className="border-t border-slate-800"
                   >
                     <td className="px-3 py-2 align-top text-slate-300">
-                      {periodLabel}
+                      {formatPeriod(payment.periodMonth, payment.periodYear)}
                     </td>
                     <td className="px-3 py-2 align-top text-slate-100">
                       {payment.tenantName}
@@ -335,13 +382,13 @@ export default async function EstateRentPage({ params }: EstateRentPageProps) {
                       {property ? property.label : "—"}
                     </td>
                     <td className="px-3 py-2 align-top text-slate-300">
-                      {paymentDate}
+                      {formatDate(payment.paymentDate)}
                     </td>
                     <td className="px-3 py-2 align-top text-slate-300">
                       {payment.method || "—"}
                     </td>
                     <td className="px-3 py-2 align-top text-right text-slate-100">
-                      ${Number(payment.amount || 0).toFixed(2)}
+                      {formatCurrency(payment.amount)}
                     </td>
                   </tr>
                 );

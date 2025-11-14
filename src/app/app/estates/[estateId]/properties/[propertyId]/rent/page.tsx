@@ -1,7 +1,9 @@
 import { notFound } from "next/navigation";
-import { connectToDatabase } from "../../../../../../lib/db";
-import { EstateProperty } from "../../../../../../models/EstateProperty";
-import { RentPayment } from "../../../../../../models/RentPayment";
+import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
+import { connectToDatabase } from "../../../../../../../lib/db";
+import { EstateProperty } from "../../../../../../../models/EstateProperty";
+import { RentPayment } from "../../../../../../../models/RentPayment";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +36,48 @@ interface RentPaymentItem {
   method?: string;
   reference?: string;
   notes?: string;
+}
+
+type RentPaymentDoc = {
+  _id: unknown;
+  estateId?: unknown;
+  propertyId?: unknown;
+  tenantName?: string;
+  periodMonth?: number;
+  periodYear?: number;
+  amount?: number;
+  paymentDate?: string | Date;
+  method?: string;
+  reference?: string;
+  notes?: string;
+};
+
+async function deleteRentPayment(formData: FormData) {
+  "use server";
+
+  const paymentId = formData.get("paymentId");
+  const estateId = formData.get("estateId");
+  const propertyId = formData.get("propertyId");
+
+  if (
+    typeof paymentId !== "string" ||
+    typeof estateId !== "string" ||
+    typeof propertyId !== "string"
+  ) {
+    return;
+  }
+
+  const origin = headers().get("origin") ?? "http://localhost:3000";
+
+  try {
+    await fetch(`${origin}/api/rent/${paymentId}`, {
+      method: "DELETE",
+    });
+  } catch (error) {
+    console.error("Failed to delete rent payment via API:", error);
+  }
+
+  revalidatePath(`/app/estates/${estateId}/properties/${propertyId}/rent`);
 }
 
 function formatCurrency(value?: number) {
@@ -88,12 +132,30 @@ export default async function PropertyRentPage({
     notFound();
   }
 
-  const rentPayments = (await RentPayment.find({
+  const rentPaymentDocs = (await RentPayment.find({
     estateId,
     propertyId,
   })
     .sort({ periodYear: -1, periodMonth: -1, paymentDate: -1 })
-    .lean()) as RentPaymentItem[];
+    .lean()) as RentPaymentDoc[];
+
+  const rentPayments: RentPaymentItem[] = (rentPaymentDocs ?? []).map(
+    (doc: RentPaymentDoc) => ({
+      _id: doc._id,
+      estateId: doc.estateId ? String(doc.estateId) : estateId,
+      propertyId: doc.propertyId,
+      tenantName: doc.tenantName,
+      periodMonth:
+        typeof doc.periodMonth === "number" ? doc.periodMonth : undefined,
+      periodYear:
+        typeof doc.periodYear === "number" ? doc.periodYear : undefined,
+      amount: typeof doc.amount === "number" ? doc.amount : undefined,
+      paymentDate: doc.paymentDate,
+      method: doc.method,
+      reference: doc.reference,
+      notes: doc.notes,
+    })
+  );
 
   const hasPayments = rentPayments.length > 0;
 
@@ -103,22 +165,53 @@ export default async function PropertyRentPage({
 
   const lastPaymentDate = rentPayments[0]?.paymentDate;
 
+  const distinctPeriods = new Set(
+    rentPayments
+      .filter((p) => p.periodYear && p.periodMonth)
+      .map((p) => `${p.periodYear}-${p.periodMonth}`)
+  ).size;
+
+  const primaryTenant =
+    rentPayments.find((p) => p.tenantName && p.tenantName.trim().length > 0)
+      ?.tenantName || null;
+
   return (
     <div className="space-y-6">
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
-          Rent &amp; tenant
-        </h1>
-        <p className="text-sm text-slate-400">
-          Rent history for{" "}
-          <span className="font-medium text-slate-100">{property.label}</span>
-          {formatAddress(property) && (
-            <>
-              {" "}
-              <span className="text-slate-500">·</span>{" "}
-              <span>{formatAddress(property)}</span>
-            </>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
+              Rent &amp; tenant
+            </h1>
+            <p className="text-sm text-slate-400">
+              Rent history for{" "}
+              <span className="font-medium text-slate-100">
+                {property.label}
+              </span>
+              {formatAddress(property) && (
+                <>
+                  {" "}
+                  <span className="text-slate-500">·</span>{" "}
+                  <span className="text-slate-300">
+                    {formatAddress(property)}
+                  </span>
+                </>
+              )}
+            </p>
+          </div>
+          {primaryTenant && (
+            <div className="rounded-full border border-slate-700 bg-slate-900/60 px-3 py-1 text-xs text-slate-300">
+              Current tenant:{" "}
+              <span className="font-medium text-slate-100">
+                {primaryTenant}
+              </span>
+            </div>
           )}
+        </div>
+        <p className="text-xs text-slate-500">
+          This view keeps a clean ledger for this specific property, so you can
+          answer questions like “how much rent did we actually collect for this
+          address during probate?” in seconds.
         </p>
       </header>
 
@@ -128,11 +221,20 @@ export default async function PropertyRentPage({
           <p className="mt-1 text-lg font-semibold text-slate-50">
             {formatCurrency(totalCollected)}
           </p>
+          {hasPayments && (
+            <p className="mt-1 text-xs text-slate-500">
+              Across {rentPayments.length} recorded payment
+              {rentPayments.length === 1 ? "" : "s"}.
+            </p>
+          )}
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 text-sm">
-          <p className="text-xs text-slate-400">Payments</p>
+          <p className="text-xs text-slate-400">Months with rent activity</p>
           <p className="mt-1 text-lg font-semibold text-slate-50">
-            {rentPayments.length}
+            {hasPayments ? distinctPeriods : "0"}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Based on the period tagged for each payment.
           </p>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 text-sm">
@@ -140,6 +242,11 @@ export default async function PropertyRentPage({
           <p className="mt-1 text-lg font-semibold text-slate-50">
             {lastPaymentDate ? formatDate(lastPaymentDate) : "—"}
           </p>
+          {lastPaymentDate && (
+            <p className="mt-1 text-xs text-slate-500">
+              Keep this up to date for your final accounting.
+            </p>
+          )}
         </div>
       </section>
 
@@ -149,8 +256,10 @@ export default async function PropertyRentPage({
             No rent payments recorded yet for this property.
           </p>
           <p className="mt-1 text-slate-400">
-            As you receive rent, record each payment so you can generate a clean
-            ledger and receipts tied specifically to this address.
+            As you receive rent, record each payment in LegatePro so you can
+            generate a clean ledger and receipts tied specifically to this
+            address. This becomes critical when you&apos;re preparing your final
+            accounting for the court.
           </p>
         </div>
       ) : (
@@ -164,11 +273,15 @@ export default async function PropertyRentPage({
                 <th className="px-3 py-2 text-left">Method</th>
                 <th className="px-3 py-2 text-left">Reference</th>
                 <th className="px-3 py-2 text-right">Amount</th>
+                <th className="px-3 py-2 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
               {rentPayments.map((payment) => (
-                <tr key={String(payment._id)} className="text-xs text-slate-200">
+                <tr
+                  key={String(payment._id)}
+                  className="text-xs text-slate-200"
+                >
                   <td className="whitespace-nowrap px-3 py-2">
                     {formatPeriod(payment.periodMonth, payment.periodYear)}
                   </td>
@@ -186,6 +299,27 @@ export default async function PropertyRentPage({
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right">
                     {formatCurrency(payment.amount)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right">
+                    <form action={deleteRentPayment}>
+                      <input
+                        type="hidden"
+                        name="paymentId"
+                        value={String(payment._id)}
+                      />
+                      <input type="hidden" name="estateId" value={estateId} />
+                      <input
+                        type="hidden"
+                        name="propertyId"
+                        value={String(property._id)}
+                      />
+                      <button
+                        type="submit"
+                        className="text-xs text-rose-400 hover:text-rose-300 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    </form>
                   </td>
                 </tr>
               ))}

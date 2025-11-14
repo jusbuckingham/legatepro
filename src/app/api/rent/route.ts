@@ -1,33 +1,33 @@
-
-
 // src/app/api/rent/route.ts
-// Rent payments API for LegatePro
+// Unified Rent Payments API for LegatePro
 
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "../../../lib/db";
 import { RentPayment } from "../../../models/RentPayment";
 
-// GET /api/rent
-// Optional query params:
-//   estateId: string          -> filter by estate
-//   propertyId: string        -> filter by property
-//   paid: "true" | "false"    -> filter by paid status
-//   from: ISO date            -> payments from this date onward
-//   to: ISO date              -> payments up to this date
-//   q: string                 -> search tenantName or notes
+/** ------------------------------------------------------------------------
+ * GET /api/rent
+ * Query params:
+ *   estateId?: string
+ *   propertyId?: string
+ *   paid?: "true" | "false"
+ *   from?: ISO date
+ *   to?: ISO date
+ *   q?: string (tenantName or notes)
+ * ------------------------------------------------------------------------ */
 export async function GET(request: NextRequest) {
   try {
     await connectToDatabase();
 
-    const ownerId = "demo-user"; // TODO: replace with real auth
-
+    const ownerId = "demo-user"; // TODO: replace with authenticated user
     const { searchParams } = new URL(request.url);
-    const estateId = searchParams.get("estateId");
-    const propertyId = searchParams.get("propertyId");
-    const paid = searchParams.get("paid");
-    const from = searchParams.get("from");
-    const to = searchParams.get("to");
-    const q = searchParams.get("q")?.trim() ?? "";
+
+    const estateId = searchParams.get("estateId") ?? undefined;
+    const propertyId = searchParams.get("propertyId") ?? undefined;
+    const paid = searchParams.get("paid") ?? undefined;
+    const from = searchParams.get("from") ?? undefined;
+    const to = searchParams.get("to") ?? undefined;
+    const q = searchParams.get("q")?.trim() || "";
 
     const filter: Record<string, unknown> = { ownerId };
 
@@ -44,31 +44,48 @@ export async function GET(request: NextRequest) {
       filter.paymentDate = dateFilter;
     }
 
-    if (q) {
+    if (q.length > 0) {
       filter.$or = [
         { tenantName: { $regex: q, $options: "i" } },
         { notes: { $regex: q, $options: "i" } },
       ];
     }
 
-    const payments = await RentPayment.find(filter)
+    const rawPayments = await RentPayment.find(filter)
       .sort({ paymentDate: -1 })
       .lean();
+
+    const payments = rawPayments.map((p) => ({
+      ...p,
+      _id: String(p._id),
+    }));
 
     return NextResponse.json({ payments }, { status: 200 });
   } catch (error) {
     console.error("GET /api/rent error", error);
-    return NextResponse.json({ error: "Unable to load rent records" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Unable to load rent records" },
+      { status: 500 }
+    );
   }
 }
 
-// POST /api/rent
-// Creates a rent payment entry
+/** ------------------------------------------------------------------------
+ * POST /api/rent
+ * Create a rent payment record
+ * Body:
+ *   estateId: string
+ *   propertyId: string
+ *   tenantName: string
+ *   paymentDate: string | Date
+ *   amount: number
+ *   notes?: string
+ *   isPaid?: boolean
+ * ------------------------------------------------------------------------ */
 export async function POST(request: NextRequest) {
   try {
     await connectToDatabase();
-
-    const ownerId = "demo-user"; // TODO: replace with real auth
+    const ownerId = "demo-user"; // TODO: replace with authenticated user
 
     const body = await request.json();
 
@@ -82,26 +99,35 @@ export async function POST(request: NextRequest) {
       isPaid,
     } = body ?? {};
 
-    if (!estateId) {
+    // --- Validation ---
+    if (!estateId)
       return NextResponse.json({ error: "estateId is required" }, { status: 400 });
-    }
 
-    if (!propertyId) {
-      return NextResponse.json({ error: "propertyId is required" }, { status: 400 });
-    }
+    if (!propertyId)
+      return NextResponse.json(
+        { error: "propertyId is required" },
+        { status: 400 }
+      );
 
-    if (!tenantName) {
-      return NextResponse.json({ error: "tenantName is required" }, { status: 400 });
-    }
+    if (!tenantName)
+      return NextResponse.json(
+        { error: "tenantName is required" },
+        { status: 400 }
+      );
 
-    if (!paymentDate) {
-      return NextResponse.json({ error: "paymentDate is required" }, { status: 400 });
-    }
+    if (!paymentDate)
+      return NextResponse.json(
+        { error: "paymentDate is required" },
+        { status: 400 }
+      );
 
-    if (amount == null || Number.isNaN(Number(amount))) {
-      return NextResponse.json({ error: "Valid amount is required" }, { status: 400 });
-    }
+    if (amount == null || Number.isNaN(Number(amount)))
+      return NextResponse.json(
+        { error: "Valid amount is required" },
+        { status: 400 }
+      );
 
+    // --- Create Record ---
     const payment = await RentPayment.create({
       ownerId,
       estateId,
@@ -109,13 +135,19 @@ export async function POST(request: NextRequest) {
       tenantName,
       paymentDate: new Date(paymentDate),
       amount: Number(amount),
-      notes,
+      notes: notes || "",
       isPaid: typeof isPaid === "boolean" ? isPaid : true,
     });
 
-    return NextResponse.json({ payment }, { status: 201 });
+    return NextResponse.json(
+      { payment: { ...payment.toJSON(), _id: String(payment._id) } },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("POST /api/rent error", error);
-    return NextResponse.json({ error: "Unable to create rent record" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Unable to create rent record" },
+      { status: 500 }
+    );
   }
 }
