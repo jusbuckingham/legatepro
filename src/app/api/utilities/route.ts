@@ -1,5 +1,3 @@
-
-
 // src/app/api/utilities/route.ts
 // Utility accounts API for LegatePro
 
@@ -11,8 +9,8 @@ import { UtilityAccount } from "../../../models/UtilityAccount";
 // Optional query params:
 //   estateId: string            -> filter by estate
 //   propertyId: string          -> filter by property
-//   utilityType: string         -> filter by utility type (ELECTRIC, GAS, etc.)
-//   q: string                   -> search by providerName, accountNumber, notes
+//   type: string                -> filter by utility type (electric, gas, etc.)
+//   q: string                   -> search by provider, accountNumber, notes
 export async function GET(request: NextRequest) {
   try {
     await connectToDatabase();
@@ -23,7 +21,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const estateId = searchParams.get("estateId");
     const propertyId = searchParams.get("propertyId");
-    const utilityType = searchParams.get("utilityType");
+    const type = searchParams.get("type");
     const q = searchParams.get("q")?.trim() ?? "";
 
     const filter: Record<string, unknown> = { ownerId };
@@ -36,20 +34,20 @@ export async function GET(request: NextRequest) {
       filter.propertyId = propertyId;
     }
 
-    if (utilityType) {
-      filter.utilityType = utilityType;
+    if (type) {
+      filter.type = type;
     }
 
     if (q) {
       filter.$or = [
-        { providerName: { $regex: q, $options: "i" } },
+        { provider: { $regex: q, $options: "i" } },
         { accountNumber: { $regex: q, $options: "i" } },
         { notes: { $regex: q, $options: "i" } },
       ];
     }
 
     const utilities = await UtilityAccount.find(filter)
-      .sort({ providerName: 1 })
+      .sort({ provider: 1 })
       .lean();
 
     return NextResponse.json({ utilities }, { status: 200 });
@@ -76,14 +74,15 @@ export async function POST(request: NextRequest) {
     const {
       estateId,
       propertyId,
-      providerName,
-      utilityType,
+      provider,
+      type,
       accountNumber,
+      billingName,
       phone,
-      website,
-      balanceDue,
-      lastPaymentAmount,
-      lastPaymentDate,
+      email,
+      onlinePortalUrl,
+      status,
+      isAutoPay,
       notes,
     } = body ?? {};
 
@@ -94,16 +93,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!providerName) {
+    if (!provider) {
       return NextResponse.json(
-        { error: "providerName is required" },
-        { status: 400 }
-      );
-    }
-
-    if (!utilityType) {
-      return NextResponse.json(
-        { error: "utilityType is required" },
+        { error: "provider is required" },
         { status: 400 }
       );
     }
@@ -112,17 +104,15 @@ export async function POST(request: NextRequest) {
       ownerId,
       estateId,
       propertyId,
-      providerName,
-      utilityType,
+      provider,
+      type: type || "other",
       accountNumber,
+      billingName,
       phone,
-      website,
-      balanceDue: balanceDue != null ? Number(balanceDue) : undefined,
-      lastPaymentAmount:
-        lastPaymentAmount != null ? Number(lastPaymentAmount) : undefined,
-      lastPaymentDate: lastPaymentDate
-        ? new Date(lastPaymentDate)
-        : undefined,
+      email,
+      onlinePortalUrl,
+      status: status || "active",
+      isAutoPay: Boolean(isAutoPay),
       notes,
     });
 

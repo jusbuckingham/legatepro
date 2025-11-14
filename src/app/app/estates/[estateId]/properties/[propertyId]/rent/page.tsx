@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { headers } from "next/headers";
+import Link from "next/link";
 import { connectToDatabase } from "../../../../../../../lib/db";
 import { EstateProperty } from "../../../../../../../models/EstateProperty";
 import { RentPayment } from "../../../../../../../models/RentPayment";
@@ -67,14 +67,16 @@ async function deleteRentPayment(formData: FormData) {
     return;
   }
 
-  const origin = headers().get("origin") ?? "http://localhost:3000";
-
   try {
-    await fetch(`${origin}/api/rent/${paymentId}`, {
-      method: "DELETE",
+    await connectToDatabase();
+
+    await RentPayment.deleteOne({
+      _id: paymentId,
+      estateId,
+      propertyId,
     });
   } catch (error) {
-    console.error("Failed to delete rent payment via API:", error);
+    console.error("Failed to delete rent payment:", error);
   }
 
   revalidatePath(`/app/estates/${estateId}/properties/${propertyId}/rent`);
@@ -177,8 +179,8 @@ export default async function PropertyRentPage({
 
   return (
     <div className="space-y-6">
-      <header className="space-y-2">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
+      <header className="space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
               Rent &amp; tenant
@@ -198,21 +200,29 @@ export default async function PropertyRentPage({
                 </>
               )}
             </p>
+            <p className="mt-1 text-xs text-slate-500">
+              This view keeps a clean ledger for this specific property, so you
+              can answer questions like “how much rent did we actually collect
+              for this address during probate?” in seconds.
+            </p>
           </div>
-          {primaryTenant && (
-            <div className="rounded-full border border-slate-700 bg-slate-900/60 px-3 py-1 text-xs text-slate-300">
-              Current tenant:{" "}
-              <span className="font-medium text-slate-100">
-                {primaryTenant}
-              </span>
-            </div>
-          )}
+          <div className="flex flex-col items-end gap-2">
+            {primaryTenant && (
+              <div className="rounded-full border border-slate-700 bg-slate-900/60 px-3 py-1 text-xs text-slate-300">
+                Current tenant:{" "}
+                <span className="font-medium text-slate-100">
+                  {primaryTenant}
+                </span>
+              </div>
+            )}
+            <Link
+              href={`/app/estates/${estateId}/properties/${propertyId}`}
+              className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-xs font-medium text-slate-200 hover:border-rose-500/70 hover:text-rose-100"
+            >
+              ← Back to property overview
+            </Link>
+          </div>
         </div>
-        <p className="text-xs text-slate-500">
-          This view keeps a clean ledger for this specific property, so you can
-          answer questions like “how much rent did we actually collect for this
-          address during probate?” in seconds.
-        </p>
       </header>
 
       <section className="grid gap-4 sm:grid-cols-3">

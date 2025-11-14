@@ -73,35 +73,78 @@ export default async function PropertyDocumentsPage({
 
   return (
     <div className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
-          Property documents
-        </h1>
-
+      {/* Breadcrumb */}
+      <nav className="text-xs text-slate-500">
+        <span className="text-slate-500">Estates</span>
+        <span className="mx-1 text-slate-600">/</span>
         {property ? (
-          <p className="text-sm text-slate-400">
-            Documents scoped to{" "}
-            <span className="font-medium text-slate-200">
-              {property.label}
-            </span>
-            {formatAddress(property) && (
-              <>
-                {" "}
-                —{" "}
-                <span className="font-mono text-xs">
-                  {formatAddress(property)}
-                </span>
-              </>
-            )}
-          </p>
+          <>
+            <span className="text-slate-400">Property</span>
+            <span className="mx-1 text-slate-600">/</span>
+            <span className="text-rose-300">Documents</span>
+          </>
         ) : (
-          <p className="text-sm text-slate-400">
-            Showing documents linked to property ID{" "}
-            <span className="font-mono text-xs">{propertyId}</span>.
-          </p>
+          <span className="text-rose-300">Property documents</span>
         )}
+      </nav>
+
+      {/* Header */}
+      <header className="space-y-2">
+        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-slate-50">
+              Property documents
+            </h1>
+
+            {property ? (
+              <p className="text-sm text-slate-400">
+                Documents scoped to{" "}
+                <span className="font-medium text-slate-200">
+                  {property.label}
+                </span>
+                {formatAddress(property) && (
+                  <>
+                    {" "}
+                    —{" "}
+                    <span className="font-mono text-xs">
+                      {formatAddress(property)}
+                    </span>
+                  </>
+                )}
+              </p>
+            ) : (
+              <p className="text-sm text-slate-400">
+                Showing documents linked to property ID{" "}
+                <span className="font-mono text-xs">{propertyId}</span>.
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="inline-flex items-center rounded-full border border-rose-500/40 bg-rose-950/70 px-3 py-1 font-medium uppercase tracking-wide text-rose-100">
+              Property scope
+            </span>
+            <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900/80 px-3 py-1 text-[11px] text-slate-300">
+              Tag documents with{" "}
+              <span className="ml-1 font-mono text-[10px] bg-slate-900/70 px-1.5 py-0.5 rounded">
+                property:{propertyId}
+              </span>
+            </span>
+          </div>
+        </div>
+
+        <p className="text-xs text-slate-500 max-w-2xl">
+          This view stays focused on one address. Any file in your estate
+          document index tagged with{" "}
+          <span className="font-mono text-[11px] bg-slate-900/60 px-1.5 py-0.5 rounded">
+            property:{propertyId}
+          </span>{" "}
+          will automatically show up here—great for banks, insurers, and
+          contractors who only need to see one property.
+        </p>
       </header>
 
+      {/* Content */}
       {!hasDocs ? (
         <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/60 px-6 py-8 text-sm text-slate-300">
           <p className="font-medium text-slate-100">
@@ -112,6 +155,12 @@ export default async function PropertyDocumentsPage({
             <span className="font-mono text-xs">property:{propertyId}</span>,
             they will automatically appear here.
           </p>
+          <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-slate-400">
+            <li>Deeds and title work</li>
+            <li>Repair quotes, invoices, and receipts</li>
+            <li>Insurance policies and correspondence</li>
+            <li>Lease agreements and move-in checklists</li>
+          </ul>
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/50 text-sm">
@@ -131,13 +180,19 @@ export default async function PropertyDocumentsPage({
               {docs.map((doc) => (
                 <tr key={doc._id.toString()} className="text-slate-200">
                   <td className="px-3 py-2">
-                    {doc.title || <span className="text-slate-500">Untitled</span>}
+                    {doc.title || (
+                      <span className="text-slate-500">Untitled</span>
+                    )}
                   </td>
                   <td className="px-3 py-2">
-                    {doc.category || <span className="text-slate-500">—</span>}
+                    {doc.category || (
+                      <span className="text-slate-500">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-xs">
-                    {doc.tags?.join(", ") || "—"}
+                    {doc.tags?.length
+                      ? doc.tags.join(", ")
+                      : "—"}
                   </td>
                   <td className="px-3 py-2">{formatDate(doc.createdAt)}</td>
                   <td className="px-3 py-2">{formatDate(doc.updatedAt)}</td>
@@ -147,7 +202,7 @@ export default async function PropertyDocumentsPage({
                         href={doc.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-400 underline text-xs"
+                        className="text-xs text-blue-400 underline hover:text-blue-300"
                       >
                         View
                       </a>

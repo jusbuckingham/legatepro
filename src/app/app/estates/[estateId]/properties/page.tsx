@@ -75,9 +75,12 @@ export default async function EstatePropertiesPage({
 
   await connectToDatabase();
 
-  const properties = (await EstateProperty.find({ estateId })
+  const rawProperties = await EstateProperty.find({ estateId })
     .sort({ label: 1 })
-    .lean()) as EstatePropertyItem[];
+    .lean()
+    .exec();
+
+  const properties = rawProperties as unknown as EstatePropertyItem[];
 
   return (
     <div className="space-y-6">
