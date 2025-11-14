@@ -1,86 +1,11 @@
-import { notFound } from "next/navigation";
+// src/app/app/estates/[estateId]/rent/page.tsx
+
+import Link from "next/link";
 import { connectToDatabase } from "../../../../../lib/db";
-import { EstateProperty } from "../../../../../models/EstateProperty";
 import { RentPayment } from "../../../../../models/RentPayment";
+import { EstateProperty } from "../../../../../models/EstateProperty";
 
 export const dynamic = "force-dynamic";
-
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  }).format(value);
-}
-
-function formatDate(value?: string | Date): string {
-  if (!value) return "";
-  const d = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toISOString().slice(0, 10); // yyyy-mm-dd
-}
-
-type RentPaymentRow = {
-  id: string;
-  date: string;
-  periodLabel: string;
-  tenantName: string;
-  propertyLabel: string;
-  method: string;
-  amount: number;
-  notes: string;
-};
-
-async function loadRentLedger(
-  estateId: string
-): Promise<{ totalCollected: number; rows: RentPaymentRow[] }> {
-  await connectToDatabase();
-
-  const [propertiesRaw, paymentsRaw] = await Promise.all([
-    EstateProperty.find({ estateId }).lean(),
-    RentPayment.find({ estateId })
-      .sort({ receivedDate: -1, createdAt: -1 })
-      .lean(),
-  ]);
-
-  const propertyNameById: Record<string, string> = {};
-  (propertiesRaw as any[]).forEach((p) => {
-    const id = String(p._id);
-    const label =
-      p.nickname ||
-      p.addressLine1 ||
-      p.address ||
-      p.city ||
-      "Unlabeled property";
-    propertyNameById[id] = label;
-  });
-
-  const rows: RentPaymentRow[] = (paymentsRaw as any[]).map((p) => {
-    const propertyId = p.propertyId ? String(p.propertyId) : undefined;
-    const propertyLabelFromPayment = p.propertyLabel as string | undefined;
-
-    return {
-      id: String(p._id),
-      date: formatDate(p.receivedDate ?? p.createdAt),
-      periodLabel: (p.periodLabel as string | undefined) ?? "",
-      tenantName: (p.tenantName as string | undefined) ?? "",
-      propertyLabel:
-        propertyLabelFromPayment ??
-        (propertyId ? propertyNameById[propertyId] : "") ??
-        "",
-      method: (p.method as string | undefined) ?? "",
-      amount: typeof p.amount === "number" ? p.amount : 0,
-      notes: (p.notes as string | undefined) ?? "",
-    };
-  });
-
-  const totalCollected = rows.reduce(
-    (sum, row) => sum + (row.amount || 0),
-    0
-  );
-
-  return { totalCollected, rows };
-}
 
 interface PageProps {
   params: {
@@ -88,97 +13,253 @@ interface PageProps {
   };
 }
 
-export default async function EstateRentPage({ params }: PageProps) {
-  const { estateId } = params;
+interface RentPaymentRow {
+  id: string;
+  estateId: string;
+  propertyLabel?: string;
+  payerName?: string;
+  method?: string;
+  amount?: number;
+  currency?: string;
+  datePaid?: string;
+  periodStart?: string;
+  periodEnd?: string;
+}
 
-  if (!estateId) {
-    notFound();
+interface RentPaymentLean {
+  _id?: { toString(): string };
+  estateId?: { toString(): string } | string;
+  propertyId?: { toString(): string };
+  payerName?: string;
+  method?: string;
+  amount?: number;
+  currency?: string;
+  datePaid?: string | Date;
+  periodStart?: string | Date;
+  periodEnd?: string | Date;
+}
+
+interface EstatePropertyLean {
+  _id: { toString(): string };
+  label?: string;
+}
+
+function formatCurrency(amount?: number, currency = "USD"): string {
+  if (amount == null || Number.isNaN(amount)) return "—";
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `$${amount.toFixed(2)}`;
+  }
+}
+
+function formatDate(value?: string | Date | null): string {
+  if (!value) return "—";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+async function getRentLedger(estateId: string): Promise<RentPaymentRow[]> {
+  await connectToDatabase();
+
+  const rawPayments = (await RentPayment.find({ estateId })
+    .sort({ datePaid: -1, createdAt: -1 })
+    .lean()
+    .exec()) as RentPaymentLean[];
+
+  if (!rawPayments || rawPayments.length === 0) {
+    return [];
   }
 
-  const { totalCollected, rows } = await loadRentLedger(estateId);
+  const propertyIds = Array.from(
+    new Set(
+      rawPayments
+        .map((p) => p.propertyId)
+        .filter((id): id is { toString(): string } => Boolean(id))
+        .map((id) => id.toString())
+    )
+  );
+
+  let propertyLabelById = new Map<string, string>();
+
+  if (propertyIds.length > 0) {
+    const properties = (await EstateProperty.find({ _id: { $in: propertyIds } })
+      .select({ _id: 1, label: 1 })
+      .lean()
+      .exec()) as EstatePropertyLean[];
+
+    propertyLabelById = new Map(
+      properties.map((p) => [p._id.toString(), p.label ?? "Property"])
+    );
+  }
+
+  return rawPayments.map((p) => ({
+    id: p._id?.toString() ?? "",
+    estateId:
+      typeof p.estateId === "string"
+        ? p.estateId
+        : p.estateId?.toString() ?? estateId,
+    propertyLabel: p.propertyId
+      ? propertyLabelById.get(p.propertyId.toString())
+      : undefined,
+    payerName: p.payerName,
+    method: p.method,
+    amount: p.amount,
+    currency: p.currency ?? "USD",
+    datePaid: p.datePaid ? new Date(p.datePaid).toISOString() : undefined,
+    periodStart: p.periodStart
+      ? new Date(p.periodStart).toISOString()
+      : undefined,
+    periodEnd: p.periodEnd ? new Date(p.periodEnd).toISOString() : undefined,
+  }));
+}
+
+export default async function EstateRentLedgerPage({ params }: PageProps) {
+  const { estateId } = params;
+  const payments = await getRentLedger(estateId);
+
+  const totalCollected = payments.reduce(
+    (sum, p) => sum + (p.amount ?? 0),
+    0
+  );
 
   return (
     <div className="space-y-6">
-      {/* Header + summary */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-1">
-          <h2 className="text-xl font-semibold tracking-tight text-slate-50">
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
             Rent ledger
-          </h2>
+          </h1>
           <p className="text-sm text-slate-400">
-            Track rent collected across all estate properties. Use this ledger
-            for accounting, tax prep, or your final probate accounting.
+            Track every dollar of rent the estate has collected. You can attach
+            each payment to a property and export a ledger for the court or your
+            accountant.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-emerald-300">
-              Total collected:{" "}
-            </span>
-            <span className="font-semibold text-emerald-200">
-              {formatCurrency(totalCollected)}
-            </span>
-          </div>
-
-          <a
+        <div className="flex flex-col items-end gap-1 text-right">
+          <p className="text-xs uppercase tracking-wide text-slate-400">
+            Total collected
+          </p>
+          <p className="text-lg font-semibold text-rose-100">
+            {formatCurrency(totalCollected, "USD")}
+          </p>
+          <Link
             href={`/api/rent/export?estateId=${estateId}`}
-            className="inline-flex items-center justify-center rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20"
+            prefetch={false}
+            className="mt-2 inline-flex items-center rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1 text-xs font-medium text-slate-100 hover:border-rose-500/70 hover:text-rose-50"
           >
-            Export CSV
-          </a>
+            Export rent ledger (CSV)
+          </Link>
         </div>
-      </div>
+      </header>
 
-      {/* Table */}
-      <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60">
-        {rows.length === 0 ? (
-          <div className="p-6 text-sm text-slate-400">
-            No rent payments recorded for this estate yet.
+      <section className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60">
+        <div className="border-b border-slate-800 px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-400">
+          Payments
+        </div>
+        {payments.length === 0 ? (
+          <div className="px-4 py-6 text-sm text-slate-400">
+            No rent payments recorded yet. When you add payments from a property
+            page, they&apos;ll show up here automatically.
           </div>
         ) : (
-          <table className="min-w-full border-t border-slate-800 text-xs">
-            <thead className="bg-slate-900/80 text-[11px] uppercase tracking-wide text-slate-400">
-              <tr>
-                <th className="px-3 py-2 text-left">Date</th>
-                <th className="px-3 py-2 text-left">Period</th>
-                <th className="px-3 py-2 text-left">Tenant</th>
-                <th className="px-3 py-2 text-left">Property</th>
-                <th className="px-3 py-2 text-left">Method</th>
-                <th className="px-3 py-2 text-right">Amount</th>
-                <th className="px-3 py-2 text-left">Notes</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/80">
-              {rows.map((row) => (
-                <tr key={row.id} className="hover:bg-slate-900/50">
-                  <td className="whitespace-nowrap px-3 py-2 align-top text-slate-200">
-                    {row.date || "—"}
-                  </td>
-                  <td className="px-3 py-2 align-top text-slate-200">
-                    {row.periodLabel || "—"}
-                  </td>
-                  <td className="px-3 py-2 align-top text-slate-200">
-                    {row.tenantName || "—"}
-                  </td>
-                  <td className="px-3 py-2 align-top text-slate-200">
-                    {row.propertyLabel || "—"}
-                  </td>
-                  <td className="px-3 py-2 align-top text-slate-200">
-                    {row.method || "—"}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 align-top text-right text-slate-100">
-                    {row.amount ? formatCurrency(row.amount) : "—"}
-                  </td>
-                  <td className="px-3 py-2 align-top text-slate-400">
-                    {row.notes || ""}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-800 text-sm">
+              <thead className="bg-slate-950/80">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Date
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Payer
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Property
+                  </th>
+                  <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Amount
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Method
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Period
+                  </th>
+                  <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Details
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-900/60">
+                {payments.map((p) => {
+                  const paidLabel = formatDate(p.datePaid);
+                  const periodLabel =
+                    p.periodStart || p.periodEnd
+                      ? `${formatDate(p.periodStart)} → ${formatDate(
+                          p.periodEnd
+                        )}`
+                      : "Not set";
+
+                  return (
+                    <tr
+                      key={p.id}
+                      className="hover:bg-slate-900/60 transition-colors"
+                    >
+                      <td className="whitespace-nowrap px-4 py-2 text-xs text-slate-300">
+                        {paidLabel}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2 text-xs text-slate-200">
+                        {p.payerName || (
+                          <span className="text-slate-500">Unlabeled</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2 text-xs text-slate-200">
+                        {p.propertyLabel || (
+                          <span className="text-slate-500">Not linked</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2 text-right text-xs font-medium text-slate-100">
+                        <Link
+                          href={`/app/estates/${estateId}/rent/${p.id}`}
+                          className="text-rose-200 hover:text-rose-100"
+                        >
+                          {formatCurrency(p.amount, p.currency)}
+                        </Link>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2 text-xs text-slate-200">
+                        {p.method || (
+                          <span className="text-slate-500">Not set</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2 text-xs text-slate-200">
+                        {periodLabel}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2 text-right text-xs">
+                        <Link
+                          href={`/app/estates/${estateId}/rent/${p.id}`}
+                          className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900/60 px-2 py-1 text-[11px] font-medium text-slate-100 hover:border-rose-500/70 hover:text-rose-50"
+                        >
+                          View / edit
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }

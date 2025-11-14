@@ -425,7 +425,8 @@ export default function EstateTimecardPage({ params }: PageProps) {
                   <th className="py-2 pr-4 text-left">Description</th>
                   <th className="py-2 pr-4 text-right">Hours</th>
                   <th className="py-2 pr-4 text-left">Notes</th>
-                  <th className="py-2 pr-0 text-right">Billable</th>
+                  <th className="py-2 pr-4 text-right">Billable</th>
+                  <th className="py-2 pl-2 pr-0 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -446,8 +447,16 @@ export default function EstateTimecardPage({ params }: PageProps) {
                     <td className="py-2 pr-4 align-top text-slate-300">
                       {entry.notes || "—"}
                     </td>
-                    <td className="py-2 pr-0 align-top text-right text-slate-300">
+                    <td className="py-2 pr-4 align-top text-right text-slate-300">
                       {entry.isBillable ? "Yes" : "No"}
+                    </td>
+                    <td className="py-2 pl-2 pr-0 align-top text-right">
+                      <a
+                        href={`/app/estates/${estateId}/time/${entry._id}`}
+                        className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800"
+                      >
+                        View / edit
+                      </a>
                     </td>
                   </tr>
                 ))}
@@ -458,12 +467,23 @@ export default function EstateTimecardPage({ params }: PageProps) {
                     {totalHours.toFixed(2)}
                   </td>
                   <td className="py-2 pr-4 align-top"></td>
-                  <td className="py-2 pr-0 align-top"></td>
+                  <td className="py-2 pr-4 align-top"></td>
+                  <td className="py-2 pl-2 pr-0 align-top"></td>
                 </tr>
               </tbody>
             </table>
           </div>
         )}
+      </section>
+      <section className="rounded-lg border border-slate-800 bg-slate-950/40 p-4 text-xs text-slate-400">
+        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Coming soon
+        </div>
+        <p>
+          LegatePro will soon combine your time entries, expenses, rent, and
+          tasks into a single chronological timeline so you can generate a
+          court-ready activity report in one click.
+        </p>
       </section>
     </div>
   );
