@@ -1,64 +1,39 @@
-export type LabelBadgeStatus =
-  | "open"
-  | "pending"
-  | "closed"
-  | "needs-info"
-  | "warning"
-  | "active"
-  | "inactive";
+"use client";
 
-export interface LabelBadgeProps {
-  status: LabelBadgeStatus;
-  className?: string;
+import * as React from "react";
+import { cn } from "../../lib/utils";
+
+export type LabelBadgeVariant = "default" | "subtle" | "outline" | "alert" | "success";
+
+export interface LabelBadgeProps
+  extends React.HTMLAttributes<HTMLSpanElement> {
+  variant?: LabelBadgeVariant;
+  children: React.ReactNode;
 }
 
-/**
- * Small pill-style badge used to show high-level estate status.
- * Colors are intentionally subtle to fit the LegatePro dark UI.
- */
-export function LabelBadge({ status, className }: LabelBadgeProps) {
-  const label = (() => {
-    switch (status) {
-      case "open":
-        return "Open";
-      case "pending":
-        return "Pending";
-      case "closed":
-        return "Closed";
-      case "needs-info":
-        return "Needs info";
-      case "warning":
-        return "Attention";
-      case "active":
-        return "Active";
-      case "inactive":
-        return "Inactive";
-      default:
-        return status;
-    }
-  })();
+export function LabelBadge({
+  variant = "default",
+  children,
+  className,
+  ...rest
+}: LabelBadgeProps) {
+  const base =
+    "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium leading-tight";
 
-  const colorClasses = (() => {
-    switch (status) {
-      case "open":
-      case "active":
-        return "border-emerald-500/50 bg-emerald-500/10 text-emerald-200";
-      case "pending":
-      case "needs-info":
-        return "border-amber-400/50 bg-amber-500/10 text-amber-200";
-      case "warning":
-        return "border-red-500/60 bg-red-500/10 text-red-200";
-      case "closed":
-      case "inactive":
-        return "border-slate-600/60 bg-slate-900 text-slate-300";
-      default:
-        return "border-slate-700 bg-slate-900 text-slate-300";
-    }
-  })();
+  const variantClass =
+    variant === "alert"
+      ? "bg-destructive/10 text-destructive border border-destructive/30"
+      : variant === "success"
+      ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/30"
+      : variant === "outline"
+      ? "border border-border text-foreground bg-background"
+      : variant === "subtle"
+      ? "bg-muted text-muted-foreground"
+      : "bg-primary/10 text-primary border border-primary/20";
 
-  const baseClasses =
-    "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wide";
-  const merged = className ? `${baseClasses} ${colorClasses} ${className}` : `${baseClasses} ${colorClasses}`;
-
-  return <span className={merged}>{label}</span>;
+  return (
+    <span className={cn(base, variantClass, className)} {...rest}>
+      {children}
+    </span>
+  );
 }

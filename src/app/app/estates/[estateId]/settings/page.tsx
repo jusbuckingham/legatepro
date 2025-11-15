@@ -1,6 +1,8 @@
 // src/app/app/estates/[estateId]/settings/page.tsx
 import { notFound } from "next/navigation";
 
+type EstateStatus = "draft" | "open" | "closing" | "closed" | string;
+
 interface Estate {
   _id: string;
   name?: string;
@@ -8,23 +10,49 @@ interface Estate {
   courtCounty?: string;
   courtState?: string;
   caseNumber?: string;
-  status?: string;
+  status?: EstateStatus;
   createdAt?: string;
   updatedAt?: string;
 }
 
-async function fetchEstate(estateId: string): Promise<Estate | null> {
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "";
-  const url = `${baseUrl}/api/estates?estateId=${encodeURIComponent(estateId)}`;
-
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) {
-    return null;
+function getBaseUrl() {
+  // Prefer explicit public base URL
+  if (process.env.NEXT_PUBLIC_BASE_URL) {
+    return process.env.NEXT_PUBLIC_BASE_URL;
   }
 
-  const data = (await res.json()) as { estates?: Estate[] };
-  const estates = data.estates ?? [];
-  return estates[0] ?? null;
+  // Fallback for Vercel
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+
+  // Local dev / generic fallback – relative API path
+  return "";
+}
+
+async function fetchEstate(estateId: string): Promise<Estate | null> {
+  if (!estateId) return null;
+
+  const baseUrl = getBaseUrl();
+  const url = `${baseUrl}/api/estates?estateId=${encodeURIComponent(
+    estateId,
+  )}`;
+
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+
+    if (!res.ok) {
+      console.error("[EstateSettings] Failed to fetch estate", res.status);
+      return null;
+    }
+
+    const data = (await res.json()) as { estates?: Estate[] };
+    const estates = data.estates ?? [];
+    return estates[0] ?? null;
+  } catch (err) {
+    console.error("[EstateSettings] Error fetching estate", err);
+    return null;
+  }
 }
 
 interface PageProps {
@@ -69,7 +97,11 @@ export default async function EstateSettingsPage({ params }: PageProps) {
   const displayName = estate.name || estate.decedentName || "Estate";
   const createdLabel = formatDateLabel(estate.createdAt);
   const updatedLabel = formatDateLabel(estate.updatedAt ?? estate.createdAt);
-  const statusLabel = estate.status ?? "Open";
+  const rawStatus = estate.status ?? "open";
+  const statusLabel =
+    typeof rawStatus === "string"
+      ? rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1)
+      : "Open";
 
   return (
     <div className="space-y-6 p-6">

@@ -1,6 +1,7 @@
 import { connectToDatabase } from "../../../../../lib/db";
 import { EstateProperty } from "../../../../../models/EstateProperty";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 
 interface EstatePropertiesPageProps {
   params: {
@@ -288,6 +289,7 @@ export default async function EstatePropertiesPage({
                 <th className="px-3 py-2">Address</th>
                 <th className="px-3 py-2">Beds/Baths</th>
                 <th className="px-3 py-2 text-right">Target rent</th>
+                <th className="px-3 py-2 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -333,10 +335,16 @@ export default async function EstatePropertiesPage({
                     </td>
                     <td className="px-3 py-2 align-top text-right text-slate-100">
                       {property.monthlyRentTarget
-                        ? `$${Number(
-                            property.monthlyRentTarget
-                          ).toFixed(2)}`
+                        ? `$${Number(property.monthlyRentTarget).toFixed(2)}`
                         : "—"}
+                    </td>
+                    <td className="px-3 py-2 align-top text-right">
+                      <Link
+                        href={`/app/estates/${estateId}/properties/${property._id.toString()}`}
+                        className="text-xs font-medium text-emerald-400 hover:text-emerald-300"
+                      >
+                        Open workspace
+                      </Link>
                     </td>
                   </tr>
                 );

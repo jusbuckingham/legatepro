@@ -1,375 +1,223 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
 
+import { connectToDatabase } from "../../../../../lib/db";
+import { UtilityAccount } from "../../../../../models/UtilityAccount";
+import { EstateProperty } from "../../../../../models/EstateProperty";
 
-"use client";
+interface EstateUtilitiesPageProps {
+  params: Promise<{ estateId: string }>;
+}
 
-import { useEffect, useState, FormEvent } from "react";
-
-interface UtilityAccount {
-  _id: string;
-  estateId: string;
-  propertyId?: string;
-  providerName: string;
-  utilityType: string;
+// Shape of the raw Mongoose documents after `.lean()`
+type RawUtilityAccount = {
+  _id: unknown;
+  estateId?: unknown;
+  propertyId?: unknown;
+  provider?: string;
+  type?: string;
   accountNumber?: string;
-  phone?: string;
-  website?: string;
-  balanceDue?: number;
-  lastPaymentAmount?: number;
-  lastPaymentDate?: string;
-  notes?: string;
-}
+  status?: "active" | "pending" | "closed";
+  isAutoPay?: boolean;
+  lastBillAmount?: number;
+  lastBillDate?: Date | string;
+};
 
-interface PageProps {
-  params: {
-    estateId: string;
-  };
-}
+type RawEstateProperty = {
+  _id: unknown;
+  label?: string;
+  addressLine1?: string;
+};
 
-const UTILITY_TYPES = [
-  "ELECTRIC",
-  "GAS",
-  "WATER",
-  "SEWER",
-  "TRASH",
-  "INTERNET",
-  "CABLE",
-  "SECURITY",
-  "OTHER",
-];
+type UtilityRow = {
+  _id: string;
+  propertyLabel: string;
+  provider: string;
+  type: string;
+  accountNumber?: string;
+  status: "active" | "pending" | "closed";
+  isAutoPay?: boolean;
+  lastBillAmount?: number;
+  lastBillDate?: string;
+};
 
-export default function EstateUtilitiesPage({ params }: PageProps) {
-  const { estateId } = params;
+async function getUtilityRows(estateId: string): Promise<UtilityRow[]> {
+  await connectToDatabase();
 
-  const [utilities, setUtilities] = useState<UtilityAccount[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const accounts = (await UtilityAccount.find({ estateId })
+    .sort({ provider: 1, type: 1 })
+    .lean()) as RawUtilityAccount[];
 
-  const [providerName, setProviderName] = useState("");
-  const [utilityType, setUtilityType] = useState("ELECTRIC");
-  const [accountNumber, setAccountNumber] = useState("");
-  const [phone, setPhone] = useState("");
-  const [website, setWebsite] = useState("");
-  const [balanceDue, setBalanceDue] = useState("");
-  const [lastPaymentAmount, setLastPaymentAmount] = useState("");
-  const [lastPaymentDate, setLastPaymentDate] = useState<string>("");
-  const [notes, setNotes] = useState("");
-
-  async function loadUtilities() {
-    try {
-      setLoading(true);
-      setError(null);
-      const res = await fetch(`/api/utilities?estateId=${encodeURIComponent(estateId)}`);
-      if (!res.ok) {
-        throw new Error("Failed to load utility accounts");
-      }
-      const data = await res.json();
-      setUtilities(data.utilities ?? []);
-    } catch (err) {
-      console.error(err);
-      setError("Unable to load utility accounts.");
-    } finally {
-      setLoading(false);
-    }
+  if (!accounts || accounts.length === 0) {
+    return [];
   }
 
-  useEffect(() => {
-    void loadUtilities();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [estateId]);
+  const propertyIds = Array.from(
+    new Set(
+      accounts
+        .map((a) => (a.propertyId ? String(a.propertyId) : null))
+        .filter((id): id is string => Boolean(id))
+    )
+  );
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
+  const properties = (await EstateProperty.find({ _id: { $in: propertyIds } })
+    .lean()) as RawEstateProperty[];
 
-    if (!providerName.trim()) {
-      setError("Provider name is required.");
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const res = await fetch("/api/utilities", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          estateId,
-          providerName,
-          utilityType,
-          accountNumber: accountNumber || undefined,
-          phone: phone || undefined,
-          website: website || undefined,
-          balanceDue: balanceDue ? Number(balanceDue) : undefined,
-          lastPaymentAmount: lastPaymentAmount ? Number(lastPaymentAmount) : undefined,
-          lastPaymentDate: lastPaymentDate || undefined,
-          notes: notes || undefined,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        const msg = data?.error || "Failed to create utility account.";
-        throw new Error(msg);
-      }
-
-      // Reset form & reload utilities
-      setProviderName("");
-      setAccountNumber("");
-      setPhone("");
-      setWebsite("");
-      setBalanceDue("");
-      setLastPaymentAmount("");
-      setLastPaymentDate("");
-      setNotes("");
-      setUtilityType("ELECTRIC");
-
-      await loadUtilities();
-    } catch (err) {
-      console.error(err);
-      setError(
-        err instanceof Error ? err.message : "Unable to create utility account."
-      );
-    } finally {
-      setLoading(false);
-    }
+  const propertyLabelById = new Map<string, string>();
+  for (const p of properties) {
+    const id = String(p._id);
+    const label = p.label || p.addressLine1 || "Property";
+    propertyLabelById.set(id, label);
   }
+
+  return accounts.map<UtilityRow>((account) => {
+    const createdForPropertyId = account.propertyId ? String(account.propertyId) : undefined;
+    const propertyLabel = createdForPropertyId
+      ? propertyLabelById.get(createdForPropertyId) || "Estate-level"
+      : "Estate-level";
+
+    const lastBillDateISO = account.lastBillDate
+      ? account.lastBillDate instanceof Date
+        ? account.lastBillDate.toISOString().slice(0, 10)
+        : new Date(account.lastBillDate).toISOString().slice(0, 10)
+      : undefined;
+
+    return {
+      _id: String(account._id),
+      propertyLabel,
+      provider: account.provider || "",
+      type: account.type || "",
+      accountNumber: account.accountNumber,
+      status: account.status || "active",
+      isAutoPay: account.isAutoPay,
+      lastBillAmount: account.lastBillAmount,
+      lastBillDate: lastBillDateISO,
+    };
+  });
+}
+
+export default async function EstateUtilitiesPage({ params }: EstateUtilitiesPageProps) {
+  const { estateId } = await params;
+
+  if (!estateId) {
+    notFound();
+  }
+
+  const utilities = await getUtilityRows(estateId);
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Utilities</h1>
-          <p className="text-sm text-slate-400">
-            Track utility accounts for this estate so you can keep services active
-            and reconcile final bills.
+          <p className="mt-1 text-sm text-muted-foreground max-w-2xl">
+            Track utility accounts tied to each property in this estate — providers, account
+            numbers, status, and autopay — so you have everything ready for court accountings
+            and a smooth handoff to heirs.
           </p>
         </div>
-      </header>
-
-      <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-        <h2 className="text-sm font-semibold text-slate-100 mb-3">
-          Add utility account
-        </h2>
-
-        <form
-          onSubmit={handleSubmit}
-          className="grid gap-3 md:grid-cols-4 md:items-end text-sm"
+        <Link
+          href={`/app/estates/${estateId}/utilities/new`}
+          className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
         >
-          <div className="flex flex-col gap-1 md:col-span-2">
-            <label htmlFor="providerName" className="text-slate-300">
-              Provider name
-            </label>
-            <input
-              id="providerName"
-              type="text"
-              value={providerName}
-              onChange={(e) => setProviderName(e.target.value)}
-              placeholder="DTE Energy, LADWP, Comcast, etc."
-              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
-            />
-          </div>
+          + Add utility account
+        </Link>
+      </div>
 
-          <div className="flex flex-col gap-1">
-            <label htmlFor="utilityType" className="text-slate-300">
-              Type
-            </label>
-            <select
-              id="utilityType"
-              value={utilityType}
-              onChange={(e) => setUtilityType(e.target.value)}
-              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
-            >
-              {UTILITY_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type.charAt(0) + type.slice(1).toLowerCase()}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label htmlFor="accountNumber" className="text-slate-300">
-              Account #
-            </label>
-            <input
-              id="accountNumber"
-              type="text"
-              value={accountNumber}
-              onChange={(e) => setAccountNumber(e.target.value)}
-              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label htmlFor="phone" className="text-slate-300">
-              Phone (optional)
-            </label>
-            <input
-              id="phone"
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1 md:col-span-2">
-            <label htmlFor="website" className="text-slate-300">
-              Website (optional)
-            </label>
-            <input
-              id="website"
-              type="url"
-              value={website}
-              onChange={(e) => setWebsite(e.target.value)}
-              placeholder="https://..."
-              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label htmlFor="balanceDue" className="text-slate-300">
-              Balance due
-            </label>
-            <input
-              id="balanceDue"
-              type="number"
-              step="0.01"
-              min="0"
-              value={balanceDue}
-              onChange={(e) => setBalanceDue(e.target.value)}
-              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label htmlFor="lastPaymentAmount" className="text-slate-300">
-              Last payment
-            </label>
-            <input
-              id="lastPaymentAmount"
-              type="number"
-              step="0.01"
-              min="0"
-              value={lastPaymentAmount}
-              onChange={(e) => setLastPaymentAmount(e.target.value)}
-              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label htmlFor="lastPaymentDate" className="text-slate-300">
-              Last payment date
-            </label>
-            <input
-              id="lastPaymentDate"
-              type="date"
-              value={lastPaymentDate}
-              onChange={(e) => setLastPaymentDate(e.target.value)}
-              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1 md:col-span-3">
-            <label htmlFor="notes" className="text-slate-300">
-              Notes (optional)
-            </label>
-            <textarea
-              id="notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={2}
-              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <button
-              type="submit"
-              disabled={loading}
-              className="inline-flex items-center justify-center rounded-md bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {loading ? "Saving..." : "Save utility"}
-            </button>
-          </div>
-        </form>
-
-        {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
-      </section>
-
-      <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-100">Utility accounts</h2>
-          <p className="text-xs text-slate-400">Total: {utilities.length}</p>
-        </div>
-
-        {loading && utilities.length === 0 ? (
-          <p className="text-sm text-slate-400">Loading utilities…</p>
-        ) : utilities.length === 0 ? (
-          <p className="text-sm text-slate-400">
-            No utility accounts yet. Add each active service so nothing gets
-            missed when you close the estate.
+      {utilities.length === 0 ? (
+        <div className="rounded-lg border border-dashed bg-muted/40 p-8 text-center">
+          <p className="text-sm font-medium">No utilities added yet.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Add your first utility account to keep track of billing details, online portals,
+            and shutoff risks in one place.
           </p>
-        ) : (
-          <div className="overflow-x-auto text-sm">
-            <table className="min-w-full border-collapse">
-              <thead>
-                <tr className="border-b border-slate-800 text-xs uppercase tracking-wide text-slate-400">
-                  <th className="py-2 pr-4 text-left">Provider</th>
-                  <th className="py-2 pr-4 text-left">Type</th>
-                  <th className="py-2 pr-4 text-left">Account #</th>
-                  <th className="py-2 pr-4 text-right">Balance due</th>
-                  <th className="py-2 pr-4 text-right">Last payment</th>
-                  <th className="py-2 pr-0 text-left">Notes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {utilities.map((u) => (
-                  <tr
-                    key={u._id}
-                    className="border-b border-slate-800/60 last:border-b-0"
-                  >
-                    <td className="py-2 pr-4 align-top text-slate-100">
-                      {u.providerName}
-                    </td>
-                    <td className="py-2 pr-4 align-top text-slate-100">
-                      {u.utilityType}
-                    </td>
-                    <td className="py-2 pr-4 align-top text-slate-300">
-                      {u.accountNumber || "—"}
-                    </td>
-                    <td className="py-2 pr-4 align-top text-right text-slate-100">
-                      {typeof u.balanceDue === "number"
-                        ? `$${u.balanceDue.toFixed(2)}`
-                        : "—"}
-                    </td>
-                    <td className="py-2 pr-4 align-top text-right text-slate-100">
-                      {typeof u.lastPaymentAmount === "number" ? (
-                        <div className="flex flex-col items-end gap-0.5">
-                          <span>{`$${u.lastPaymentAmount.toFixed(2)}`}</span>
-                          {u.lastPaymentDate && (
-                            <span className="text-[11px] text-slate-400">
-                              {new Date(u.lastPaymentDate).toLocaleDateString()}
-                            </span>
-                          )}
-                        </div>
-                      ) : u.lastPaymentDate ? (
-                        new Date(u.lastPaymentDate).toLocaleDateString()
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="py-2 pr-0 align-top text-slate-300">
-                      {u.notes || ""}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-4">
+            <Link
+              href={`/app/estates/${estateId}/utilities/new`}
+              className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
+            >
+              Add utility account
+            </Link>
           </div>
-        )}
-      </section>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-lg border bg-card">
+          <table className="min-w-full divide-y divide-border text-sm">
+            <thead className="bg-muted/40">
+              <tr>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Provider</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Type</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Property</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  Account #
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Autopay</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Last bill</th>
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border bg-card/50">
+              {utilities.map((u) => (
+                <tr key={u._id} className="hover:bg-muted/40">
+                  <td className="px-4 py-3 font-medium text-foreground">{u.provider}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{u.type}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{u.propertyLabel}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {u.accountNumber || (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium
+                        ${
+                          u.status === "active"
+                            ? "border-emerald-500/40 bg-emerald-500/5 text-emerald-600"
+                            : u.status === "pending"
+                            ? "border-amber-500/40 bg-amber-500/5 text-amber-600"
+                            : "border-slate-400/40 bg-slate-400/5 text-slate-600"
+                        }`}
+                    >
+                      <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-current" />
+                      {u.status.charAt(0).toUpperCase() + u.status.slice(1)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {u.isAutoPay ? (
+                      <span className="rounded-full bg-emerald-500/5 px-2 py-0.5 text-xs font-medium text-emerald-600">
+                        On
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-slate-400/5 px-2 py-0.5 text-xs font-medium text-slate-600">
+                        Off
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {u.lastBillAmount ? (
+                      <span>
+                        ${u.lastBillAmount.toFixed(2)}
+                        {u.lastBillDate ? ` • ${u.lastBillDate}` : ""}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm">
+                    <Link
+                      href={`/app/estates/${estateId}/utilities/${u._id}`}
+                      className="text-primary hover:underline"
+                    >
+                      View
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

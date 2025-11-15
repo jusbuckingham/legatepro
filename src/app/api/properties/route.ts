@@ -5,13 +5,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "../../../lib/db";
 import { EstateProperty } from "../../../models/EstateProperty";
 
+// Helpers
+function parseOptionalBoolean(value: unknown): boolean | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    if (value.toLowerCase() === "true") return true;
+    if (value.toLowerCase() === "false") return false;
+  }
+  return undefined;
+}
+
 // GET /api/properties
 // Optional query params:
-//   estateId: string          -> filter by estate
-//   isRented: "true" | "false" -> filter by rental status
-//   city: string              -> filter by city (case-insensitive)
-//   state: string             -> filter by state (exact match)
-//   q: string                 -> search by nickname, address, or notes
+//   estateId: string            -> filter by estate
+//   isRented: "true" | "false"  -> filter by rental status
+//   city: string                -> filter by city (case-insensitive)
+//   state: string               -> filter by state (exact match)
+//   q: string                   -> search by nickname, address, or notes
 export async function GET(request: NextRequest) {
   try {
     await connectToDatabase();
@@ -24,7 +35,7 @@ export async function GET(request: NextRequest) {
     const isRentedParam = searchParams.get("isRented");
     const city = searchParams.get("city");
     const state = searchParams.get("state");
-    const q = searchParams.get("q")?.trim() ?? "";
+    const q = (searchParams.get("q") ?? "").trim();
 
     const filter: Record<string, unknown> = { ownerId };
 
@@ -110,6 +121,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const parsedIsPrimaryResidence = parseOptionalBoolean(isPrimaryResidence);
+    const parsedIsRented = parseOptionalBoolean(isRented);
+
     const property = await EstateProperty.create({
       ownerId,
       estateId,
@@ -120,8 +134,8 @@ export async function POST(request: NextRequest) {
       state,
       postalCode,
       propertyType,
-      isPrimaryResidence,
-      isRented,
+      isPrimaryResidence: parsedIsPrimaryResidence,
+      isRented: parsedIsRented,
       purchasePrice,
       estimatedValue,
       notes,

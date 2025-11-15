@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
+
 import { connectToDatabase } from "../../../../../../lib/db";
 import { UtilityAccount } from "../../../../../../models/UtilityAccount";
 import { EstateProperty } from "../../../../../../models/EstateProperty";
@@ -52,6 +53,7 @@ async function getUtilityDetail(
 
   const utilityDoc = rawUtility as unknown as {
     _id?: { toString(): string };
+    estateId?: { toString(): string };
     propertyId?: { toString(): string };
     provider?: string;
     type?: string;
@@ -68,9 +70,7 @@ async function getUtilityDetail(
   let propertyLabel: string | undefined;
 
   if (utilityDoc.propertyId) {
-    const property = (await EstateProperty.findById(
-      utilityDoc.propertyId
-    )
+    const property = (await EstateProperty.findById(utilityDoc.propertyId)
       .lean()
       .exec()) as { label?: string } | null;
 
@@ -125,7 +125,8 @@ function formatType(type?: string): string {
   }
 }
 
-export async function updateUtility(formData: FormData) {
+// Server action to update a single utility record
+export async function updateUtility(formData: FormData): Promise<void> {
   "use server";
 
   const estateId = String(formData.get("estateId") || "");
@@ -309,7 +310,7 @@ export default async function UtilityDetailPage({ params }: PageProps) {
               <p className="text-xs text-slate-400">
                 This utility is associated with a specific estate property. Use
                 this when you need to show that a particular house kept lights,
-                water, and gas on for tenants or preservation.
+                water, or gas on for tenants or preservation.
               </p>
               <Link
                 href={`/app/estates/${estateId}/properties/${utility.propertyId}`}
@@ -358,7 +359,8 @@ export default async function UtilityDetailPage({ params }: PageProps) {
             Update this account
           </h2>
           <span className="text-xs text-slate-500">
-            Small changes you make here will refresh this page and the estate utilities list.
+            Small changes you make here will refresh this page and the estate
+            utilities list.
           </span>
         </div>
 
