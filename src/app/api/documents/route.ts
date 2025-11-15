@@ -5,6 +5,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "../../../lib/db";
 import { EstateDocument } from "../../../models/EstateDocument";
 
+type DocumentFilter = {
+  ownerId: string;
+  estateId?: string;
+  subject?: string;
+  $or?: Array<Record<string, unknown>>;
+};
+
+interface CreateDocumentPayload {
+  estateId: string;
+  subject: string;
+  label: string;
+  location?: string;
+  url?: string;
+  tags?: string | string[];
+  notes?: string;
+  isSensitive?: boolean;
+  fileName?: string;
+  fileType?: string;
+  fileSizeBytes?: number;
+}
+
 // GET /api/documents
 // Optional query params:
 //   estateId: string              -> filter documents for a specific estate
@@ -22,7 +43,7 @@ export async function GET(request: NextRequest) {
     const subject = searchParams.get("subject");
     const q = searchParams.get("q")?.trim() ?? "";
 
-    const filter: Record<string, unknown> = { ownerId };
+    const filter: DocumentFilter = { ownerId };
 
     if (estateId) {
       filter.estateId = estateId;
@@ -42,7 +63,7 @@ export async function GET(request: NextRequest) {
     }
 
     const documents = await EstateDocument.find(filter)
-      .sort({ createdAt: -1 })
+      .sort({ createdAt: -1, updatedAt: -1 })
       .lean();
 
     return NextResponse.json({ documents }, { status: 200 });
@@ -64,7 +85,9 @@ export async function POST(request: NextRequest) {
     // TODO: replace with real ownerId from auth/session
     const ownerId = "demo-user";
 
-    const body = await request.json();
+    const rawBody = (await request.json()) as
+      | Partial<CreateDocumentPayload>
+      | null;
 
     const {
       estateId,
@@ -72,13 +95,13 @@ export async function POST(request: NextRequest) {
       label,
       location,
       url,
-      tags,
+      tags: incomingTags,
       notes,
-      isSensitive,
+      isSensitive: incomingIsSensitive,
       fileName,
       fileType,
       fileSizeBytes,
-    } = body ?? {};
+    } = rawBody ?? {};
 
     if (!estateId) {
       return NextResponse.json(
@@ -100,6 +123,14 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const tags = Array.isArray(incomingTags)
+      ? incomingTags
+      : incomingTags
+      ? [String(incomingTags)]
+      : [];
+
+    const isSensitive = Boolean(incomingIsSensitive);
 
     const document = await EstateDocument.create({
       ownerId,

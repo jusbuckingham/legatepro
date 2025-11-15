@@ -1,4 +1,12 @@
-import { Schema, model, models } from "mongoose";
+import {
+  Schema,
+  model,
+  models,
+  type Model,
+  type HydratedDocument,
+  type InferSchemaType,
+  Types,
+} from "mongoose";
 
 const TaskSchema = new Schema(
   {
@@ -6,24 +14,53 @@ const TaskSchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: "Estate",
       required: true,
+      index: true,
     },
     status: {
       type: String,
-      enum: ["OPEN", "DONE"],
+      enum: ["OPEN", "DONE"] as const,
       default: "OPEN",
     },
-    date: { type: Date, required: true },
+    date: {
+      type: Date,
+      required: true,
+    },
     priority: {
       type: String,
-      enum: ["LOW", "MEDIUM", "HIGH"],
+      enum: ["LOW", "MEDIUM", "HIGH"] as const,
       default: "MEDIUM",
     },
-    subject: { type: String, required: true },      // "Dickerson", "Probate", etc.
-    description: { type: String, required: true },  // "Shut off all utilities"
-    notes: { type: String },
-    completedAt: { type: Date },
+    subject: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    description: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    notes: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    completedAt: {
+      type: Date,
+    },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
-export const Task = models.Task || model("Task", TaskSchema);
+export type TaskSchemaType = InferSchemaType<typeof TaskSchema> & {
+  estateId: Types.ObjectId;
+};
+
+export type TaskDocument = HydratedDocument<TaskSchemaType>;
+
+export type TaskModelType = Model<TaskSchemaType>;
+
+export const Task: TaskModelType =
+  (models.Task as TaskModelType) || model<TaskSchemaType>("Task", TaskSchema);

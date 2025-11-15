@@ -1,6 +1,26 @@
+
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "../../../../lib/db";
 import { EstateProperty } from "../../../../models/EstateProperty";
+
+interface UpdatePropertyPayload {
+  estateId: string;
+  label?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  propertyType?: string;
+  bedrooms?: number;
+  bathrooms?: number;
+  monthlyRentTarget?: number;
+  notes?: string;
+  tenantName?: string;
+  tenantPhone?: string;
+  tenantEmail?: string;
+  tenantNotes?: string;
+}
 
 /**
  * GET /api/properties/[propertyId]?estateId=...
@@ -67,7 +87,7 @@ export async function PUT(
       );
     }
 
-    const body = await request.json();
+    const body = (await request.json()) as Partial<UpdatePropertyPayload> | null;
 
     const {
       estateId,

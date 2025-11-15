@@ -38,6 +38,11 @@ const UserSchema = new Schema<UserDocument>(
       lowercase: true,
       trim: true,
       index: true,
+      validate: {
+        validator: (v: string) => /^\S+@\S+\.\S+$/.test(v),
+        message: (props: { value: string }) =>
+          `${props.value} is not a valid email`,
+      },
     },
 
     passwordHash: { type: String, required: false },
@@ -58,6 +63,7 @@ const UserSchema = new Schema<UserDocument>(
     subscriptionStatus: {
       type: String,
       enum: ["active", "past_due", "canceled", "trialing"],
+      default: "trialing",
     },
 
     onboardingCompleted: { type: Boolean, default: false },
@@ -67,6 +73,18 @@ const UserSchema = new Schema<UserDocument>(
     timestamps: true,
   }
 );
+
+UserSchema.virtual("fullName").get(function (this: UserDocument) {
+  return [this.firstName, this.lastName].filter(Boolean).join(" ");
+});
+
+UserSchema.set("toJSON", {
+  transform(_doc, ret) {
+    // Never expose password hashes in API responses
+    delete ret.passwordHash;
+    return ret;
+  },
+});
 
 let UserModel: Model<UserDocument>;
 

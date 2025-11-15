@@ -1,9 +1,23 @@
-import { Schema, model, models } from "mongoose";
+import {
+  Schema,
+  model,
+  models,
+  InferSchemaType,
+  HydratedDocument,
+  Model,
+  Types,
+} from "mongoose";
+
+/**
+ * TimeEntry Schema
+ * Tracks billable/non‑billable hours for an estate.
+ */
 
 const TimeEntrySchema = new Schema(
   {
     estateId: {
-      type: String,
+      type: Types.ObjectId,
+      ref: "Estate",
       required: true,
       index: true,
     },
@@ -28,6 +42,7 @@ const TimeEntrySchema = new Schema(
     notes: {
       type: String,
       trim: true,
+      default: "",
     },
 
     isBillable: {
@@ -40,5 +55,14 @@ const TimeEntrySchema = new Schema(
   }
 );
 
+// ---- Export Types ----
+export type TimeEntrySchemaType = InferSchemaType<typeof TimeEntrySchema>;
+export type TimeEntryDocument = HydratedDocument<TimeEntrySchemaType>;
+
+// Typed model type
+export type TimeEntryModelType = Model<TimeEntrySchemaType>;
+
+// ---- Export Model ----
 export const TimeEntry =
-  models.TimeEntry || model("TimeEntry", TimeEntrySchema);
+  (models.TimeEntry as TimeEntryModelType) ||
+  model<TimeEntrySchemaType>("TimeEntry", TimeEntrySchema);

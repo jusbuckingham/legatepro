@@ -1,19 +1,18 @@
 // src/lib/db.ts
 import mongoose, { Mongoose } from "mongoose";
 
-// Explicitly type as string for TypeScript, but still runtime-check below
-const MONGODB_URI: string = process.env.MONGODB_URI as string;
-
-if (!MONGODB_URI) {
-  throw new Error(
-    "❌ Missing MONGODB_URI — please define it in your .env.local file."
-  );
-}
-
 // Shape of our cached connection
 interface MongooseCache {
   conn: Mongoose | null;
   promise: Promise<Mongoose> | null;
+}
+
+function getMongoUri(): string {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    throw new Error("❌ Missing MONGODB_URI — please define it in your .env.local file.");
+  }
+  return uri;
 }
 
 /**
@@ -42,8 +41,9 @@ export async function connectToDatabase(): Promise<Mongoose> {
   }
 
   if (!cached.promise) {
+    const uri = getMongoUri();
     cached.promise = mongoose
-      .connect(MONGODB_URI, {
+      .connect(uri, {
         dbName: "legatepro",
         autoIndex: true,
       })

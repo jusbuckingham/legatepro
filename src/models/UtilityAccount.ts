@@ -2,15 +2,15 @@
 import mongoose, { Schema, Document, Model, Types } from "mongoose";
 
 export type UtilityType =
-  | "ELECTRIC"
-  | "GAS"
-  | "WATER"
-  | "SEWER"
-  | "TRASH"
-  | "INTERNET"
-  | "CABLE"
-  | "SECURITY"
-  | "OTHER";
+  | "electric"
+  | "gas"
+  | "water"
+  | "sewer"
+  | "trash"
+  | "internet"
+  | "cable"
+  | "security"
+  | "other";
 
 export interface IUtilityAccount {
   ownerId: string; // user who owns this utility record
@@ -62,15 +62,15 @@ const UtilityAccountSchema = new Schema<UtilityAccountDocument>(
     utilityType: {
       type: String,
       enum: [
-        "ELECTRIC",
-        "GAS",
-        "WATER",
-        "SEWER",
-        "TRASH",
-        "INTERNET",
-        "CABLE",
-        "SECURITY",
-        "OTHER",
+        "electric",
+        "gas",
+        "water",
+        "sewer",
+        "trash",
+        "internet",
+        "cable",
+        "security",
+        "other",
       ],
       required: true,
     },

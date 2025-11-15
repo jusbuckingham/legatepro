@@ -79,6 +79,19 @@ export async function GET(request: NextRequest) {
 
 // POST /api/expenses
 // Creates a new expense entry for an estate
+interface CreateExpensePayload {
+  estateId: string;
+  date: string;
+  category?: string;
+  description: string;
+  amount: number | string;
+  payee?: string;
+  notes?: string;
+  isPaid?: boolean;
+  propertyId?: string;
+  utilityAccountId?: string;
+  documentId?: string;
+}
 export async function POST(request: NextRequest) {
   try {
     await connectToDatabase();
@@ -86,7 +99,14 @@ export async function POST(request: NextRequest) {
     // TODO: replace with real ownerId from auth/session
     const ownerId = "demo-user";
 
-    const body = await request.json();
+    const body = (await request.json()) as Partial<CreateExpensePayload> | null;
+
+    if (!body) {
+      return NextResponse.json(
+        { error: "Request body is required" },
+        { status: 400 }
+      );
+    }
 
     const {
       estateId,

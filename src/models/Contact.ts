@@ -1,7 +1,7 @@
 
 
 // src/models/Contact.ts
-import mongoose, { Schema, Document, Model } from "mongoose";
+import mongoose, { Schema, Document, Model, Types } from "mongoose";
 
 export type ContactCategory =
   | "ATTORNEY"
@@ -15,8 +15,8 @@ export type ContactCategory =
   | "OTHER";
 
 export interface IContact {
-  ownerId: string; // user who owns this record
-  estateId?: string; // optional: tie contact to a specific estate
+  ownerId: Types.ObjectId | string; // user who owns this record
+  estateId?: Types.ObjectId | string; // optional: tie contact to a specific estate
   category?: ContactCategory;
 
   name: string; // person or primary contact name
@@ -42,8 +42,8 @@ export interface ContactDocument extends IContact, Document {}
 
 const ContactSchema: Schema<ContactDocument> = new Schema<ContactDocument>(
   {
-    ownerId: { type: String, required: true, index: true },
-    estateId: { type: String, required: false, index: true },
+    ownerId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    estateId: { type: Schema.Types.ObjectId, ref: "Estate", required: false, index: true },
 
     category: {
       type: String,

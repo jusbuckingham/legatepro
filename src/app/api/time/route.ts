@@ -1,12 +1,23 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "../../../lib/db";
 import { TimeEntry } from "../../../models/TimeEntry";
+
+// Shape of the payload we expect when creating a time entry
+interface CreateTimeEntryPayload {
+  estateId: string;
+  date: string; // ISO string
+  hours: number;
+  description: string;
+  notes?: string;
+  isBillable?: boolean;
+  rate?: number | null;
+}
 
 /**
  * GET /api/time?estateId=...
  * Returns all time entries for a specific estate, sorted newest first.
  */
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const estateId = searchParams.get("estateId");
@@ -50,11 +61,19 @@ export async function GET(request: Request) {
  *   description: string;
  *   notes?: string;
  *   isBillable?: boolean;
+ *   rate?: number | null;
  * }
  */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const body = (await request.json()) as Partial<CreateTimeEntryPayload> | null;
+
+    if (!body || typeof body !== "object") {
+      return NextResponse.json(
+        { error: "Invalid request body. Expected JSON object." },
+        { status: 400 }
+      );
+    }
 
     const {
       estateId,
@@ -63,7 +82,8 @@ export async function POST(request: Request) {
       description,
       notes,
       isBillable = true,
-    } = body ?? {};
+      rate = null,
+    } = body;
 
     if (!estateId || !date || typeof hours !== "number" || !description) {
       return NextResponse.json(
@@ -84,6 +104,8 @@ export async function POST(request: Request) {
       description: description.trim(),
       notes: notes ? String(notes).trim() : undefined,
       isBillable: Boolean(isBillable),
+      // `rate` is optional; if provided we store it, otherwise it stays null/undefined.
+      rate,
     });
 
     return NextResponse.json({ entry }, { status: 201 });
@@ -93,9 +115,6 @@ export async function POST(request: Request) {
       error instanceof Error && error.message
         ? error.message
         : "Failed to create time entry";
-    return NextResponse.json(
-      { error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

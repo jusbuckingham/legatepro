@@ -13,7 +13,7 @@ export type ExpenseCategory =
   | "OTHER";
 
 export interface IExpense {
-  ownerId: string; // user who owns this expense
+  ownerId: Types.ObjectId | string; // user who owns this expense (Mongo ObjectId or string)
   estateId: Types.ObjectId; // required
 
   date: Date;
@@ -36,9 +36,32 @@ export interface IExpense {
 
 export interface ExpenseDocument extends IExpense, Document {}
 
+export interface ExpenseModelType extends Model<ExpenseDocument> {
+  /**
+   * Fetch all expenses for a given estate, newest first.
+   */
+  forEstate(
+    estateId: Types.ObjectId | string
+  ): Promise<ExpenseDocument[]>;
+
+  /**
+   * Fetch all expenses for a given owner + estate combo, newest first.
+   * Useful for scoping to the logged-in user.
+   */
+  forUserEstate(
+    ownerId: Types.ObjectId | string,
+    estateId: Types.ObjectId | string
+  ): Promise<ExpenseDocument[]>;
+}
+
 const ExpenseSchema = new Schema<ExpenseDocument>(
   {
-    ownerId: { type: String, required: true, index: true },
+    ownerId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
 
     estateId: {
       type: Schema.Types.ObjectId,
@@ -98,12 +121,30 @@ const ExpenseSchema = new Schema<ExpenseDocument>(
   }
 );
 
-let ExpenseModel: Model<ExpenseDocument>;
+ExpenseSchema.statics.forEstate = function (
+  estateId: Types.ObjectId | string
+): Promise<ExpenseDocument[]> {
+  return this.find({ estateId }).sort({ date: -1, createdAt: -1 }).exec();
+};
+
+ExpenseSchema.statics.forUserEstate = function (
+  ownerId: Types.ObjectId | string,
+  estateId: Types.ObjectId | string
+): Promise<ExpenseDocument[]> {
+  return this.find({ ownerId, estateId })
+    .sort({ date: -1, createdAt: -1 })
+    .exec();
+};
+
+let ExpenseModel: ExpenseModelType;
 
 try {
-  ExpenseModel = mongoose.model<ExpenseDocument>("Expense");
+  ExpenseModel = mongoose.model<ExpenseDocument>("Expense") as ExpenseModelType;
 } catch {
-  ExpenseModel = mongoose.model<ExpenseDocument>("Expense", ExpenseSchema);
+  ExpenseModel = mongoose.model<ExpenseDocument, ExpenseModelType>(
+    "Expense",
+    ExpenseSchema
+  );
 }
 
 export const Expense = ExpenseModel;

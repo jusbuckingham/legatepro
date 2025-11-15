@@ -5,13 +5,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "../../../../lib/db";
 import { RentPayment } from "../../../../models/RentPayment";
 
-interface RouteParams {
+type RouteParams = {
   params: {
     id: string;
   };
-}
+};
 
-const OWNER_ID_PLACEHOLDER = "demo-user"; // TODO: replace with authenticated user id
+export const dynamic = "force-dynamic";
+
+/** TODO: Inject authenticated user ID from middleware/session */
+const OWNER_ID_PLACEHOLDER = "demo-user";
 
 /**
  * GET /api/rent/[id]
@@ -75,8 +78,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     await connectToDatabase();
 
     const ownerId = OWNER_ID_PLACEHOLDER;
-    const updates = await request.json();
-
     const allowedFields = [
       "tenantName",
       "paymentDate",
@@ -89,16 +90,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       "reference",
     ] as const;
 
+    const updates: Partial<Record<typeof allowedFields[number], unknown>> = await request.json();
+
     const updatePayload: Record<string, unknown> = {};
 
     for (const key of allowedFields) {
       if (key in updates) {
-        if (key === "paymentDate") {
-          updatePayload.paymentDate = new Date(updates[key]);
-        } else if (key === "amount") {
-          updatePayload.amount = Number(updates[key]);
+        const value = updates[key];
+        if (key === "paymentDate" && value != null) {
+          updatePayload.paymentDate = new Date(
+            value as string | number | Date
+          );
+        } else if (key === "amount" && value != null) {
+          updatePayload.amount = Number(value);
         } else {
-          updatePayload[key] = updates[key];
+          updatePayload[key] = value;
         }
       }
     }

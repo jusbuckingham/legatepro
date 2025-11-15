@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "../../../../lib/db";
 import { RentPayment } from "../../../../models/RentPayment";
 
@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
 
   const csv = lines.join("\n");
 
-  return new Response(csv, {
+  return new NextResponse(csv, {
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",

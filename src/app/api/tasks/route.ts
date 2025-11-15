@@ -1,11 +1,18 @@
-
-
 // src/app/api/tasks/route.ts
 // Tasks API for LegatePro (estate to‑do list / required actions)
 
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "../../../lib/db";
 import { Task } from "../../../models/Task";
+
+interface CreateTaskBody {
+  estateId?: string;
+  title?: string;
+  category?: string;
+  dueDate?: string | null;
+  notes?: string;
+  isCompleted?: boolean;
+}
 
 // GET /api/tasks
 // Optional query params:
@@ -17,7 +24,8 @@ export async function GET(request: NextRequest) {
   try {
     await connectToDatabase();
 
-    const ownerId = "demo-user"; // TODO: replace with real auth
+    // TODO: replace with real auth user id
+    const ownerId = "demo-user";
 
     const { searchParams } = new URL(request.url);
     const estateId = searchParams.get("estateId");
@@ -27,11 +35,19 @@ export async function GET(request: NextRequest) {
 
     const filter: Record<string, unknown> = { ownerId };
 
-    if (estateId) filter.estateId = estateId;
-    if (category) filter.category = category;
+    if (estateId) {
+      filter.estateId = estateId;
+    }
 
-    if (completed === "true") filter.isCompleted = true;
-    if (completed === "false") filter.isCompleted = false;
+    if (category) {
+      filter.category = category;
+    }
+
+    if (completed === "true") {
+      filter.isCompleted = true;
+    } else if (completed === "false") {
+      filter.isCompleted = false;
+    }
 
     if (q) {
       filter.$or = [
@@ -42,12 +58,16 @@ export async function GET(request: NextRequest) {
 
     const tasks = await Task.find(filter)
       .sort({ isCompleted: 1, dueDate: 1 })
-      .lean();
+      .lean()
+      .exec();
 
     return NextResponse.json({ tasks }, { status: 200 });
   } catch (error) {
     console.error("GET /api/tasks error", error);
-    return NextResponse.json({ error: "Unable to load tasks" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Unable to load tasks" },
+      { status: 500 },
+    );
   }
 }
 
@@ -57,24 +77,25 @@ export async function POST(request: NextRequest) {
   try {
     await connectToDatabase();
 
-    const ownerId = "demo-user"; // TODO: replace with real auth
-    const body = await request.json();
+    // TODO: replace with real auth user id
+    const ownerId = "demo-user";
 
-    const {
-      estateId,
-      title,
-      category,
-      dueDate,
-      notes,
-      isCompleted,
-    } = body ?? {};
+    const body = (await request.json()) as CreateTaskBody;
+
+    const { estateId, title, category, dueDate, notes, isCompleted } = body;
 
     if (!estateId) {
-      return NextResponse.json({ error: "estateId is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "estateId is required" },
+        { status: 400 },
+      );
     }
 
     if (!title) {
-      return NextResponse.json({ error: "title is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "title is required" },
+        { status: 400 },
+      );
     }
 
     const task = await Task.create({
@@ -90,6 +111,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ task }, { status: 201 });
   } catch (error) {
     console.error("POST /api/tasks error", error);
-    return NextResponse.json({ error: "Unable to create task" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Unable to create task" },
+      { status: 500 },
+    );
   }
 }

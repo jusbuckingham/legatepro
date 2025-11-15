@@ -14,13 +14,18 @@ export async function GET(request: NextRequest) {
     await connectToDatabase();
 
     // TODO: replace with real ownerId from auth/session
-    const ownerId = "demo-user";
+    const ownerId = "demo-user"; // TODO replace with real auth user
 
     const { searchParams } = new URL(request.url);
     const estateId = searchParams.get("estateId");
     const q = searchParams.get("q")?.trim() ?? "";
 
-    const filter: Record<string, unknown> = { ownerId };
+    type ContactFilter = {
+      ownerId: string;
+      estateId?: string;
+      $or?: Array<Record<string, unknown>>;
+    };
+    const filter: ContactFilter = { ownerId };
 
     if (estateId) {
       filter.estateId = estateId;
@@ -28,10 +33,10 @@ export async function GET(request: NextRequest) {
 
     if (q) {
       filter.$or = [
-        { name: { $regex: q, $options: "i" } },
-        { organization: { $regex: q, $options: "i" } },
-        { roleOrRelationship: { $regex: q, $options: "i" } },
-        { email: { $regex: q, $options: "i" } },
+        { name: { $regex: new RegExp(q, "i") } },
+        { organization: { $regex: new RegExp(q, "i") } },
+        { roleOrRelationship: { $regex: new RegExp(q, "i") } },
+        { email: { $regex: new RegExp(q, "i") } },
       ];
     }
 
@@ -54,7 +59,7 @@ export async function POST(request: NextRequest) {
     await connectToDatabase();
 
     // TODO: replace with real ownerId from auth/session
-    const ownerId = "demo-user";
+    const ownerId = "demo-user"; // TODO replace with real auth user
 
     const body = await request.json();
 

@@ -10,7 +10,7 @@ export async function GET() {
     await connectToDatabase();
 
     // TODO: replace with real ownerId from auth/session
-    const ownerId = "demo-user";
+    const ownerId = "000000000000000000000001";
 
     const estates = await Estate.find({ ownerId })
       .sort({ createdAt: -1 })
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     // TODO: replace with real ownerId from auth/session
-    const ownerId = "demo-user";
+    const ownerId = "000000000000000000000001";
 
     const {
       decedentName,
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
       courtCounty,
       courtState,
       caseNumber,
-      status: status || "OPEN",
+      status: (status || "OPEN").toUpperCase(),
     });
 
     return NextResponse.json({ estate: estateDoc }, { status: 201 });

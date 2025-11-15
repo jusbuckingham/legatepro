@@ -14,7 +14,7 @@ export type EstateDocumentSubject =
   | "OTHER";
 
 export interface IEstateDocument {
-  ownerId: string; // user who owns this record
+  ownerId: Types.ObjectId | string; // user who owns this record
   estateId: Types.ObjectId; // required
 
   subject: EstateDocumentSubject;
@@ -43,7 +43,12 @@ export interface EstateDocumentDocument
 
 const EstateDocumentSchema = new Schema<EstateDocumentDocument>(
   {
-    ownerId: { type: String, required: true, index: true },
+    ownerId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
 
     estateId: {
       type: Schema.Types.ObjectId,

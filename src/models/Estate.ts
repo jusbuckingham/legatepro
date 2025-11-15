@@ -44,7 +44,7 @@ export interface IEstate {
   // Personal representative compensation config
   compensation?: CompensationSettings;
 
-  status?: "OPEN" | "CLOSED";
+  status?: "OPEN" | "CLOSED" | "open" | "closed";
 
   createdAt?: Date;
   updatedAt?: Date;
@@ -105,6 +105,7 @@ const EstateSchema = new Schema<EstateDocument>(
       type: String,
       enum: ["OPEN", "CLOSED"],
       default: "OPEN",
+      set: (val: string) => (typeof val === "string" ? val.toUpperCase() : val),
     },
   },
   {

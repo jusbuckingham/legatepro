@@ -40,8 +40,14 @@ const EstatePropertySchema = new Schema(
     // Basic characteristics
     propertyType: {
       type: String,
-      enum: ["SFR", "MULTI", "CONDO", "LAND", "OTHER"],
-      default: "SFR",
+      enum: [
+        "single_family",
+        "multi_family",
+        "condo",
+        "land",
+        "other"
+      ],
+      default: "single_family",
     },
     bedrooms: {
       type: Number,

@@ -5,6 +5,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "../../../lib/db";
 import { RentPayment } from "../../../models/RentPayment";
 
+type RentPaymentLean = {
+  _id: unknown;
+  estateId: string;
+  propertyId: string;
+  tenantName: string;
+  paymentDate: Date;
+  amount: number;
+  notes?: string;
+  isPaid: boolean;
+  [key: string]: unknown;
+};
+
 /** ------------------------------------------------------------------------
  * GET /api/rent
  * Query params:
@@ -51,11 +63,11 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    const rawPayments = await RentPayment.find(filter)
+    const rawPayments = (await RentPayment.find(filter)
       .sort({ paymentDate: -1 })
-      .lean();
+      .lean() as unknown as RentPaymentLean[]);
 
-    const payments = rawPayments.map((p) => ({
+    const payments = rawPayments.map((p: RentPaymentLean) => ({
       ...p,
       _id: String(p._id),
     }));

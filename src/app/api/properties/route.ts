@@ -89,7 +89,23 @@ export async function POST(request: NextRequest) {
     // TODO: replace with real ownerId from auth/session
     const ownerId = "demo-user";
 
-    const body = await request.json();
+    interface CreatePropertyPayload {
+      estateId?: string;
+      nickname?: string;
+      streetAddress?: string;
+      unit?: string;
+      city?: string;
+      state?: string;
+      postalCode?: string;
+      propertyType?: string;
+      isPrimaryResidence?: unknown;
+      isRented?: unknown;
+      purchasePrice?: number;
+      estimatedValue?: number;
+      notes?: string;
+    }
+
+    const body = (await request.json()) as CreatePropertyPayload | null;
 
     const {
       estateId,

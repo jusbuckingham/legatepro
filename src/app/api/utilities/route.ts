@@ -10,7 +10,7 @@ import { UtilityAccount } from "../../../models/UtilityAccount";
 //   estateId: string            -> filter by estate
 //   propertyId: string          -> filter by property
 //   type: string                -> filter by utility type (electric, gas, etc.)
-//   q: string                   -> search by provider, accountNumber, notes
+//   q: string                   -> search by providerName, accountNumber, notes
 export async function GET(request: NextRequest) {
   try {
     await connectToDatabase();
@@ -35,19 +35,19 @@ export async function GET(request: NextRequest) {
     }
 
     if (type) {
-      filter.type = type;
+      filter.utilityType = type;
     }
 
     if (q) {
       filter.$or = [
-        { provider: { $regex: q, $options: "i" } },
+        { providerName: { $regex: q, $options: "i" } },
         { accountNumber: { $regex: q, $options: "i" } },
         { notes: { $regex: q, $options: "i" } },
       ];
     }
 
     const utilities = await UtilityAccount.find(filter)
-      .sort({ provider: 1 })
+      .sort({ providerName: 1 })
       .lean();
 
     return NextResponse.json({ utilities }, { status: 200 });
@@ -74,8 +74,8 @@ export async function POST(request: NextRequest) {
     const {
       estateId,
       propertyId,
-      provider,
-      type,
+      providerName,
+      utilityType,
       accountNumber,
       billingName,
       phone,
@@ -93,9 +93,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!provider) {
+    if (!providerName) {
       return NextResponse.json(
-        { error: "provider is required" },
+        { error: "providerName is required" },
         { status: 400 }
       );
     }
@@ -104,8 +104,8 @@ export async function POST(request: NextRequest) {
       ownerId,
       estateId,
       propertyId,
-      provider,
-      type: type || "other",
+      providerName,
+      utilityType: utilityType || "other",
       accountNumber,
       billingName,
       phone,

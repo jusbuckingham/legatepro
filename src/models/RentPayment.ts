@@ -1,35 +1,54 @@
-import { Schema, model, models } from "mongoose";
+import { Schema, model, models, Model, Document } from "mongoose";
 
-const RentPaymentSchema = new Schema(
+export interface RentPaymentDocument extends Document {
+  estateId: Schema.Types.ObjectId;
+  propertyId?: Schema.Types.ObjectId;
+  tenantName: string;
+  periodMonth: number;
+  periodYear: number;
+  amount: number;
+  paymentDate: Date;
+  method?: string;
+  reference?: string;
+  notes?: string;
+  isLate: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface RentPaymentModelType extends Model<RentPaymentDocument> {
+  forEstate(estateId: string): Promise<RentPaymentDocument[]>;
+  forProperty(estateId: string, propertyId: string): Promise<RentPaymentDocument[]>;
+}
+
+const RentPaymentSchema = new Schema<RentPaymentDocument>(
   {
     estateId: {
       type: Schema.Types.ObjectId,
       ref: "Estate",
       required: true,
+      index: true,
     },
     propertyId: {
       type: Schema.Types.ObjectId,
       ref: "EstateProperty",
+      index: true,
     },
-
-    // Tenant / payer name
     tenantName: {
       type: String,
       trim: true,
       required: true,
     },
-
-    // For which month/year this payment applies
     periodMonth: {
-      type: Number, // 1-12
+      type: Number,
       required: true,
+      min: 1,
+      max: 12,
     },
     periodYear: {
       type: Number,
       required: true,
     },
-
-    // Actual payment details
     amount: {
       type: Number,
       required: true,
@@ -41,18 +60,16 @@ const RentPaymentSchema = new Schema(
     },
     method: {
       type: String,
-      trim: true, // e.g. "Cash", "Zelle", "Money order"
+      trim: true,
     },
     reference: {
       type: String,
-      trim: true, // e.g. confirmation #
+      trim: true,
     },
-
     notes: {
       type: String,
       trim: true,
     },
-
     isLate: {
       type: Boolean,
       default: false,
@@ -63,5 +80,22 @@ const RentPaymentSchema = new Schema(
   }
 );
 
+// ------- STATICS ------- //
+
+RentPaymentSchema.statics.forEstate = function (estateId: string) {
+  return this.find({ estateId }).sort({ paymentDate: -1 }).lean();
+};
+
+RentPaymentSchema.statics.forProperty = function (
+  estateId: string,
+  propertyId: string
+) {
+  return this.find({ estateId, propertyId }).sort({ paymentDate: -1 }).lean();
+};
+
 export const RentPayment =
-  models.RentPayment || model("RentPayment", RentPaymentSchema);
+  (models.RentPayment as RentPaymentModelType) ||
+  model<RentPaymentDocument, RentPaymentModelType>(
+    "RentPayment",
+    RentPaymentSchema
+  );
