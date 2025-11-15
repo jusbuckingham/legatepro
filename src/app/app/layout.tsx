@@ -5,7 +5,9 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 
-const navItems = [
+type NavItem = { label: string; href: string };
+
+const navItems: NavItem[] = [
   { label: "Estates", href: "/app/estates" },
   { label: "Billing", href: "/app/billing" },
   { label: "Settings", href: "/app/settings" },
@@ -46,7 +48,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={baseClasses + activeClasses}
+                  className={`${baseClasses} ${activeClasses}`}
                 >
                   {item.label}
                 </Link>

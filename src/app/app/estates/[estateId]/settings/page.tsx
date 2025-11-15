@@ -1,5 +1,6 @@
 // src/app/app/estates/[estateId]/settings/page.tsx
 import { notFound } from "next/navigation";
+import { formatDate } from "../../../../../lib/utils";
 
 type EstateStatus = "draft" | "open" | "closing" | "closed" | string;
 
@@ -55,24 +56,12 @@ async function fetchEstate(estateId: string): Promise<Estate | null> {
   }
 }
 
-interface PageProps {
-  params: { estateId: string };
-}
-
-function formatDateLabel(input?: string): string | null {
-  if (!input) return null;
-  const date = new Date(input);
-  if (Number.isNaN(date.getTime())) return null;
-
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-export default async function EstateSettingsPage({ params }: PageProps) {
-  const { estateId } = params;
+export default async function EstateSettingsPage({
+  params,
+}: {
+  params: Promise<{ estateId: string }>;
+}) {
+  const { estateId } = await params;
 
   if (!estateId) {
     notFound();
@@ -95,8 +84,10 @@ export default async function EstateSettingsPage({ params }: PageProps) {
   }
 
   const displayName = estate.name || estate.decedentName || "Estate";
-  const createdLabel = formatDateLabel(estate.createdAt);
-  const updatedLabel = formatDateLabel(estate.updatedAt ?? estate.createdAt);
+  const createdLabel = estate.createdAt ? formatDate(estate.createdAt) : "";
+  const updatedLabel = estate.updatedAt
+    ? formatDate(estate.updatedAt)
+    : createdLabel;
   const rawStatus = estate.status ?? "open";
   const statusLabel =
     typeof rawStatus === "string"

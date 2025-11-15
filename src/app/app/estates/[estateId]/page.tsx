@@ -1,39 +1,32 @@
-"use client";
+import React from "react";
+import { notFound } from "next/navigation";
 
-import * as React from "react";
-import { cn } from "../../../../lib/utils";
+import { connectToDatabase } from "../../../../lib/db";
+import { Estate } from "../../../../models/Estate";
 
-export type LabelBadgeVariant = "default" | "subtle" | "outline" | "alert" | "success";
+// Props type for this dynamic route in Next 16 / React 19
+// `params` is a Promise that must be awaited.
+type PageProps = {
+  params: Promise<{
+    estateId: string;
+  }>;
+};
 
-export interface LabelBadgeProps
-  extends React.HTMLAttributes<HTMLSpanElement> {
-  variant?: LabelBadgeVariant;
-  children: React.ReactNode;
-}
+export default async function EstateSettingsPage({ params }: PageProps) {
+  const { estateId } = await params;
 
-export function LabelBadge({
-  variant = "default",
-  children,
-  className,
-  ...rest
-}: LabelBadgeProps) {
-  const base =
-    "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium leading-tight";
+  await connectToDatabase();
 
-  const variantClass =
-    variant === "alert"
-      ? "bg-destructive/10 text-destructive border border-destructive/30"
-      : variant === "success"
-      ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/30"
-      : variant === "outline"
-      ? "border border-border text-foreground bg-background"
-      : variant === "subtle"
-      ? "bg-muted text-muted-foreground"
-      : "bg-primary/10 text-primary border border-primary/20";
+  const estateDoc = await Estate.findById(estateId).lean().exec();
+
+  if (!estateDoc) {
+    notFound();
+  }
 
   return (
-    <span className={cn(base, variantClass, className)} {...rest}>
-      {children}
-    </span>
+    <div>
+      <h1>Settings for {estateDoc.name}</h1>
+      {/* Settings form and other components here */}
+    </div>
   );
 }
