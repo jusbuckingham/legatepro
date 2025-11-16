@@ -1,336 +1,269 @@
+"use client";
+
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { revalidatePath } from "next/cache";
-import { connectToDatabase } from "../../../../../lib/db";
-import { Expense } from "../../../../../models/Expense";
+import { useParams } from "next/navigation";
+import { cn } from "@/lib/utils";
 
-export const dynamic = "force-dynamic";
-
-interface EstateExpensesPageProps {
-  params: {
-    estateId: string;
-  };
-}
+type Category =
+  | "TAXES"
+  | "INSURANCE"
+  | "MAINTENANCE"
+  | "UTILITIES"
+  | "LEGAL"
+  | "FUNERAL"
+  | "MORTGAGE"
+  | "OTHER";
 
 interface ExpenseItem {
-  _id: unknown;
-  date?: string | Date;
-  category?: string;
+  _id: string;
+  estateId: string;
+  date: string;
+  category: Category;
+  description: string;
+  amount: number;
+  isPaid: boolean;
   payee?: string;
-  description?: string;
-  amount?: number;
-  isReimbursable?: boolean;
+  notes?: string;
+  propertyId?: string;
 }
 
-function formatCurrency(value?: number) {
-  if (value == null || Number.isNaN(value)) return "–";
+interface ApiResponse {
+  expenses: ExpenseItem[];
+}
+
+function formatCurrency(value: number) {
+  if (Number.isNaN(value)) return "$0.00";
   return value.toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
   });
 }
 
-function formatDate(value?: string | Date) {
-  if (!value) return "–";
-  const d = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(d.getTime())) return "–";
-  return d.toLocaleDateString();
-}
-
-async function createExpense(formData: FormData) {
-  "use server";
-
-  const estateId = formData.get("estateId")?.toString();
-  if (!estateId) return;
-
-  const dateRaw = formData.get("date")?.toString();
-  const category = formData.get("category")?.toString().trim() || "";
-  const payee = formData.get("payee")?.toString().trim() || "";
-  const description = formData.get("description")?.toString().trim() || "";
-  const amountRaw = formData.get("amount")?.toString();
-  const isReimbursable = formData.get("isReimbursable") === "on";
-
-  const amount = amountRaw ? Number(amountRaw) : undefined;
-  const date = dateRaw ? new Date(dateRaw) : undefined;
-
-  // Minimal guard: at least an amount or description
-  if (!description && (amount == null || Number.isNaN(amount))) {
-    return;
-  }
-
-  await connectToDatabase();
-
-  await Expense.create({
-    estateId,
-    date: date && !Number.isNaN(date.getTime()) ? date : undefined,
-    category: category || undefined,
-    payee: payee || undefined,
-    description: description || undefined,
-    amount:
-      amount != null && !Number.isNaN(amount) ? Number(amount.toFixed(2)) : undefined,
-    isReimbursable,
+function formatDate(dateStr: string) {
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
   });
-
-  revalidatePath(`/app/estates/${estateId}/expenses`);
 }
 
-async function deleteExpense(formData: FormData) {
-  "use server";
+const CATEGORY_LABELS: Record<Category, string> = {
+  TAXES: "Taxes",
+  INSURANCE: "Insurance",
+  MAINTENANCE: "Maintenance",
+  UTILITIES: "Utilities",
+  LEGAL: "Legal & Professional",
+  FUNERAL: "Funeral",
+  MORTGAGE: "Mortgage",
+  OTHER: "Other",
+};
 
-  const estateId = formData.get("estateId");
-  const expenseId = formData.get("expenseId");
+export default function EstateExpensesPage() {
+  const params = useParams<{ estateId: string }>();
+  const estateId = params.estateId;
 
-  if (typeof estateId !== "string" || typeof expenseId !== "string") {
-    return;
-  }
+  const [expenses, setExpenses] = useState<ExpenseItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  await connectToDatabase();
+  const total = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
-  await Expense.findOneAndDelete({
-    _id: expenseId,
-    estateId,
-  });
+  useEffect(() => {
+    if (!estateId) return;
 
-  revalidatePath(`/app/estates/${estateId}/expenses`);
-}
+    const loadExpenses = async () => {
+      setLoading(true);
+      setError(null);
 
-export default async function EstateExpensesPage({
-  params,
-}: EstateExpensesPageProps) {
-  const { estateId } = params;
+      try {
+        const res = await fetch(
+          `/api/expenses?estateId=${encodeURIComponent(estateId)}`
+        );
 
-  await connectToDatabase();
+        if (!res.ok) {
+          throw new Error(`Failed to load expenses (${res.status})`);
+        }
 
-  const expenses = (await Expense.find({ estateId })
-    .sort({ date: 1, createdAt: 1 })
-    .lean()) as ExpenseItem[];
+        const data = (await res.json()) as ApiResponse;
+        setExpenses(data.expenses || []);
+      } catch (err) {
+        console.error("Failed to load expenses", err);
+        setError("We couldn’t load expenses right now. Please try again.");
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  const hasExpenses = expenses.length > 0;
-
-  const totalAmount = expenses.reduce((sum, expense) => {
-    return sum + (expense.amount ?? 0);
-  }, 0);
-
-  const reimbursableTotal = expenses.reduce((sum, expense) => {
-    if (!expense.isReimbursable) return sum;
-    return sum + (expense.amount ?? 0);
-  }, 0);
+    void loadExpenses();
+  }, [estateId]);
 
   return (
     <div className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
-          Expenses
-        </h1>
-        <p className="text-sm text-slate-400">
-          Court costs, repairs, utilities paid out-of-pocket, travel, and any
-          other estate expenses.
-        </p>
-      </header>
+      {/* Header */}
+      <div className="flex flex-col gap-3 justify-between sm:flex-row sm:items-center">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+            Estate expenses
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Track every dollar that goes out of the estate — ready for court,
+            beneficiaries, and your accountant.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            Export CSV
+          </button>
+          <Link
+            href={`/app/estates/${estateId}/expenses/new`}
+            className="inline-flex items-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+          >
+            + Add expense
+          </Link>
+        </div>
+      </div>
 
-      <section className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 text-sm">
-          <p className="text-xs text-slate-400">Total expenses</p>
-          <p className="mt-1 text-lg font-semibold text-slate-50">
-            {formatCurrency(totalAmount)}
+      {/* Summary card */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Total expenses
+          </p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">
+            {formatCurrency(total)}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Includes all transactions recorded for this estate.
           </p>
         </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 text-sm">
-          <p className="text-xs text-slate-400">Reimbursable</p>
-          <p className="mt-1 text-lg font-semibold text-slate-50">
-            {formatCurrency(reimbursableTotal)}
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Number of entries
           </p>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 text-sm">
-          <p className="text-xs text-slate-400">Entries</p>
-          <p className="mt-1 text-lg font-semibold text-slate-50">
+          <p className="mt-2 text-2xl font-semibold text-slate-900">
             {expenses.length}
           </p>
-        </div>
-      </section>
-
-      {/* Quick add expense form */}
-      <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-sm">
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Add expense
-        </h2>
-        <form action={createExpense} className="space-y-3">
-          <input type="hidden" name="estateId" value={estateId} />
-          <div className="grid gap-3 md:grid-cols-[0.9fr,1fr,1fr]">
-            <div className="space-y-1">
-              <label
-                htmlFor="date"
-                className="text-xs font-medium text-slate-300"
-              >
-                Date
-              </label>
-              <input
-                id="date"
-                name="date"
-                type="date"
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-50 outline-none focus:border-emerald-400"
-              />
-            </div>
-            <div className="space-y-1">
-              <label
-                htmlFor="category"
-                className="text-xs font-medium text-slate-300"
-              >
-                Category
-              </label>
-              <input
-                id="category"
-                name="category"
-                placeholder="Court fees, repairs, insurance..."
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-50 outline-none focus:border-emerald-400"
-              />
-            </div>
-            <div className="space-y-1">
-              <label
-                htmlFor="payee"
-                className="text-xs font-medium text-slate-300"
-              >
-                Payee
-              </label>
-              <input
-                id="payee"
-                name="payee"
-                placeholder="Who was paid"
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-50 outline-none focus:border-emerald-400"
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-[1.4fr,0.6fr,0.6fr]">
-            <div className="space-y-1">
-              <label
-                htmlFor="description"
-                className="text-xs font-medium text-slate-300"
-              >
-                Description
-              </label>
-              <input
-                id="description"
-                name="description"
-                placeholder="Short description for the ledger"
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-50 outline-none focus:border-emerald-400"
-              />
-            </div>
-            <div className="space-y-1">
-              <label
-                htmlFor="amount"
-                className="text-xs font-medium text-slate-300"
-              >
-                Amount (USD)
-              </label>
-              <input
-                id="amount"
-                name="amount"
-                type="number"
-                step="0.01"
-                min="0"
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-50 outline-none focus:border-emerald-400"
-                placeholder="0.00"
-              />
-            </div>
-            <div className="flex items-end justify-between gap-3">
-              <label className="flex items-center gap-2 text-xs text-slate-300">
-                <input
-                  type="checkbox"
-                  name="isReimbursable"
-                  className="h-3 w-3 rounded border-slate-600 bg-slate-950 text-emerald-500 focus:ring-emerald-500"
-                />
-                Reimbursable to PR
-              </label>
-              <button
-                type="submit"
-                className="inline-flex items-center justify-center rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-emerald-400"
-              >
-                Add
-              </button>
-            </div>
-          </div>
-        </form>
-      </section>
-
-      {!hasExpenses ? (
-        <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/60 px-6 py-8 text-sm text-slate-300">
-          <p className="font-medium text-slate-100">No expenses recorded yet.</p>
-          <p className="mt-1 text-slate-400">
-            As you pay filing fees, repairs, insurance, or other estate costs,
-            log them here so you can show a clear ledger to the court.
+          <p className="mt-1 text-xs text-slate-500">
+            You can always add more as you pay new bills.
           </p>
         </div>
-      ) : (
-        <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/60 text-sm">
-          <table className="min-w-full divide-y divide-slate-800">
-            <thead className="bg-slate-950/80">
-              <tr className="text-xs uppercase tracking-wide text-slate-400">
-                <th className="px-3 py-2 text-left">Date</th>
-                <th className="px-3 py-2 text-left">Category</th>
-                <th className="px-3 py-2 text-left">Payee</th>
-                <th className="px-3 py-2 text-left">Description</th>
-                <th className="px-3 py-2 text-right">Amount</th>
-                <th className="px-3 py-2 text-center">Reimbursable</th>
-                <th className="px-3 py-2 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800">
-              {expenses.map((expense) => (
-                <tr key={String(expense._id)} className="text-xs text-slate-200">
-                  <td className="whitespace-nowrap px-3 py-2">
-                    {formatDate(expense.date)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2">
-                    {expense.category || "–"}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2">
-                    {expense.payee || "–"}
-                  </td>
-                  <td className="px-3 py-2">
-                    <Link
-                      href={`/app/estates/${estateId}/expenses/${String(expense._id)}`}
-                      className="text-emerald-300 underline-offset-2 hover:text-emerald-200 hover:underline"
-                    >
-                      {expense.description || "(no description)"}
-                    </Link>
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right">
-                    {formatCurrency(expense.amount)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-center">
-                    {expense.isReimbursable ? (
-                      <span className="inline-flex rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
-                        Yes
-                      </span>
-                    ) : (
-                      <span className="inline-flex rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-medium text-slate-400">
-                        No
-                      </span>
-                    )}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right">
-                    <form action={deleteExpense}>
-                      <input type="hidden" name="estateId" value={estateId} />
-                      <input
-                        type="hidden"
-                        name="expenseId"
-                        value={String(expense._id)}
-                      />
-                      <button
-                        type="submit"
-                        className="text-[11px] text-rose-400 underline-offset-2 hover:text-rose-300 hover:underline"
-                      >
-                        Remove
-                      </button>
-                    </form>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Status
+          </p>
+          <p className="mt-2 text-sm text-slate-700">
+            Keep receipts and invoices handy for every line item.
+          </p>
         </div>
-      )}
+      </div>
+
+      {/* Table / state */}
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 px-4 py-3">
+          <h2 className="text-sm font-medium text-slate-700">
+            Expense ledger
+          </h2>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center px-4 py-10 text-sm text-slate-500">
+            Loading expenses…
+          </div>
+        ) : error ? (
+          <div className="px-4 py-8 text-sm text-red-600">{error}</div>
+        ) : expenses.length === 0 ? (
+          <div className="px-4 py-10 text-center text-sm text-slate-500">
+            No expenses recorded yet. Start by adding the first bill you
+            paid from the estate.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="border-b border-slate-100 bg-slate-50 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-2">Date</th>
+                  <th className="px-4 py-2">Category</th>
+                  <th className="px-4 py-2">Description</th>
+                  <th className="px-4 py-2">Payee</th>
+                  <th className="px-4 py-2 text-right">Amount</th>
+                  <th className="px-4 py-2 text-right">Status</th>
+                  <th className="px-4 py-2 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {expenses.map((expense) => (
+                  <tr
+                    key={expense._id}
+                    className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60"
+                  >
+                    <td className="px-4 py-2 text-xs text-slate-600">
+                      {formatDate(expense.date)}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-slate-600">
+                      {CATEGORY_LABELS[expense.category] ??
+                        expense.category ??
+                        "Other"}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-slate-700">
+                      {expense.description}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-slate-600">
+                      {expense.payee || "—"}
+                    </td>
+                    <td className="px-4 py-2 text-right text-xs font-medium text-slate-900">
+                      {formatCurrency(expense.amount)}
+                    </td>
+                    <td className="px-4 py-2 text-right text-xs">
+                      <span
+                        className={cn(
+                          "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
+                          expense.isPaid
+                            ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100"
+                            : "bg-amber-50 text-amber-700 ring-1 ring-amber-100",
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "mr-1 inline-block h-1.5 w-1.5 rounded-full",
+                            expense.isPaid ? "bg-emerald-500" : "bg-amber-500",
+                          )}
+                        />
+                        {expense.isPaid ? "Paid" : "Outstanding"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 text-right text-xs">
+                      <Link
+                        href={`/app/estates/${estateId}/expenses/${expense._id}`}
+                        className="text-emerald-700 hover:text-emerald-800"
+                      >
+                        View / Edit
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-slate-50 text-xs text-slate-600">
+                <tr>
+                  <td className="px-4 py-2" colSpan={4}>
+                    Total
+                  </td>
+                  <td className="px-4 py-2 text-right font-semibold text-slate-900">
+                    {formatCurrency(total)}
+                  </td>
+                  <td colSpan={2} />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

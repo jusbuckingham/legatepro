@@ -38,7 +38,7 @@ export default function NewEstatePage() {
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
 
@@ -75,7 +75,7 @@ export default function NewEstatePage() {
         throw new Error(message);
       }
 
-      const data = await res.json().catch(() => ({} as any));
+      const data = (await res.json().catch(() => ({} as unknown))) as { estate?: { _id?: string } };
       const estateId = data?.estate?._id as string | undefined;
 
       if (estateId) {

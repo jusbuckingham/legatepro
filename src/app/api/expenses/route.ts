@@ -2,8 +2,8 @@
 // Estate expenses API for LegatePro
 
 import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase } from "../../../lib/db";
-import { Expense } from "../../../models/Expense";
+import { connectToDatabase } from "@/lib/db";
+import { Expense } from "@/models/Expense";
 
 // GET /api/expenses
 // Optional query params:
@@ -17,9 +17,6 @@ export async function GET(request: NextRequest) {
   try {
     await connectToDatabase();
 
-    // TODO: replace with real ownerId from auth/session
-    const ownerId = "demo-user";
-
     const { searchParams } = new URL(request.url);
     const estateId = searchParams.get("estateId");
     const category = searchParams.get("category");
@@ -28,7 +25,9 @@ export async function GET(request: NextRequest) {
     const to = searchParams.get("to");
     const q = searchParams.get("q")?.trim() ?? "";
 
-    const filter: Record<string, unknown> = { ownerId };
+    // For now, we do NOT filter by ownerId until auth is wired up.
+    // This avoids ObjectId casting issues with fake IDs.
+    const filter: Record<string, unknown> = {};
 
     if (estateId) {
       filter.estateId = estateId;
@@ -72,7 +71,7 @@ export async function GET(request: NextRequest) {
     console.error("GET /api/expenses error", error);
     return NextResponse.json(
       { error: "Unable to load expenses" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -92,19 +91,17 @@ interface CreateExpensePayload {
   utilityAccountId?: string;
   documentId?: string;
 }
+
 export async function POST(request: NextRequest) {
   try {
     await connectToDatabase();
-
-    // TODO: replace with real ownerId from auth/session
-    const ownerId = "demo-user";
 
     const body = (await request.json()) as Partial<CreateExpensePayload> | null;
 
     if (!body) {
       return NextResponse.json(
         { error: "Request body is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -120,38 +117,38 @@ export async function POST(request: NextRequest) {
       propertyId,
       utilityAccountId,
       documentId,
-    } = body ?? {};
+    } = body;
 
     if (!estateId) {
       return NextResponse.json(
         { error: "estateId is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (!date) {
       return NextResponse.json(
         { error: "date is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (!description) {
       return NextResponse.json(
         { error: "description is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (amount == null || Number.isNaN(Number(amount))) {
       return NextResponse.json(
         { error: "A valid amount is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     const expense = await Expense.create({
-      ownerId,
+      // ownerId will be wired up once auth is in place
       estateId,
       date: new Date(date),
       category: category || "OTHER",
@@ -170,7 +167,7 @@ export async function POST(request: NextRequest) {
     console.error("POST /api/expenses error", error);
     return NextResponse.json(
       { error: "Unable to create expense" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

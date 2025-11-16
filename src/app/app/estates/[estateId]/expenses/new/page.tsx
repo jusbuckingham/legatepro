@@ -1,7 +1,7 @@
-// src/app/app/estates/[estateId]/expenses/[expenseId]/page.tsx
+// src/app/app/estates/[estateId]/expenses/new/page.tsx
 
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { connectToDatabase } from "@/lib/db";
@@ -10,44 +10,18 @@ import { Expense } from "@/models/Expense";
 export const dynamic = "force-dynamic";
 
 interface PageProps {
+  // Next 16: params is a Promise in server components
   params: Promise<{
     estateId: string;
-    expenseId: string;
   }>;
 }
 
-interface ExpenseDoc {
-  _id: unknown;
-  estateId: unknown;
-  date?: string | Date;
-  category?: string;
-  payee?: string;
-  description?: string;
-  amount?: number;
-  isReimbursable?: boolean;
-}
-
-async function loadExpense(
-  estateId: string,
-  expenseId: string
-): Promise<ExpenseDoc | null> {
-  await connectToDatabase();
-
-  const doc = await Expense.findOne({
-    _id: expenseId,
-    estateId,
-  }).lean<ExpenseDoc | null>();
-
-  return doc;
-}
-
-async function updateExpense(formData: FormData) {
+async function createExpense(formData: FormData) {
   "use server";
 
   const estateId = formData.get("estateId");
-  const expenseId = formData.get("expenseId");
 
-  if (typeof estateId !== "string" || typeof expenseId !== "string") {
+  if (typeof estateId !== "string" || !estateId) {
     return;
   }
 
@@ -61,70 +35,43 @@ async function updateExpense(formData: FormData) {
   const date = dateRaw ? new Date(dateRaw) : undefined;
   const amount = amountRaw ? Number(amountRaw) : undefined;
 
-  // Require at least description or amount
+  // Require at least a description or an amount
   if (!description && (amount == null || Number.isNaN(amount))) {
     return;
   }
 
   await connectToDatabase();
 
-  await Expense.findOneAndUpdate(
-    { _id: expenseId, estateId },
-    {
-      date: date && !Number.isNaN(date.getTime()) ? date : undefined,
-      category: category || undefined,
-      payee: payee || undefined,
-      description: description || undefined,
-      amount:
-        amount != null && !Number.isNaN(amount)
-          ? Number(amount.toFixed(2))
-          : undefined,
-      isReimbursable,
-    },
-    { new: true }
-  );
+  await Expense.create({
+    estateId,
+    date: date && !Number.isNaN(date.getTime()) ? date : undefined,
+    category: category || undefined,
+    payee: payee || undefined,
+    description: description || undefined,
+    amount:
+      amount != null && !Number.isNaN(amount)
+        ? Number(amount.toFixed(2))
+        : undefined,
+    isReimbursable,
+  });
 
   revalidatePath(`/app/estates/${estateId}/expenses`);
   redirect(`/app/estates/${estateId}/expenses`);
 }
 
-function toISODateInput(value?: string | Date) {
-  if (!value) return "";
-  const d = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toISOString().slice(0, 10); // yyyy-mm-dd
-}
-
-export default async function ExpenseDetailPage({ params }: PageProps) {
-  const { estateId, expenseId } = await params; // ⬅️ key change
-
-  if (!estateId || !expenseId) {
-    notFound();
-  }
-
-  const doc = await loadExpense(estateId, expenseId);
-  if (!doc) {
-    notFound();
-  }
-
-  const dateValue = toISODateInput(doc.date);
-  const category = doc.category ?? "";
-  const payee = doc.payee ?? "";
-  const description = doc.description ?? "";
-  const amount =
-    doc.amount != null && !Number.isNaN(doc.amount) ? String(doc.amount) : "";
-  const isReimbursable = Boolean(doc.isReimbursable);
+export default async function NewExpensePage({ params }: PageProps) {
+  const { estateId } = await params; // ⬅️ key change
 
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
-            Edit expense
+            Add expense
           </h1>
           <p className="text-sm text-slate-400">
-            Adjust the category, description, or amount. This feeds into your
-            estate ledger and reimbursement summary.
+            Log an expense related to this estate. It will show up in your
+            ledger and reimbursement summary.
           </p>
         </div>
         <Link
@@ -136,11 +83,10 @@ export default async function ExpenseDetailPage({ params }: PageProps) {
       </div>
 
       <form
-        action={updateExpense}
+        action={createExpense}
         className="max-w-2xl space-y-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-sm"
       >
         <input type="hidden" name="estateId" value={estateId} />
-        <input type="hidden" name="expenseId" value={expenseId} />
 
         <div className="grid gap-3 md:grid-cols-[0.9fr,1fr,1fr]">
           <div className="space-y-1">
@@ -154,7 +100,6 @@ export default async function ExpenseDetailPage({ params }: PageProps) {
               id="date"
               name="date"
               type="date"
-              defaultValue={dateValue}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-50 outline-none focus:border-emerald-400"
             />
           </div>
@@ -168,7 +113,6 @@ export default async function ExpenseDetailPage({ params }: PageProps) {
             <input
               id="category"
               name="category"
-              defaultValue={category}
               placeholder="Court fees, repairs, insurance..."
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-50 outline-none focus:border-emerald-400"
             />
@@ -183,7 +127,6 @@ export default async function ExpenseDetailPage({ params }: PageProps) {
             <input
               id="payee"
               name="payee"
-              defaultValue={payee}
               placeholder="Who was paid"
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-50 outline-none focus:border-emerald-400"
             />
@@ -201,7 +144,6 @@ export default async function ExpenseDetailPage({ params }: PageProps) {
             <input
               id="description"
               name="description"
-              defaultValue={description}
               placeholder="Short description for the ledger"
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-50 outline-none focus:border-emerald-400"
             />
@@ -219,9 +161,8 @@ export default async function ExpenseDetailPage({ params }: PageProps) {
               type="number"
               step="0.01"
               min="0"
-              defaultValue={amount}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-50 outline-none focus:border-emerald-400"
               placeholder="0.00"
+              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-50 outline-none focus:border-emerald-400"
             />
           </div>
         </div>
@@ -231,7 +172,6 @@ export default async function ExpenseDetailPage({ params }: PageProps) {
             <input
               type="checkbox"
               name="isReimbursable"
-              defaultChecked={isReimbursable}
               className="h-3 w-3 rounded border-slate-600 bg-slate-950 text-emerald-500 focus:ring-emerald-500"
             />
             Reimbursable to PR
@@ -241,7 +181,7 @@ export default async function ExpenseDetailPage({ params }: PageProps) {
             type="submit"
             className="inline-flex items-center justify-center rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-emerald-400"
           >
-            Save changes
+            Save expense
           </button>
         </div>
       </form>
