@@ -2,14 +2,14 @@
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
-import { connectToDatabase } from "@/lib/db";
-import { Task } from "@/models/Task";
+import { connectToDatabase } from "../../../../../../lib/db";
+import { Task } from "../../../../../../models/Task";
 
 interface PageProps {
-  params: {
+  params: Promise<{
     estateId: string;
     taskId: string;
-  };
+  }>;
 }
 
 interface TaskDoc {
@@ -98,7 +98,7 @@ function formatDateInput(value?: string | Date): string {
 }
 
 export default async function TaskDetailPage({ params }: PageProps) {
-  const { estateId, taskId } = params;
+  const { estateId, taskId } = await params;
 
   if (!estateId || !taskId) {
     notFound();

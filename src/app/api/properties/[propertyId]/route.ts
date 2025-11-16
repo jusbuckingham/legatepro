@@ -1,7 +1,10 @@
-
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "../../../../lib/db";
 import { EstateProperty } from "../../../../models/EstateProperty";
+
+interface RouteParams {
+  params: Promise<{ propertyId: string }>;
+}
 
 interface UpdatePropertyPayload {
   estateId: string;
@@ -28,10 +31,10 @@ interface UpdatePropertyPayload {
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { propertyId: string } }
+  { params }: RouteParams
 ) {
   try {
-    const { propertyId } = params;
+    const { propertyId } = await params;
 
     if (!propertyId) {
       return NextResponse.json(
@@ -75,10 +78,10 @@ export async function GET(
  */
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { propertyId: string } }
+  { params }: RouteParams
 ) {
   try {
-    const { propertyId } = params;
+    const { propertyId } = await params;
 
     if (!propertyId) {
       return NextResponse.json(
@@ -171,10 +174,10 @@ export async function PUT(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { propertyId: string } }
+  { params }: RouteParams
 ) {
   try {
-    const { propertyId } = params;
+    const { propertyId } = await params;
 
     if (!propertyId) {
       return NextResponse.json(

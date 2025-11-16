@@ -14,7 +14,8 @@ export async function GET() {
 
     const demoEmail = process.env.LEGATEPRO_DEMO_EMAIL || "demo@legatepro.test";
 
-    let user = await User.findOne({ email: demoEmail }).lean();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let user: any = await User.findOne({ email: demoEmail }).lean();
 
     // If the demo user doesn't exist yet, create it.
     if (!user) {

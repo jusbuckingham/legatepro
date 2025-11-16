@@ -1,35 +1,48 @@
-import type { ReactNode } from "react";
-import { cva, type VariantProps } from "class-variance-authority";
-import { cn } from "@/lib/utils";
+// src/components/ui/Badge.tsx
+import * as React from "react";
+import { cn } from "../../lib/utils";
 
-const badgeVariants = cva(
-  "inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium transition-colors",
-  {
-    variants: {
-      variant: {
-        default: "border-slate-700 bg-slate-800 text-slate-100",
-        outline: "border-slate-600 text-slate-200",
-        success: "border-emerald-600 bg-emerald-600/20 text-emerald-300",
-        warning: "border-amber-600 bg-amber-600/20 text-amber-300",
-        danger: "border-red-600 bg-red-600/20 text-red-300",
-      },
-    },
-    defaultVariants: {
-      variant: "default",
-    },
-  }
-);
+export type BadgeVariant =
+  | "default"
+  | "secondary"
+  | "outline"
+  | "destructive"
+  | "success";
 
-export interface BadgeProps
-  extends React.HTMLAttributes<HTMLSpanElement>,
-    VariantProps<typeof badgeVariants> {
-  children: ReactNode;
+export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement> {
+  variant?: BadgeVariant;
 }
 
-export function Badge({ className, variant, children, ...props }: BadgeProps) {
+const baseClasses =
+  "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 dark:focus:ring-slate-800";
+
+const variantClasses: Record<BadgeVariant, string> = {
+  default:
+    "border-transparent bg-slate-900 text-slate-50 hover:bg-slate-900/80 dark:bg-slate-50 dark:text-slate-900 dark:hover:bg-slate-50/80",
+  secondary:
+    "border-transparent bg-slate-100 text-slate-900 hover:bg-slate-100/80 dark:bg-slate-800 dark:text-slate-50 dark:hover:bg-slate-800/80",
+  outline:
+    "border-slate-200 text-slate-900 dark:border-slate-800 dark:text-slate-50",
+  destructive:
+    "border-transparent bg-red-500 text-red-50 hover:bg-red-500/80",
+  success:
+    "border-transparent bg-emerald-500 text-emerald-50 hover:bg-emerald-500/80",
+};
+
+export function Badge({
+  className,
+  variant = "default",
+  children,
+  ...props
+}: BadgeProps) {
   return (
-    <span className={cn(badgeVariants({ variant }), className)} {...props}>
+    <div
+      className={cn(baseClasses, variantClasses[variant], className)}
+      {...props}
+    >
       {children}
-    </span>
+    </div>
   );
 }
+
+export default Badge;

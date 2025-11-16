@@ -1,37 +1,39 @@
-"use client";
+// src/components/ui/Tag.tsx
+import * as React from "react";
+import { cn } from "../../lib/utils";
 
-import type { ReactNode } from "react";
-import { cva, type VariantProps } from "class-variance-authority";
-import { cn } from "@/lib/utils";
+export type TagVariant = "default" | "muted" | "outline";
 
-const tagVariants = cva(
-  "inline-flex items-center rounded-full px-3 py-1 text-xs font-medium",
-  {
-    variants: {
-      variant: {
-        default: "bg-slate-800 text-slate-200",
-        subtle: "bg-slate-900/40 text-slate-400",
-        red: "bg-red-600/20 text-red-300",
-        green: "bg-emerald-600/20 text-emerald-300",
-        yellow: "bg-amber-600/20 text-amber-300",
-      },
-    },
-    defaultVariants: {
-      variant: "default",
-    },
-  }
-);
-
-export interface TagProps
-  extends React.HTMLAttributes<HTMLSpanElement>,
-    VariantProps<typeof tagVariants> {
-  children: ReactNode;
+export interface TagProps extends React.HTMLAttributes<HTMLDivElement> {
+  variant?: TagVariant;
 }
 
-export function Tag({ className, variant, children, ...props }: TagProps) {
+const baseClasses =
+  "inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium transition-colors";
+
+const variantClasses: Record<TagVariant, string> = {
+  default:
+    "border-slate-200 bg-slate-100 text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100",
+  muted:
+    "border-transparent bg-slate-50 text-slate-500 dark:bg-slate-900 dark:text-slate-400",
+  outline:
+    "border-slate-300 text-slate-700 dark:border-slate-600 dark:text-slate-100",
+};
+
+export function Tag({
+  className,
+  variant = "default",
+  children,
+  ...props
+}: TagProps) {
   return (
-    <span className={cn(tagVariants({ variant }), className)} {...props}>
+    <div
+      className={cn(baseClasses, variantClasses[variant], className)}
+      {...props}
+    >
       {children}
-    </span>
+    </div>
   );
 }
+
+export default Tag;
