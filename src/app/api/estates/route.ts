@@ -1,22 +1,41 @@
-// Minimal auth helper stub for now so that `import { auth } from "@/lib/auth"` works.
-// TODO: Replace this with your real authentication integration (e.g. NextAuth).
+// src/app/api/estates/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { connectToDatabase } from "@/lib/db";
+import { Estate } from "@/models/Estate";
 
-export type SessionUser = {
-  id?: string;
-  name?: string | null;
-  email?: string | null;
-};
+export async function GET() {
+  try {
+    await connectToDatabase();
 
-export type Session = {
-  user?: SessionUser;
-} | null;
+    // For now, return all estates. We can scope to the logged-in user later.
+    const estates = await Estate.find().sort({ createdAt: -1 }).lean();
 
-/**
- * Temporary auth() stub.
- *
- * This is just here to satisfy TypeScript while you wire up real auth.
- * It always returns null, so any route using it will treat the user as unauthenticated.
- */
-export async function auth(): Promise<Session> {
-  return null;
+    return NextResponse.json({ estates }, { status: 200 });
+  } catch (error) {
+    console.error("[GET /api/estates] Error:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch estates" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    await connectToDatabase();
+
+    const body = await req.json();
+
+    // For now, accept whatever the client sends and let the Mongoose schema
+    // enforce required fields. We'll tighten this with explicit validation later.
+    const estate = await Estate.create(body);
+
+    return NextResponse.json({ estate }, { status: 201 });
+  } catch (error) {
+    console.error("[POST /api/estates] Error:", error);
+    return NextResponse.json(
+      { error: "Failed to create estate" },
+      { status: 500 }
+    );
+  }
 }
