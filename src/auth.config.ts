@@ -17,12 +17,17 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
+        const normalizedEmail = String(credentials.email).trim().toLowerCase();
+
         await connectToDatabase();
 
-        const user = (await User.findOne({ email: credentials.email }).lean()) as
+        const user = (await User.findOne({ email: normalizedEmail })
+          .select("+password")
+          .lean()) as
           | {
               _id: { toString(): string } | string;
-              name?: string;
+              firstName?: string;
+              lastName?: string;
               email: string;
               password?: string;
             }
@@ -35,9 +40,12 @@ export const authOptions: NextAuthOptions = {
         const isValid = await compare(credentials.password, user.password);
         if (!isValid) return null;
 
+        const fullName =
+          [user.firstName, user.lastName].filter(Boolean).join(" ") || undefined;
+
         return {
           id: typeof user._id === "string" ? user._id : user._id.toString(),
-          name: user.name,
+          name: fullName,
           email: user.email
         };
       }

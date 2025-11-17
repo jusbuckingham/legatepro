@@ -1,9 +1,12 @@
 // middleware.ts
-export { default } from "next-auth/middleware";
+import { NextResponse } from "next/server";
+
+export function middleware() {
+  // For now, just let all requests pass through.
+  // We'll reintroduce authentication-aware middleware later.
+  return NextResponse.next();
+}
 
 export const config = {
-  matcher: [
-    "/app/:path*",
-    "/api/estates/:path*"
-  ]
+  matcher: []
 };
