@@ -1,11 +1,10 @@
-
-
+// src/models/User.ts
 import mongoose, { Schema, Document, Model } from "mongoose";
 
 export interface IUser {
   // Authentication identifiers
   email: string;
-  passwordHash?: string; // if using password auth later
+  password?: string; // hashed password for credentials auth
   authProvider?: "google" | "apple" | "password" | "github" | "magiclink";
   providerId?: string; // e.g. Google sub, Apple id, etc.
 
@@ -45,7 +44,7 @@ const UserSchema = new Schema<UserDocument>(
       },
     },
 
-    passwordHash: { type: String, required: false },
+    password: { type: String, required: false },
     authProvider: {
       type: String,
       enum: ["google", "apple", "password", "github", "magiclink"],
@@ -81,7 +80,7 @@ UserSchema.virtual("fullName").get(function (this: UserDocument) {
 UserSchema.set("toJSON", {
   transform(_doc, ret) {
     // Never expose password hashes in API responses
-    delete ret.passwordHash;
+    delete ret.password;
     return ret;
   },
 });

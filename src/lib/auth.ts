@@ -1,25 +1,9 @@
-
-
 // src/lib/auth.ts
-// Minimal auth helper stub for now so that `import { auth } from "@/lib/auth"` works.
-// TODO: Replace this with real authentication (NextAuth or other) when ready.
+// Thin wrapper around next-auth's getServerSession for server-side auth (v4 compatible).
 
-export type SessionUser = {
-  id?: string;
-  name?: string | null;
-  email?: string | null;
-};
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/auth.config";
 
-export type Session = {
-  user?: SessionUser;
-} | null;
-
-/**
- * Temporary auth() stub.
- *
- * This always returns null so routes will treat the user as unauthenticated.
- * It only exists so the project compiles while you wire up real auth.
- */
-export async function auth(): Promise<Session> {
-  return null;
+export async function auth() {
+  return getServerSession(authOptions);
 }
