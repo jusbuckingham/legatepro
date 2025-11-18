@@ -2,13 +2,14 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
-import { connectToDatabase } from "../../../../../lib/db";
-import { EstateDocument } from "../../../../../models/EstateDocument";
+import { connectToDatabase } from "@/lib/db";
+import { auth } from "@/lib/auth";
+import { EstateDocument } from "@/models/EstateDocument";
 
 interface EstateDocumentsPageProps {
-  params: {
+  params: Promise<{
     estateId: string;
-  };
+  }>;
 }
 
 // Shape returned from Mongoose `.lean()`
@@ -37,7 +38,7 @@ interface EstateDocumentItem {
 
 export const dynamic = "force-dynamic";
 
-async function createDocumentEntry(formData: FormData) {
+async function createDocumentEntry(formData: FormData): Promise<void> {
   "use server";
 
   const estateId = formData.get("estateId")?.toString();
@@ -51,6 +52,12 @@ async function createDocumentEntry(formData: FormData) {
 
   if (!estateId || !subject || !label) {
     return;
+  }
+
+  const session = await auth();
+
+  if (!session?.user?.id) {
+    redirect("/login?callbackUrl=/app");
   }
 
   const tags = tagsRaw
@@ -69,12 +76,13 @@ async function createDocumentEntry(formData: FormData) {
     tags,
     notes,
     isSensitive,
+    ownerId: session!.user!.id,
   });
 
   redirect(`/app/estates/${estateId}/documents`);
 }
 
-async function deleteDocument(formData: FormData) {
+async function deleteDocument(formData: FormData): Promise<void> {
   "use server";
 
   const estateId = formData.get("estateId");
@@ -84,11 +92,18 @@ async function deleteDocument(formData: FormData) {
     return;
   }
 
+  const session = await auth();
+
+  if (!session?.user?.id) {
+    return;
+  }
+
   await connectToDatabase();
 
   await EstateDocument.findOneAndDelete({
     _id: documentId,
     estateId,
+    ownerId: session.user.id,
   });
 
   revalidatePath(`/app/estates/${estateId}/documents`);
@@ -97,11 +112,20 @@ async function deleteDocument(formData: FormData) {
 export default async function EstateDocumentsPage({
   params,
 }: EstateDocumentsPageProps) {
-  const { estateId } = params;
+  const { estateId } = await params;
+
+  const session = await auth();
+
+  if (!session?.user?.id) {
+    redirect(`/login?callbackUrl=/app/estates/${estateId}/documents`);
+  }
 
   await connectToDatabase();
 
-  const docs = await EstateDocument.find({ estateId })
+  const docs = await EstateDocument.find({
+    estateId,
+    ownerId: session!.user!.id,
+  })
     .sort({ subject: 1, label: 1 })
     .lean<EstateDocumentLean[]>();
 
@@ -184,13 +208,24 @@ export default async function EstateDocumentsPage({
               >
                 Subject / category
               </label>
-              <input
+              <select
                 id="subject"
                 name="subject"
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50 outline-none focus:border-rose-400"
-                placeholder="e.g. Banking, Auto, Medical, Taxes, Insurance"
                 required
-              />
+                className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50 outline-none focus:border-rose-400"
+                defaultValue=""
+              >
+                <option value="" disabled>
+                  Select a subject
+                </option>
+                <option value="LEGAL">Legal</option>
+                <option value="BANKING">Banking</option>
+                <option value="PROPERTY">Property</option>
+                <option value="TAX">Tax</option>
+                <option value="INSURANCE">Insurance</option>
+                <option value="COMMUNICATION">Communication</option>
+                <option value="OTHER">Other</option>
+              </select>
             </div>
 
             <div className="space-y-1">
