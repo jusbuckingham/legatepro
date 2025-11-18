@@ -1,92 +1,113 @@
+import { Schema, model, models, type Document, type Types } from "mongoose";
 
-
-// src/models/Contact.ts
-import mongoose, { Schema, Document, Model, Types } from "mongoose";
-
-export type ContactCategory =
+export type ContactRole =
+  | "HEIR"
+  | "BENEFICIARY"
   | "ATTORNEY"
-  | "COURT"
   | "ACCOUNTANT"
-  | "REAL_ESTATE"
-  | "CONTRACTOR"
-  | "UTILITY"
-  | "TENANT"
-  | "FAMILY"
+  | "EXECUTOR"
   | "OTHER";
 
-export interface IContact {
-  ownerId: Types.ObjectId | string; // user who owns this record
-  estateId?: Types.ObjectId | string; // optional: tie contact to a specific estate
-  category?: ContactCategory;
-
-  name: string; // person or primary contact name
-  organization?: string; // firm, company, or entity
-  roleOrRelationship?: string; // e.g. "Probate attorney", "Sibling", "Tenant"
-
-  phone?: string;
+export interface ContactDocument extends Document {
+  ownerId: Types.ObjectId | string;
+  estateId: Types.ObjectId | string;
+  name: string;
+  relationship?: string;
+  role?: ContactRole;
   email?: string;
-
+  phone?: string;
   addressLine1?: string;
   addressLine2?: string;
   city?: string;
   state?: string;
   postalCode?: string;
-
+  country?: string;
   notes?: string;
-
-  createdAt?: Date;
-  updatedAt?: Date;
+  isPrimary?: boolean;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
-export interface ContactDocument extends IContact, Document {}
-
-const ContactSchema: Schema<ContactDocument> = new Schema<ContactDocument>(
+const ContactSchema = new Schema<ContactDocument>(
   {
-    ownerId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    estateId: { type: Schema.Types.ObjectId, ref: "Estate", required: false, index: true },
-
-    category: {
+    ownerId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
+    estateId: {
+      type: Schema.Types.ObjectId,
+      ref: "Estate",
+      required: true,
+      index: true,
+    },
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    relationship: {
+      type: String,
+      trim: true,
+    },
+    role: {
       type: String,
       enum: [
+        "HEIR",
+        "BENEFICIARY",
         "ATTORNEY",
-        "COURT",
         "ACCOUNTANT",
-        "REAL_ESTATE",
-        "CONTRACTOR",
-        "UTILITY",
-        "TENANT",
-        "FAMILY",
+        "EXECUTOR",
         "OTHER",
       ],
-      required: false,
+      default: "OTHER",
     },
-
-    name: { type: String, required: true, trim: true },
-    organization: { type: String, required: false, trim: true },
-    roleOrRelationship: { type: String, required: false, trim: true },
-
-    phone: { type: String, required: false, trim: true },
-    email: { type: String, required: false, trim: true, lowercase: true },
-
-    addressLine1: { type: String, required: false, trim: true },
-    addressLine2: { type: String, required: false, trim: true },
-    city: { type: String, required: false, trim: true },
-    state: { type: String, required: false, trim: true },
-    postalCode: { type: String, required: false, trim: true },
-
-    notes: { type: String, required: false, trim: true },
+    email: {
+      type: String,
+      trim: true,
+    },
+    phone: {
+      type: String,
+      trim: true,
+    },
+    addressLine1: {
+      type: String,
+      trim: true,
+    },
+    addressLine2: {
+      type: String,
+      trim: true,
+    },
+    city: {
+      type: String,
+      trim: true,
+    },
+    state: {
+      type: String,
+      trim: true,
+    },
+    postalCode: {
+      type: String,
+      trim: true,
+    },
+    country: {
+      type: String,
+      trim: true,
+    },
+    notes: {
+      type: String,
+      trim: true,
+    },
+    isPrimary: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
-  }
+  },
 );
 
-let ContactModel: Model<ContactDocument>;
-
-try {
-  ContactModel = mongoose.model<ContactDocument>("Contact");
-} catch {
-  ContactModel = mongoose.model<ContactDocument>("Contact", ContactSchema);
-}
-
-export const Contact = ContactModel;
+export const Contact =
+  models.Contact || model<ContactDocument>("Contact", ContactSchema);

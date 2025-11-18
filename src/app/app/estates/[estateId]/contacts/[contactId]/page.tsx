@@ -1,45 +1,18 @@
-// src/app/app/estates/[estateId]/contacts/[contactId]/page.tsx
-
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
 
-import { connectToDatabase } from "../../../../../../lib/db";
-import { Contact as ContactModel } from "../../../../../../models/Contact";
+import { auth } from "@/lib/auth";
+import { connectToDatabase } from "@/lib/db";
+import { Contact, type ContactDocument } from "@/models/Contact";
 
 interface PageProps {
-  params: {
+  params: Promise<{
     estateId: string;
     contactId: string;
-  };
+  }>;
 }
 
-interface ContactDoc {
-  _id: unknown;
-  estateId: unknown;
-  name?: string;
-  role?: string;
-  email?: string;
-  phone?: string;
-  notes?: string;
-  category?: string;
-}
-
-async function loadContact(
-  estateId: string,
-  contactId: string
-): Promise<ContactDoc | null> {
-  await connectToDatabase();
-
-  const doc = await ContactModel.findOne({
-    _id: contactId,
-    estateId,
-  }).lean<ContactDoc | null>();
-
-  return doc;
-}
-
-async function updateContact(formData: FormData) {
+async function deleteContact(formData: FormData): Promise<void> {
   "use server";
 
   const estateId = formData.get("estateId");
@@ -49,258 +22,162 @@ async function updateContact(formData: FormData) {
     return;
   }
 
-  const name = formData.get("name")?.toString().trim() ?? "";
-  const role = formData.get("role")?.toString().trim() || "";
-  const category = formData.get("category")?.toString().trim() || "";
-  const email = formData.get("email")?.toString().trim() || "";
-  const phone = formData.get("phone")?.toString().trim() || "";
-  const notes = formData.get("notes")?.toString().trim() || "";
+  const session = await auth();
 
-  if (!name) {
-    // Must have a name; silently ignore if omitted
-    return;
+  if (!session?.user?.id) {
+    redirect(`/login?callbackUrl=/app/estates/${estateId}/contacts/${contactId}`);
   }
 
   await connectToDatabase();
 
-  await ContactModel.findOneAndUpdate(
-    { _id: contactId, estateId },
-    {
-      name,
-      role: role || undefined,
-      category: category || undefined,
-      email: email || undefined,
-      phone: phone || undefined,
-      notes: notes || undefined,
-    },
-    { new: true }
-  );
+  await Contact.findOneAndDelete({
+    _id: contactId,
+    estateId,
+    ownerId: session.user.id,
+  });
 
-  revalidatePath(`/app/estates/${estateId}/contacts`);
   redirect(`/app/estates/${estateId}/contacts`);
 }
 
 export default async function ContactDetailPage({ params }: PageProps) {
-  const { estateId, contactId } = params;
+  const { estateId, contactId } = await params;
 
-  if (!estateId || !contactId) {
-    notFound();
+  const session = await auth();
+
+  if (!session?.user?.id) {
+    redirect(`/login?callbackUrl=/app/estates/${estateId}/contacts/${contactId}`);
   }
 
-  const contact = await loadContact(estateId, contactId);
+  await connectToDatabase();
+
+  const contact = await Contact.findOne({
+    _id: contactId,
+    estateId,
+    ownerId: session.user.id,
+  }).lean<ContactDocument | null>();
 
   if (!contact) {
     notFound();
   }
 
-  const name = contact.name ?? "";
-  const role = contact.role ?? "";
-  const email = contact.email ?? "";
-  const phone = contact.phone ?? "";
-  const notes = contact.notes ?? "";
-  const category = contact.category ?? "";
+  const createdAt = contact.createdAt
+    ? new Date(contact.createdAt).toLocaleString()
+    : "";
+  const updatedAt = contact.updatedAt
+    ? new Date(contact.updatedAt).toLocaleString()
+    : "";
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Header / breadcrumb */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="space-y-2">
-          <nav className="text-xs text-slate-500">
-            <span className="text-slate-500">Estates</span>
-            <span className="mx-1 text-slate-600">/</span>
-            <span className="text-slate-300">Current estate</span>
-            <span className="mx-1 text-slate-600">/</span>
-            <Link
-              href={`/app/estates/${estateId}/contacts`}
-              className="text-slate-300 underline-offset-2 hover:text-slate-100 hover:underline"
-            >
-              Contacts
-            </Link>
-            <span className="mx-1 text-slate-600">/</span>
-            <span className="text-rose-300">Edit</span>
-          </nav>
-
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-slate-50">
-              Edit contact
-            </h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-400">
-              Update details for this person. This is often your probate
-              attorney, heirs, creditors, court contacts, tenants, or key
-              vendors you&apos;re dealing with.
-            </p>
-          </div>
-
-          <p className="text-xs text-slate-500">
-            Changes here only affect this estate&apos;s directory.
+    <div className="space-y-6">
+      <div className="flex flex-col justify-between gap-4 border-b border-slate-800 pb-4 sm:flex-row sm:items-center">
+        <div className="space-y-1">
+          <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+            Contact
+          </p>
+          <h1 className="text-2xl font-semibold text-slate-50 sm:text-3xl">
+            {contact.name}
+          </h1>
+          <p className="text-xs text-slate-400">
+            Added {createdAt}
+            {updatedAt && createdAt !== updatedAt
+              ? ` · Updated ${updatedAt}`
+              : null}
           </p>
         </div>
 
-        <div className="flex flex-col items-end gap-2 text-xs">
-          <span className="inline-flex items-center rounded-full border border-rose-500/40 bg-rose-950/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-rose-100 shadow-sm">
-            <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-rose-400" />
-            Estate directory
-          </span>
-          {category && (
-            <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-950/60 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-amber-100">
-              {category}
-            </span>
-          )}
+        <div className="flex flex-wrap items-center justify-start gap-2 text-xs sm:justify-end">
           <Link
             href={`/app/estates/${estateId}/contacts`}
-            className="mt-1 text-[11px] text-slate-300 underline-offset-2 hover:text-emerald-300 hover:underline"
+            className="inline-flex items-center rounded-lg border border-slate-800 px-3 py-1.5 font-medium text-slate-300 hover:border-slate-500/70 hover:text-slate-100"
           >
             Back to contacts
           </Link>
+          <Link
+            href={`/app/estates/${estateId}/contacts/${contactId}/edit`}
+            className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-100 shadow-sm shadow-black/40 hover:bg-slate-800"
+          >
+            Edit
+          </Link>
+          <form action={deleteContact} className="inline-flex">
+            <input type="hidden" name="estateId" value={estateId} />
+            <input type="hidden" name="contactId" value={contactId} />
+            <button
+              type="submit"
+              className="inline-flex items-center rounded-lg border border-red-500/70 bg-red-900/40 px-3 py-1.5 text-xs font-semibold text-red-100 shadow-sm shadow-black/40 hover:bg-red-700/70"
+            >
+              Delete
+            </button>
+          </form>
         </div>
       </div>
 
-      {/* Edit form */}
-      <form
-        action={updateContact}
-        className="max-w-xl space-y-4 rounded-xl border border-rose-900/40 bg-slate-950/70 p-4 shadow-sm shadow-rose-950/40"
-      >
-        <input type="hidden" name="estateId" value={estateId} />
-        <input type="hidden" name="contactId" value={contactId} />
+      <div className="grid gap-6 md:grid-cols-[2fr,1fr]">
+        <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+          <h2 className="text-sm font-semibold text-slate-100">
+            Contact details
+          </h2>
 
-        <div className="space-y-1">
-          <label
-            htmlFor="name"
-            className="text-xs font-medium text-slate-200"
-          >
-            Name<span className="text-rose-400"> *</span>
-          </label>
-          <input
-            id="name"
-            name="name"
-            defaultValue={name}
-            required
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
-            placeholder="Full name"
-          />
-          <p className="text-[11px] text-slate-500">
-            Use the name you or the court would recognize on paper.
-          </p>
-        </div>
+          <dl className="grid grid-cols-1 gap-3 text-xs text-slate-300 sm:grid-cols-2">
+            <div>
+              <dt className="text-slate-500">Relationship</dt>
+              <dd className="font-medium">
+                {contact.relationship || "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Role</dt>
+              <dd className="font-medium">{contact.role ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Email</dt>
+              <dd className="font-medium">{contact.email || "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Phone</dt>
+              <dd className="font-medium">{contact.phone || "—"}</dd>
+            </div>
+          </dl>
 
-        <div className="space-y-1">
-          <label
-            htmlFor="role"
-            className="text-xs font-medium text-slate-200"
-          >
-            Role / relationship
-          </label>
-          <input
-            id="role"
-            name="role"
-            defaultValue={role}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
-            placeholder="Probate attorney, heir, creditor, vendor, etc."
-          />
-          <p className="text-[11px] text-slate-500">
-            How this person relates to the estate in plain language.
-          </p>
-        </div>
-
-        <div className="space-y-1">
-          <label
-            htmlFor="category"
-            className="text-xs font-medium text-slate-200"
-          >
-            Category
-          </label>
-          <select
-            id="category"
-            name="category"
-            defaultValue={category || ""}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
-          >
-            <option value="">Select a category (optional)</option>
-            <option value="Attorney">Attorney</option>
-            <option value="Heir / Beneficiary">Heir / Beneficiary</option>
-            <option value="Tenant">Tenant</option>
-            <option value="Creditor">Creditor</option>
-            <option value="Vendor / Contractor">Vendor / Contractor</option>
-            <option value="Court contact">Court contact</option>
-            <option value="Other">Other</option>
-          </select>
-          <p className="text-[11px] text-slate-500">
-            This powers the small category chip on the estate directory cards.
-          </p>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="space-y-1">
-            <label
-              htmlFor="email"
-              className="text-xs font-medium text-slate-200"
-            >
-              Email
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              defaultValue={email}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
-              placeholder="name@example.com"
-            />
+          <div className="space-y-2 pt-4">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Notes
+            </h3>
+            <p className="whitespace-pre-wrap text-sm text-slate-200">
+              {contact.notes || "No notes added yet."}
+            </p>
           </div>
+        </section>
 
-          <div className="space-y-1">
-            <label
-              htmlFor="phone"
-              className="text-xs font-medium text-slate-200"
-            >
-              Phone
-            </label>
-            <input
-              id="phone"
-              name="phone"
-              defaultValue={phone}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
-              placeholder="(555) 555-5555"
-            />
+        <aside className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+          <h2 className="text-sm font-semibold text-slate-100">
+            Address & metadata
+          </h2>
+          <div className="space-y-3 text-xs text-slate-300">
+            <div>
+              <p className="text-slate-500">Address</p>
+              <p className="mt-1 whitespace-pre-line text-slate-200">
+                {contact.addressLine1 || contact.addressLine2
+                  ? [
+                      contact.addressLine1,
+                      contact.addressLine2,
+                      [contact.city, contact.state]
+                        .filter(Boolean)
+                        .join(", "),
+                      contact.postalCode,
+                      contact.country,
+                    ]
+                      .filter((line) => Boolean(line && line.toString().trim()))
+                      .join("\n")
+                  : "—"}
+              </p>
+            </div>
+
+            <div className="border-t border-slate-800 pt-3 text-[11px] text-slate-500">
+              <p>Contact ID: {contactId}</p>
+            </div>
           </div>
-        </div>
-
-        <div className="space-y-1">
-          <label
-            htmlFor="notes"
-            className="text-xs font-medium text-slate-200"
-          >
-            Notes
-          </label>
-          <textarea
-            id="notes"
-            name="notes"
-            defaultValue={notes}
-            rows={4}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
-            placeholder="Bar number, claim ID, retainer details, best time to call, or relationship context."
-          />
-        </div>
-
-        <div className="flex flex-col gap-3 border-t border-slate-800 pt-3 text-xs md:flex-row md:items-center md:justify-between">
-          <p className="text-[11px] text-slate-500">
-            Changes are saved for this estate&apos;s workspace only.
-          </p>
-          <div className="flex items-center gap-3">
-            <Link
-              href={`/app/estates/${estateId}/contacts`}
-              className="text-[11px] text-slate-300 underline-offset-2 hover:text-slate-100 hover:underline"
-            >
-              Cancel
-            </Link>
-            <button
-              type="submit"
-              className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-sm font-medium text-slate-950 hover:bg-rose-400"
-            >
-              Save changes
-            </button>
-          </div>
-        </div>
-      </form>
+        </aside>
+      </div>
     </div>
   );
 }
