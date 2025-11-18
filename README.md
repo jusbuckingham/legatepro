@@ -1,12 +1,21 @@
 # 🏛️ LegatePro  
+<!-- Badges -->
+<p align="left">
+  <img src="https://img.shields.io/badge/Next.js-14-black" />
+  <img src="https://img.shields.io/badge/TypeScript-5-blue" />
+  <img src="https://img.shields.io/badge/TailwindCSS-3-38BDF8" />
+  <img src="https://img.shields.io/badge/MongoDB-Mongoose-47A248" />
+  <img src="https://img.shields.io/badge/Status-Private%20Beta-orange" />
+</p>
+
 **A modern, elegant, AI‑powered probate management platform.**
 
-LegatePro simplifies the probate process for Personal Representatives (executors) through guided workflows, automation, and structured estate management.  
-Inspired by real‑world estate administration, LegatePro aims to become the **TurboTax for probate** — calm, accurate, and empowering.
+LegatePro is a next‑generation probate administration system designed to streamline estate management for Personal Representatives (executors), attorneys, and fiduciaries.  
+With structured workflows, automation, and AI‑assisted guidance, LegatePro aims to become the *TurboTax for probate* — accurate, compliant, and built for real‑world estate complexity.
 
 ---
 
-## ✨ Core Features (MVP)
+## ✨ Core Features (MVP & Beyond)
 
 ### 📂 Estate Management  
 - Create & manage multiple estates  
@@ -64,6 +73,7 @@ Inspired by real‑world estate administration, LegatePro aims to become the **T
 - **Stripe Billing (coming soon)**  
 - **Server Actions**  
 - **Vercel Deployment**  
+- **Cloud Storage Integrations (coming soon)**  
 
 ---
 
@@ -129,6 +139,30 @@ src/
 
 ---
 
+## 💼 Investor Overview (High‑Level)
+
+### Market Need  
+Probate impacts ~3M estates annually in the U.S., yet the process remains paper‑heavy, fragmented, and stressful.  
+LegatePro modernizes this space by offering tools that Personal Representatives actually need but currently assemble across spreadsheets, PDFs, email threads, and courthouse forms.
+
+### Value Proposition  
+- Reduces administrative burden by 60–80%  
+- Prevents errors in filings, deadlines, and accounting  
+- Creates clean, court‑ready exports for judges and attorneys  
+- Offers AI‑powered document drafting and classification (future)
+
+### Target Users  
+- Personal Representatives (executors)  
+- Probate attorneys  
+- Estate planners  
+- Court‑appointed administrators
+
+### Long‑Term Vision  
+A unified ecosystem for estate administration:  
+tasks → documents → rent → utilities → expenses → filings → AI automation.
+
+---
+
 ## 🛠️ Design & Development Philosophy
 
 ### **1. Radical Simplicity**  
@@ -154,20 +188,20 @@ Inspired by:
 - Sandstone + red accents  
 - Black Renaissance aesthetic  
 
-Logo currently in design.
+Brand direction aligns with trust, clarity, and professional legal tech standards.
 
 ---
 
 ## 📌 Roadmap
 
 - [ ] Full CRUD tasks  
-- [ ] Expense receipt uploads  
+- [x] Expense module (initial version)  
 - [ ] Enhanced document index  
-- [ ] Property management + rent exports  
+- [x] Property management (core features)  
 - [ ] Utility workflows  
-- [ ] Contacts system  
+- [x] Contacts system  
 - [ ] PR timecard exports  
-- [ ] Authentication  
+- [x] Authentication  
 - [ ] Stripe billing integration  
 - [ ] PDF generation  
 - [ ] AI assistants & automation  
@@ -178,3 +212,10 @@ Logo currently in design.
 **Jus K. Buckingham**  
 Los Angeles  
 Private & Proprietary Project
+
+---
+
+## 🔐 Licensing & Confidentiality
+
+This project is private, proprietary, and not open‑source.  
+All rights reserved. Distribution or replication is prohibited without explicit written permission.
