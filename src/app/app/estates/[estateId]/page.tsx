@@ -67,6 +67,7 @@ export default async function EstatePage({ params }: PageProps) {
 
   const createdLabel = formatDate(estate.createdAt);
   const updatedLabel = formatDate(estate.updatedAt);
+  const decedentDateOfDeath = formatDate(estate.decedentDateOfDeath);
 
   return (
     <div className="space-y-6">
@@ -80,6 +81,8 @@ export default async function EstatePage({ params }: PageProps) {
             <span>{jurisdiction}</span>
             <span className="inline-block h-1 w-1 rounded-full bg-slate-600" />
             <span>Decedent: {decedentName}</span>
+            <span className="inline-block h-1 w-1 rounded-full bg-slate-600" />
+            <span>DOD: {decedentDateOfDeath}</span>
           </div>
         </div>
 
@@ -120,7 +123,7 @@ export default async function EstatePage({ params }: PageProps) {
               This is where you&apos;ll keep a running summary of the estate.
             </p>
             <div className="mt-4 rounded-lg border border-dashed border-slate-800 p-4 text-xs text-slate-500">
-              Notes UI not built yet.
+              High-level summary of this estate will live here. For detailed notes, use the Notes tab.
             </div>
           </div>
 
@@ -141,8 +144,10 @@ export default async function EstatePage({ params }: PageProps) {
             <ul className="mt-3 space-y-2 text-sm text-emerald-300">
               <li><Link href={`/app/estates/${id}/tasks`} className="hover:underline">→ View tasks</Link></li>
               <li><Link href={`/app/estates/${id}/documents`} className="hover:underline">→ View documents</Link></li>
-              <li><Link href={`/app/estates/${id}/expenses`} className="hover:underline">→ View expenses</Link></li>
               <li><Link href={`/app/estates/${id}/properties`} className="hover:underline">→ View properties</Link></li>
+              <li><Link href={`/app/estates/${id}/contacts`} className="hover:underline">→ View contacts</Link></li>
+              <li><Link href={`/app/estates/${id}/notes`} className="hover:underline">→ View notes</Link></li>
+              <li><Link href={`/app/estates/${id}/expenses`} className="hover:underline">→ View expenses</Link></li>
             </ul>
           </div>
 

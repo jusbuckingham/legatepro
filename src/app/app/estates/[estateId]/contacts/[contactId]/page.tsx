@@ -1,109 +1,139 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-
-import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { Contact, type ContactDocument } from "@/models/Contact";
+import { Contact } from "@/models/Contact";
 
-interface PageProps {
+type PageProps = {
   params: Promise<{
     estateId: string;
     contactId: string;
   }>;
-}
+};
 
-async function deleteContact(formData: FormData): Promise<void> {
-  "use server";
+type ContactDoc = {
+  _id: string;
+  ownerId: string;
+  estateId: string;
+  name: string;
+  relationship?: string;
+  role?: "PERSONAL_REPRESENTATIVE" | "BENEFICIARY" | "CREDITOR" | "ATTORNEY" | "OTHER";
+  email?: string;
+  phone?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
+  notes?: string;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
 
-  const estateId = formData.get("estateId");
-  const contactId = formData.get("contactId");
-
-  if (typeof estateId !== "string" || typeof contactId !== "string") {
-    return;
-  }
-
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect(`/login?callbackUrl=/app/estates/${estateId}/contacts/${contactId}`);
-  }
-
-  await connectToDatabase();
-
-  await Contact.findOneAndDelete({
-    _id: contactId,
-    estateId,
-    ownerId: session.user.id,
+function formatDate(value: Date | string | undefined): string {
+  if (!value) return "N/A";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "N/A";
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
-
-  redirect(`/app/estates/${estateId}/contacts`);
 }
+
+function roleLabel(role?: ContactDoc["role"]): string {
+  if (!role) return "Unspecified";
+  switch (role) {
+    case "PERSONAL_REPRESENTATIVE":
+      return "Personal Representative";
+    case "BENEFICIARY":
+      return "Beneficiary";
+    case "CREDITOR":
+      return "Creditor";
+    case "ATTORNEY":
+      return "Attorney";
+    case "OTHER":
+      return "Other";
+    default:
+      return role;
+  }
+}
+
+export const metadata = {
+  title: "Contact Details | LegatePro",
+};
 
 export default async function ContactDetailPage({ params }: PageProps) {
   const { estateId, contactId } = await params;
 
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect(`/login?callbackUrl=/app/estates/${estateId}/contacts/${contactId}`);
-  }
-
   await connectToDatabase();
 
-  const contact = await Contact.findOne({
+  const doc = await Contact.findOne({
     _id: contactId,
     estateId,
-    ownerId: session.user.id,
-  }).lean<ContactDocument | null>();
+  }).lean<ContactDoc | null>();
 
-  if (!contact) {
+  if (!doc) {
     notFound();
   }
 
-  const createdAt = contact.createdAt
-    ? new Date(contact.createdAt).toLocaleString()
-    : "";
-  const updatedAt = contact.updatedAt
-    ? new Date(contact.updatedAt).toLocaleString()
-    : "";
+  const contact: ContactDoc = {
+    ...doc,
+    _id: doc._id.toString(),
+    estateId: doc.estateId.toString(),
+    ownerId: doc.ownerId.toString(),
+  };
+
+  async function deleteContact() {
+    "use server";
+
+    await connectToDatabase();
+    await Contact.findOneAndDelete({
+      _id: contactId,
+      estateId,
+    });
+
+    redirect(`/app/estates/${estateId}/contacts`);
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col justify-between gap-4 border-b border-slate-800 pb-4 sm:flex-row sm:items-center">
-        <div className="space-y-1">
-          <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+    <div className="space-y-6 p-6">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-wide text-rose-400/70">
             Contact
           </p>
-          <h1 className="text-2xl font-semibold text-slate-50 sm:text-3xl">
-            {contact.name}
+          <h1 className="mt-1 text-2xl font-semibold text-slate-50">
+            {contact.name || "Unnamed Contact"}
           </h1>
-          <p className="text-xs text-slate-400">
-            Added {createdAt}
-            {updatedAt && createdAt !== updatedAt
-              ? ` · Updated ${updatedAt}`
-              : null}
+          <p className="mt-1 text-sm text-slate-400">
+            {contact.relationship ? `${contact.relationship}` : "Relationship not set"}
+            {contact.role ? (
+              <>
+                {" · "}
+                <span className="font-medium text-rose-300">
+                  {roleLabel(contact.role)}
+                </span>
+              </>
+            ) : null}
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center justify-start gap-2 text-xs sm:justify-end">
-          <Link
-            href={`/app/estates/${estateId}/contacts`}
-            className="inline-flex items-center rounded-lg border border-slate-800 px-3 py-1.5 font-medium text-slate-300 hover:border-slate-500/70 hover:text-slate-100"
-          >
-            Back to contacts
-          </Link>
+        <div className="flex items-center gap-2">
           <Link
             href={`/app/estates/${estateId}/contacts/${contactId}/edit`}
-            className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-100 shadow-sm shadow-black/40 hover:bg-slate-800"
+            className="rounded-lg border border-rose-500/60 bg-rose-500/10 px-3 py-1.5 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20"
           >
-            Edit
+            Edit contact
           </Link>
-          <form action={deleteContact} className="inline-flex">
-            <input type="hidden" name="estateId" value={estateId} />
-            <input type="hidden" name="contactId" value={contactId} />
+
+          <form action={deleteContact}>
             <button
               type="submit"
-              className="inline-flex items-center rounded-lg border border-red-500/70 bg-red-900/40 px-3 py-1.5 text-xs font-semibold text-red-100 shadow-sm shadow-black/40 hover:bg-red-700/70"
+              className="rounded-lg border border-red-700/60 bg-red-900/30 px-3 py-1.5 text-sm font-medium text-red-100 transition hover:bg-red-900/60"
             >
               Delete
             </button>
@@ -111,71 +141,144 @@ export default async function ContactDetailPage({ params }: PageProps) {
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-[2fr,1fr]">
-        <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-          <h2 className="text-sm font-semibold text-slate-100">
-            Contact details
-          </h2>
+      {/* Meta */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Role
+          </p>
+          <p className="mt-2 inline-flex rounded-full bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-200 ring-1 ring-rose-500/30">
+            {roleLabel(contact.role)}
+          </p>
+        </div>
 
-          <dl className="grid grid-cols-1 gap-3 text-xs text-slate-300 sm:grid-cols-2">
-            <div>
-              <dt className="text-slate-500">Relationship</dt>
-              <dd className="font-medium">
-                {contact.relationship || "—"}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Role</dt>
-              <dd className="font-medium">{contact.role ?? "—"}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Email</dt>
-              <dd className="font-medium">{contact.email || "—"}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Phone</dt>
-              <dd className="font-medium">{contact.phone || "—"}</dd>
-            </div>
-          </dl>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Created
+          </p>
+          <p className="mt-2 text-sm text-slate-200">
+            {formatDate(contact.createdAt)}
+          </p>
+        </div>
 
-          <div className="space-y-2 pt-4">
-            <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Notes
-            </h3>
-            <p className="whitespace-pre-wrap text-sm text-slate-200">
-              {contact.notes || "No notes added yet."}
+        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Last updated
+          </p>
+          <p className="mt-2 text-sm text-slate-200">
+            {formatDate(contact.updatedAt)}
+          </p>
+        </div>
+      </div>
+
+      {/* Content grid */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Left: primary details */}
+        <div className="space-y-4 lg:col-span-2">
+          {/* Contact details */}
+          <section className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+            <h2 className="text-sm font-semibold text-slate-100">
+              Contact details
+            </h2>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-400">
+                  Name
+                </p>
+                <p className="mt-1 text-sm text-slate-100">
+                  {contact.name || "—"}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-400">
+                  Relationship
+                </p>
+                <p className="mt-1 text-sm text-slate-100">
+                  {contact.relationship || "—"}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-400">
+                  Email
+                </p>
+                <p className="mt-1 text-sm text-slate-100">
+                  {contact.email || "—"}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-400">
+                  Phone
+                </p>
+                <p className="mt-1 text-sm text-slate-100">
+                  {contact.phone || "—"}
+                </p>
+              </div>
+            </div>
+          </section>
+
+          {/* Notes */}
+          <section className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+            <h2 className="text-sm font-semibold text-slate-100">Notes</h2>
+            <p className="mt-2 whitespace-pre-wrap text-sm text-slate-200">
+              {contact.notes && contact.notes.trim().length > 0
+                ? contact.notes
+                : "No notes added yet."}
             </p>
-          </div>
-        </section>
+          </section>
+        </div>
 
-        <aside className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-          <h2 className="text-sm font-semibold text-slate-100">
-            Address & metadata
-          </h2>
-          <div className="space-y-3 text-xs text-slate-300">
-            <div>
-              <p className="text-slate-500">Address</p>
-              <p className="mt-1 whitespace-pre-line text-slate-200">
-                {contact.addressLine1 || contact.addressLine2
-                  ? [
-                      contact.addressLine1,
-                      contact.addressLine2,
-                      [contact.city, contact.state]
-                        .filter(Boolean)
-                        .join(", "),
-                      contact.postalCode,
-                      contact.country,
-                    ]
-                      .filter((line) => Boolean(line && line.toString().trim()))
-                      .join("\n")
-                  : "—"}
-              </p>
-            </div>
+        {/* Right: address */}
+        <aside className="space-y-4">
+          <section className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+            <h2 className="text-sm font-semibold text-slate-100">Address</h2>
+            <div className="mt-3 space-y-1 text-sm text-slate-200">
+              {contact.addressLine1 || contact.addressLine2 ? (
+                <>
+                  {contact.addressLine1 && <p>{contact.addressLine1}</p>}
+                  {contact.addressLine2 && <p>{contact.addressLine2}</p>}
+                </>
+              ) : (
+                <p>Address not provided.</p>
+              )}
 
-            <div className="border-t border-slate-800 pt-3 text-[11px] text-slate-500">
-              <p>Contact ID: {contactId}</p>
+              {(contact.city || contact.state || contact.postalCode) && (
+                <p>
+                  {contact.city && <span>{contact.city}</span>}
+                  {contact.city && (contact.state || contact.postalCode) && ", "}
+                  {contact.state && <span>{contact.state}</span>}
+                  {contact.postalCode && (
+                    <>
+                      {" "}
+                      <span>{contact.postalCode}</span>
+                    </>
+                  )}
+                </p>
+              )}
+
+              {contact.country && <p>{contact.country}</p>}
             </div>
-          </div>
+          </section>
+
+          <section className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 text-sm text-slate-400">
+            <p className="font-medium text-slate-200">Estate navigation</p>
+            <div className="mt-3 space-y-2">
+              <Link
+                href={`/app/estates/${estateId}`}
+                className="block text-sm text-rose-300 underline-offset-2 hover:underline"
+              >
+                Back to estate overview
+              </Link>
+              <Link
+                href={`/app/estates/${estateId}/contacts`}
+                className="block text-sm text-rose-300 underline-offset-2 hover:underline"
+              >
+                View all contacts for this estate
+              </Link>
+            </div>
+          </section>
         </aside>
       </div>
     </div>

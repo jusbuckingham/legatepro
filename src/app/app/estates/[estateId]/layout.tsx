@@ -12,10 +12,11 @@ function getNavItems(estateId: string) {
   return [
     { label: "Overview", href: `/app/estates/${estateId}` },
     { label: "Tasks", href: `/app/estates/${estateId}/tasks` },
-    { label: "Expenses", href: `/app/estates/${estateId}/expenses` },
+    { label: "Properties", href: `/app/estates/${estateId}/properties` },
     { label: "Documents", href: `/app/estates/${estateId}/documents` },
     { label: "Contacts", href: `/app/estates/${estateId}/contacts` },
-    { label: "Properties", href: `/app/estates/${estateId}/properties` },
+    { label: "Notes", href: `/app/estates/${estateId}/notes` },
+    { label: "Expenses", href: `/app/estates/${estateId}/expenses` },
     { label: "Rent", href: `/app/estates/${estateId}/rent` },
     { label: "Timecard", href: `/app/estates/${estateId}/time` },
   ];
@@ -32,7 +33,7 @@ export default function EstateLayout({ children }: EstateLayoutProps) {
         <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
           <h1 className="text-sm font-semibold text-slate-100">Estate workspace</h1>
           <p className="mt-1 text-xs text-slate-400">
-            Switch between tasks, expenses, documents, properties, rent, and your timecard.
+            Switch between tasks, properties, documents, contacts, notes, expenses, rent, and your timecard.
           </p>
 
           <nav className="mt-3 space-y-1 text-sm">
