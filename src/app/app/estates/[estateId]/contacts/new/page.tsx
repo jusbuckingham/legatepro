@@ -6,15 +6,25 @@ import { revalidatePath } from "next/cache";
 
 import { connectToDatabase } from "../../../../../../lib/db";
 import { Contact as ContactModel } from "../../../../../../models/Contact";
+import { auth } from "../../../../../../lib/auth";
 
 interface PageProps {
-  params: {
+  params: Promise<{
     estateId: string;
-  };
+  }>;
 }
 
 async function createContact(formData: FormData) {
   "use server";
+
+  // Ensure we have an authenticated user for ownerId
+  const session = await auth();
+  const ownerId = session?.user?.id;
+
+  if (!ownerId) {
+    // If somehow not logged in, just bounce to login
+    redirect("/login");
+  }
 
   const estateId = formData.get("estateId");
   if (typeof estateId !== "string" || !estateId) {
@@ -22,10 +32,18 @@ async function createContact(formData: FormData) {
   }
 
   const name = formData.get("name")?.toString().trim() ?? "";
-  const role = formData.get("role")?.toString().trim() || "";
+  const rawRole = formData.get("role")?.toString().trim() || "";
   const category = formData.get("category")?.toString().trim() || "";
   const email = formData.get("email")?.toString().trim() || "";
   const phone = formData.get("phone")?.toString().trim() || "";
+
+  const addressLine1 = formData.get("addressLine1")?.toString().trim() || "";
+  const addressLine2 = formData.get("addressLine2")?.toString().trim() || "";
+  const city = formData.get("city")?.toString().trim() || "";
+  const state = formData.get("state")?.toString().trim() || "";
+  const postalCode = formData.get("postalCode")?.toString().trim() || "";
+  const country = formData.get("country")?.toString().trim() || "";
+
   const notes = formData.get("notes")?.toString().trim() || "";
 
   if (!name) {
@@ -33,15 +51,42 @@ async function createContact(formData: FormData) {
     return;
   }
 
+  // Map the free-text role input into your enum values.
+  // Anything that doesn't match a known role is ignored so it won't break validation.
+  let normalizedRole: string | undefined;
+  if (rawRole) {
+    const r = rawRole.toLowerCase();
+
+    if (r === "personal representative" || r === "personal rep" || r === "pr") {
+      normalizedRole = "PERSONAL_REPRESENTATIVE";
+    } else if (r === "creditor") {
+      normalizedRole = "CREDITOR";
+    } else if (r === "attorney" || r === "lawyer") {
+      normalizedRole = "ATTORNEY";
+    } else if (r === "heir" || r === "beneficiary") {
+      normalizedRole = "BENEFICIARY";
+    } else {
+      // Unknown roles are stored as plain language in category/notes instead
+      normalizedRole = undefined;
+    }
+  }
+
   await connectToDatabase();
 
   await ContactModel.create({
+    ownerId,
     estateId,
     name,
-    role: role || undefined,
+    role: normalizedRole,
     category: category || undefined,
     email: email || undefined,
     phone: phone || undefined,
+    addressLine1: addressLine1 || undefined,
+    addressLine2: addressLine2 || undefined,
+    city: city || undefined,
+    state: state || undefined,
+    postalCode: postalCode || undefined,
+    country: country || undefined,
     notes: notes || undefined,
   });
 
@@ -49,8 +94,8 @@ async function createContact(formData: FormData) {
   redirect(`/app/estates/${estateId}/contacts`);
 }
 
-export default function NewContactPage({ params }: PageProps) {
-  const { estateId } = params;
+export default async function NewContactPage({ params }: PageProps) {
+  const { estateId } = await params;
 
   return (
     <div className="space-y-6 p-6">
@@ -205,6 +250,98 @@ export default function NewContactPage({ params }: PageProps) {
 
         <div className="space-y-1">
           <label
+            htmlFor="addressLine1"
+            className="text-xs font-medium text-slate-200"
+          >
+            Address Line 1
+          </label>
+          <input
+            id="addressLine1"
+            name="addressLine1"
+            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
+            placeholder="Street address"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label
+            htmlFor="addressLine2"
+            className="text-xs font-medium text-slate-200"
+          >
+            Address Line 2
+          </label>
+          <input
+            id="addressLine2"
+            name="addressLine2"
+            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
+            placeholder="Apartment, suite, etc."
+          />
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="space-y-1">
+            <label
+              htmlFor="city"
+              className="text-xs font-medium text-slate-200"
+            >
+              City
+            </label>
+            <input
+              id="city"
+              name="city"
+              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
+              placeholder="City"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label
+              htmlFor="state"
+              className="text-xs font-medium text-slate-200"
+            >
+              State
+            </label>
+            <input
+              id="state"
+              name="state"
+              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
+              placeholder="State"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label
+              htmlFor="postalCode"
+              className="text-xs font-medium text-slate-200"
+            >
+              Postal Code
+            </label>
+            <input
+              id="postalCode"
+              name="postalCode"
+              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
+              placeholder="ZIP"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <label
+            htmlFor="country"
+            className="text-xs font-medium text-slate-200"
+          >
+            Country
+          </label>
+          <input
+            id="country"
+            name="country"
+            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
+            placeholder="Country"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label
             htmlFor="notes"
             className="text-xs font-medium text-slate-200"
           >
@@ -221,7 +358,8 @@ export default function NewContactPage({ params }: PageProps) {
 
         <div className="flex flex-col gap-3 border-t border-slate-800 pt-3 text-xs md:flex-row md:items-center md:justify-between">
           <p className="text-[11px] text-slate-500">
-            This contact will only be visible inside this estate&apos;s workspace.
+            This contact will only be visible inside this estate&apos;s
+            workspace.
           </p>
           <div className="flex items-center gap-3">
             <Link
