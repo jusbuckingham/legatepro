@@ -1,350 +1,189 @@
-import { connectToDatabase } from "../../../../../lib/db";
-import { EstateProperty } from "../../../../../models/EstateProperty";
-import { redirect } from "next/navigation";
+// src/app/app/estates/[estateId]/properties/page.tsx
+import { DeletePropertyButton } from "@/components/estate/DeletePropertyButton";
 import Link from "next/link";
+import { connectToDatabase } from "@/lib/db";
+import { EstateProperty } from "@/models/EstateProperty";
 
-interface EstatePropertiesPageProps {
-  params: {
-    estateId: string;
-  };
-}
-
-interface EstatePropertyItem {
-  _id: { toString(): string };
-  estateId: string;
-  label: string;
-  addressLine1?: string;
+type EstatePropertyItem = {
+  _id: string | { toString(): string };
+  name?: string;
+  label?: string;
+  type?: string;
+  address?: string;
   city?: string;
   state?: string;
-  postalCode?: string;
-  propertyType: string;
-  bedrooms?: number;
-  bathrooms?: number;
-  monthlyRentTarget?: number;
-  notes?: string;
+  estimatedValue?: number;
+  ownershipPercentage?: number;
+  createdAt?: string | Date;
+};
+
+interface PageProps {
+  params: Promise<{ estateId: string }>;
 }
 
-export const dynamic = "force-dynamic";
-
-async function createProperty(formData: FormData) {
-  "use server";
-
-  const estateId = formData.get("estateId")?.toString();
-  const label = formData.get("label")?.toString().trim();
-  const addressLine1 = formData.get("addressLine1")?.toString().trim() || "";
-  const city = formData.get("city")?.toString().trim() || "";
-  const state = formData.get("state")?.toString().trim() || "";
-  const postalCode = formData.get("postalCode")?.toString().trim() || "";
-  const propertyType = formData.get("propertyType")?.toString() || "SFR";
-  const bedroomsRaw = formData.get("bedrooms")?.toString() || "";
-  const bathroomsRaw = formData.get("bathrooms")?.toString() || "";
-  const monthlyRentTargetRaw =
-    formData.get("monthlyRentTarget")?.toString() || "";
-  const notes = formData.get("notes")?.toString().trim() || "";
-
-  if (!estateId || !label) return;
-
-  const bedrooms = bedroomsRaw ? Number(bedroomsRaw) : undefined;
-  const bathrooms = bathroomsRaw ? Number(bathroomsRaw) : undefined;
-  const monthlyRentTarget = monthlyRentTargetRaw
-    ? Number(monthlyRentTargetRaw)
-    : undefined;
-
+async function getProperties(estateId: string): Promise<EstatePropertyItem[]> {
   await connectToDatabase();
-
-  await EstateProperty.create({
-    estateId,
-    label,
-    addressLine1,
-    city,
-    state,
-    postalCode,
-    propertyType,
-    bedrooms,
-    bathrooms,
-    monthlyRentTarget,
-    notes,
-  });
-
-  redirect(`/app/estates/${estateId}/properties`);
+  const properties = await EstateProperty.find({ estateId })
+    .sort({ createdAt: -1 })
+    .lean();
+  return properties as EstatePropertyItem[];
 }
 
-export default async function EstatePropertiesPage({
-  params,
-}: EstatePropertiesPageProps) {
-  const { estateId } = params;
+function formatCurrency(value?: number): string {
+  if (value == null || Number.isNaN(value)) return "—";
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0
+    }).format(value);
+  } catch {
+    return String(value);
+  }
+}
 
-  await connectToDatabase();
+function formatDate(value?: string | Date): string {
+  if (!value) return "—";
+  try {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric"
+    });
+  } catch {
+    return "—";
+  }
+}
 
-  const rawProperties = await EstateProperty.find({ estateId })
-    .sort({ label: 1 })
-    .lean()
-    .exec();
+export default async function EstatePropertiesPage({ params }: PageProps) {
+  const { estateId } = await params;
+  const properties = await getProperties(estateId);
 
-  const properties = rawProperties as unknown as EstatePropertyItem[];
+  const hasProperties = properties.length > 0;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+      {/* Header */}
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div>
-          <h2 className="text-xl font-semibold tracking-tight">Properties</h2>
-          <p className="text-sm text-slate-400">
-            Track all real estate associated with this estate, including rental
-            units, vacant lots, and the primary residence.
+          <p className="mb-1 text-xs uppercase tracking-[0.18em] text-slate-500">
+            Properties
           </p>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
+            Estate properties & assets
+          </h1>
+          <p className="mt-1 text-xs text-slate-400">
+            Track every house, parcel, vehicle, and financial account tied to
+            this estate.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <Link
+            href={`/app/estates/${estateId}`}
+            className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium text-slate-100 hover:bg-slate-800"
+          >
+            Back to estate
+          </Link>
+          <Link
+            href={`/app/estates/${estateId}/properties/new`}
+            className="inline-flex items-center rounded-lg border border-emerald-500 bg-emerald-500/10 px-3 py-1.5 font-medium text-emerald-100 hover:bg-emerald-500/20"
+          >
+            Add property
+          </Link>
         </div>
       </div>
 
-      {/* New property form */}
-      <form
-        action={createProperty}
-        className="space-y-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4"
-      >
-        <input type="hidden" name="estateId" value={estateId} />
-
-        <div className="grid gap-3 md:grid-cols-[1.4fr,1fr]">
-          <div className="space-y-1">
-            <label htmlFor="label" className="text-xs font-medium text-slate-200">
-              Property label
-            </label>
-            <input
-              id="label"
-              name="label"
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50 outline-none focus:border-emerald-400"
-              placeholder="e.g. Dickerson house, Tuller upper/lower"
-              required
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label
-              htmlFor="propertyType"
-              className="text-xs font-medium text-slate-200"
+      {!hasProperties ? (
+        <div className="rounded-xl border border-dashed border-slate-800 bg-slate-950/60 p-6 text-center text-sm text-slate-400">
+          <p className="mb-2 text-slate-200">
+            No properties recorded for this estate yet.
+          </p>
+          <p className="text-xs text-slate-500">
+            Start by adding the primary residence, rental properties, land, or
+            any significant assets you need to track.
+          </p>
+          <div className="mt-4">
+            <Link
+              href={`/app/estates/${estateId}/properties/new`}
+              className="inline-flex items-center rounded-lg border border-emerald-500 bg-emerald-500/10 px-4 py-2 text-xs font-medium text-emerald-100 hover:bg-emerald-500/20"
             >
-              Type
-            </label>
-            <select
-              id="propertyType"
-              name="propertyType"
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs uppercase tracking-wide text-slate-100 outline-none focus:border-emerald-400"
-              defaultValue="SFR"
-            >
-              <option value="SFR">Single-family</option>
-              <option value="MULTI">Multi-family</option>
-              <option value="CONDO">Condo</option>
-              <option value="LAND">Land</option>
-              <option value="OTHER">Other</option>
-            </select>
+              Add first property
+            </Link>
           </div>
         </div>
-
-        <div className="grid gap-3 md:grid-cols-[1.6fr,1fr,0.8fr]">
-          <div className="space-y-1">
-            <label
-              htmlFor="addressLine1"
-              className="text-xs font-medium text-slate-200"
-            >
-              Address
-            </label>
-            <input
-              id="addressLine1"
-              name="addressLine1"
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50 outline-none focus:border-emerald-400"
-              placeholder="Street address"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label htmlFor="city" className="text-xs font-medium text-slate-200">
-              City
-            </label>
-            <input
-              id="city"
-              name="city"
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50 outline-none focus:border-emerald-400"
-              placeholder="City"
-            />
-          </div>
-
-          <div className="grid grid-cols-[1.1fr,1.2fr] gap-2">
-            <div className="space-y-1">
-              <label
-                htmlFor="state"
-                className="text-xs font-medium text-slate-200"
-              >
-                State
-              </label>
-              <input
-                id="state"
-                name="state"
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50 outline-none focus:border-emerald-400"
-                placeholder="MI"
-              />
-            </div>
-            <div className="space-y-1">
-              <label
-                htmlFor="postalCode"
-                className="text-xs font-medium text-slate-200"
-              >
-                ZIP
-              </label>
-              <input
-                id="postalCode"
-                name="postalCode"
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50 outline-none focus:border-emerald-400"
-                placeholder="ZIP"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-[1fr,1fr]">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label
-                htmlFor="bedrooms"
-                className="text-xs font-medium text-slate-200"
-              >
-                Bedrooms
-              </label>
-              <input
-                id="bedrooms"
-                name="bedrooms"
-                type="number"
-                min="0"
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50 outline-none focus:border-emerald-400"
-              />
-            </div>
-            <div className="space-y-1">
-              <label
-                htmlFor="bathrooms"
-                className="text-xs font-medium text-slate-200"
-              >
-                Bathrooms
-              </label>
-              <input
-                id="bathrooms"
-                name="bathrooms"
-                type="number"
-                min="0"
-                step="0.5"
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50 outline-none focus:border-emerald-400"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <label
-              htmlFor="monthlyRentTarget"
-              className="text-xs font-medium text-slate-200"
-            >
-              Target monthly rent (optional)
-            </label>
-            <input
-              id="monthlyRentTarget"
-              name="monthlyRentTarget"
-              type="number"
-              min="0"
-              step="0.01"
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50 outline-none focus:border-emerald-400"
-              placeholder="0.00"
-            />
-          </div>
-        </div>
-
-        <div className="space-y-1">
-          <label htmlFor="notes" className="text-xs font-medium text-slate-200">
-            Notes (optional)
-          </label>
-          <textarea
-            id="notes"
-            name="notes"
-            rows={2}
-            className="w-full resize-none rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50 outline-none focus:border-emerald-400"
-            placeholder="e.g. current tenant details, repairs needed, realtor contact"
-          />
-        </div>
-
-        <button
-          type="submit"
-          className="inline-flex items-center justify-center rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-medium text-slate-950 hover:bg-emerald-400"
-        >
-          Add property
-        </button>
-      </form>
-
-      {/* Properties table */}
-      {properties.length === 0 ? (
-        <p className="text-sm text-slate-400">
-          No properties recorded yet. Add each house, multi-family, condo, or
-          land parcel associated with this estate.
-        </p>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-900/40">
+        <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60">
           <table className="min-w-full text-left text-sm">
-            <thead className="bg-slate-900/80 text-xs uppercase tracking-wide text-slate-400">
+            <thead className="border-b border-slate-800 bg-slate-950/80 text-xs uppercase tracking-[0.16em] text-slate-500">
               <tr>
-                <th className="px-3 py-2">Label</th>
-                <th className="px-3 py-2">Type</th>
-                <th className="px-3 py-2">Address</th>
-                <th className="px-3 py-2">Beds/Baths</th>
-                <th className="px-3 py-2 text-right">Target rent</th>
-                <th className="px-3 py-2 text-right">Actions</th>
+                <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Location</th>
+                <th className="px-4 py-3">Value</th>
+                <th className="px-4 py-3">Ownership</th>
+                <th className="px-4 py-3">Added</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody>
-              {properties.map((property: EstatePropertyItem) => {
-                const addressParts = [
-                  property.addressLine1,
-                  property.city,
-                  property.state,
-                  property.postalCode,
-                ].filter(Boolean);
+            <tbody className="divide-y divide-slate-800 text-xs text-slate-200">
+              {properties.map((property) => {
+                const id =
+                  typeof property._id === "string"
+                    ? property._id
+                    : property._id?.toString?.() ?? "";
 
-                const typeLabel =
-                  property.propertyType === "SFR"
-                    ? "Single-family"
-                    : property.propertyType === "MULTI"
-                    ? "Multi-family"
-                    : property.propertyType === "CONDO"
-                    ? "Condo"
-                    : property.propertyType === "LAND"
-                    ? "Land"
-                    : "Other";
+                const name = property.name || property.label || "Untitled property";
+                const type = property.type || "—";
+                const location = [property.city, property.state]
+                  .filter(Boolean)
+                  .join(", ");
 
                 return (
-                  <tr
-                    key={property._id.toString()}
-                    className="border-t border-slate-800"
-                  >
-                    <td className="px-3 py-2 align-top text-slate-100">
-                      {property.label}
+                  <tr key={id} className="hover:bg-slate-900/60">
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-slate-50">
+                        <Link
+                          href={`/app/estates/${estateId}/properties/${id}`}
+                          className="hover:underline"
+                        >
+                          {name}
+                        </Link>
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-slate-500">
+                        {property.address || "No address"}
+                      </div>
                     </td>
-                    <td className="px-3 py-2 align-top text-slate-300">
-                      {typeLabel}
+                    <td className="px-4 py-3 text-slate-300">{type}</td>
+                    <td className="px-4 py-3 text-slate-300">
+                      {location || "—"}
                     </td>
-                    <td className="px-3 py-2 align-top text-slate-300">
-                      {addressParts.length > 0
-                        ? addressParts.join(", ")
+                    <td className="px-4 py-3">
+                      {formatCurrency(property.estimatedValue)}
+                    </td>
+                    <td className="px-4 py-3">
+                      {property.ownershipPercentage != null
+                        ? `${property.ownershipPercentage}%`
                         : "—"}
                     </td>
-                    <td className="px-3 py-2 align-top text-slate-300">
-                      {property.bedrooms ?? "-"}
-                      /
-                      {property.bathrooms ?? "-"}
+                    <td className="px-4 py-3">
+                      {formatDate(property.createdAt)}
                     </td>
-                    <td className="px-3 py-2 align-top text-right text-slate-100">
-                      {property.monthlyRentTarget
-                        ? `$${Number(property.monthlyRentTarget).toFixed(2)}`
-                        : "—"}
-                    </td>
-                    <td className="px-3 py-2 align-top text-right">
-                      <Link
-                        href={`/app/estates/${estateId}/properties/${property._id.toString()}`}
-                        className="text-xs font-medium text-emerald-400 hover:text-emerald-300"
-                      >
-                        Open workspace
-                      </Link>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex justify-end gap-2">
+                        <Link
+                          href={`/app/estates/${estateId}/properties/${id}/edit`}
+                          className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800"
+                        >
+                          Edit
+                        </Link>
+                        <DeletePropertyButton
+                          estateId={estateId}
+                          propertyId={id}
+                          propertyTitle={name}
+                        />
+                      </div>
                     </td>
                   </tr>
                 );

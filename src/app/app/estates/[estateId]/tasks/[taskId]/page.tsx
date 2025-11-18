@@ -1,9 +1,19 @@
-// src/app/app/estates/[estateId]/tasks/[taskId]/page.tsx
-import { notFound, redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { connectToDatabase } from "@/lib/db";
+import { Task } from "@/models/Task";
 
-import { connectToDatabase } from "../../../../../../lib/db";
-import { Task } from "../../../../../../models/Task";
+interface TaskDoc {
+  _id: string | { toString(): string };
+  subject: string;
+  description?: string;
+  notes?: string;
+  status: "OPEN" | "DONE";
+  priority: "LOW" | "MEDIUM" | "HIGH";
+  date?: Date | string | null;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
+}
 
 interface PageProps {
   params: Promise<{
@@ -12,16 +22,8 @@ interface PageProps {
   }>;
 }
 
-interface TaskDoc {
-  _id: unknown;
-  estateId: unknown;
-  status?: string;
-  date?: string | Date;
-  priority?: string;
-  subject?: string;
-  description?: string;
-  createdAt?: string | Date;
-  completedAt?: string | Date;
+function isValidObjectId(value: string): boolean {
+  return /^[0-9a-fA-F]{24}$/.test(value);
 }
 
 async function loadTask(
@@ -30,79 +32,81 @@ async function loadTask(
 ): Promise<TaskDoc | null> {
   await connectToDatabase();
 
+  // If the id is not a valid ObjectId (e.g. the literal string "new"),
+  // treat it as not found instead of throwing a CastError.
+  if (!isValidObjectId(taskId)) {
+    return null;
+  }
+
   const doc = await Task.findOne({
     _id: taskId,
     estateId,
   }).lean<TaskDoc | null>();
 
-  return doc;
+  return doc ?? null;
 }
 
-async function updateTask(formData: FormData) {
-  "use server";
+function formatDate(value?: Date | string | null): string {
+  if (!value) return "—";
+  const date =
+    typeof value === "string" ? new Date(value) : (value as Date);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+  });
+}
 
-  const estateId = formData.get("estateId");
-  const taskId = formData.get("taskId");
+function formatDateTime(value?: Date | string | null): string {
+  if (!value) return "—";
+  const date =
+    typeof value === "string" ? new Date(value) : (value as Date);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
-  if (typeof estateId !== "string" || typeof taskId !== "string") {
-    return;
+function statusLabel(status: "OPEN" | "DONE"): string {
+  return status === "DONE" ? "Completed" : "Open";
+}
+
+function priorityLabel(priority: "LOW" | "MEDIUM" | "HIGH"): string {
+  switch (priority) {
+    case "HIGH":
+      return "High";
+    case "LOW":
+      return "Low";
+    default:
+      return "Medium";
   }
+}
 
-  const date = formData.get("date")?.toString() || "";
-  const subject = formData.get("subject")?.toString().trim() ?? "";
-  const description = formData.get("description")?.toString().trim() ?? "";
-  const priority = (formData.get("priority")?.toString() || "MEDIUM").toUpperCase();
-  const statusRaw = formData.get("status")?.toString().toUpperCase() || "OPEN";
-  const status = statusRaw === "DONE" ? "DONE" : "OPEN";
-
-  if (!subject || !description || !date) {
-    return;
-  }
-
-  await connectToDatabase();
-
-  const now = new Date();
-
-  const update: Record<string, unknown> = {
-    date,
-    subject,
-    description,
-    priority,
-    status,
-  };
-
+function statusBadgeClass(status: "OPEN" | "DONE"): string {
   if (status === "DONE") {
-    update.completedAt = now;
-  } else {
-    update.completedAt = undefined;
+    return "bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/40";
   }
-
-  await Task.findOneAndUpdate(
-    { _id: taskId, estateId },
-    update,
-    { new: true }
-  );
-
-  revalidatePath(`/app/estates/${estateId}/tasks`);
-  redirect(`/app/estates/${estateId}/tasks`);
+  return "bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/40";
 }
 
-function formatDateInput(value?: string | Date): string {
-  if (!value) return "";
-  const d = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  const year = d.getFullYear();
-  const month = `${d.getMonth() + 1}`.padStart(2, "0");
-  const day = `${d.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
+function priorityBadgeClass(priority: "LOW" | "MEDIUM" | "HIGH"): string {
+  switch (priority) {
+    case "HIGH":
+      return "bg-rose-500/10 text-rose-300 ring-1 ring-rose-500/40";
+    case "LOW":
+      return "bg-slate-600/20 text-slate-200 ring-1 ring-slate-500/40";
+    default:
+      return "bg-sky-500/10 text-sky-300 ring-1 ring-sky-500/40";
+  }
 }
 
 export default async function TaskDetailPage({ params }: PageProps) {
   const { estateId, taskId } = await params;
-
-  if (!estateId || !taskId) {
-    notFound();
-  }
 
   const task = await loadTask(estateId, taskId);
 
@@ -110,180 +114,140 @@ export default async function TaskDetailPage({ params }: PageProps) {
     notFound();
   }
 
-  const subject = task.subject ?? "";
-  const description = task.description ?? "";
-  const priority = (task.priority || "MEDIUM").toUpperCase();
-  const status = (task.status || "OPEN").toUpperCase();
-  const dateValue =
-    task.date ?? task.createdAt ?? new Date().toISOString().slice(0, 10);
-  const dateInput = formatDateInput(dateValue);
+  const id =
+    typeof task._id === "string" ? task._id : task._id.toString();
+
+  const isDone = task.status === "DONE";
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Header / breadcrumb */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="space-y-2">
-          <nav className="text-xs text-slate-500">
-            <span className="text-slate-500">Estates</span>
-            <span className="mx-1 text-slate-600">/</span>
-            <span className="text-slate-300">Current estate</span>
-            <span className="mx-1 text-slate-600">/</span>
-            <span className="text-slate-300">Tasks</span>
-            <span className="mx-1 text-slate-600">/</span>
-            <span className="text-rose-300">Edit</span>
-          </nav>
-
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-slate-50">
-              Edit task
-            </h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-400">
-              Tune the date, subject, priority, and status for this item. This
-              page is meant for the bigger moves—changing what the work
-              actually is, not just checking a box.
-            </p>
-          </div>
-
-          <p className="text-xs text-slate-500">
-            Helpful for keeping a clean record of what you actually did for the
-            estate, especially when you&apos;re later building your timecard or
-            a narrative for the court.
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex flex-col justify-between gap-3 border-b border-slate-800 pb-4 sm:flex-row sm:items-center">
+        <div>
+          <p className="mb-1 text-[11px] uppercase tracking-[0.18em] text-slate-500">
+            Tasks
           </p>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
+            {task.subject}
+          </h1>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <span
+              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ${statusBadgeClass(
+                task.status
+              )}`}
+            >
+              {statusLabel(task.status)}
+            </span>
+            <span
+              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ${priorityBadgeClass(
+                task.priority
+              )}`}
+            >
+              Priority: {priorityLabel(task.priority)}
+            </span>
+            <span className="inline-flex items-center rounded-full bg-slate-900/80 px-2.5 py-1 text-[11px] font-medium text-slate-300 ring-1 ring-slate-700/80">
+              Due: {formatDate(task.date)}
+            </span>
+          </div>
         </div>
 
-        <div className="flex flex-col items-end gap-2 text-xs">
-          <span className="inline-flex items-center rounded-full border border-rose-500/40 bg-rose-950/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-rose-100 shadow-sm">
-            <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-rose-400" />
-            Task detail
-          </span>
+        <div className="flex flex-wrap items-center justify-start gap-2 text-xs sm:justify-end">
+          <Link
+            href={`/app/estates/${estateId}/tasks`}
+            className="inline-flex items-center rounded-lg border border-slate-800 px-3 py-1.5 font-medium text-slate-300 hover:border-slate-500/70 hover:text-slate-100"
+          >
+            Back to tasks
+          </Link>
+
+          {/* Status toggle form posts to the API route which redirects back here */}
+          <form
+            method="POST"
+            action={`/api/estates/${estateId}/tasks/${id}`}
+          >
+            <input type="hidden" name="intent" value="toggleStatus" />
+            <button
+              type="submit"
+              className={`inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm shadow-black/40 ${
+                isDone
+                  ? "border border-emerald-500/40 bg-slate-950 text-emerald-300 hover:border-emerald-400 hover:bg-slate-900"
+                  : "bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
+              }`}
+            >
+              {isDone ? "Mark as open" : "Mark as done"}
+            </button>
+          </form>
         </div>
       </div>
 
-      {/* Edit form */}
-      <form
-        action={updateTask}
-        className="max-w-2xl space-y-4 rounded-xl border border-rose-900/40 bg-slate-950/70 p-4 shadow-sm shadow-rose-950/40"
-      >
-        <input type="hidden" name="estateId" value={estateId} />
-        <input type="hidden" name="taskId" value={taskId} />
-
-        <div className="grid gap-3 md:grid-cols-[140px,1fr,140px]">
-          <div className="space-y-1">
-            <label htmlFor="date" className="text-xs font-medium text-slate-200">
-              Date
-            </label>
-            <input
-              id="date"
-              name="date"
-              type="date"
-              defaultValue={dateInput}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50 outline-none focus:border-rose-400"
-              required
-            />
-            <p className="text-[11px] text-slate-500">
-              The date you did (or will do) the task.
+      {/* Main content */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Left: description & notes */}
+        <div className="space-y-6 lg:col-span-2">
+          <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm shadow-black/40 sm:p-6">
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Description
+            </h2>
+            <p className="text-sm leading-relaxed text-slate-100">
+              {task.description?.trim()
+                ? task.description
+                : "No description added yet."}
             </p>
-          </div>
+          </section>
 
-          <div className="space-y-1">
-            <label
-              htmlFor="subject"
-              className="text-xs font-medium text-slate-200"
-            >
-              Subject
-            </label>
-            <input
-              id="subject"
-              name="subject"
-              defaultValue={subject}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50 outline-none focus:border-rose-400"
-              placeholder="e.g. Dickerson – DTE transfer, Tuxedo – appraisal"
-              required
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label
-              htmlFor="priority"
-              className="text-xs font-medium text-slate-200"
-            >
-              Priority
-            </label>
-            <select
-              id="priority"
-              name="priority"
-              defaultValue={priority}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs uppercase tracking-wide text-slate-100 outline-none focus:border-rose-400"
-            >
-              <option value="LOW">Low</option>
-              <option value="MEDIUM">Medium</option>
-              <option value="HIGH">High</option>
-            </select>
-          </div>
+          <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm shadow-black/40 sm:p-6">
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Internal notes
+            </h2>
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-100">
+              {task.notes?.trim()
+                ? task.notes
+                : "No notes recorded yet."}
+            </p>
+          </section>
         </div>
 
-        <div className="space-y-1">
-          <label
-            htmlFor="status"
-            className="text-xs font-medium text-slate-200"
-          >
-            Status
-          </label>
-          <select
-            id="status"
-            name="status"
-            defaultValue={status}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs uppercase tracking-wide text-slate-100 outline-none focus:border-rose-400 md:w-48"
-          >
-            <option value="OPEN">Open</option>
-            <option value="DONE">Done</option>
-          </select>
-          <p className="text-[11px] text-slate-500">
-            Mark as{" "}
-            <span className="text-emerald-300">Done</span> once you&apos;ve
-            actually completed the call, filing, or visit.
-          </p>
-        </div>
-
-        <div className="space-y-1">
-          <label
-            htmlFor="description"
-            className="text-xs font-medium text-slate-200"
-          >
-            Description
-          </label>
-          <textarea
-            id="description"
-            name="description"
-            defaultValue={description}
-            rows={3}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50 outline-none focus:border-rose-400"
-            placeholder="e.g. Called DTE to move account into estate, confirmed balance, requested final bill to be sent to PR address."
-            required
-          />
-        </div>
-
-        <div className="flex flex-col gap-3 border-t border-slate-800 pt-3 text-xs md:flex-row md:items-center md:justify-between">
-          <p className="text-[11px] text-slate-500">
-            These edits keep your checklist honest—so the story you tell the
-            court later matches what really happened.
-          </p>
-          <div className="flex items-center gap-3">
-            <a
-              href={`/app/estates/${estateId}/tasks`}
-              className="text-[11px] text-slate-300 underline-offset-2 hover:text-slate-100 hover:underline"
-            >
-              Cancel
-            </a>
-            <button
-              type="submit"
-              className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-sm font-medium text-slate-950 hover:bg-rose-400"
-            >
-              Save changes
-            </button>
+        {/* Right: metadata */}
+        <aside className="space-y-4">
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-xs text-slate-200 shadow-sm shadow-black/40">
+            <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Task details
+            </h2>
+            <dl className="space-y-2">
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">Status</dt>
+                <dd className="text-slate-100">
+                  {statusLabel(task.status)}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">Priority</dt>
+                <dd className="text-slate-100">
+                  {priorityLabel(task.priority)}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">Due date</dt>
+                <dd className="text-slate-100">
+                  {formatDate(task.date)}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">Created</dt>
+                <dd className="text-slate-100">
+                  {formatDateTime(task.createdAt)}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">Last updated</dt>
+                <dd className="text-slate-100">
+                  {formatDateTime(task.updatedAt)}
+                </dd>
+              </div>
+            </dl>
           </div>
-        </div>
-      </form>
+        </aside>
+      </div>
     </div>
   );
 }

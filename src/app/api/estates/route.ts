@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
+import { auth } from "@/lib/auth";
 
 export async function GET() {
   try {
@@ -24,11 +25,21 @@ export async function POST(req: NextRequest) {
   try {
     await connectToDatabase();
 
+    const session = await auth();
+    const userId = session?.user?.id;
+
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await req.json();
 
-    // For now, accept whatever the client sends and let the Mongoose schema
-    // enforce required fields. We'll tighten this with explicit validation later.
-    const estate = await Estate.create(body);
+    const payload = {
+      ...body,
+      ownerId: userId,
+    };
+
+    const estate = await Estate.create(payload);
 
     return NextResponse.json({ estate }, { status: 201 });
   } catch (error) {
