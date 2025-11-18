@@ -96,12 +96,14 @@ export default async function AppLayout({ children }: AppLayoutProps) {
 
         <div className="mt-6 border-t border-slate-800 pt-4 text-xs text-slate-500">
           <div className="text-slate-300">{userName}</div>
-          <a
-            href="/api/auth/signout?callbackUrl=/login"
-            className="mt-1 inline-flex items-center text-[11px] font-medium text-slate-400 hover:text-slate-200"
-          >
-            Sign out
-          </a>
+          <form action="/api/auth/signout?callbackUrl=/login" method="post" className="mt-1">
+            <button
+              type="submit"
+              className="inline-flex items-center text-[11px] font-medium text-slate-400 hover:text-slate-200"
+            >
+              Sign out
+            </button>
+          </form>
         </div>
       </aside>
 
@@ -116,12 +118,14 @@ export default async function AppLayout({ children }: AppLayoutProps) {
                 <span className="font-medium text-slate-200">{userName}</span>
               </p>
             </div>
-            <a
-              href="/api/auth/signout?callbackUrl=/login"
-              className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-800 hover:border-slate-500 transition-colors"
-            >
-              Sign out
-            </a>
+            <form action="/api/auth/signout?callbackUrl=/login" method="post">
+              <button
+                type="submit"
+                className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-800 hover:border-slate-500 transition-colors"
+              >
+                Sign out
+              </button>
+            </form>
           </div>
         </header>
 
