@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { connectToDatabase } from "@/lib/db";
 import { Task } from "@/models/Task";
 
@@ -45,6 +46,28 @@ async function getTasks(estateId: string): Promise<TaskItem[]> {
     .sort({ date: 1, createdAt: -1 })
     .lean();
   return tasks as unknown as TaskItem[];
+}
+
+async function deleteTask(formData: FormData): Promise<void> {
+  "use server";
+
+  const estateId = formData.get("estateId");
+  const taskId = formData.get("taskId");
+
+  if (
+    !estateId ||
+    !taskId ||
+    typeof estateId !== "string" ||
+    typeof taskId !== "string"
+  ) {
+    return;
+  }
+
+  await connectToDatabase();
+
+  await Task.findOneAndDelete({ _id: taskId, estateId });
+
+  redirect(`/app/estates/${estateId}/tasks`);
 }
 
 export default async function EstateTasksPage({ params }: PageProps) {
@@ -153,13 +176,51 @@ export default async function EstateTasksPage({ params }: PageProps) {
                       {formatDate(task.createdAt)}
                     </td>
                     <td className="px-4 py-3 align-top text-right text-xs">
-                      <Link
-                        href={`/app/estates/${estateId}/tasks/${id}/edit`}
-                        className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800"
-                      >
-                        Edit
-                      </Link>
-                      {/* We can wire a DeleteTaskButton here next */}
+                      <div className="flex items-center justify-end gap-2">
+                        <Link
+                          href={`/app/estates/${estateId}/tasks/${id}`}
+                          className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800"
+                        >
+                          View
+                        </Link>
+                        <Link
+                          href={`/app/estates/${estateId}/tasks/${id}/edit`}
+                          className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800"
+                        >
+                          Edit
+                        </Link>
+
+                        {/* Status toggle from list */}
+                        <form
+                          method="POST"
+                          action={`/api/estates/${estateId}/tasks/${id}`}
+                          className="inline-flex"
+                        >
+                          <input type="hidden" name="intent" value="toggleStatus" />
+                          <button
+                            type="submit"
+                            className="inline-flex items-center rounded-lg border border-emerald-600/60 bg-emerald-900/20 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 hover:border-emerald-500 hover:bg-emerald-900/40"
+                          >
+                            {task.status === "DONE" ? "Mark open" : "Mark done"}
+                          </button>
+                        </form>
+
+                        {/* Delete from list */}
+                        <form action={deleteTask} className="inline-flex">
+                          <input type="hidden" name="estateId" value={estateId} />
+                          <input
+                            type="hidden"
+                            name="taskId"
+                            value={id}
+                          />
+                          <button
+                            type="submit"
+                            className="inline-flex items-center rounded-lg border border-rose-600/60 bg-rose-900/20 px-2.5 py-1 text-[11px] font-semibold text-rose-200 hover:border-rose-500 hover:bg-rose-900/40"
+                          >
+                            Delete
+                          </button>
+                        </form>
+                      </div>
                     </td>
                   </tr>
                 );

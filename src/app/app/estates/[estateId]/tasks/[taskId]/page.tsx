@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { connectToDatabase } from "@/lib/db";
 import { Task } from "@/models/Task";
 
@@ -105,6 +105,28 @@ function priorityBadgeClass(priority: "LOW" | "MEDIUM" | "HIGH"): string {
   }
 }
 
+async function deleteTaskAction(formData: FormData): Promise<void> {
+  "use server";
+
+  const estateId = formData.get("estateId");
+  const taskId = formData.get("taskId");
+
+  if (
+    !estateId ||
+    !taskId ||
+    typeof estateId !== "string" ||
+    typeof taskId !== "string"
+  ) {
+    return;
+  }
+
+  await connectToDatabase();
+
+  await Task.findOneAndDelete({ _id: taskId, estateId });
+
+  redirect(`/app/estates/${estateId}/tasks`);
+}
+
 export default async function TaskDetailPage({ params }: PageProps) {
   const { estateId, taskId } = await params;
 
@@ -164,6 +186,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
           <form
             method="POST"
             action={`/api/estates/${estateId}/tasks/${id}`}
+            className="inline-flex"
           >
             <input type="hidden" name="intent" value="toggleStatus" />
             <button
@@ -175,6 +198,18 @@ export default async function TaskDetailPage({ params }: PageProps) {
               }`}
             >
               {isDone ? "Mark as open" : "Mark as done"}
+            </button>
+          </form>
+
+          {/* Delete task button */}
+          <form action={deleteTaskAction} className="inline-flex">
+            <input type="hidden" name="estateId" value={estateId} />
+            <input type="hidden" name="taskId" value={id} />
+            <button
+              type="submit"
+              className="inline-flex items-center rounded-lg border border-rose-600/60 bg-rose-900/20 px-3 py-1.5 text-xs font-semibold text-rose-200 shadow-sm shadow-black/40 hover:border-rose-500 hover:bg-rose-900/40"
+            >
+              Delete task
             </button>
           </form>
         </div>
