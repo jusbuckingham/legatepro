@@ -1,529 +1,406 @@
-// src/app/app/estates/[estateId]/rent/[paymentId]/page.tsx
-
-import Link from "next/link";
+import { connectToDatabase } from "@/lib/db";
+import { RentPayment } from "@/models/RentPayment";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { connectToDatabase } from "../../../../../../lib/db";
-import { RentPayment } from "../../../../../../models/RentPayment";
-import { EstateProperty } from "../../../../../../models/EstateProperty";
-
-export const dynamic = "force-dynamic";
+import Link from "next/link";
 
 interface PageProps {
-  params: {
+  params: Promise<{
     estateId: string;
     paymentId: string;
-  };
+  }>;
 }
 
-interface RentPaymentDetail {
-  id: string;
+type LeanRentPayment = {
+  _id: string;
   estateId: string;
   propertyId?: string;
-  propertyLabel?: string;
-  payerName?: string;
-  payerType?: string;
+  tenantName: string;
+  periodMonth: number;
+  periodYear: number;
+  amount: number;
+  paymentDate: string; // ISO date string
   method?: string;
-  amount?: number;
-  currency?: string;
-  datePaid?: string;
-  periodStart?: string;
-  periodEnd?: string;
+  reference?: string;
   notes?: string;
-  createdAt?: string;
-  updatedAt?: string;
+};
+
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+function formatDisplayDate(iso?: string): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString();
 }
 
-function formatCurrency(amount?: number, currency = "USD"): string {
-  if (amount == null || Number.isNaN(amount)) return "—";
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-      maximumFractionDigits: 2,
-    }).format(amount);
-  } catch {
-    return `$${amount.toFixed(2)}`;
-  }
+function formatDateInputFromISO(iso?: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
 }
 
-function formatDate(value?: string | Date | null): string {
-  if (!value) return "—";
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+function formatPeriod(month: number, year: number): string {
+  if (!month || !year) return "—";
+  const idx = month - 1;
+  const label = MONTH_NAMES[idx] ?? `Month ${month}`;
+  return `${label} ${year}`;
 }
 
-async function getRentPaymentDetail(
+async function loadPayment(
   estateId: string,
   paymentId: string
-): Promise<RentPaymentDetail | null> {
+): Promise<LeanRentPayment | null> {
   await connectToDatabase();
 
-  const rawPayment = await RentPayment.findOne({
+  const doc = await RentPayment.findOne({
     _id: paymentId,
     estateId,
-  })
-    .lean()
-    .exec();
+  }).lean();
 
-  if (!rawPayment) {
-    return null;
-  }
-
-  const paymentDoc = rawPayment as unknown as {
-    _id?: { toString(): string };
-    estateId?: { toString(): string } | string;
-    propertyId?: { toString(): string };
-    payerName?: string;
-    payerType?: string;
-    method?: string;
-    amount?: number;
-    currency?: string;
-    datePaid?: string | Date;
-    periodStart?: string | Date;
-    periodEnd?: string | Date;
-    notes?: string;
-    createdAt?: string | Date;
-    updatedAt?: string | Date;
-  };
-
-  let propertyLabel: string | undefined;
-
-  if (paymentDoc.propertyId) {
-    const property = (await EstateProperty.findById(paymentDoc.propertyId)
-      .lean()
-      .exec()) as { label?: string } | null;
-
-    if (property?.label) {
-      propertyLabel = property.label;
-    } else if (property) {
-      propertyLabel = "Property";
-    }
-  }
-
-  const id = paymentDoc._id?.toString?.() ?? "";
-  const estateIdString =
-    typeof paymentDoc.estateId === "string"
-      ? paymentDoc.estateId
-      : paymentDoc.estateId?.toString?.() ?? estateId;
+  if (!doc) return null;
 
   return {
-    id,
-    estateId: estateIdString,
-    propertyId: paymentDoc.propertyId?.toString?.(),
-    propertyLabel,
-    payerName: paymentDoc.payerName,
-    payerType: paymentDoc.payerType,
-    method: paymentDoc.method,
-    amount: paymentDoc.amount,
-    currency: paymentDoc.currency ?? "USD",
-    datePaid: paymentDoc.datePaid
-      ? new Date(paymentDoc.datePaid).toISOString()
-      : undefined,
-    periodStart: paymentDoc.periodStart
-      ? new Date(paymentDoc.periodStart).toISOString()
-      : undefined,
-    periodEnd: paymentDoc.periodEnd
-      ? new Date(paymentDoc.periodEnd).toISOString()
-      : undefined,
-    notes: paymentDoc.notes,
-    createdAt: paymentDoc.createdAt
-      ? new Date(paymentDoc.createdAt).toISOString()
-      : undefined,
-    updatedAt: paymentDoc.updatedAt
-      ? new Date(paymentDoc.updatedAt).toISOString()
-      : undefined,
+    _id: String(doc._id),
+    estateId: String(doc.estateId),
+    propertyId: doc.propertyId ? String(doc.propertyId) : undefined,
+    tenantName: doc.tenantName ?? "",
+    periodMonth: typeof doc.periodMonth === "number" ? doc.periodMonth : 0,
+    periodYear: typeof doc.periodYear === "number" ? doc.periodYear : 0,
+    amount: typeof doc.amount === "number" ? doc.amount : 0,
+    paymentDate: doc.paymentDate
+      ? new Date(doc.paymentDate as Date).toISOString()
+      : new Date().toISOString(),
+    method: doc.method ?? "",
+    reference: doc.reference ?? "",
+    notes: doc.notes ?? "",
   };
-}
-
-export async function updateRentPayment(formData: FormData) {
-  "use server";
-
-  const estateId = String(formData.get("estateId") || "");
-  const paymentId = String(formData.get("paymentId") || "");
-
-  if (!estateId || !paymentId) {
-    return;
-  }
-
-  await connectToDatabase();
-
-  const amountRaw = formData.get("amount");
-  const amountParsed =
-    typeof amountRaw === "string" && amountRaw.trim().length > 0
-      ? Number.parseFloat(amountRaw)
-      : undefined;
-
-  const update: Record<string, unknown> = {
-    payerName: formData.get("payerName") || undefined,
-    payerType: formData.get("payerType") || undefined,
-    method: formData.get("method") || undefined,
-    datePaid: formData.get("datePaid") || undefined,
-    periodStart: formData.get("periodStart") || undefined,
-    periodEnd: formData.get("periodEnd") || undefined,
-    notes: formData.get("notes") || undefined,
-  };
-
-  if (amountParsed !== undefined && !Number.isNaN(amountParsed)) {
-    update.amount = amountParsed;
-  }
-
-  await RentPayment.findByIdAndUpdate(paymentId, update).exec();
-
-  revalidatePath(`/app/estates/${estateId}/rent/${paymentId}`);
-  revalidatePath(`/app/estates/${estateId}/rent`);
-}
-
-export async function deleteRentPayment(formData: FormData) {
-  "use server";
-
-  const estateId = String(formData.get("estateId") || "");
-  const paymentId = String(formData.get("paymentId") || "");
-
-  if (!estateId || !paymentId) {
-    return;
-  }
-
-  await connectToDatabase();
-
-  await RentPayment.findByIdAndDelete(paymentId).exec();
-
-  revalidatePath(`/app/estates/${estateId}/rent`);
-  redirect(`/app/estates/${estateId}/rent`);
 }
 
 export default async function RentPaymentDetailPage({ params }: PageProps) {
-  const { estateId, paymentId } = params;
+  const { estateId, paymentId } = await params;
 
-  const payment = await getRentPaymentDetail(estateId, paymentId);
-
+  const payment = await loadPayment(estateId, paymentId);
   if (!payment) {
     notFound();
   }
 
-  const {
-    payerName,
-    payerType,
-    propertyId,
-    propertyLabel,
-    method,
-    amount,
-    currency,
-    datePaid,
-    periodStart,
-    periodEnd,
-    notes,
-  } = payment;
+  // --- Server actions ---
 
-  const paidLabel = formatDate(datePaid);
-  const periodLabel =
-    periodStart || periodEnd
-      ? `${formatDate(periodStart)} → ${formatDate(periodEnd)}`
-      : "Not set";
+  async function updatePayment(formData: FormData) {
+    "use server";
+
+    const amountRaw = formData.get("amount") as string | null;
+    const amount = amountRaw ? Number.parseFloat(amountRaw) : 0;
+
+    const paymentDateRaw = formData.get("paymentDate") as string | null;
+    const periodMonthRaw = formData.get("periodMonth") as string | null;
+    const periodYearRaw = formData.get("periodYear") as string | null;
+
+    const tenantName = (formData.get("tenantName") as string | null) ?? "";
+    const method = (formData.get("method") as string | null) ?? "";
+    const reference = (formData.get("reference") as string | null) ?? "";
+    const notes = (formData.get("notes") as string | null) ?? "";
+
+    await connectToDatabase();
+
+    await RentPayment.findOneAndUpdate(
+      {
+        _id: paymentId,
+        estateId,
+      },
+      {
+        tenantName,
+        amount,
+        periodMonth: periodMonthRaw
+          ? Number.parseInt(periodMonthRaw, 10)
+          : undefined,
+        periodYear: periodYearRaw
+          ? Number.parseInt(periodYearRaw, 10)
+          : undefined,
+        paymentDate: paymentDateRaw ? new Date(paymentDateRaw) : undefined,
+        method,
+        reference,
+        notes,
+      },
+      { new: true }
+    );
+
+    revalidatePath(`/app/estates/${estateId}/rent`);
+    redirect(`/app/estates/${estateId}/rent`);
+  }
+
+  async function deletePayment() {
+    "use server";
+
+    await connectToDatabase();
+
+    await RentPayment.findOneAndDelete({
+      _id: paymentId,
+      estateId,
+    });
+
+    revalidatePath(`/app/estates/${estateId}/rent`);
+    redirect(`/app/estates/${estateId}/rent`);
+  }
+
+  // --- UI ---
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-950/70 px-3 py-1 text-xs text-slate-300">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-rose-400" />
-            Rent payment
+    <div className="space-y-6 p-6">
+      {/* Breadcrumbs */}
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <div className="text-xs uppercase tracking-wide text-slate-400">
+            Rent ledger
           </div>
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
-              {formatCurrency(amount, currency)}{" "}
-              <span className="text-sm font-normal text-slate-400">
-                {payerName ? `from ${payerName}` : ""}
-              </span>
-            </h1>
-            <p className="mt-1 text-sm text-slate-400">
-              {paidLabel !== "—" ? `Paid ${paidLabel}` : "Payment date not set"}
-              {method ? ` • ${method}` : ""}
-            </p>
-          </div>
+          <h1 className="mt-1 text-xl font-semibold text-slate-50">
+            Rent payment detail
+          </h1>
+          <p className="mt-1 text-xs text-slate-400">
+            View and update this rent transaction, or delete it if it was
+            entered in error.
+          </p>
         </div>
 
-        <div className="flex flex-col items-end gap-2">
-          <div className="flex gap-2">
-            {payerType && (
-              <span className="inline-flex items-center rounded-full bg-slate-900/80 px-2 py-0.5 text-xs font-medium text-slate-200">
-                {payerType}
-              </span>
-            )}
-            {propertyId && (
-              <span className="inline-flex items-center rounded-full bg-slate-900/80 px-2 py-0.5 text-xs font-medium text-slate-200">
-                Linked to property
-              </span>
-            )}
-          </div>
-          <div className="flex gap-2 text-xs">
-            <Link
-              href={`/app/estates/${estateId}/rent`}
-              className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 font-medium text-slate-200 hover:border-rose-500/70 hover:text-rose-100"
-            >
-              ← Back to rent ledger
-            </Link>
-            {propertyId && (
-              <Link
-                href={`/app/estates/${estateId}/properties/${propertyId}/rent`}
-                className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900/60 px-3 py-1 font-medium text-slate-200 hover:border-rose-500/70 hover:text-rose-100"
-              >
-                View property rent
-              </Link>
-            )}
-          </div>
-        </div>
-      </header>
+        <div className="flex gap-2">
+          <Link
+            href={`/app/estates/${estateId}/rent`}
+            className="rounded-full border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
+          >
+            Back to rent ledger
+          </Link>
 
-      {/* Core details */}
-      <div className="grid gap-6 md:grid-cols-3">
-        <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4 md:col-span-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
-            Payment details
-          </h2>
-          <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <dt className="text-xs font-medium text-slate-400">
-                Payer name
-              </dt>
-              <dd className="mt-1 text-sm text-slate-100">
-                {payerName || (
-                  <span className="text-slate-500">Not provided</span>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium text-slate-400">
-                Payer type
-              </dt>
-              <dd className="mt-1 text-sm text-slate-100">
-                {payerType || (
-                  <span className="text-slate-500">Not provided</span>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium text-slate-400">
-                Amount received
-              </dt>
-              <dd className="mt-1 text-sm text-slate-100">
-                {formatCurrency(amount, currency)}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium text-slate-400">
-                Date paid
-              </dt>
-              <dd className="mt-1 text-sm text-slate-100">{paidLabel}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium text-slate-400">
-                Rent period
-              </dt>
-              <dd className="mt-1 text-sm text-slate-100">{periodLabel}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium text-slate-400">
-                Payment method
-              </dt>
-              <dd className="mt-1 text-sm text-slate-100">
-                {method || (
-                  <span className="text-slate-500">Not provided</span>
-                )}
-              </dd>
-            </div>
-          </dl>
-        </section>
-
-        <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
-            Linked property
-          </h2>
-          {propertyId ? (
-            <div className="space-y-2 text-sm text-slate-200">
-              <p className="font-medium">
-                {propertyLabel ?? "Linked property"}
-              </p>
-              <p className="text-xs text-slate-400">
-                This helps you show the court and your accountant which house
-                generated this rent.
-              </p>
-              <Link
-                href={`/app/estates/${estateId}/properties/${propertyId}`}
-                className="inline-flex items-center text-xs font-medium text-rose-300 hover:text-rose-200"
-              >
-                View property details →
-              </Link>
-            </div>
-          ) : (
-            <p className="text-sm text-slate-400">
-              This payment is not linked to a specific property yet. You can
-              update it later if needed.
-            </p>
-          )}
-        </section>
-      </div>
-
-      {/* Notes */}
-      <section className="space-y-3 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
-            Internal notes
-          </h2>
-          <span className="text-xs text-slate-500">
-            These stay inside LegatePro — they&apos;re not shared with tenants.
-          </span>
-        </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-950/80 p-3 text-sm text-slate-100">
-          {notes ? (
-            <p className="whitespace-pre-wrap">{notes}</p>
-          ) : (
-            <p className="text-slate-500">
-              No notes yet. You might track partial payments, promises to pay,
-              or instructions from your attorney here.
-            </p>
-          )}
-        </div>
-      </section>
-
-      {/* Quick edit */}
-      <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
-            Update this payment
-          </h2>
-          <span className="text-xs text-slate-500">
-            Small changes here refresh this page and the rent ledger.
-          </span>
-        </div>
-
-        <form action={updateRentPayment} className="space-y-4">
-          <input type="hidden" name="estateId" value={estateId} />
-          <input type="hidden" name="paymentId" value={payment.id} />
-
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-1 md:col-span-1">
-              <label className="text-xs font-medium text-slate-400">
-                Amount received
-              </label>
-              <input
-                name="amount"
-                defaultValue={amount ?? ""}
-                inputMode="decimal"
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
-                placeholder="0.00"
-              />
-            </div>
-            <div className="space-y-1 md:col-span-1">
-              <label className="text-xs font-medium text-slate-400">
-                Date paid
-              </label>
-              <input
-                type="date"
-                name="datePaid"
-                defaultValue={
-                  datePaid ? new Date(datePaid).toISOString().slice(0, 10) : ""
-                }
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
-              />
-            </div>
-            <div className="space-y-1 md:col-span-1">
-              <label className="text-xs font-medium text-slate-400">
-                Payment method
-              </label>
-              <input
-                name="method"
-                defaultValue={method ?? ""}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
-                placeholder="check, Zelle, cash…"
-              />
-            </div>
-
-            <div className="space-y-1 md:col-span-1">
-              <label className="text-xs font-medium text-slate-400">
-                Period start
-              </label>
-              <input
-                type="date"
-                name="periodStart"
-                defaultValue={
-                  periodStart
-                    ? new Date(periodStart).toISOString().slice(0, 10)
-                    : ""
-                }
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
-              />
-            </div>
-            <div className="space-y-1 md:col-span-1">
-              <label className="text-xs font-medium text-slate-400">
-                Period end
-              </label>
-              <input
-                type="date"
-                name="periodEnd"
-                defaultValue={
-                  periodEnd
-                    ? new Date(periodEnd).toISOString().slice(0, 10)
-                    : ""
-                }
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
-              />
-            </div>
-            <div className="space-y-1 md:col-span-1">
-              <label className="text-xs font-medium text-slate-400">
-                Payer name
-              </label>
-              <input
-                name="payerName"
-                defaultValue={payerName ?? ""}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
-                placeholder="Tenant or payer"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-400">
-              Internal notes
-            </label>
-            <textarea
-              name="notes"
-              defaultValue={notes ?? ""}
-              className="min-h-[80px] w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
-              placeholder="Partial payments, promises to pay, calls with tenants…"
-            />
-          </div>
-
-          <div className="flex justify-end">
+          <form action={deletePayment}>
             <button
               type="submit"
-              className="inline-flex items-center rounded-md bg-rose-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-400"
+              className="rounded-full border border-rose-900/70 bg-rose-950/40 px-3 py-1.5 text-xs font-semibold text-rose-200 hover:bg-rose-900/70 hover:text-rose-50"
             >
-              Save changes
+              Delete payment
             </button>
-          </div>
-        </form>
+          </form>
+        </div>
+      </div>
 
-        <form
-          action={deleteRentPayment}
-          className="mt-2 flex justify-end"
-        >
-          <input type="hidden" name="estateId" value={estateId} />
-          <input type="hidden" name="paymentId" value={payment.id} />
+      {/* Summary card */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              Tenant
+            </div>
+            <div className="text-sm font-semibold text-slate-50">
+              {payment.tenantName || "Unknown tenant"}
+            </div>
+            <div className="mt-1 text-xs text-slate-400">
+              Period: {formatPeriod(payment.periodMonth, payment.periodYear)}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-6 text-xs">
+            <div>
+              <div className="font-medium text-slate-400">Amount</div>
+              <div className="text-base font-semibold text-emerald-300">
+                ${Number(payment.amount || 0).toLocaleString()}
+              </div>
+            </div>
+            <div>
+              <div className="font-medium text-slate-400">Payment date</div>
+              <div className="mt-0.5 text-slate-100">
+                {formatDisplayDate(payment.paymentDate)}
+              </div>
+            </div>
+            <div>
+              <div className="font-medium text-slate-400">Method</div>
+              <div className="mt-0.5 text-slate-100">
+                {payment.method || "—"}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Edit form */}
+      <form
+        action={updatePayment}
+        className="grid gap-6 rounded-2xl border border-slate-800 bg-slate-950/60 p-4 text-sm md:grid-cols-2"
+      >
+        <div className="md:col-span-2">
+          <h2 className="text-sm font-semibold text-slate-100">
+            Edit payment details
+          </h2>
+          <p className="mt-1 text-xs text-slate-400">
+            Adjust the amount, dates, tenant info, and bookkeeping metadata.
+          </p>
+        </div>
+
+        {/* Tenant */}
+        <div className="space-y-1.5">
+          <label
+            htmlFor="tenantName"
+            className="block text-xs font-medium text-slate-300"
+          >
+            Tenant name
+          </label>
+          <input
+            id="tenantName"
+            name="tenantName"
+            defaultValue={payment.tenantName || ""}
+            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-50 outline-none ring-0 placeholder:text-slate-500 focus:border-rose-500"
+          />
+        </div>
+
+        {/* Amount */}
+        <div className="space-y-1.5">
+          <label
+            htmlFor="amount"
+            className="block text-xs font-medium text-slate-300"
+          >
+            Amount (USD)
+          </label>
+          <input
+            id="amount"
+            name="amount"
+            type="number"
+            step="0.01"
+            min="0"
+            defaultValue={payment.amount?.toString() ?? ""}
+            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-50 outline-none ring-0 placeholder:text-slate-500 focus:border-rose-500"
+          />
+        </div>
+
+        {/* Period month/year */}
+        <div className="space-y-1.5">
+          <label
+            htmlFor="periodMonth"
+            className="block text-xs font-medium text-slate-300"
+          >
+            Period month (1–12)
+          </label>
+          <input
+            id="periodMonth"
+            name="periodMonth"
+            type="number"
+            min={1}
+            max={12}
+            defaultValue={payment.periodMonth || ""}
+            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-50 outline-none ring-0 placeholder:text-slate-500 focus:border-rose-500"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label
+            htmlFor="periodYear"
+            className="block text-xs font-medium text-slate-300"
+          >
+            Period year
+          </label>
+          <input
+            id="periodYear"
+            name="periodYear"
+            type="number"
+            min={1900}
+            max={9999}
+            defaultValue={payment.periodYear || ""}
+            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-50 outline-none ring-0 placeholder:text-slate-500 focus:border-rose-500"
+          />
+        </div>
+
+        {/* Payment date */}
+        <div className="space-y-1.5">
+          <label
+            htmlFor="paymentDate"
+            className="block text-xs font-medium text-slate-300"
+          >
+            Payment date
+          </label>
+          <input
+            id="paymentDate"
+            name="paymentDate"
+            type="date"
+            defaultValue={formatDateInputFromISO(payment.paymentDate)}
+            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-50 outline-none ring-0 focus:border-rose-500"
+          />
+        </div>
+
+        {/* Method */}
+        <div className="space-y-1.5">
+          <label
+            htmlFor="method"
+            className="block text-xs font-medium text-slate-300"
+          >
+            Payment method
+          </label>
+          <input
+            id="method"
+            name="method"
+            defaultValue={payment.method || ""}
+            placeholder="e.g. Cash, Check, ACH"
+            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-50 outline-none ring-0 placeholder:text-slate-500 focus:border-rose-500"
+          />
+        </div>
+
+        {/* Reference */}
+        <div className="space-y-1.5">
+          <label
+            htmlFor="reference"
+            className="block text-xs font-medium text-slate-300"
+          >
+            Reference / check #
+          </label>
+          <input
+            id="reference"
+            name="reference"
+            defaultValue={payment.reference || ""}
+            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-50 outline-none ring-0 placeholder:text-slate-500 focus:border-rose-500"
+          />
+        </div>
+
+        {/* Notes (full width) */}
+        <div className="md:col-span-2 space-y-1.5">
+          <label
+            htmlFor="notes"
+            className="block text-xs font-medium text-slate-300"
+          >
+            Internal notes
+          </label>
+          <textarea
+            id="notes"
+            name="notes"
+            rows={4}
+            defaultValue={payment.notes || ""}
+            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none ring-0 placeholder:text-slate-500 focus:border-rose-500"
+          />
+        </div>
+
+        {/* Actions */}
+        <div className="md:col-span-2 flex items-center justify-between gap-3 pt-2">
+          <p className="text-xs text-slate-500">
+            Changes are saved to this single payment only and reflected in the
+            estate rent ledger.
+          </p>
           <button
             type="submit"
-            className="inline-flex items-center rounded-md border border-rose-500/80 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/10"
+            className="rounded-full bg-rose-600 px-4 py-1.5 text-xs font-semibold text-rose-50 shadow-sm shadow-rose-900/60 hover:bg-rose-500"
           >
-            Delete payment
+            Save changes
           </button>
-        </form>
-      </section>
+        </div>
+      </form>
     </div>
   );
 }

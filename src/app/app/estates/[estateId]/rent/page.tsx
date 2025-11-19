@@ -1,9 +1,9 @@
 // src/app/app/estates/[estateId]/rent/page.tsx
 
 import Link from "next/link";
-import { connectToDatabase } from "../../../../../lib/db";
-import { RentPayment } from "../../../../../models/RentPayment";
-import { EstateProperty } from "../../../../../models/EstateProperty";
+import { connectToDatabase } from "@/lib/db";
+import { RentPayment } from "@/models/RentPayment";
+import { EstateProperty } from "@/models/EstateProperty";
 
 export const dynamic = "force-dynamic";
 
@@ -213,7 +213,7 @@ export default async function EstateRentLedgerPage({ params }: PageProps) {
                   return (
                     <tr
                       key={p.id}
-                      className="hover:bg-slate-900/60 transition-colors"
+                      className="transition-colors hover:bg-slate-900/60"
                     >
                       <td className="whitespace-nowrap px-4 py-2 text-xs text-slate-300">
                         {paidLabel}
