@@ -8,9 +8,9 @@ import { EstateProperty } from "../../../../../models/EstateProperty";
 export const dynamic = "force-dynamic";
 
 interface PageProps {
-  params: {
+  params: Promise<{
     estateId: string;
-  };
+  }>;
 }
 
 interface RentPaymentRow {
@@ -124,7 +124,7 @@ async function getRentLedger(estateId: string): Promise<RentPaymentRow[]> {
 }
 
 export default async function EstateRentLedgerPage({ params }: PageProps) {
-  const { estateId } = params;
+  const { estateId } = await params;
   const payments = await getRentLedger(estateId);
 
   const totalCollected = payments.reduce(

@@ -1,11 +1,14 @@
-"use client";
-
-import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { cn } from "@/lib/utils";
+import { notFound } from "next/navigation";
 
-type Category =
+import { connectToDatabase } from "@/lib/db";
+import { Estate } from "@/models/Estate";
+import type { EstateDocument } from "@/models/Estate";
+import { Expense } from "@/models/Expense";
+import type { ExpenseDocument } from "@/models/Expense";
+
+// Keep this in sync with your Mongoose Expense category enum
+export type ExpenseCategory =
   | "TAXES"
   | "INSURANCE"
   | "MAINTENANCE"
@@ -15,254 +18,185 @@ type Category =
   | "MORTGAGE"
   | "OTHER";
 
-interface ExpenseItem {
-  _id: string;
-  estateId: string;
-  date: string;
-  category: Category;
+interface PageProps {
+  params: Promise<{ estateId: string }>;
+}
+
+interface ExpenseListItem {
+  id: string;
+  date: string | null;
   description: string;
+  category: ExpenseCategory;
   amount: number;
   isPaid: boolean;
   payee?: string;
-  notes?: string;
-  propertyId?: string;
 }
 
-interface ApiResponse {
-  expenses: ExpenseItem[];
+async function loadEstate(estateId: string) {
+  await connectToDatabase();
+
+  const estateDoc = (await Estate.findById(estateId).lean()) as
+    | (EstateDocument & {
+        displayName?: string;
+        caseName?: string;
+      })
+    | null;
+
+  if (!estateDoc) return null;
+
+  const { _id, displayName, caseName } = estateDoc;
+
+  return {
+    id: String(_id),
+    displayName: displayName ?? caseName ?? "Estate",
+  };
 }
 
-function formatCurrency(value: number) {
-  if (Number.isNaN(value)) return "$0.00";
-  return value.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  });
+async function loadExpenses(estateId: string): Promise<ExpenseListItem[]> {
+  await connectToDatabase();
+
+  const docs = await Expense.find({ estateId })
+    .sort({ date: -1 })
+    .lean<ExpenseDocument[]>();
+
+  return docs.map((doc): ExpenseListItem => ({
+    id: String(doc._id),
+    date: doc.date ? new Date(doc.date).toISOString().slice(0, 10) : null,
+    description: doc.description ?? "",
+    category: (doc.category as ExpenseCategory) ?? "OTHER",
+    amount: typeof doc.amount === "number" ? doc.amount : Number(doc.amount) || 0,
+    isPaid: Boolean(doc.isPaid),
+    payee: doc.payee ?? undefined,
+  }));
 }
 
-function formatDate(dateStr: string) {
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
+export default async function EstateExpensesPage({ params }: PageProps) {
+  const { estateId } = await params;
 
-const CATEGORY_LABELS: Record<Category, string> = {
-  TAXES: "Taxes",
-  INSURANCE: "Insurance",
-  MAINTENANCE: "Maintenance",
-  UTILITIES: "Utilities",
-  LEGAL: "Legal & Professional",
-  FUNERAL: "Funeral",
-  MORTGAGE: "Mortgage",
-  OTHER: "Other",
-};
+  const [estate, expenses] = await Promise.all([
+    loadEstate(estateId),
+    loadExpenses(estateId),
+  ]);
 
-export default function EstateExpensesPage() {
-  const params = useParams<{ estateId: string }>();
-  const estateId = params.estateId;
+  if (!estate) {
+    return notFound();
+  }
 
-  const [expenses, setExpenses] = useState<ExpenseItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const total = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-
-  useEffect(() => {
-    if (!estateId) return;
-
-    const loadExpenses = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const res = await fetch(
-          `/api/expenses?estateId=${encodeURIComponent(estateId)}`
-        );
-
-        if (!res.ok) {
-          throw new Error(`Failed to load expenses (${res.status})`);
-        }
-
-        const data = (await res.json()) as ApiResponse;
-        setExpenses(data.expenses || []);
-      } catch (err) {
-        console.error("Failed to load expenses", err);
-        setError("We couldn’t load expenses right now. Please try again.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void loadExpenses();
-  }, [estateId]);
+  const totalAmount = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+  const paidAmount = expenses
+    .filter((exp) => exp.isPaid)
+    .reduce((sum, exp) => sum + exp.amount, 0);
+  const unpaidAmount = totalAmount - paidAmount;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-3 justify-between sm:flex-row sm:items-center">
+    <div className="space-y-6 p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-            Estate expenses
+          <h1 className="text-lg font-semibold text-slate-50">
+            Expenses for {estate.displayName}
           </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Track every dollar that goes out of the estate — ready for court,
-            beneficiaries, and your accountant.
+          <p className="text-xs text-slate-400">
+            Track court costs, maintenance, taxes, and other estate expenses.
           </p>
         </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-          >
-            Export CSV
-          </button>
+        <div className="flex items-center gap-2">
           <Link
-            href={`/app/estates/${estateId}/expenses/new`}
-            className="inline-flex items-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+            href={`/app/estates/${estate.id}/expenses/new`}
+            className="inline-flex items-center rounded-full border border-rose-500/60 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-100 shadow-sm shadow-rose-950/40 transition hover:bg-rose-500/20"
           >
             + Add expense
           </Link>
         </div>
       </div>
 
-      {/* Summary card */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+      {/* Summary cards */}
+      <div className="grid gap-3 md:grid-cols-3">
+        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+          <p className="text-[10px] uppercase tracking-wide text-slate-500">
             Total expenses
           </p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">
-            {formatCurrency(total)}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Includes all transactions recorded for this estate.
+          <p className="mt-1 text-lg font-semibold text-slate-50">
+            ${totalAmount.toFixed(2)}
           </p>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-            Number of entries
+        <div className="rounded-xl border border-emerald-900/60 bg-emerald-950/60 p-3">
+          <p className="text-[10px] uppercase tracking-wide text-emerald-500">
+            Paid
           </p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">
-            {expenses.length}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            You can always add more as you pay new bills.
+          <p className="mt-1 text-lg font-semibold text-emerald-100">
+            ${paidAmount.toFixed(2)}
           </p>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-            Status
+        <div className="rounded-xl border border-amber-900/60 bg-amber-950/60 p-3">
+          <p className="text-[10px] uppercase tracking-wide text-amber-400">
+            Outstanding
           </p>
-          <p className="mt-2 text-sm text-slate-700">
-            Keep receipts and invoices handy for every line item.
+          <p className="mt-1 text-lg font-semibold text-amber-100">
+            ${unpaidAmount.toFixed(2)}
           </p>
         </div>
       </div>
 
-      {/* Table / state */}
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-4 py-3">
-          <h2 className="text-sm font-medium text-slate-700">
-            Expense ledger
-          </h2>
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center px-4 py-10 text-sm text-slate-500">
-            Loading expenses…
-          </div>
-        ) : error ? (
-          <div className="px-4 py-8 text-sm text-red-600">{error}</div>
-        ) : expenses.length === 0 ? (
-          <div className="px-4 py-10 text-center text-sm text-slate-500">
-            No expenses recorded yet. Start by adding the first bill you
-            paid from the estate.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="border-b border-slate-100 bg-slate-50 text-xs font-medium uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-2">Date</th>
-                  <th className="px-4 py-2">Category</th>
-                  <th className="px-4 py-2">Description</th>
-                  <th className="px-4 py-2">Payee</th>
-                  <th className="px-4 py-2 text-right">Amount</th>
-                  <th className="px-4 py-2 text-right">Status</th>
-                  <th className="px-4 py-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {expenses.map((expense) => (
-                  <tr
-                    key={expense._id}
-                    className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60"
-                  >
-                    <td className="px-4 py-2 text-xs text-slate-600">
-                      {formatDate(expense.date)}
-                    </td>
-                    <td className="px-4 py-2 text-xs text-slate-600">
-                      {CATEGORY_LABELS[expense.category] ??
-                        expense.category ??
-                        "Other"}
-                    </td>
-                    <td className="px-4 py-2 text-xs text-slate-700">
-                      {expense.description}
-                    </td>
-                    <td className="px-4 py-2 text-xs text-slate-600">
-                      {expense.payee || "—"}
-                    </td>
-                    <td className="px-4 py-2 text-right text-xs font-medium text-slate-900">
-                      {formatCurrency(expense.amount)}
-                    </td>
-                    <td className="px-4 py-2 text-right text-xs">
-                      <span
-                        className={cn(
-                          "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
-                          expense.isPaid
-                            ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100"
-                            : "bg-amber-50 text-amber-700 ring-1 ring-amber-100",
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "mr-1 inline-block h-1.5 w-1.5 rounded-full",
-                            expense.isPaid ? "bg-emerald-500" : "bg-amber-500",
-                          )}
-                        />
-                        {expense.isPaid ? "Paid" : "Outstanding"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-right text-xs">
-                      <Link
-                        href={`/app/estates/${estateId}/expenses/${expense._id}`}
-                        className="text-emerald-700 hover:text-emerald-800"
-                      >
-                        View / Edit
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot className="bg-slate-50 text-xs text-slate-600">
-                <tr>
-                  <td className="px-4 py-2" colSpan={4}>
-                    Total
+      {/* Table */}
+      <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/70">
+        <table className="min-w-full text-left text-xs">
+          <thead className="bg-slate-900/80 text-slate-400">
+            <tr>
+              <th className="px-3 py-2 font-medium">Date</th>
+              <th className="px-3 py-2 font-medium">Description</th>
+              <th className="px-3 py-2 font-medium">Category</th>
+              <th className="px-3 py-2 font-medium text-right">Amount</th>
+              <th className="px-3 py-2 font-medium text-center">Status</th>
+              <th className="px-3 py-2 font-medium">Payee</th>
+            </tr>
+          </thead>
+          <tbody>
+            {expenses.length === 0 ? (
+              <tr>
+                <td
+                  className="px-3 py-4 text-center text-slate-500"
+                  colSpan={6}
+                >
+                  No expenses recorded yet.
+                </td>
+              </tr>
+            ) : (
+              expenses.map((expense) => (
+                <tr
+                  key={expense.id}
+                  className="border-t border-slate-800/80 hover:bg-slate-900/50"
+                >
+                  <td className="px-3 py-2 align-top text-slate-300">
+                    {expense.date ?? "—"}
                   </td>
-                  <td className="px-4 py-2 text-right font-semibold text-slate-900">
-                    {formatCurrency(total)}
+                  <td className="px-3 py-2 align-top text-slate-50">
+                    {expense.description || "(No description)"}
                   </td>
-                  <td colSpan={2} />
+                  <td className="px-3 py-2 align-top text-slate-300">
+                    {expense.category}
+                  </td>
+                  <td className="px-3 py-2 align-top text-right text-slate-50">
+                    ${expense.amount.toFixed(2)}
+                  </td>
+                  <td className="px-3 py-2 align-top text-center">
+                    <span
+                      className={
+                        expense.isPaid
+                          ? "inline-flex rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300"
+                          : "inline-flex rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-200"
+                      }
+                    >
+                      {expense.isPaid ? "Paid" : "Outstanding"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 align-top text-slate-300">
+                    {expense.payee ?? ""}
+                  </td>
                 </tr>
-              </tfoot>
-            </table>
-          </div>
-        )}
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
