@@ -24,7 +24,7 @@ declare global {
 }
 
 // Helper to get a strongly-typed global object
-const globalForMongoose = global as typeof globalThis & {
+const globalForMongoose = globalThis as typeof globalThis & {
   _mongooseCache?: MongooseCache;
 };
 

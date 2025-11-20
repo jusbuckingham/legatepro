@@ -1,265 +1,312 @@
+// src/app/app/expenses/page.tsx
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Types } from "mongoose";
-import type { FlattenMaps } from "mongoose";
-
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { Estate, type EstateDocument } from "@/models/Estate";
 import { Expense, type ExpenseDocument } from "@/models/Expense";
+import { type EstateDocument } from "@/models/Estate";
 
-// Types
-
-type PageProps = {
-  params: Promise<{ estateId: string }>;
+type LeanEstateForExpense = {
+  _id: string;
+  displayName?: string;
+  caseName?: string;
 };
 
-type EstateDocLean = FlattenMaps<EstateDocument> & {
-  _id: Types.ObjectId;
-};
-
-type ExpenseDocLean = FlattenMaps<ExpenseDocument> & {
-  _id: Types.ObjectId;
-};
-
-type EstateExpenseRow = {
-  id: string;
-  incurredAt: string;
-  category: string;
+type LeanExpense = {
+  _id: string;
+  estate?: LeanEstateForExpense | null;
   amount: number;
-  payee?: string;
+  category?: string;
   description?: string;
+  payee?: string;
+  status?: string;
+  incurredAt?: Date;
+  createdAt?: Date;
 };
 
-// Helpers
+export const metadata = {
+  title: "All Expenses | LegatePro",
+};
 
-function formatDate(dateString: string) {
-  const date = new Date(dateString);
-  if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(date);
-}
-
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-US", {
+function formatCurrency(amount: number): string {
+  return amount.toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
     maximumFractionDigits: 2,
-  }).format(amount);
+  });
 }
 
-export const metadata = {
-  title: "Estate expenses | LegatePro",
-};
+function formatDate(date?: Date): string {
+  if (!date) return "–";
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
 
-export default async function EstateExpensesPage({ params }: PageProps) {
-  const { estateId } = await params;
+function humanizeCategory(category?: string): string {
+  if (!category) return "Uncategorized";
+  return category
+    .toLowerCase()
+    .split("_")
+    .join(" ")
+    .replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
 
+function humanizeStatus(status?: string): string {
+  if (!status) return "PENDING";
+  return status
+    .toLowerCase()
+    .split("_")
+    .join(" ")
+    .replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
+export default async function GlobalExpensesPage() {
   const session = await auth();
+
   if (!session?.user?.id) {
     redirect("/login");
   }
 
-  const ownerId = session.user.id;
-
   await connectToDatabase();
 
-  const estate = await Estate.findOne({ _id: estateId, ownerId })
-    .select("caseName decedentName")
-    .lean<EstateDocLean | null>();
+  // Load all expenses for this owner, including estate info
+  const raw = (await Expense.find({
+    ownerId: session.user.id,
+  })
+    .populate("estateId")
+    .sort({ incurredAt: -1 })
+    .lean()) as Array<
+    ExpenseDocument & {
+      estateId?:
+        | (EstateDocument & { _id: unknown })
+        | { _id: unknown }
+        | unknown;
+    }
+  >;
 
-  if (!estate) {
-    redirect("/app/estates");
-  }
+  const expenses: LeanExpense[] = raw.map((doc) => {
+    let estate: LeanEstateForExpense | null = null;
 
-  const expenseDocs = await Expense.find({ estateId, ownerId })
-    .sort({ incurredAt: -1, createdAt: -1 })
-    .lean<ExpenseDocLean[]>();
-
-  const rows: EstateExpenseRow[] = expenseDocs.map((doc) => {
-    const { incurredAt } = doc as ExpenseDocLean & {
-      incurredAt?: Date | string;
-      createdAt?: Date | string;
-    };
-
-    const incurredAtValue = (() => {
-      if (incurredAt instanceof Date) return incurredAt.toISOString();
-      if (typeof incurredAt === "string") {
-        return new Date(incurredAt).toISOString();
-      }
-      const createdAt = (doc as ExpenseDocLean & {
-        createdAt?: Date | string;
-      }).createdAt;
-      if (createdAt instanceof Date) return createdAt.toISOString();
-      if (typeof createdAt === "string")
-        return new Date(createdAt).toISOString();
-      return new Date().toISOString();
-    })();
+    if (doc.estateId && typeof doc.estateId === "object") {
+      const estateDoc = doc.estateId as EstateDocument & { _id: unknown };
+      estate = {
+        _id: String(estateDoc._id),
+        displayName: estateDoc.displayName,
+        caseName: (estateDoc as EstateDocument).caseName,
+      };
+    }
 
     return {
-      id: doc._id.toString(),
-      incurredAt: incurredAtValue,
-      category: String(
-        (doc as ExpenseDocLean & { category?: string }).category ?? "Other"
-      ),
-      amount: Number(
-        (doc as ExpenseDocLean & { amount?: number }).amount ?? 0
-      ),
-      payee: (doc as ExpenseDocLean & { payee?: string }).payee ?? undefined,
-      description:
-        (doc as ExpenseDocLean & { description?: string }).description ??
-        undefined,
+      _id: String(doc._id),
+      estate,
+      amount: doc.amount,
+      category: doc.category,
+      description: doc.description,
+      payee: doc.payee,
+      status: doc.status,
+      incurredAt: doc.incurredAt,
+      createdAt: doc.createdAt,
     };
   });
 
-  const totalAmount = rows.reduce((sum, row) => sum + row.amount, 0);
+  const totalExpenses = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
-  const totalByCategory = rows.reduce<Map<string, number>>((acc, row) => {
-    const key = row.category || "Other";
-    const prev = acc.get(key) ?? 0;
-    acc.set(key, prev + row.amount);
+  const now = new Date();
+  const thisMonthKey = `${now.getFullYear()}-${now.getMonth()}`;
+  const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastMonthKey = `${lastMonth.getFullYear()}-${lastMonth.getMonth()}`;
+
+  const byMonth = expenses.reduce<Record<string, number>>((acc, e) => {
+    if (!e.incurredAt) return acc;
+    const d = e.incurredAt;
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    acc[key] = (acc[key] || 0) + (e.amount || 0);
     return acc;
-  }, new Map<string, number>());
+  }, {});
 
-  const categoryTotals = Array.from(totalByCategory.entries()).sort(
-    (a, b) => b[1] - a[1]
-  );
+  const thisMonthTotal = byMonth[thisMonthKey] || 0;
+  const lastMonthTotal = byMonth[lastMonthKey] || 0;
 
-  const estateDisplayName =
-    (estate as EstateDocLean & { displayName?: string }).displayName ??
-    (estate as EstateDocLean & { caseName?: string }).caseName ??
-    (estate as EstateDocLean & { decedentName?: string }).decedentName ??
-    "Untitled estate";
+  const monthDelta = thisMonthTotal - lastMonthTotal;
+  const monthDeltaLabel =
+    monthDelta === 0
+      ? "Flat vs last month"
+      : monthDelta > 0
+      ? `↑ ${formatCurrency(Math.abs(monthDelta))} vs last month`
+      : `↓ ${formatCurrency(Math.abs(monthDelta))} vs last month`;
 
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div>
-          <p className="text-xs uppercase tracking-wide text-slate-400">
-            Estate expenses
-          </p>
-          <h1 className="text-2xl font-semibold text-slate-50">
-            {estateDisplayName}
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
+            All Expenses
           </h1>
           <p className="mt-1 text-sm text-slate-400">
-            Track legal fees, repairs, utilities, taxes, and other costs for
-            this estate.
+            See every expense across all of your estates in one place.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-right text-sm">
-            <div className="text-xs uppercase tracking-wide text-slate-400">
-              Total recorded
-            </div>
-            <div className="text-lg font-semibold text-rose-400">
-              {formatCurrency(totalAmount)}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-right text-sm">
-            <div className="text-xs uppercase tracking-wide text-slate-400">
-              Expense entries
-            </div>
-            <div className="text-lg font-semibold text-slate-50">
-              {rows.length}
-            </div>
-          </div>
-
+        <div className="flex flex-wrap gap-3">
           <Link
-            href={`/app/estates/${estateId}/expenses/new`}
-            className="inline-flex items-center justify-center rounded-lg border border-rose-500/60 bg-rose-500/10 px-4 py-2 text-xs font-medium text-rose-200 shadow-sm shadow-rose-900/40 transition hover:border-rose-400 hover:bg-rose-500/20"
+            href="/app/estates"
+            className="inline-flex items-center rounded-full border border-slate-700/70 bg-slate-950/60 px-3 py-1.5 text-xs font-medium text-slate-200 shadow-sm shadow-slate-950/50 hover:border-rose-500/70 hover:text-rose-200"
           >
-            + New expense
+            ← Back to Estates
           </Link>
         </div>
       </div>
 
-      {/* Category breakdown */}
-      {categoryTotals.length > 0 && (
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-          <h2 className="mb-3 text-sm font-medium text-slate-200">
-            By category
-          </h2>
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {categoryTotals.map(([category, amount]) => (
-              <div
-                key={category}
-                className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs"
-              >
-                <span className="max-w-[60%] truncate text-slate-200">
-                  {category}
-                </span>
-                <span className="font-semibold text-rose-300">
-                  {formatCurrency(amount)}
-                </span>
-              </div>
-            ))}
-          </div>
+      {/* Summary cards */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm shadow-slate-950/70">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+            Total Expenses
+          </p>
+          <p className="mt-2 text-2xl font-semibold text-slate-50">
+            {formatCurrency(totalExpenses)}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Across {expenses.length}{" "}
+            {expenses.length === 1 ? "entry" : "entries"}.
+          </p>
         </div>
-      )}
+
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm shadow-slate-950/70">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+            This Month
+          </p>
+          <p className="mt-2 text-xl font-semibold text-slate-50">
+            {formatCurrency(thisMonthTotal)}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">{monthDeltaLabel}</p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm shadow-slate-950/70">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+            Estates With Expenses
+          </p>
+          <p className="mt-2 text-2xl font-semibold text-slate-50">
+            {
+              new Set(
+                expenses
+                  .map((e) => e.estate?._id)
+                  .filter((id): id is string => Boolean(id))
+              ).size
+            }
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Counted by unique estate IDs.
+          </p>
+        </div>
+      </div>
 
       {/* Table */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-950/70">
-        <div className="border-b border-slate-800 px-4 py-3 text-sm font-medium text-slate-200">
-          All expenses for this estate
+      <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/80 shadow-sm shadow-slate-950/70">
+        <div className="border-b border-slate-800 bg-slate-950/80 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Expense Activity
         </div>
-        {rows.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-slate-400">
-            No expenses recorded yet for this estate.{" "}
-            <span className="text-slate-300">
-              Use the <span className="font-semibold">New expense</span> button
-              to add your first entry.
-            </span>
+
+        {expenses.length === 0 ? (
+          <div className="p-6 text-sm text-slate-400">
+            No expenses recorded yet. Start by adding expenses from within a
+            specific estate.
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="border-b border-slate-800 bg-slate-900/60 text-xs uppercase tracking-wide text-slate-400">
+            <table className="min-w-full divide-y divide-slate-800 text-sm">
+              <thead className="bg-slate-950/60">
                 <tr>
-                  <th className="px-4 py-2">Date</th>
-                  <th className="px-4 py-2">Category</th>
-                  <th className="px-4 py-2">Payee</th>
-                  <th className="px-4 py-2">Description</th>
-                  <th className="px-4 py-2 text-right">Amount</th>
-                  <th className="px-4 py-2 text-right">Details</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Date
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Estate
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Category
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Payee
+                  </th>
+                  <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Amount
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Status
+                  </th>
+                  <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Actions
+                  </th>
                 </tr>
               </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="border-b border-slate-900/60 last:border-b-0 hover:bg-slate-900/40"
-                  >
-                    <td className="px-4 py-2 text-xs text-slate-300">
-                      {formatDate(row.incurredAt)}
-                    </td>
-                    <td className="px-4 py-2 text-xs text-slate-300">
-                      {row.category}
-                    </td>
-                    <td className="px-4 py-2 text-xs text-slate-300">
-                      {row.payee ?? "—"}
-                    </td>
-                    <td className="px-4 py-2 text-xs text-slate-400">
-                      {row.description ?? "—"}
-                    </td>
-                    <td className="px-4 py-2 text-right text-xs font-semibold text-rose-300">
-                      {formatCurrency(row.amount)}
-                    </td>
-                    <td className="px-4 py-2 text-right text-xs">
-                      <Link
-                        href={`/app/estates/${estateId}/expenses/${row.id}`}
-                        className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900/60 px-2 py-1 text-[11px] font-medium text-slate-100 hover:border-rose-500 hover:text-rose-200"
-                      >
-                        View
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+              <tbody className="divide-y divide-slate-800">
+                {expenses.map((expense) => {
+                  const estateLabel =
+                    expense.estate?.displayName ||
+                    expense.estate?.caseName ||
+                    "Unassigned";
+
+                  return (
+                    <tr key={expense._id} className="hover:bg-slate-900/50">
+                      <td className="whitespace-nowrap px-4 py-2 text-slate-200">
+                        {formatDate(expense.incurredAt ?? expense.createdAt)}
+                      </td>
+                      <td className="px-4 py-2 text-slate-200">
+                        {expense.estate ? (
+                          <Link
+                            href={`/app/estates/${expense.estate._id}`}
+                            className="text-xs font-medium text-rose-300 hover:text-rose-200"
+                          >
+                            {estateLabel}
+                          </Link>
+                        ) : (
+                          <span className="text-xs text-slate-500">
+                            Unassigned
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-xs text-slate-300">
+                        {humanizeCategory(expense.category)}
+                      </td>
+                      <td className="px-4 py-2 text-xs text-slate-300">
+                        {expense.payee || "–"}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2 text-right text-sm font-semibold text-slate-50">
+                        {formatCurrency(expense.amount)}
+                      </td>
+                      <td className="px-4 py-2 text-xs">
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                            expense.status === "PAID"
+                              ? "bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/30"
+                              : expense.status === "DUE"
+                              ? "bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/30"
+                              : "bg-slate-500/10 text-slate-300 ring-1 ring-slate-500/30"
+                          }`}
+                        >
+                          {humanizeStatus(expense.status)}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2 text-right text-xs">
+                        {expense.estate ? (
+                          <Link
+                            href={`/app/estates/${expense.estate._id}/expenses/${expense._id}`}
+                            className="rounded-full border border-slate-700/70 px-2 py-1 text-[11px] font-medium text-slate-200 hover:border-rose-500/70 hover:text-rose-200"
+                          >
+                            View
+                          </Link>
+                        ) : (
+                          <span className="text-xs text-slate-500">–</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

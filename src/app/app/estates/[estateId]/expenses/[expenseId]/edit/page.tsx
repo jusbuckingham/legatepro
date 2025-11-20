@@ -17,8 +17,8 @@ interface PageProps {
 }
 
 interface ExpenseDoc {
-  _id: unknown;
-  estateId: unknown;
+  _id: string;
+  estateId: string;
   date?: string | Date;
   category?: string;
   payee?: string;
