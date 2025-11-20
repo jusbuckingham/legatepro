@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 
 import { connectToDatabase } from "@/lib/db";
 import { Expense } from "@/models/Expense";
+import { auth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +17,43 @@ interface PageProps {
   }>;
 }
 
+type ExpenseCategory =
+  | "TAXES"
+  | "INSURANCE"
+  | "UTILITIES"
+  | "REPAIRS"
+  | "MORTGAGE"
+  | "LEGAL_FEES"
+  | "COURT_FEES"
+  | "OTHER";
+
+function normalizeCategory(raw: FormDataEntryValue | null): ExpenseCategory {
+  if (!raw) return "OTHER";
+  const v = raw.toString().trim().toLowerCase();
+
+  if (v.includes("repair") || v.includes("maint")) return "REPAIRS";
+  if (v.includes("tax")) return "TAXES";
+  if (v.includes("insur")) return "INSURANCE";
+  if (v.includes("utilit") || v.includes("water") || v.includes("gas") || v.includes("electric"))
+    return "UTILITIES";
+  if (v.includes("mortgage") || v.includes("loan")) return "MORTGAGE";
+  if (v.includes("legal") || v.includes("attorney") || v.includes("lawyer"))
+    return "LEGAL_FEES";
+
+  // Keep COURT_FEES extremely strict: only match EXACT "court fee" or "court fees"
+  if (v === "court fee" || v === "court fees") return "COURT_FEES";
+
+  return "OTHER";
+}
+
 async function createExpense(formData: FormData) {
   "use server";
+
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect("/api/auth/signin");
+  }
+  const ownerId = session.user.id;
 
   const estateId = formData.get("estateId");
 
@@ -26,7 +62,9 @@ async function createExpense(formData: FormData) {
   }
 
   const dateRaw = formData.get("date")?.toString();
-  const category = formData.get("category")?.toString().trim() || "";
+  const rawCategory = formData.get("category");
+  const category = normalizeCategory(rawCategory);
+
   const payee = formData.get("payee")?.toString().trim() || "";
   const description = formData.get("description")?.toString().trim() || "";
   const amountRaw = formData.get("amount")?.toString();
@@ -43,9 +81,10 @@ async function createExpense(formData: FormData) {
   await connectToDatabase();
 
   await Expense.create({
+    ownerId,
     estateId,
     date: date && !Number.isNaN(date.getTime()) ? date : undefined,
-    category: category || undefined,
+    category,
     payee: payee || undefined,
     description: description || undefined,
     amount:

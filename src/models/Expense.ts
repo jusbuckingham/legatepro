@@ -10,7 +10,9 @@ export type ExpenseCategory =
   | "INSURANCE"
   | "LEGAL"
   | "ACCOUNTING"
-  | "OTHER";
+  | "OTHER"
+  | "REPAIRS"
+  | "COURT_FEES";
 
 export interface IExpense {
   ownerId: Types.ObjectId | string; // user who owns this expense (Mongo ObjectId or string)
@@ -85,6 +87,8 @@ const ExpenseSchema = new Schema<ExpenseDocument>(
         "LEGAL",
         "ACCOUNTING",
         "OTHER",
+        "REPAIRS",
+        "COURT_FEES",
       ],
       required: true,
       default: "OTHER",

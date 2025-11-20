@@ -1,12 +1,18 @@
-// src/app/app/expenses/page.tsx
-import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { Types } from "mongoose";
+import type { FlattenMaps } from "mongoose";
+
+import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Estate, type EstateDocument } from "@/models/Estate";
 import { Expense, type ExpenseDocument } from "@/models/Expense";
-import type { FlattenMaps } from "mongoose";
-import { Types } from "mongoose";
+
+// Types
+
+type PageProps = {
+  params: Promise<{ estateId: string }>;
+};
 
 type EstateDocLean = FlattenMaps<EstateDocument> & {
   _id: Types.ObjectId;
@@ -16,16 +22,16 @@ type ExpenseDocLean = FlattenMaps<ExpenseDocument> & {
   _id: Types.ObjectId;
 };
 
-type GlobalExpenseRow = {
+type EstateExpenseRow = {
   id: string;
-  estateId: string;
-  estateName: string;
   incurredAt: string;
   category: string;
   amount: number;
   payee?: string;
   description?: string;
 };
+
+// Helpers
 
 function formatDate(dateString: string) {
   const date = new Date(dateString);
@@ -46,12 +52,13 @@ function formatCurrency(amount: number) {
 }
 
 export const metadata = {
-  title: "Expenses | LegatePro",
+  title: "Estate expenses | LegatePro",
 };
 
-export default async function GlobalExpensesPage() {
-  const session = await auth();
+export default async function EstateExpensesPage({ params }: PageProps) {
+  const { estateId } = await params;
 
+  const session = await auth();
   if (!session?.user?.id) {
     redirect("/login");
   }
@@ -60,37 +67,19 @@ export default async function GlobalExpensesPage() {
 
   await connectToDatabase();
 
-  const [estateDocs, expenseDocs] = await Promise.all([
-    Estate.find({ ownerId })
-      .select("caseName decedentName")
-      .lean<EstateDocLean[]>(),
-    Expense.find({ ownerId })
-      .sort({ incurredAt: -1 })
-      .lean<ExpenseDocLean[]>(),
-  ]);
+  const estate = await Estate.findOne({ _id: estateId, ownerId })
+    .select("caseName decedentName")
+    .lean<EstateDocLean | null>();
 
-  const estateNameById = new Map<string, string>();
-
-  for (const estate of estateDocs) {
-    const id = estate._id.toString();
-    const displayName =
-      // keep in sync with how we label estates elsewhere
-      (estate as EstateDocLean & { displayName?: string }).displayName ??
-      (estate as EstateDocLean & { caseName?: string }).caseName ??
-      (estate as EstateDocLean & { decedentName?: string }).decedentName ??
-      "Untitled estate";
-
-    estateNameById.set(id, displayName);
+  if (!estate) {
+    redirect("/app/estates");
   }
 
-  const rows: GlobalExpenseRow[] = expenseDocs.map((doc) => {
-    const estateIdRaw = doc.estateId as unknown;
+  const expenseDocs = await Expense.find({ estateId, ownerId })
+    .sort({ incurredAt: -1, createdAt: -1 })
+    .lean<ExpenseDocLean[]>();
 
-    const estateId =
-      estateIdRaw instanceof Types.ObjectId
-        ? estateIdRaw.toString()
-        : String(estateIdRaw);
-
+  const rows: EstateExpenseRow[] = expenseDocs.map((doc) => {
     const { incurredAt } = doc as ExpenseDocLean & {
       incurredAt?: Date | string;
       createdAt?: Date | string;
@@ -101,19 +90,17 @@ export default async function GlobalExpensesPage() {
       if (typeof incurredAt === "string") {
         return new Date(incurredAt).toISOString();
       }
-      // Fallback to createdAt if incurredAt is not present on the typed model
       const createdAt = (doc as ExpenseDocLean & {
         createdAt?: Date | string;
       }).createdAt;
       if (createdAt instanceof Date) return createdAt.toISOString();
-      if (typeof createdAt === "string") return new Date(createdAt).toISOString();
+      if (typeof createdAt === "string")
+        return new Date(createdAt).toISOString();
       return new Date().toISOString();
     })();
 
     return {
       id: doc._id.toString(),
-      estateId,
-      estateName: estateNameById.get(estateId) ?? "Unknown estate",
       incurredAt: incurredAtValue,
       category: String(
         (doc as ExpenseDocLean & { category?: string }).category ?? "Other"
@@ -130,31 +117,41 @@ export default async function GlobalExpensesPage() {
 
   const totalAmount = rows.reduce((sum, row) => sum + row.amount, 0);
 
-  const totalByEstate = rows.reduce<Map<string, number>>((acc, row) => {
-    const prev = acc.get(row.estateName) ?? 0;
-    acc.set(row.estateName, prev + row.amount);
+  const totalByCategory = rows.reduce<Map<string, number>>((acc, row) => {
+    const key = row.category || "Other";
+    const prev = acc.get(key) ?? 0;
+    acc.set(key, prev + row.amount);
     return acc;
   }, new Map<string, number>());
 
-  const estateTotals = Array.from(totalByEstate.entries()).sort(
+  const categoryTotals = Array.from(totalByCategory.entries()).sort(
     (a, b) => b[1] - a[1]
   );
+
+  const estateDisplayName =
+    (estate as EstateDocLean & { displayName?: string }).displayName ??
+    (estate as EstateDocLean & { caseName?: string }).caseName ??
+    (estate as EstateDocLean & { decedentName?: string }).decedentName ??
+    "Untitled estate";
 
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
+          <p className="text-xs uppercase tracking-wide text-slate-400">
+            Estate expenses
+          </p>
           <h1 className="text-2xl font-semibold text-slate-50">
-            Expenses overview
+            {estateDisplayName}
           </h1>
           <p className="mt-1 text-sm text-slate-400">
-            All expenses across your estates, with quick links back to each
-            case.
+            Track legal fees, repairs, utilities, taxes, and other costs for
+            this estate.
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap items-end gap-3">
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-right text-sm">
             <div className="text-xs uppercase tracking-wide text-slate-400">
               Total recorded
@@ -172,23 +169,30 @@ export default async function GlobalExpensesPage() {
               {rows.length}
             </div>
           </div>
+
+          <Link
+            href={`/app/estates/${estateId}/expenses/new`}
+            className="inline-flex items-center justify-center rounded-lg border border-rose-500/60 bg-rose-500/10 px-4 py-2 text-xs font-medium text-rose-200 shadow-sm shadow-rose-900/40 transition hover:border-rose-400 hover:bg-rose-500/20"
+          >
+            + New expense
+          </Link>
         </div>
       </div>
 
-      {/* Estate breakdown */}
-      {estateTotals.length > 0 && (
+      {/* Category breakdown */}
+      {categoryTotals.length > 0 && (
         <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
           <h2 className="mb-3 text-sm font-medium text-slate-200">
-            By estate
+            By category
           </h2>
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {estateTotals.map(([name, amount]) => (
+            {categoryTotals.map(([category, amount]) => (
               <div
-                key={name}
+                key={category}
                 className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs"
               >
                 <span className="max-w-[60%] truncate text-slate-200">
-                  {name}
+                  {category}
                 </span>
                 <span className="font-semibold text-rose-300">
                   {formatCurrency(amount)}
@@ -202,14 +206,14 @@ export default async function GlobalExpensesPage() {
       {/* Table */}
       <div className="rounded-2xl border border-slate-800 bg-slate-950/70">
         <div className="border-b border-slate-800 px-4 py-3 text-sm font-medium text-slate-200">
-          All expenses
+          All expenses for this estate
         </div>
         {rows.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-slate-400">
-            No expenses recorded yet.{" "}
+            No expenses recorded yet for this estate.{" "}
             <span className="text-slate-300">
-              Open an estate and add expenses from the{" "}
-              <span className="font-semibold">Expenses</span> tab.
+              Use the <span className="font-semibold">New expense</span> button
+              to add your first entry.
             </span>
           </div>
         ) : (
@@ -218,10 +222,11 @@ export default async function GlobalExpensesPage() {
               <thead className="border-b border-slate-800 bg-slate-900/60 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
                   <th className="px-4 py-2">Date</th>
-                  <th className="px-4 py-2">Estate</th>
                   <th className="px-4 py-2">Category</th>
                   <th className="px-4 py-2">Payee</th>
+                  <th className="px-4 py-2">Description</th>
                   <th className="px-4 py-2 text-right">Amount</th>
+                  <th className="px-4 py-2 text-right">Details</th>
                 </tr>
               </thead>
               <tbody>
@@ -233,22 +238,25 @@ export default async function GlobalExpensesPage() {
                     <td className="px-4 py-2 text-xs text-slate-300">
                       {formatDate(row.incurredAt)}
                     </td>
-                    <td className="px-4 py-2 text-xs">
-                      <Link
-                        href={`/app/estates/${row.estateId}/expenses`}
-                        className="text-slate-100 underline-offset-2 hover:text-rose-300 hover:underline"
-                      >
-                        {row.estateName}
-                      </Link>
-                    </td>
                     <td className="px-4 py-2 text-xs text-slate-300">
                       {row.category}
                     </td>
                     <td className="px-4 py-2 text-xs text-slate-300">
                       {row.payee ?? "—"}
                     </td>
+                    <td className="px-4 py-2 text-xs text-slate-400">
+                      {row.description ?? "—"}
+                    </td>
                     <td className="px-4 py-2 text-right text-xs font-semibold text-rose-300">
                       {formatCurrency(row.amount)}
+                    </td>
+                    <td className="px-4 py-2 text-right text-xs">
+                      <Link
+                        href={`/app/estates/${estateId}/expenses/${row.id}`}
+                        className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900/60 px-2 py-1 text-[11px] font-medium text-slate-100 hover:border-rose-500 hover:text-rose-200"
+                      >
+                        View
+                      </Link>
                     </td>
                   </tr>
                 ))}
