@@ -45,6 +45,16 @@ function formatDate(value: string | Date): string {
   });
 }
 
+function formatPeriod(month: number, year: number): string {
+  if (!month || !year) return "–";
+  const safeMonth = Math.min(Math.max(month, 1), 12);
+  const date = new Date(year, safeMonth - 1, 1);
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+  });
+}
+
 export default async function EstateRentLedgerPage({ params }: PageProps) {
   const { estateId } = await params;
 
@@ -69,9 +79,26 @@ export default async function EstateRentLedgerPage({ params }: PageProps) {
     })
   );
 
-  const totalCollected = payments.reduce(
-    (sum, p) => sum + (p.amount || 0),
-    0
+  const totalCollected = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  const currentMonthCollected = payments.reduce((sum, p) => {
+    const date =
+      typeof p.paymentDate === "string" ? new Date(p.paymentDate) : p.paymentDate;
+    if (!date || Number.isNaN(date.getTime())) return sum;
+    if (date.getMonth() === currentMonth && date.getFullYear() === currentYear) {
+      return sum + (p.amount || 0);
+    }
+    return sum;
+  }, 0);
+
+  const uniqueTenants = new Set(
+    payments
+      .map((p) => (p.tenantName || "").trim())
+      .filter((name) => name.length > 0)
   );
 
   return (
@@ -79,9 +106,7 @@ export default async function EstateRentLedgerPage({ params }: PageProps) {
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-lg font-semibold text-slate-100">
-            Rent ledger
-          </h1>
+          <h1 className="text-lg font-semibold text-slate-100">Rent ledger</h1>
           <p className="text-xs text-slate-400">
             Track rent payments collected for this estate.
           </p>
@@ -95,7 +120,7 @@ export default async function EstateRentLedgerPage({ params }: PageProps) {
         </Link>
       </div>
 
-      {/* Summary card */}
+      {/* Summary cards */}
       <div className="grid gap-4 md:grid-cols-3">
         <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-xs">
           <p className="text-slate-400">Total collected</p>
@@ -108,20 +133,22 @@ export default async function EstateRentLedgerPage({ params }: PageProps) {
         </div>
 
         <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-xs">
-          <p className="text-slate-400">Number of payments</p>
-          <p className="mt-1 text-lg font-semibold text-slate-100">
-            {payments.length}
+          <p className="text-slate-400">This month</p>
+          <p className="mt-1 text-lg font-semibold text-emerald-200">
+            {formatCurrency(currentMonthCollected)}
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Collected in {formatPeriod(currentMonth + 1, currentYear)}.
           </p>
         </div>
 
         <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-xs">
-          <p className="text-slate-400">Most recent payment</p>
-          <p className="mt-1 text-sm font-medium text-slate-100">
-            {payments[0]
-              ? `${formatCurrency(payments[0].amount)} on ${formatDate(
-                  payments[0].paymentDate
-                )}`
-              : "No payments recorded yet."}
+          <p className="text-slate-400">Active tenants</p>
+          <p className="mt-1 text-lg font-semibold text-slate-100">
+            {uniqueTenants.size}
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Based on names in recorded payments.
           </p>
         </div>
       </div>
@@ -148,7 +175,8 @@ export default async function EstateRentLedgerPage({ params }: PageProps) {
                 >
                   No rent payments recorded yet. Use{" "}
                   <span className="font-medium text-emerald-300">
-                    “Record rent payment”
+                    
+                    Record rent payment
                   </span>{" "}
                   to add the first one.
                 </td>
@@ -166,7 +194,7 @@ export default async function EstateRentLedgerPage({ params }: PageProps) {
                     {payment.tenantName}
                   </td>
                   <td className="px-3 py-2 align-top text-slate-100">
-                    {payment.periodMonth}/{payment.periodYear}
+                    {formatPeriod(payment.periodMonth, payment.periodYear)}
                   </td>
                   <td className="px-3 py-2 align-top text-right font-semibold text-emerald-300">
                     {formatCurrency(payment.amount)}
@@ -194,6 +222,7 @@ export default async function EstateRentLedgerPage({ params }: PageProps) {
           href={`/app/estates/${estateId}`}
           className="text-xs font-medium text-slate-400 hover:text-slate-100"
         >
+          
           ← Back to estate overview
         </Link>
       </div>

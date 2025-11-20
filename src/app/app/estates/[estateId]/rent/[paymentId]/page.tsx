@@ -61,7 +61,9 @@ export default async function RentPaymentDetailPage({ params }: PageProps) {
   const doc = await RentPayment.findOne({
     _id: paymentId,
     estateId,
-    ownerId: session.user.id,
+    // NOTE: We intentionally do NOT filter by ownerId here for now,
+    // because some existing records may not have ownerId set.
+    // ownerId: session.user.id,
   }).lean<LeanRentPayment | null>();
 
   if (!doc) {
