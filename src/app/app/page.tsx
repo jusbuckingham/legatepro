@@ -4,6 +4,7 @@ import { Estate } from "@/models/Estate";
 import { Task } from "@/models/Task";
 import { Expense } from "@/models/Expense";
 import { Contact } from "@/models/Contact";
+import { RentPayment } from "@/models/RentPayment";
 
 export const metadata = {
   title: "Dashboard | LegatePro",
@@ -33,6 +34,13 @@ type LeanExpense = {
   category?: string;
   amount: number;
   date?: Date | string | null;
+  estateId?: unknown;
+};
+
+type LeanRentPayment = {
+  _id: unknown;
+  amount: number;
+  paymentDate?: Date | string | null;
   estateId?: unknown;
 };
 
@@ -72,6 +80,9 @@ export default async function AppDashboardPage() {
     upcomingTasksRaw,
     recentExpensesRaw,
     monthlyExpensesRaw,
+    monthlyRentRaw,
+    allRentRaw,
+    allExpensesRaw,
   ] = await Promise.all([
     Estate.countDocuments({}),
     Estate.find({})
@@ -96,6 +107,11 @@ export default async function AppDashboardPage() {
     Expense.find({
       date: { $gte: startOfMonth },
     }).lean(),
+    RentPayment.find({
+      paymentDate: { $gte: startOfMonth },
+    }).lean(),
+    RentPayment.find({}).lean(),
+    Expense.find({}).lean(),
   ]);
 
   const estates = estatesRaw as LeanEstate[];
@@ -104,10 +120,59 @@ export default async function AppDashboardPage() {
     estateId?: LeanEstate | string;
   })[];
 
-  const monthlyExpenseTotal = (monthlyExpensesRaw as LeanExpense[]).reduce(
+  const monthlyExpenses = monthlyExpensesRaw as LeanExpense[];
+  const monthlyRent = monthlyRentRaw as LeanRentPayment[];
+  const allRent = allRentRaw as LeanRentPayment[];
+  const allExpenses = allExpensesRaw as LeanExpense[];
+
+  const expensesByCategoryThisMonth = monthlyExpenses.reduce<Record<string, number>>(
+    (acc, exp) => {
+      const key = exp.category || "Other";
+      acc[key] = (acc[key] || 0) + (exp.amount || 0);
+      return acc;
+    },
+    {},
+  );
+
+  const topCategoryEntry = Object.entries(expensesByCategoryThisMonth).sort(
+    (a, b) => b[1] - a[1],
+  )[0];
+
+  const topCategoryLabel = topCategoryEntry?.[0] ?? null;
+  const topCategoryAmount = topCategoryEntry?.[1] ?? 0;
+
+  const largestExpenseThisMonth = monthlyExpenses.reduce<LeanExpense | null>(
+    (largest, exp) => {
+      if (!largest) return exp;
+      const currentAmount = exp.amount || 0;
+      const largestAmount = largest.amount || 0;
+      return currentAmount > largestAmount ? exp : largest;
+    },
+    null,
+  );
+
+  const monthlyExpenseTotal = monthlyExpenses.reduce(
     (sum, exp) => sum + (exp.amount || 0),
     0,
   );
+
+  const monthlyRentTotal = monthlyRent.reduce(
+    (sum, payment) => sum + (payment.amount || 0),
+    0,
+  );
+
+  const totalRentAllTime = allRent.reduce(
+    (sum, payment) => sum + (payment.amount || 0),
+    0,
+  );
+
+  const totalExpensesAllTime = allExpenses.reduce(
+    (sum, exp) => sum + (exp.amount || 0),
+    0,
+  );
+
+  const netThisMonth = monthlyRentTotal - monthlyExpenseTotal;
+  const netAllTime = totalRentAllTime - totalExpensesAllTime;
 
   const userName = "there";
 
@@ -221,27 +286,53 @@ export default async function AppDashboardPage() {
 
         <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4 shadow-sm shadow-slate-950/60">
           <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-            Expenses this month
+            This month cashflow
           </p>
           <p className="mt-2 text-2xl font-semibold text-emerald-300">
-            {formatCurrency(monthlyExpenseTotal)}
+            {formatCurrency(netThisMonth)}
           </p>
           <p className="mt-1 text-xs text-slate-400">
-            Total tracked expenses since{" "}
-            {startOfMonth.toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-            })}
-            .
+            Rent: {formatCurrency(monthlyRentTotal)} • Expenses: {formatCurrency(monthlyExpenseTotal)}
+            <br />
+            Since {startOfMonth.toLocaleDateString("en-US", { month: "short", day: "numeric" })}.
           </p>
-          <div className="mt-3">
+          {(topCategoryLabel || largestExpenseThisMonth) && (
+            <div className="mt-2 space-y-1 text-[10px] text-slate-500">
+              {topCategoryLabel && (
+                <p>
+                  Top spending category this month:{" "}
+                  <span className="text-slate-300">{topCategoryLabel}</span>{" "}
+                  ({formatCurrency(topCategoryAmount)})
+                </p>
+              )}
+              {largestExpenseThisMonth && (
+                <p>
+                  Largest single expense:{" "}
+                  <span className="text-slate-300">
+                    {largestExpenseThisMonth.label || "Expense"}
+                  </span>{" "}
+                  ({formatCurrency(largestExpenseThisMonth.amount || 0)})
+                </p>
+              )}
+            </div>
+          )}
+          <div className="mt-3 flex flex-wrap gap-2">
             <Link
-              href="/app/estates"
+              href="/app/rent"
               className="text-xs font-medium text-rose-300 hover:text-rose-200"
             >
-              Drill into expenses →
+              View rent overview →
+            </Link>
+            <Link
+              href="/app/expenses"
+              className="text-xs font-medium text-rose-300 hover:text-rose-200"
+            >
+              View expenses overview →
             </Link>
           </div>
+          <p className="mt-2 text-[10px] text-slate-500">
+            All-time net: {formatCurrency(netAllTime)} (rent minus expenses).
+          </p>
         </div>
       </section>
 
