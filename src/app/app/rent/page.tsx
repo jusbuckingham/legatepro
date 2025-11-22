@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { RentPayment } from "@/models/RentPayment";
-import { Estate } from "@/models/Estate";
 
 export const metadata = {
   title: "Rent overview | LegatePro",

@@ -69,14 +69,29 @@ export default function EstateTimecardPage({ params }: PageProps) {
       }
 
       const typed = (data ?? {}) as { entries?: TimeEntry[] };
-      const loadedEntries: TimeEntry[] = Array.isArray(typed.entries)
+      const loadedEntriesRaw: TimeEntry[] = Array.isArray(typed.entries)
         ? typed.entries
         : [];
 
+      // Normalize hours so it's always a number
+      const loadedEntries: TimeEntry[] = loadedEntriesRaw.map((entry) => {
+        const hoursValue =
+          typeof entry.hours === "number"
+            ? entry.hours
+            : Number(
+                // Fallback for any legacy/incorrect shapes
+                (entry as { hours?: unknown }).hours ?? 0
+              ) || 0;
+
+        return {
+          ...entry,
+          hours: hoursValue,
+        };
+      });
+
       // Sort newest first by date
       loadedEntries.sort(
-        (a, b) =>
-          new Date(b.date).getTime() - new Date(a.date).getTime()
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
       );
 
       setEntries(loadedEntries);
@@ -432,7 +447,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
               <tbody>
                 {entries.map((entry) => (
                   <tr
-                    key={entry._id}
+                    key={`${entry._id}-${entry.date}`}
                     className="border-b border-slate-800/60 last:border-b-0"
                   >
                     <td className="py-2 pr-4 align-top text-slate-100">

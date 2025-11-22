@@ -1,22 +1,51 @@
-import {
-  Schema,
-  model,
-  models,
-  InferSchemaType,
-  HydratedDocument,
-  Model,
-  Types,
-} from "mongoose";
+import { Schema, model, models, type Model, type Document } from "mongoose";
 
-/**
- * TimeEntry Schema
- * Tracks billable/non‑billable hours for an estate.
- */
+export const TIME_ENTRY_ACTIVITY_TYPES = [
+  "GENERAL",
+  "COURT",
+  "ATTORNEY_COMMUNICATION",
+  "BENEFICIARY_COMMUNICATION",
+  "CREDITOR_COMMUNICATION",
+  "PROPERTY_VISIT",
+  "ACCOUNTING",
+  "DOCUMENT_PREP",
+  "TRAVEL",
+  "OTHER",
+] as const;
 
-const TimeEntrySchema = new Schema(
+export type TimeEntryActivityType = (typeof TIME_ENTRY_ACTIVITY_TYPES)[number];
+
+export interface TimeEntryAttrs {
+  ownerId: Schema.Types.ObjectId | string;
+  estateId: Schema.Types.ObjectId | string;
+
+  date: Date;
+  minutes: number; // store minutes for easy math
+
+  description?: string;
+  activityType: TimeEntryActivityType;
+
+  // Optional billing-related fields
+  hourlyRate?: number; // dollars per hour
+  billable?: boolean;
+  invoiced?: boolean;
+}
+
+export interface TimeEntryDocument extends Document, TimeEntryAttrs {
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const TimeEntrySchema = new Schema<TimeEntryDocument>(
   {
+    ownerId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
     estateId: {
-      type: Types.ObjectId,
+      type: Schema.Types.ObjectId,
       ref: "Estate",
       required: true,
       index: true,
@@ -26,26 +55,32 @@ const TimeEntrySchema = new Schema(
       type: Date,
       required: true,
     },
+    minutes: {
+      type: Number,
+      required: true,
+      min: 1,
+    },
 
     description: {
       type: String,
-      required: true,
       trim: true,
     },
 
-    hours: {
+    activityType: {
+      type: String,
+      enum: TIME_ENTRY_ACTIVITY_TYPES,
+      default: "GENERAL",
+    },
+
+    hourlyRate: {
       type: Number,
-      required: true,
       min: 0,
     },
-
-    notes: {
-      type: String,
-      trim: true,
-      default: "",
+    billable: {
+      type: Boolean,
+      default: true,
     },
-
-    isBillable: {
+    invoiced: {
       type: Boolean,
       default: false,
     },
@@ -55,14 +90,6 @@ const TimeEntrySchema = new Schema(
   }
 );
 
-// ---- Export Types ----
-export type TimeEntrySchemaType = InferSchemaType<typeof TimeEntrySchema>;
-export type TimeEntryDocument = HydratedDocument<TimeEntrySchemaType>;
-
-// Typed model type
-export type TimeEntryModelType = Model<TimeEntrySchemaType>;
-
-// ---- Export Model ----
-export const TimeEntry =
-  (models.TimeEntry as TimeEntryModelType) ||
-  model<TimeEntrySchemaType>("TimeEntry", TimeEntrySchema);
+export const TimeEntry: Model<TimeEntryDocument> =
+  (models.TimeEntry as Model<TimeEntryDocument>) ||
+  model<TimeEntryDocument>("TimeEntry", TimeEntrySchema);
