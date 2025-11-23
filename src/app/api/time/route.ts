@@ -206,4 +206,51 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 }
 
-// (optional) you can add DELETE or other verbs here later if needed
+// DELETE /api/time?id=...&estateId=...
+export async function DELETE(req: NextRequest): Promise<NextResponse> {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    const estateId = searchParams.get("estateId");
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "Missing id for time entry to delete" },
+        { status: 400 }
+      );
+    }
+
+    await connectToDatabase();
+
+    const deleteQuery: Record<string, unknown> = {
+      _id: id,
+      ownerId: session.user.id,
+    };
+
+    if (estateId) {
+      deleteQuery.estateId = estateId;
+    }
+
+    const deleted = await TimeEntry.findOneAndDelete(deleteQuery).lean();
+
+    if (!deleted) {
+      return NextResponse.json(
+        { error: "Time entry not found" },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true }, { status: 200 });
+  } catch (error) {
+    console.error("[DELETE /api/time] Error:", error);
+    return NextResponse.json(
+      { error: "Failed to delete time entry" },
+      { status: 500 }
+    );
+  }
+}

@@ -1,9 +1,11 @@
+// REPLACED BY PATCH: new implementation below
 "use client";
 
 import { useEffect, useState, FormEvent, use as usePromise } from "react";
 
 interface TimeEntry {
-  _id: string;
+  _id?: string;
+  id?: string;
   estateId: string;
   date: string;
   hours: number;
@@ -16,6 +18,10 @@ interface PageProps {
   params: Promise<{
     estateId: string;
   }>;
+}
+
+function isValidObjectId(id: unknown): id is string {
+  return typeof id === "string" && /^[0-9a-fA-F]{24}$/.test(id);
 }
 
 export default function EstateTimecardPage({ params }: PageProps) {
@@ -68,24 +74,52 @@ export default function EstateTimecardPage({ params }: PageProps) {
         throw new Error(apiError);
       }
 
-      const typed = (data ?? {}) as { entries?: TimeEntry[] };
-      const loadedEntriesRaw: TimeEntry[] = Array.isArray(typed.entries)
-        ? typed.entries
-        : [];
+      // Expect the API to return a clean JSON payload shaped like:
+      // { entries: [{ id, estateId, date, minutes, description, notes, isBillable }] }
+      const typed = (data ?? {}) as {
+        entries?: Array<{
+          id?: string;
+          _id?: string;
+          estateId?: string;
+          date?: string;
+          minutes?: number;
+          hours?: number;
+          description?: string;
+          notes?: string;
+          isBillable?: boolean;
+        }>;
+      };
 
-      // Normalize hours so it's always a number
-      const loadedEntries: TimeEntry[] = loadedEntriesRaw.map((entry) => {
+      const loadedEntriesRaw = Array.isArray(typed.entries) ? typed.entries : [];
+
+      const loadedEntries: TimeEntry[] = loadedEntriesRaw.map((raw) => {
+        const id =
+          typeof raw.id === "string"
+            ? raw.id
+            : typeof raw._id === "string"
+            ? raw._id
+            : undefined;
+
+        const minutesValue =
+          typeof raw.minutes === "number"
+            ? raw.minutes
+            : Number(raw.minutes ?? 0) || 0;
+
+        // If the API already gave us hours, prefer that; otherwise compute from minutes.
         const hoursValue =
-          typeof entry.hours === "number"
-            ? entry.hours
-            : Number(
-                // Fallback for any legacy/incorrect shapes
-                (entry as { hours?: unknown }).hours ?? 0
-              ) || 0;
+          typeof raw.hours === "number" && !Number.isNaN(raw.hours)
+            ? raw.hours
+            : minutesValue / 60;
 
         return {
-          ...entry,
+          _id: id,
+          id,
+          estateId: raw.estateId ?? estateId,
+          date: raw.date ?? new Date().toISOString(),
           hours: hoursValue,
+          description: raw.description ?? "",
+          notes: raw.notes ?? "",
+          isBillable: raw.isBillable !== false,
         };
       });
 
@@ -445,11 +479,13 @@ export default function EstateTimecardPage({ params }: PageProps) {
                 </tr>
               </thead>
               <tbody>
-                {entries.map((entry) => (
-                  <tr
-                    key={`${entry._id}-${entry.date}`}
-                    className="border-b border-slate-800/60 last:border-b-0"
-                  >
+                {entries.map((entry, index) => {
+                  const hasValidId = isValidObjectId(entry._id);
+                  return (
+                    <tr
+                      key={hasValidId ? entry._id : `${entry.date}-${index}`}
+                      className="border-b border-slate-800/60 last:border-b-0"
+                    >
                     <td className="py-2 pr-4 align-top text-slate-100">
                       {new Date(entry.date).toLocaleDateString()}
                     </td>
@@ -466,15 +502,22 @@ export default function EstateTimecardPage({ params }: PageProps) {
                       {entry.isBillable ? "Yes" : "No"}
                     </td>
                     <td className="py-2 pl-2 pr-0 align-top text-right">
-                      <a
-                        href={`/app/estates/${estateId}/time/${entry._id}`}
-                        className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800"
-                      >
-                        View / edit
-                      </a>
+                      {hasValidId ? (
+                        <a
+                          href={`/app/estates/${estateId}/time/${entry._id}`}
+                          className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800"
+                        >
+                          View / edit
+                        </a>
+                      ) : (
+                        <span className="text-[11px] text-slate-500">
+                          No ID available
+                        </span>
+                      )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
                 <tr className="border-t border-slate-700 font-semibold text-slate-100">
                   <td className="py-2 pr-4 align-top">Totals</td>
                   <td className="py-2 pr-4 align-top"></td>

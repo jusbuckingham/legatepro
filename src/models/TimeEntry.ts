@@ -23,6 +23,7 @@ export interface TimeEntryAttrs {
   minutes: number; // store minutes for easy math
 
   description?: string;
+  notes?: string;
   activityType: TimeEntryActivityType;
 
   // Optional billing-related fields
@@ -62,6 +63,10 @@ const TimeEntrySchema = new Schema<TimeEntryDocument>(
     },
 
     description: {
+      type: String,
+      trim: true,
+    },
+    notes: {
       type: String,
       trim: true,
     },

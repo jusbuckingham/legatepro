@@ -7,13 +7,17 @@ type RouteParams = {
   estateId: string;
 };
 
+interface RouteContext {
+  params: Promise<RouteParams>;
+}
+
 // Derive a proper activity type from the constant
 type TimeEntryActivityType = (typeof TIME_ENTRY_ACTIVITY_TYPES)[number];
 
 // GET /api/estates/[estateId]/time
 export async function GET(
   _req: NextRequest,
-  context: { params: Promise<RouteParams> }
+  context: RouteContext
 ): Promise<NextResponse> {
   const session = await auth();
   if (!session?.user?.id) {
@@ -45,7 +49,7 @@ export async function GET(
 // POST /api/estates/[estateId]/time
 export async function POST(
   req: NextRequest,
-  context: { params: Promise<RouteParams> }
+  context: RouteContext
 ): Promise<NextResponse> {
   const session = await auth();
   if (!session?.user?.id) {
@@ -57,51 +61,66 @@ export async function POST(
   try {
     await connectToDatabase();
 
-    const body = await req.json();
-
-    const {
-      date,
-      minutes,
-      description,
-      activityType,
-      hourlyRate,
-      billable,
-      invoiced,
-    } = body as {
+    const body = (await req.json()) as {
       date: string;
-      minutes: number;
+      minutes: number | string;
       description?: string;
       activityType?: string;
-      hourlyRate?: number;
-      billable?: boolean;
-      invoiced?: boolean;
+      hourlyRate?: number | string;
+      billable?: boolean | string;
+      invoiced?: boolean | string;
+      taskId?: string | null;
+      notes?: string;
     };
 
-    if (!date || !minutes) {
+    const minutesNumber =
+      typeof body.minutes === "string"
+        ? Number.parseFloat(body.minutes)
+        : body.minutes;
+
+    if (
+      !body.date ||
+      minutesNumber === undefined ||
+      Number.isNaN(minutesNumber) ||
+      minutesNumber <= 0
+    ) {
       return NextResponse.json(
-        { error: "date and minutes are required" },
+        { error: "Valid date and positive minutes are required" },
         { status: 400 }
       );
     }
 
+    const hourlyRateNumber =
+      typeof body.hourlyRate === "string"
+        ? Number.parseFloat(body.hourlyRate)
+        : body.hourlyRate ?? 0;
+
     const normalizedActivityType: TimeEntryActivityType =
-      activityType &&
+      body.activityType &&
       TIME_ENTRY_ACTIVITY_TYPES.includes(
-        activityType as TimeEntryActivityType
+        body.activityType as TimeEntryActivityType
       )
-        ? (activityType as TimeEntryActivityType)
+        ? (body.activityType as TimeEntryActivityType)
         : "GENERAL";
 
     const created = await TimeEntry.create({
       ownerId: session.user.id,
       estateId,
-      date: new Date(date),
-      minutes,
-      description: description?.trim() || undefined,
+      date: new Date(body.date),
+      minutes: minutesNumber,
+      description: body.description?.trim() || undefined,
+      notes: body.notes?.trim() || undefined,
       activityType: normalizedActivityType,
-      hourlyRate: typeof hourlyRate === "number" ? hourlyRate : undefined,
-      billable: typeof billable === "boolean" ? billable : true,
-      invoiced: typeof invoiced === "boolean" ? invoiced : false,
+      hourlyRate: hourlyRateNumber,
+      billable:
+        typeof body.billable === "string"
+          ? body.billable === "true" || body.billable === "on"
+          : body.billable ?? true,
+      invoiced:
+        typeof body.invoiced === "string"
+          ? body.invoiced === "true" || body.invoiced === "on"
+          : body.invoiced ?? false,
+      taskId: body.taskId || undefined,
     });
 
     return NextResponse.json({ entry: created }, { status: 201 });
