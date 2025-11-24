@@ -46,7 +46,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
       setError(null);
 
       const res = await fetch(
-        `/api/time?estateId=${encodeURIComponent(estateId)}`
+        `/api/estates/${encodeURIComponent(estateId)}/time`
       );
 
       let data: unknown = null;
@@ -86,6 +86,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
           hours?: number;
           description?: string;
           notes?: string;
+          note?: string; // support legacy `note` field without using `any`
           isBillable?: boolean;
         }>;
       };
@@ -105,11 +106,24 @@ export default function EstateTimecardPage({ params }: PageProps) {
             ? raw.minutes
             : Number(raw.minutes ?? 0) || 0;
 
-        // If the API already gave us hours, prefer that; otherwise compute from minutes.
-        const hoursValue =
-          typeof raw.hours === "number" && !Number.isNaN(raw.hours)
+        // Prefer hours from the API if it is a valid number; otherwise derive from minutes
+        const hoursValueRaw =
+          typeof raw.hours === "number"
             ? raw.hours
+            : Number(raw.hours ?? 0);
+
+        const hoursValue =
+          Number.isFinite(hoursValueRaw) && !Number.isNaN(hoursValueRaw)
+            ? hoursValueRaw
             : minutesValue / 60;
+
+        // Support both `notes` and `note` keys from the API payload
+        const notesValue =
+          typeof raw.notes === "string" && raw.notes.trim().length > 0
+            ? raw.notes
+            : typeof raw.note === "string" && raw.note.trim().length > 0
+            ? raw.note
+            : "";
 
         return {
           _id: id,
@@ -118,7 +132,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
           date: raw.date ?? new Date().toISOString(),
           hours: hoursValue,
           description: raw.description ?? "",
-          notes: raw.notes ?? "",
+          notes: notesValue,
           isBillable: raw.isBillable !== false,
         };
       });
@@ -493,7 +507,9 @@ export default function EstateTimecardPage({ params }: PageProps) {
                       {entry.description}
                     </td>
                     <td className="py-2 pr-4 align-top text-right text-slate-100">
-                      {entry.hours.toFixed(2)}
+                      {Number.isFinite(entry.hours)
+                        ? entry.hours.toFixed(2)
+                        : "0.00"}
                     </td>
                     <td className="py-2 pr-4 align-top text-slate-300">
                       {entry.notes || "—"}

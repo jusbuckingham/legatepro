@@ -1,44 +1,94 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { TimeEntry, TIME_ENTRY_ACTIVITY_TYPES } from "@/models/TimeEntry";
+import {
+  TimeEntry,
+  TIME_ENTRY_ACTIVITY_TYPES,
+  TimeEntryActivityType
+} from "@/models/TimeEntry";
 
-type RouteParams = {
-  estateId: string;
-};
-
-interface RouteContext {
-  params: Promise<RouteParams>;
+function normalizeObjectId(value: unknown): string | undefined {
+  if (!value) return undefined;
+  if (typeof value === "string") return value;
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "toString" in value &&
+    typeof (value as { toString: () => string }).toString === "function"
+  ) {
+    return (value as { toString: () => string }).toString();
+  }
+  return String(value);
 }
 
-// Derive a proper activity type from the constant
-type TimeEntryActivityType = (typeof TIME_ENTRY_ACTIVITY_TYPES)[number];
-
-// GET /api/estates/[estateId]/time
-export async function GET(
-  _req: NextRequest,
-  context: RouteContext
-): Promise<NextResponse> {
+// GET /api/time
+// Optional query params:
+//   - estateId: limit to a single estate
+//   - from, to: ISO date strings to bound the date range (inclusive)
+export async function GET(req: NextRequest): Promise<NextResponse> {
   const session = await auth();
+
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { estateId } = await context.params;
+  const { searchParams } = new URL(req.url);
+  const estateId = searchParams.get("estateId");
+  const from = searchParams.get("from");
+  const to = searchParams.get("to");
+
+  const query: Record<string, unknown> = {
+    ownerId: session.user.id,
+  };
+
+  if (estateId) {
+    query.estateId = estateId;
+  }
+
+  if (from || to) {
+    const dateQuery: { $gte?: Date; $lte?: Date } = {};
+    if (from) dateQuery.$gte = new Date(from);
+    if (to) dateQuery.$lte = new Date(to);
+    query.date = dateQuery;
+  }
 
   try {
     await connectToDatabase();
 
-    const entries = await TimeEntry.find({
-      estateId,
-      ownerId: session.user.id,
-    })
+    const docs = (await TimeEntry.find(query)
       .sort({ date: -1, createdAt: -1 })
-      .lean();
+      .lean()) as unknown[];
+
+    const entries = docs.map((raw) => {
+      const doc = raw as {
+        _id?: unknown;
+        estateId?: unknown;
+        taskId?: unknown;
+        minutes?: unknown;
+        hourlyRate?: unknown;
+      };
+
+      const minutes = Number(doc.minutes ?? 0);
+      const hourlyRate = Number(doc.hourlyRate ?? 0);
+      const hours = minutes / 60;
+      const amount = (minutes * hourlyRate) / 60;
+
+      const rawObj = (typeof raw === "object" && raw !== null) ? raw as Record<string, unknown> : {};
+      return {
+        ...rawObj,
+        _id: normalizeObjectId(doc._id) ?? "",
+        estateId: normalizeObjectId(doc.estateId),
+        taskId: normalizeObjectId(doc.taskId),
+        minutes,
+        hourlyRate,
+        hours,
+        amount,
+      };
+    });
 
     return NextResponse.json({ entries }, { status: 200 });
   } catch (error) {
-    console.error("[GET /api/estates/[estateId]/time] Error:", error);
+    console.error("[GET /api/time] Error:", error);
     return NextResponse.json(
       { error: "Failed to load time entries" },
       { status: 500 }
@@ -46,54 +96,66 @@ export async function GET(
   }
 }
 
-// POST /api/estates/[estateId]/time
-export async function POST(
-  req: NextRequest,
-  context: RouteContext
-): Promise<NextResponse> {
+// POST /api/time
+// Accepts JSON body with at minimum: { estateId, date, minutes | hours }
+// Other optional fields: description, notes, hourlyRate, billable, invoiced, activityType, taskId
+export async function POST(req: NextRequest): Promise<NextResponse> {
   const session = await auth();
+
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  const { estateId } = await context.params;
 
   try {
     await connectToDatabase();
 
     const body = (await req.json()) as {
-      date: string;
-      minutes: number | string;
+      estateId?: string;
+      date?: string;
+      minutes?: number | string | null;
+      hours?: number | string | null;
       description?: string;
-      activityType?: string;
-      hourlyRate?: number | string;
+      notes?: string;
+      hourlyRate?: number | string | null;
       billable?: boolean | string;
       invoiced?: boolean | string;
+      activityType?: string | null;
       taskId?: string | null;
-      notes?: string;
     };
 
-    const minutesNumber =
-      typeof body.minutes === "string"
-        ? Number.parseFloat(body.minutes)
-        : body.minutes;
-
-    if (
-      !body.date ||
-      minutesNumber === undefined ||
-      Number.isNaN(minutesNumber) ||
-      minutesNumber <= 0
-    ) {
+    if (!body.estateId) {
       return NextResponse.json(
-        { error: "Valid date and positive minutes are required" },
+        { error: "estateId is required" },
         { status: 400 }
       );
     }
 
-    const hourlyRateNumber =
-      typeof body.hourlyRate === "string"
-        ? Number.parseFloat(body.hourlyRate)
-        : body.hourlyRate ?? 0;
+    if (!body.date) {
+      return NextResponse.json(
+        { error: "date is required" },
+        { status: 400 }
+      );
+    }
+
+    // Normalise minutes: allow client to send either minutes or hours
+    let minutes: number | null = null;
+    if (body.minutes !== undefined && body.minutes !== null) {
+      minutes = Number(body.minutes);
+    } else if (body.hours !== undefined && body.hours !== null) {
+      minutes = Number(body.hours) * 60;
+    }
+
+    if (!minutes || Number.isNaN(minutes) || minutes <= 0) {
+      return NextResponse.json(
+        { error: "A positive number of minutes or hours is required" },
+        { status: 400 }
+      );
+    }
+
+    const hourlyRate =
+      body.hourlyRate !== undefined && body.hourlyRate !== null
+        ? Number(body.hourlyRate)
+        : 0;
 
     const normalizedActivityType: TimeEntryActivityType =
       body.activityType &&
@@ -105,13 +167,13 @@ export async function POST(
 
     const created = await TimeEntry.create({
       ownerId: session.user.id,
-      estateId,
+      estateId: body.estateId,
       date: new Date(body.date),
-      minutes: minutesNumber,
+      minutes,
       description: body.description?.trim() || undefined,
       notes: body.notes?.trim() || undefined,
       activityType: normalizedActivityType,
-      hourlyRate: hourlyRateNumber,
+      hourlyRate,
       billable:
         typeof body.billable === "string"
           ? body.billable === "true" || body.billable === "on"
@@ -123,9 +185,31 @@ export async function POST(
       taskId: body.taskId || undefined,
     });
 
-    return NextResponse.json({ entry: created }, { status: 201 });
+    const minutesCreated = Number(created.minutes ?? minutes ?? 0);
+    const hourlyRateCreated = Number(created.hourlyRate ?? hourlyRate ?? 0);
+    const hoursCreated = minutesCreated / 60;
+    const amountCreated = (minutesCreated * hourlyRateCreated) / 60;
+
+    const createdWithIds = created as {
+      _id?: unknown;
+      estateId?: unknown;
+      taskId?: unknown;
+    };
+
+    const entry = {
+      ...created.toObject(),
+      _id: normalizeObjectId(createdWithIds._id) ?? "",
+      estateId: normalizeObjectId(createdWithIds.estateId),
+      taskId: normalizeObjectId(createdWithIds.taskId),
+      minutes: minutesCreated,
+      hourlyRate: hourlyRateCreated,
+      hours: hoursCreated,
+      amount: amountCreated,
+    };
+
+    return NextResponse.json({ entry }, { status: 201 });
   } catch (error) {
-    console.error("[POST /api/estates/[estateId]/time] Error:", error);
+    console.error("[POST /api/time] Error:", error);
     return NextResponse.json(
       { error: "Failed to create time entry" },
       { status: 500 }
