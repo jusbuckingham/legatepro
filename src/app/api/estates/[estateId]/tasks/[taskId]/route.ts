@@ -1,208 +1,155 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Task } from "@/models/Task";
 
-interface RouteParams {
-  params: Promise<{
-    estateId: string;
-    taskId: string;
-  }>;
+type RouteParams = {
+  estateId: string;
+  taskId: string;
+};
+
+async function requireSession() {
+  const session = await auth();
+  if (!session || !session.user || !session.user.id) {
+    return null;
+  }
+  return session;
 }
 
 export async function GET(
   _req: NextRequest,
-  { params }: RouteParams
-): Promise<NextResponse> {
-  try {
-    await connectToDatabase();
-    const { estateId, taskId } = await params;
-
-    if (!estateId || !taskId) {
-      return NextResponse.json(
-        { error: "Missing estateId or taskId" },
-        { status: 400 }
-      );
-    }
-
-    const task = await Task.findOne({ _id: taskId, estateId }).lean();
-
-    if (!task) {
-      return NextResponse.json({ error: "Task not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({ task }, { status: 200 });
-  } catch (error) {
-    console.error(
-      "[GET /api/estates/[estateId]/tasks/[taskId]] Error:",
-      error
-    );
-    return NextResponse.json(
-      { error: "Failed to fetch task" },
-      { status: 500 }
-    );
+  { params }: { params: RouteParams },
+) {
+  const session = await requireSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const { estateId, taskId } = params;
+
+  await connectToDatabase();
+
+  const task = await Task.findOne({
+    _id: taskId,
+    estateId,
+    ownerId: session.user.id,
+  });
+
+  if (!task) {
+    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({ task }, { status: 200 });
 }
 
-export async function PATCH(
+/**
+ * Shared update logic used by both PUT and POST so the UI can hit this
+ * endpoint with either verb.
+ */
+async function updateTask(
   req: NextRequest,
-  { params }: RouteParams
-): Promise<NextResponse> {
+  { params }: { params: RouteParams },
+) {
+  const session = await requireSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { estateId, taskId } = params;
+
+  await connectToDatabase();
+
+  let body: {
+    subject?: string;
+    description?: string;
+    status?: string;
+    priority?: string;
+    date?: string;
+    notes?: string;
+  };
+
   try {
-    await connectToDatabase();
-    const { estateId, taskId } = await params;
-
-    if (!estateId || !taskId) {
-      return NextResponse.json(
-        { error: "Missing estateId or taskId" },
-        { status: 400 }
-      );
-    }
-
-    const body = (await req.json()) as {
-      subject?: string;
-      description?: string;
-      notes?: string;
-      status?: "OPEN" | "DONE";
-      priority?: "LOW" | "MEDIUM" | "HIGH";
-      date?: string | null;
-    };
-
-    const update: Record<string, unknown> = {};
-
-    if (typeof body.subject === "string") {
-      update.subject = body.subject.trim();
-    }
-    if (typeof body.description === "string") {
-      update.description = body.description;
-    }
-    if (typeof body.notes === "string") {
-      update.notes = body.notes;
-    }
-    if (typeof body.status === "string") {
-      update.status = body.status;
-    }
-    if (typeof body.priority === "string") {
-      update.priority = body.priority;
-    }
-    if (Object.prototype.hasOwnProperty.call(body, "date")) {
-      update.date = body.date ? new Date(body.date) : null;
-    }
-
-    const updated = await Task.findOneAndUpdate(
-      { _id: taskId, estateId },
-      update,
-      { new: true }
-    ).lean();
-
-    if (!updated) {
-      return NextResponse.json({ error: "Task not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({ task: updated }, { status: 200 });
-  } catch (error) {
-    console.error(
-      "[PATCH /api/estates/[estateId]/tasks/[taskId]] Error:",
-      error
-    );
+    body = (await req.json()) as typeof body;
+  } catch {
     return NextResponse.json(
-      { error: "Failed to update task" },
-      { status: 500 }
+      { error: "Invalid JSON body" },
+      { status: 400 },
     );
   }
+
+  const update: Record<string, unknown> = {};
+
+  if (body.subject !== undefined) update.subject = body.subject;
+  if (body.description !== undefined) update.description = body.description;
+  if (body.status !== undefined) update.status = body.status;
+  if (body.priority !== undefined) update.priority = body.priority;
+  if (body.notes !== undefined) update.notes = body.notes;
+  if (body.date !== undefined) {
+    const parsed = new Date(body.date);
+    if (!Number.isNaN(parsed.getTime())) {
+      update.date = parsed;
+    }
+  }
+
+  // Optionally track completion timestamp
+  if (body.status === "DONE") {
+    update.completedAt = new Date();
+  }
+
+  const updated = await Task.findOneAndUpdate(
+    {
+      _id: taskId,
+      estateId,
+      ownerId: session.user.id,
+    },
+    { $set: update },
+    { new: true },
+  );
+
+  if (!updated) {
+    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({ task: updated }, { status: 200 });
+}
+
+export async function PUT(
+  req: NextRequest,
+  ctx: { params: RouteParams },
+) {
+  return updateTask(req, ctx);
+}
+
+// ✅ This is what fixes your 405 for POST
+export async function POST(
+  req: NextRequest,
+  ctx: { params: RouteParams },
+) {
+  return updateTask(req, ctx);
 }
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: RouteParams
-): Promise<NextResponse> {
-  try {
-    await connectToDatabase();
-    const { estateId, taskId } = await params;
-
-    if (!estateId || !taskId) {
-      return NextResponse.json(
-        { error: "Missing estateId or taskId" },
-        { status: 400 }
-      );
-    }
-
-    const deleted = await Task.findOneAndDelete({
-      _id: taskId,
-      estateId,
-    }).lean();
-
-    if (!deleted) {
-      return NextResponse.json({ error: "Task not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({ success: true }, { status: 200 });
-  } catch (error) {
-    console.error(
-      "[DELETE /api/estates/[estateId]/tasks/[taskId]] Error:",
-      error
-    );
-    return NextResponse.json(
-      { error: "Failed to delete task" },
-      { status: 500 }
-    );
+  { params }: { params: RouteParams },
+) {
+  const session = await requireSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-}
 
-export async function POST(
-  req: NextRequest,
-  { params }: RouteParams
-): Promise<NextResponse> {
-  try {
-    await connectToDatabase();
-    const { estateId, taskId } = await params;
+  const { estateId, taskId } = params;
 
-    if (!estateId || !taskId) {
-      return NextResponse.json(
-        { error: "Missing estateId or taskId" },
-        { status: 400 }
-      );
-    }
+  await connectToDatabase();
 
-    const formData = await req.formData();
-    const intent = formData.get("intent");
+  const deleted = await Task.findOneAndDelete({
+    _id: taskId,
+    estateId,
+    ownerId: session.user.id,
+  });
 
-    if (intent !== "toggleStatus") {
-      return NextResponse.json(
-        { error: "Unsupported intent" },
-        { status: 400 }
-      );
-    }
-
-    const task = await Task.findOne({ _id: taskId, estateId });
-
-    if (!task) {
-      return NextResponse.json({ error: "Task not found" }, { status: 404 });
-    }
-
-    const isDone = task.status === "DONE";
-    task.status = isDone ? "OPEN" : "DONE";
-
-    if (!isDone) {
-      // Marking as DONE now
-      task.completedAt = new Date();
-    } else {
-      // Reopening the task
-      task.completedAt = undefined;
-    }
-
-    await task.save();
-
-    return NextResponse.redirect(
-      new URL(`/app/estates/${estateId}/tasks/${taskId}`, req.url)
-    );
-  } catch (error) {
-    console.error(
-      "[POST /api/estates/[estateId]/tasks/[taskId]] Error:",
-      error
-    );
-    return NextResponse.json(
-      { error: "Failed to update task status" },
-      { status: 500 }
-    );
+  if (!deleted) {
+    return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
+
+  return NextResponse.json({ success: true }, { status: 200 });
 }

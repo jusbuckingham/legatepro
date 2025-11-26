@@ -383,8 +383,7 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
             {totalHours.toFixed(2)}h
           </p>
           <p className="mt-1 text-xs text-slate-400">
-            Across {entries.length} time entr
-            {entries.length === 1 ? "y" : "ies"}.
+            Across {entries.length} time entries.
           </p>
         </div>
 
@@ -458,8 +457,7 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
             Time Entries
           </p>
           <p className="text-[11px] text-slate-500">
-            Showing {sortedEntries.length} entr
-            {sortedEntries.length === 1 ? "y" : "ies"} matching filters.
+            Showing {sortedEntries.length} entries matching filters.
           </p>
         </div>
 

@@ -1,101 +1,95 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Task } from "@/models/Task";
-import { auth } from "@/lib/auth";
 
-interface RouteParams {
-  params: Promise<{
-    estateId: string;
-  }>;
-}
-
+/**
+ * GET /api/estates/[estateId]/tasks
+ * List tasks for a specific estate belonging to the logged-in user
+ */
 export async function GET(
   _req: NextRequest,
-  { params }: RouteParams
-): Promise<NextResponse> {
+  { params }: { params: Promise<{ estateId: string }> },
+) {
+  const { estateId } = await params;
+
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  await connectToDatabase();
+
   try {
-    await connectToDatabase();
-    const { estateId } = await params;
-
-    if (!estateId) {
-      return NextResponse.json(
-        { error: "Missing estateId" },
-        { status: 400 }
-      );
-    }
-
-    const tasks = await Task.find({ estateId })
-      .sort({ date: 1, createdAt: -1 })
+    const tasks = await Task.find({
+      estateId,
+      ownerId: session.user.id,
+    })
+      .sort({ date: -1, createdAt: -1 })
       .lean();
 
     return NextResponse.json({ tasks }, { status: 200 });
   } catch (error) {
     console.error("[GET /api/estates/[estateId]/tasks] Error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch tasks" },
-      { status: 500 }
+      { error: "Failed to load tasks" },
+      { status: 500 },
     );
   }
 }
 
+/**
+ * POST /api/estates/[estateId]/tasks
+ * Create a new task for a specific estate
+ */
 export async function POST(
   req: NextRequest,
-  { params }: RouteParams
-): Promise<NextResponse> {
+  { params }: { params: Promise<{ estateId: string }> },
+) {
+  const { estateId } = await params;
+
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  await connectToDatabase();
+
   try {
-    await connectToDatabase();
-    const { estateId } = await params;
-
-    if (!estateId) {
-      return NextResponse.json(
-        { error: "Missing estateId" },
-        { status: 400 }
-      );
-    }
-
-    const session = await auth();
-    const userId = session?.user?.id;
-
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const body = (await req.json()) as {
-      subject: string;
+      subject?: string;
       description?: string;
+      date?: string;
+      status?: string;
+      priority?: string;
       notes?: string;
-      status?: "OPEN" | "DONE";
-      priority?: "LOW" | "MEDIUM" | "HIGH";
-      date?: string | null;
     };
 
-    if (!body.subject?.trim()) {
+    const subject = body.subject?.trim();
+    if (!subject) {
       return NextResponse.json(
         { error: "Subject is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const payload = {
-      subject: body.subject.trim(),
+    const task = await Task.create({
+      estateId,
+      ownerId: session.user.id,
+      subject,
       description: body.description ?? "",
       notes: body.notes ?? "",
+      date: body.date ? new Date(body.date) : new Date(),
       status: body.status ?? "OPEN",
       priority: body.priority ?? "MEDIUM",
-      date: body.date ? new Date(body.date) : undefined,
-      estateId,
-      // if your Task model has ownerId/createdBy, add it here:
-      // ownerId: userId,
-    };
-
-    const task = await Task.create(payload);
+    });
 
     return NextResponse.json({ task }, { status: 201 });
   } catch (error) {
     console.error("[POST /api/estates/[estateId]/tasks] Error:", error);
     return NextResponse.json(
       { error: "Failed to create task" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
