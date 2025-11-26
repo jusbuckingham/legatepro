@@ -1,331 +1,418 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
-import { revalidatePath } from "next/cache";
-
+import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { Estate, type EstateDocument } from "@/models/Estate";
-import {
-  Task,
-  type TaskDocument,
-  TaskStatus,
-  TaskPriority,
-} from "@/models/Task";
+import { Estate, EstateDocument } from "@/models/Estate";
+import { Task, TaskDocLean } from "@/models/Task";
+import { format, isBefore, startOfDay, addDays } from "date-fns";
 
 type PageProps = {
-  params: Promise<{
-    estateId: string;
-  }>;
+  params: Promise<{ estateId: string }>;
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
 };
 
-type TaskListItem = {
-  _id: string;
-  subject: string;
-  status: TaskStatus;
-  priority: TaskPriority;
-  dueDate?: Date | null;
-};
+type TaskStatusFilter = "ALL" | "OPEN" | "DONE";
+type TaskPriorityFilter = "ALL" | "LOW" | "MEDIUM" | "HIGH";
+type TaskSortOption = "dueDateAsc" | "dueDateDesc" | "priority" | "recent";
 
-function getStatusLabel(status: TaskStatus) {
-  switch (status) {
-    case "OPEN":
-      return "Open";
-    case "DONE":
-      return "Done";
-    default:
-      return status;
-  }
+// For sorting by priority, including CRITICAL if it exists on tasks
+type PriorityKey = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+
+function toDate(value: unknown): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  const str = String(value);
+  if (!str) return null;
+  const d = new Date(str);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function getStatusClasses(status: TaskStatus) {
-  if (status === "DONE") {
-    return "inline-flex items-center rounded-full bg-emerald-900/40 px-2 py-0.5 text-[11px] font-medium text-emerald-200 border border-emerald-700/60";
-  }
-  return "inline-flex items-center rounded-full bg-amber-900/40 px-2 py-0.5 text-[11px] font-medium text-amber-100 border border-amber-700/60";
-}
-
-function getPriorityLabel(priority: TaskPriority) {
-  switch (priority) {
-    case "LOW":
-      return "Low";
-    case "MEDIUM":
-      return "Medium";
-    case "HIGH":
-      return "High";
-    default:
-      return priority;
-  }
-}
-
-function getPriorityClasses(priority: TaskPriority) {
-  switch (priority) {
-    case "LOW":
-      return "inline-flex items-center rounded-full bg-slate-800/60 px-2 py-0.5 text-[11px] font-medium text-slate-200 border border-slate-700/70";
-    case "MEDIUM":
-      return "inline-flex items-center rounded-full bg-sky-900/40 px-2 py-0.5 text-[11px] font-medium text-sky-100 border border-sky-700/60";
-    case "HIGH":
-      return "inline-flex items-center rounded-full bg-rose-900/50 px-2 py-0.5 text-[11px] font-medium text-rose-100 border border-rose-700/70";
-    default:
-      return "inline-flex items-center rounded-full bg-slate-800/60 px-2 py-0.5 text-[11px] font-medium text-slate-200 border border-slate-700/70";
-  }
-}
-
-export default async function EstateTasksPage({ params }: PageProps) {
-  const { estateId } = await params;
-
+export default async function EstateTasksPage({ params, searchParams }: PageProps) {
   const session = await auth();
-  if (!session?.user?.id) {
+  if (!session || !session.user?.id) {
     redirect("/login");
   }
 
+  const { estateId } = await params;
+  const sp =
+    (searchParams ? await searchParams : {}) as Record<
+      string,
+      string | string[] | undefined
+    >;
+
+  const statusParam =
+    typeof sp.status === "string" ? sp.status.toUpperCase() : "ALL";
+
+  const statusFilter: TaskStatusFilter =
+    statusParam === "OPEN" || statusParam === "DONE" ? statusParam : "ALL";
+
+  const priorityParam =
+    typeof sp.priority === "string" ? sp.priority.toUpperCase() : "ALL";
+
+  const priorityFilter: TaskPriorityFilter =
+    priorityParam === "LOW" ||
+    priorityParam === "MEDIUM" ||
+    priorityParam === "HIGH"
+      ? (priorityParam as TaskPriorityFilter)
+      : "ALL";
+
+  const sortParam = typeof sp.sort === "string" ? sp.sort : "dueDateAsc";
+
+  const sortBy: TaskSortOption = ["dueDateAsc", "dueDateDesc", "priority", "recent"].includes(
+    sortParam,
+  )
+    ? (sortParam as TaskSortOption)
+    : "dueDateAsc";
+
   await connectToDatabase();
 
-  // Fetch estate & tasks
-  const estateDoc = await Estate.findOne({
-    _id: estateId,
-    ownerId: session.user.id,
-  }).lean<EstateDocument | null>();
+  const [estateDoc, taskDocs] = await Promise.all([
+    Estate.findOne({
+      _id: estateId,
+      ownerId: session.user.id,
+    })
+      .lean()
+      .exec(),
+    Task.find({
+      estateId,
+      ownerId: session.user.id,
+    })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec(),
+  ]);
 
   if (!estateDoc) {
     redirect("/app/estates");
   }
 
-  const taskDocs = await Task.find({
-    estateId,
-    ownerId: session.user.id,
-  })
-    .sort({ status: 1, priority: -1, dueDate: 1, createdAt: -1 })
-    .lean<TaskDocument[]>();
+  const estate = estateDoc as unknown as EstateDocument & {
+    displayName?: string;
+    caseName?: string;
+  };
+  const tasks = taskDocs as unknown as TaskDocLean[];
 
-  const tasks: TaskListItem[] = taskDocs.map((doc: TaskDocument) => ({
-    _id: String(doc._id),
-    subject: doc.subject,
-    status: doc.status,
-    priority: doc.priority,
-    dueDate: doc.dueDate ?? null,
-  }));
+  const today = startOfDay(new Date());
+  const weekAhead = addDays(today, 7);
 
-  // --- Server actions (no onClick, only <form action={...}> ) ---
-
-  async function toggleTaskStatus(formData: FormData) {
-    "use server";
-
-    const sessionInner = await auth();
-    if (!sessionInner?.user?.id) {
-      redirect("/login");
-    }
-
-    const taskId = formData.get("taskId")?.toString();
-    if (!taskId) return;
-
-    await connectToDatabase();
-
-    const task = await Task.findOne({
-      _id: taskId,
-      estateId,
-      ownerId: sessionInner.user.id,
+  const filtered = tasks
+    .filter((task) => {
+      if (statusFilter === "ALL") return true;
+      return task.status === statusFilter;
+    })
+    .filter((task) => {
+      if (priorityFilter === "ALL") return true;
+      return task.priority === priorityFilter;
     });
 
-    if (!task) return;
-
-    task.status = task.status === "DONE" ? "OPEN" : "DONE";
-    await task.save();
-
-    revalidatePath(`/app/estates/${estateId}/tasks`);
-    revalidatePath(`/app/estates/${estateId}`);
-    revalidatePath("/app/tasks");
-    revalidatePath("/app");
-  }
-
-  async function deleteTask(formData: FormData) {
-    "use server";
-
-    const sessionInner = await auth();
-    if (!sessionInner?.user?.id) {
-      redirect("/login");
-    }
-
-    const taskId = formData.get("taskId")?.toString();
-    if (!taskId) return;
-
-    await connectToDatabase();
-
-    await Task.findOneAndDelete({
-      _id: taskId,
-      estateId,
-      ownerId: sessionInner.user.id,
-    });
-
-    revalidatePath(`/app/estates/${estateId}/tasks`);
-    revalidatePath(`/app/estates/${estateId}`);
-    revalidatePath("/app/tasks");
-    revalidatePath("/app");
-  }
-
-  const estateLabelSource = estateDoc as unknown as Record<string, unknown>;
-
-  const getEstateLabelField = (key: string): string | undefined => {
-    const value = estateLabelSource[key];
-    return typeof value === "string" && value.trim().length > 0
-      ? value
-      : undefined;
+  const priorityRank: Record<PriorityKey, number> = {
+    CRITICAL: 0,
+    HIGH: 1,
+    MEDIUM: 2,
+    LOW: 3,
   };
 
-  const estateLabel =
-    getEstateLabelField("caseName") ??
-    getEstateLabelField("displayName") ??
-    getEstateLabelField("name") ??
-    "Estate";
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortBy === "recent") {
+      const aCreated = toDate(a.createdAt) ?? today;
+      const bCreated = toDate(b.createdAt) ?? today;
+      return bCreated.getTime() - aCreated.getTime();
+    }
+
+    if (sortBy === "priority") {
+      const aRank = priorityRank[a.priority as PriorityKey];
+      const bRank = priorityRank[b.priority as PriorityKey];
+      if (aRank !== bRank) return aRank - bRank;
+
+      const aDue = toDate(a.dueDate) ?? weekAhead;
+      const bDue = toDate(b.dueDate) ?? weekAhead;
+      return aDue.getTime() - bDue.getTime();
+    }
+
+    const aDue = toDate(a.dueDate) ?? weekAhead;
+    const bDue = toDate(b.dueDate) ?? weekAhead;
+
+    if (sortBy === "dueDateDesc") {
+      return bDue.getTime() - aDue.getTime();
+    }
+
+    // dueDateAsc default
+    return aDue.getTime() - bDue.getTime();
+  });
+
+  const totalTasks = tasks.length;
+  const openTasks = tasks.filter((t) => t.status === "OPEN").length;
+  const doneTasks = tasks.filter((t) => t.status === "DONE").length;
+
+  const overdueTasks = tasks.filter((t) => {
+    const due = toDate(t.dueDate);
+    if (!due) return false;
+    return isBefore(due, today) && t.status !== "DONE";
+  }).length;
+
+  const dueThisWeek = tasks.filter((t) => {
+    const due = toDate(t.dueDate);
+    if (!due) return false;
+    return due >= today && due <= weekAhead;
+  }).length;
+
+  const highPriorityOpen = tasks.filter(
+    (t) => t.status === "OPEN" && t.priority === "HIGH",
+  ).length;
 
   return (
-    <div className="space-y-6 p-4 sm:p-6">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-lg font-semibold text-slate-50">
-            Tasks for {estateLabel}
+          <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
+            Tasks · Estate
+          </div>
+          <h1 className="mt-1 text-2xl font-semibold text-slate-50">
+            {estate.displayName ?? estate.caseName ?? "Estate Tasks"}
           </h1>
           <p className="mt-1 text-xs text-slate-400">
-            Track all to-dos and follow-ups tied to this estate.
+            Track what still needs to be done for this estate — filtered and
+            sorted your way.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-3">
+          <Link
+            href={`/app/estates/${estateId}`}
+            className="inline-flex items-center rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:border-slate-500 hover:bg-slate-800/60"
+          >
+            ← Back to estate
+          </Link>
           <Link
             href={`/app/estates/${estateId}/tasks/new`}
-            className="inline-flex items-center rounded-full bg-emerald-600 px-4 py-1.5 text-xs font-medium text-emerald-50 shadow-sm shadow-emerald-900/50 hover:bg-emerald-500"
+            className="inline-flex items-center rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-emerald-950 shadow-sm hover:bg-emerald-400"
           >
             + New Task
           </Link>
-          <Link
-            href="/app/tasks"
-            className="inline-flex items-center rounded-full border border-slate-700/70 bg-slate-900/60 px-3 py-1.5 text-xs font-medium text-slate-200 hover:border-slate-500 hover:bg-slate-800/80"
+        </div>
+      </div>
+
+      {/* Analytics bar */}
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+          <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
+            Total
+          </div>
+          <div className="mt-1 text-xl font-semibold text-slate-50">
+            {totalTasks}
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+          <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
+            Open
+          </div>
+          <div className="mt-1 text-xl font-semibold text-amber-400">
+            {openTasks}
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+          <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
+            Done
+          </div>
+          <div className="mt-1 text-xl font-semibold text-emerald-400">
+            {doneTasks}
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+          <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
+            Overdue
+          </div>
+          <div className="mt-1 text-xl font-semibold text-rose-400">
+            {overdueTasks}
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+          <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
+            High-priority open
+          </div>
+          <div className="mt-1 text-xl font-semibold text-fuchsia-400">
+            {highPriorityOpen}
+          </div>
+          <div className="mt-0.5 text-[0.7rem] text-slate-400">
+            {dueThisWeek} due in next 7 days
+          </div>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <form
+        method="GET"
+        className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-800 bg-slate-900/70 p-3 text-xs"
+      >
+        <div className="flex flex-col">
+          <label className="mb-1 font-medium text-slate-300">Status</label>
+          <select
+            name="status"
+            defaultValue={statusFilter}
+            className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100"
           >
-            Global Tasks
-          </Link>
+            <option value="ALL">All</option>
+            <option value="OPEN">Open</option>
+            <option value="DONE">Done</option>
+          </select>
         </div>
-      </div>
 
-      {/* Summary */}
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-          <p className="text-[11px] uppercase tracking-wide text-slate-400">
-            Open Tasks
-          </p>
-          <p className="mt-1 text-xl font-semibold text-slate-50">
-            {tasks.filter((t) => t.status === "OPEN").length}
-          </p>
+        <div className="flex flex-col">
+          <label className="mb-1 font-medium text-slate-300">Priority</label>
+          <select
+            name="priority"
+            defaultValue={priorityFilter}
+            className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100"
+          >
+            <option value="ALL">All</option>
+            <option value="HIGH">High</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="LOW">Low</option>
+          </select>
         </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-          <p className="text-[11px] uppercase tracking-wide text-slate-400">
-            Completed
-          </p>
-          <p className="mt-1 text-xl font-semibold text-slate-50">
-            {tasks.filter((t) => t.status === "DONE").length}
-          </p>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-          <p className="text-[11px] uppercase tracking-wide text-slate-400">
-            Total Tasks
-          </p>
-          <p className="mt-1 text-xl font-semibold text-slate-50">
-            {tasks.length}
-          </p>
-        </div>
-      </div>
 
-      {/* Table */}
-      <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60">
-        <table className="min-w-full divide-y divide-slate-800 text-xs">
-          <thead className="bg-slate-950/80">
-            <tr>
-              <th className="px-3 py-2 text-left font-medium text-slate-400">
-                Subject
-              </th>
-              <th className="px-3 py-2 text-left font-medium text-slate-400">
-                Status
-              </th>
-              <th className="px-3 py-2 text-left font-medium text-slate-400">
-                Priority
-              </th>
-              <th className="px-3 py-2 text-left font-medium text-slate-400">
-                Due
-              </th>
-              <th className="px-3 py-2 text-right font-medium text-slate-400">
-                Actions
-              </th>
+        <div className="flex flex-col">
+          <label className="mb-1 font-medium text-slate-300">Sort</label>
+          <select
+            name="sort"
+            defaultValue={sortBy}
+            className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100"
+          >
+            <option value="dueDateAsc">Due date · earliest first</option>
+            <option value="dueDateDesc">Due date · latest first</option>
+            <option value="priority">Priority · high → low</option>
+            <option value="recent">Recently created</option>
+          </select>
+        </div>
+
+        <button
+          type="submit"
+          className="inline-flex items-center rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-900 hover:bg-white"
+        >
+          Apply
+        </button>
+
+        <Link
+          href={`/app/estates/${estateId}/tasks`}
+          className="text-xs text-slate-400 hover:text-slate-200"
+        >
+          Reset
+        </Link>
+      </form>
+
+      {/* Task table */}
+      <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/80">
+        <table className="min-w-full border-collapse text-xs">
+          <thead>
+            <tr className="border-b border-slate-800 bg-slate-900/70 text-[0.7rem] uppercase tracking-[0.18em] text-slate-400">
+              <th className="px-3 py-2 text-left">Subject</th>
+              <th className="px-3 py-2 text-left">Status</th>
+              <th className="px-3 py-2 text-left">Priority</th>
+              <th className="px-3 py-2 text-left">Due</th>
+              <th className="px-3 py-2 text-left">Notes</th>
+              <th className="px-3 py-2 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800">
-            {tasks.length === 0 ? (
+          <tbody>
+            {sorted.length === 0 ? (
               <tr>
                 <td
-                  colSpan={5}
-                  className="px-3 py-6 text-center text-xs text-slate-500"
+                  colSpan={6}
+                  className="px-3 py-4 text-center text-xs text-slate-500"
                 >
-                  No tasks yet. Create your first task for this estate.
+                  No tasks match these filters yet.
                 </td>
               </tr>
             ) : (
-              tasks.map((task) => (
-                <tr key={task._id} className="hover:bg-slate-900/40">
-                  <td className="px-3 py-2 align-top text-slate-100">
-                    <div className="font-medium">{task.subject}</div>
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <span className={getStatusClasses(task.status)}>
-                      {getStatusLabel(task.status)}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <span className={getPriorityClasses(task.priority)}>
-                      {getPriorityLabel(task.priority)}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 align-top text-slate-300">
-                    {task.dueDate
-                      ? new Date(task.dueDate).toLocaleDateString()
-                      : "—"}
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <div className="flex justify-end gap-2">
-                      <Link
-                        href={`/app/estates/${estateId}/tasks/${task._id}`}
-                        className="inline-flex items-center rounded-full border border-slate-700/70 px-2 py-0.5 text-[11px] text-slate-200 hover:border-slate-500 hover:bg-slate-900/80"
+              sorted.map((task) => {
+                const due = toDate(task.dueDate);
+                const overdue =
+                  !!due && isBefore(due, today) && task.status !== "DONE";
+
+                return (
+                  <tr
+                    key={String(task._id)}
+                    className="border-t border-slate-900/80 hover:bg-slate-900/70"
+                  >
+                    <td className="px-3 py-2 align-top">
+                      <div className="font-medium text-slate-50">
+                        {task.subject}
+                      </div>
+                      {task.description && (
+                        <div className="mt-0.5 line-clamp-2 text-[0.7rem] text-slate-400">
+                          {task.description}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <span
+                        className={
+                          task.status === "DONE"
+                            ? "rounded-full bg-emerald-500/10 px-2 py-0.5 text-[0.65rem] font-semibold text-emerald-400"
+                            : "rounded-full bg-amber-500/10 px-2 py-0.5 text-[0.65rem] font-semibold text-amber-300"
+                        }
                       >
-                        View
-                      </Link>
-
-                      <form action={toggleTaskStatus}>
-                        <input
-                          type="hidden"
-                          name="taskId"
-                          value={task._id}
-                        />
-                        <button
-                          type="submit"
-                          className="inline-flex items-center rounded-full border border-emerald-700/70 bg-emerald-950/50 px-2 py-0.5 text-[11px] text-emerald-100 hover:border-emerald-500 hover:bg-emerald-900/70"
+                        {task.status === "DONE" ? "Done" : "Open"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <span
+                        className={
+                          task.priority === "HIGH"
+                            ? "rounded-full bg-fuchsia-500/10 px-2 py-0.5 text-[0.65rem] font-semibold text-fuchsia-300"
+                            : task.priority === "MEDIUM"
+                            ? "rounded-full bg-sky-500/10 px-2 py-0.5 text-[0.65rem] font-semibold text-sky-300"
+                            : task.priority === "LOW"
+                            ? "rounded-full bg-slate-500/10 px-2 py-0.5 text-[0.65rem] font-semibold text-slate-200"
+                            : "rounded-full bg-rose-500/10 px-2 py-0.5 text-[0.65rem] font-semibold text-rose-300"
+                        }
+                      >
+                        {task.priority.charAt(0) +
+                          task.priority.slice(1).toLowerCase()}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 align-top text-slate-200">
+                      {due ? (
+                        <span
+                          className={
+                            overdue ? "text-rose-400" : "text-slate-200"
+                          }
                         >
-                          {task.status === "DONE" ? "Reopen" : "Mark done"}
-                        </button>
-                      </form>
-
-                      <form action={deleteTask}>
-                        <input
-                          type="hidden"
-                          name="taskId"
-                          value={task._id}
-                        />
-                        <button
-                          type="submit"
-                          className="inline-flex items-center rounded-full border border-rose-800/70 bg-rose-950/50 px-2 py-0.5 text-[11px] text-rose-100 hover:border-rose-500 hover:bg-rose-900/70"
+                          {format(due, "MMM d, yyyy")}
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 align-top text-slate-300">
+                      {task.notes ? (
+                        <span className="line-clamp-2 text-[0.75rem]">
+                          {task.notes}
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 align-top text-right">
+                      <div className="inline-flex gap-2">
+                        <Link
+                          href={`/app/estates/${estateId}/tasks/${task._id}`}
+                          className="text-[0.7rem] font-medium text-slate-200 hover:text-white"
                         >
-                          Delete
-                        </button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              ))
+                          View
+                        </Link>
+                        <span className="text-slate-600">·</span>
+                        <Link
+                          href={`/app/estates/${estateId}/tasks/${task._id}/edit`}
+                          className="text-[0.7rem] font-medium text-sky-300 hover:text-sky-200"
+                        >
+                          Edit
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

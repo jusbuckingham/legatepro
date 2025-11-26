@@ -13,6 +13,7 @@
     "@auth/mongodb-adapter": "^3.11.1",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
     "mongoose": "^8.19.3",
     "next": "16.0.2",
@@ -22,6 +23,7 @@
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
+    "@types/date-fns": "^2.5.3",
     "@types/mongoose": "^5.11.96",
     "@types/node": "^20",
     "@types/react": "^19",
