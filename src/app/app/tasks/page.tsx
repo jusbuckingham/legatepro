@@ -7,7 +7,7 @@ import { Task, TaskDocLean, TaskPriority } from "@/models/Task";
 import { format, isBefore, startOfDay, addDays } from "date-fns";
 
 type PageProps = {
-  searchParams?: { [key: string]: string | string[] | undefined };
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
 };
 
 type TaskStatusFilter = "ALL" | "OPEN" | "DONE";
@@ -25,12 +25,7 @@ function getEstateLabel(estate: EstateDocument): string {
     propertyAddress?: string;
   };
 
-  return (
-    e.displayName ||
-    e.caseName ||
-    e.propertyAddress ||
-    "Estate"
-  );
+  return e.displayName || e.caseName || e.propertyAddress || "Estate";
 }
 
 function toDate(value: unknown): Date | null {
@@ -40,26 +35,62 @@ function toDate(value: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+type AnalyticsCardProps = {
+  label: string;
+  value: number;
+  helper?: string;
+};
+
+function AnalyticsCard({ label, value, helper }: AnalyticsCardProps) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+      <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
+        {label}
+      </div>
+      <div className="mt-1 text-xl font-semibold text-slate-50">{value}</div>
+      {helper && (
+        <div className="mt-0.5 text-[0.7rem] text-slate-400">{helper}</div>
+      )}
+    </div>
+  );
+}
+
 export default async function GlobalTasksPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session || !session.user?.id) {
     redirect("/login");
   }
 
+  const sp = (searchParams
+    ? await searchParams
+    : {}) as Record<string, string | string[] | undefined>;
+
+  const statusParam =
+    typeof sp.status === "string" ? sp.status.toUpperCase() : "ALL";
+
   const statusFilter: TaskStatusFilter =
-    typeof searchParams?.status === "string"
-      ? ((searchParams.status.toUpperCase() as TaskStatusFilter) || "ALL")
-      : "ALL";
+    statusParam === "OPEN" || statusParam === "DONE" ? statusParam : "ALL";
+
+  const priorityParam =
+    typeof sp.priority === "string" ? sp.priority.toUpperCase() : "ALL";
 
   const priorityFilter: TaskPriorityFilter =
-    typeof searchParams?.priority === "string"
-      ? ((searchParams.priority.toUpperCase() as TaskPriorityFilter) || "ALL")
+    priorityParam === "LOW" ||
+    priorityParam === "MEDIUM" ||
+    priorityParam === "HIGH"
+      ? (priorityParam as TaskPriorityFilter)
       : "ALL";
 
-  const sortBy: TaskSortOption =
-    typeof searchParams?.sort === "string"
-      ? (searchParams.sort as TaskSortOption)
-      : "dueDateAsc";
+  const sortParam = typeof sp.sort === "string" ? sp.sort : "dueDateAsc";
+
+  const sortBy: TaskSortOption = [
+    "dueDateAsc",
+    "dueDateDesc",
+    "priority",
+    "recent",
+  ].includes(sortParam)
+    ? (sortParam as TaskSortOption)
+    : "dueDateAsc";
 
   await connectToDatabase();
 
@@ -71,11 +102,7 @@ export default async function GlobalTasksPage({ searchParams }: PageProps) {
     .exec()) as unknown as TaskDocLean[];
 
   const estateIds = Array.from(
-    new Set(
-      taskDocs
-        .map((t) => String(t.estateId))
-        .filter((id) => Boolean(id)),
-    ),
+    new Set(taskDocs.map((t) => String(t.estateId)).filter((id) => Boolean(id))),
   );
 
   const estateDocs = (await Estate.find({
@@ -133,12 +160,16 @@ export default async function GlobalTasksPage({ searchParams }: PageProps) {
       return bDue.getTime() - aDue.getTime();
     }
 
+    // dueDateAsc default
     return aDue.getTime() - bDue.getTime();
   });
 
   const totalTasks = taskDocs.length;
   const openTasks = taskDocs.filter((t) => t.status === "OPEN").length;
   const doneTasks = taskDocs.filter((t) => t.status === "DONE").length;
+
+  const completionRate =
+    totalTasks === 0 ? 0 : Math.round((doneTasks / totalTasks) * 100);
 
   const overdueTasks = taskDocs.filter((t) => {
     const due = toDate(t.dueDate);
@@ -152,8 +183,10 @@ export default async function GlobalTasksPage({ searchParams }: PageProps) {
     return due >= today && due <= weekAhead;
   }).length;
 
-  const highPriorityOpen = taskDocs.filter(
-    (t) => t.status === "OPEN" && t.priority === "HIGH",
+  const highOrCriticalOpen = taskDocs.filter(
+    (t) =>
+      t.status === "OPEN" &&
+      (t.priority === "HIGH" || t.priority === "CRITICAL"),
   ).length;
 
   return (
@@ -175,56 +208,32 @@ export default async function GlobalTasksPage({ searchParams }: PageProps) {
       </div>
 
       {/* Analytics */}
-      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-          <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
-            Total
-          </div>
-          <div className="mt-1 text-xl font-semibold text-slate-50">
-            {totalTasks}
-          </div>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-          <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
-            Open
-          </div>
-          <div className="mt-1 text-xl font-semibold text-amber-400">
-            {openTasks}
-          </div>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-          <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
-            Done
-          </div>
-          <div className="mt-1 text-xl font-semibold text-emerald-400">
-            {doneTasks}
-          </div>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-          <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
-            Overdue
-          </div>
-          <div className="mt-1 text-xl font-semibold text-rose-400">
-            {overdueTasks}
-          </div>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-          <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
-            Due in next 7 days
-          </div>
-          <div className="mt-1 text-xl font-semibold text-sky-400">
-            {dueThisWeek}
-          </div>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-          <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
-            High-priority open
-          </div>
-          <div className="mt-1 text-xl font-semibold text-fuchsia-400">
-            {highPriorityOpen}
-          </div>
-        </div>
-      </div>
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <AnalyticsCard
+          label="All tasks"
+          value={totalTasks}
+          helper={`${doneTasks} completed (${completionRate}%)`}
+        />
+        <AnalyticsCard
+          label="Open vs completed"
+          value={openTasks}
+          helper={`${doneTasks} done`}
+        />
+        <AnalyticsCard
+          label="Overdue & due soon"
+          value={overdueTasks}
+          helper={
+            dueThisWeek > 0
+              ? `${dueThisWeek} due in next 7 days`
+              : "No tasks due in the next 7 days"
+          }
+        />
+        <AnalyticsCard
+          label="High & critical priority (open)"
+          value={highOrCriticalOpen}
+          helper="Across all estates"
+        />
+      </section>
 
       {/* Filters */}
       <form
@@ -274,7 +283,7 @@ export default async function GlobalTasksPage({ searchParams }: PageProps) {
 
         <button
           type="submit"
-          className="inline-flex items-center rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-900 hover:bg-white"
+          className="inline-flex items-center rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-900 hover:bg:white"
         >
           Apply
         </button>
@@ -358,7 +367,8 @@ export default async function GlobalTasksPage({ searchParams }: PageProps) {
                     <td className="px-3 py-2 align-top">
                       <span
                         className={
-                          task.priority === "HIGH"
+                          task.priority === "HIGH" ||
+                          task.priority === "CRITICAL"
                             ? "rounded-full bg-fuchsia-500/10 px-2 py-0.5 text-[0.65rem] font-semibold text-fuchsia-300"
                             : task.priority === "MEDIUM"
                             ? "rounded-full bg-sky-500/10 px-2 py-0.5 text-[0.65rem] font-semibold text-sky-300"

@@ -27,6 +27,26 @@ function toDate(value: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+type AnalyticsCardProps = {
+  label: string;
+  value: number;
+  helper?: string;
+};
+
+function AnalyticsCard({ label, value, helper }: AnalyticsCardProps) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+      <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
+        {label}
+      </div>
+      <div className="mt-1 text-xl font-semibold text-slate-50">{value}</div>
+      {helper && (
+        <div className="mt-0.5 text-[0.7rem] text-slate-400">{helper}</div>
+      )}
+    </div>
+  );
+}
+
 export default async function EstateTasksPage({ params, searchParams }: PageProps) {
   const session = await auth();
   if (!session || !session.user?.id) {
@@ -140,9 +160,13 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
     return aDue.getTime() - bDue.getTime();
   });
 
+  // ---- enhanced analytics metrics ----
   const totalTasks = tasks.length;
   const openTasks = tasks.filter((t) => t.status === "OPEN").length;
   const doneTasks = tasks.filter((t) => t.status === "DONE").length;
+
+  const completionRate =
+    totalTasks === 0 ? 0 : Math.round((doneTasks / totalTasks) * 100);
 
   const overdueTasks = tasks.filter((t) => {
     const due = toDate(t.dueDate);
@@ -150,14 +174,16 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
     return isBefore(due, today) && t.status !== "DONE";
   }).length;
 
-  const dueThisWeek = tasks.filter((t) => {
+  const dueNext7Days = tasks.filter((t) => {
     const due = toDate(t.dueDate);
     if (!due) return false;
     return due >= today && due <= weekAhead;
   }).length;
 
-  const highPriorityOpen = tasks.filter(
-    (t) => t.status === "OPEN" && t.priority === "HIGH",
+  const highOrCriticalOpen = tasks.filter(
+    (t) =>
+      t.status === "OPEN" &&
+      (t.priority === "HIGH" || t.priority === "CRITICAL"),
   ).length;
 
   return (
@@ -193,51 +219,32 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
       </div>
 
       {/* Analytics bar */}
-      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-          <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
-            Total
-          </div>
-          <div className="mt-1 text-xl font-semibold text-slate-50">
-            {totalTasks}
-          </div>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-          <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
-            Open
-          </div>
-          <div className="mt-1 text-xl font-semibold text-amber-400">
-            {openTasks}
-          </div>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-          <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
-            Done
-          </div>
-          <div className="mt-1 text-xl font-semibold text-emerald-400">
-            {doneTasks}
-          </div>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-          <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
-            Overdue
-          </div>
-          <div className="mt-1 text-xl font-semibold text-rose-400">
-            {overdueTasks}
-          </div>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-          <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
-            High-priority open
-          </div>
-          <div className="mt-1 text-xl font-semibold text-fuchsia-400">
-            {highPriorityOpen}
-          </div>
-          <div className="mt-0.5 text-[0.7rem] text-slate-400">
-            {dueThisWeek} due in next 7 days
-          </div>
-        </div>
-      </div>
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <AnalyticsCard
+          label="All tasks"
+          value={totalTasks}
+          helper={`${doneTasks} completed (${completionRate}%)`}
+        />
+        <AnalyticsCard
+          label="Open vs completed"
+          value={openTasks}
+          helper={`${doneTasks} done`}
+        />
+        <AnalyticsCard
+          label="Overdue & due soon"
+          value={overdueTasks}
+          helper={
+            dueNext7Days > 0
+              ? `${dueNext7Days} due in next 7 days`
+              : "No tasks due in the next 7 days"
+          }
+        />
+        <AnalyticsCard
+          label="High & critical priority (open)"
+          value={highOrCriticalOpen}
+          helper="Focus these first for this estate"
+        />
+      </section>
 
       {/* Filters */}
       <form
