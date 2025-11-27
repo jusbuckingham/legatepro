@@ -3,6 +3,7 @@
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/auth.config";
+export { authOptions };
 
 export async function auth() {
   return getServerSession(authOptions);
