@@ -54,6 +54,9 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
   }
 
   const { estateId } = await params;
+  if (!estateId || estateId === "undefined") {
+    redirect("/app/estates");
+  }
   const sp =
     (searchParams ? await searchParams : {}) as Record<
       string,

@@ -5,6 +5,7 @@ import { Task } from "@/models/Task";
 import { Expense } from "@/models/Expense";
 import { Contact } from "@/models/Contact";
 import { RentPayment } from "@/models/RentPayment";
+import { Invoice } from "@/models/Invoice";
 
 export const metadata = {
   title: "Dashboard | LegatePro",
@@ -44,6 +45,15 @@ type LeanRentPayment = {
   estateId?: unknown;
 };
 
+type LeanInvoice = {
+  _id: unknown;
+  estateId?: string | { _id?: string; displayName?: string; caseName?: string };
+  status?: "DRAFT" | "SENT" | "PAID" | "PARTIAL" | "VOID" | "UNPAID" | string;
+  dueDate?: Date | string | null;
+  total?: number;
+  balanceDue?: number;
+};
+
 function getEstateDisplayName(estate: LeanEstate | null | undefined) {
   if (!estate) return "Untitled estate";
   return estate.caseName || estate.decedentName || estate.courtCaseNumber || "Untitled estate";
@@ -66,110 +76,160 @@ function formatCurrency(amount: number) {
 }
 
 export default async function AppDashboardPage() {
-  await connectToDatabase();
-
   const today = new Date();
   const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
-  const [
-    estateCount,
-    estatesRaw,
-    openTaskCount,
-    contactCount,
-    upcomingTasksRaw,
-    recentExpensesRaw,
-    monthlyExpensesRaw,
-    monthlyRentRaw,
-    allRentRaw,
-    allExpensesRaw,
-  ] = await Promise.all([
-    Estate.countDocuments({}),
-    Estate.find({})
-      .sort({ createdAt: -1 })
-      .limit(4)
-      .lean(),
-    Task.countDocuments({ status: "OPEN" }),
-    Contact.countDocuments({}),
-    Task.find({
-      status: "OPEN",
-      date: { $gte: startOfToday },
-    })
-      .sort({ date: 1 })
-      .limit(5)
-      .populate("estateId", "caseName decedentName courtCaseNumber")
-      .lean(),
-    Expense.find({})
-      .sort({ date: -1 })
-      .limit(5)
-      .populate("estateId", "caseName decedentName courtCaseNumber")
-      .lean(),
-    Expense.find({
-      date: { $gte: startOfMonth },
-    }).lean(),
-    RentPayment.find({
-      paymentDate: { $gte: startOfMonth },
-    }).lean(),
-    RentPayment.find({}).lean(),
-    Expense.find({}).lean(),
-  ]);
+  // Safe defaults so the dashboard can still render even if the DB is unavailable
+  let estateCount = 0;
+  let estates: LeanEstate[] = [];
+  let openTaskCount = 0;
+  let contactCount = 0;
+  let upcomingTasks: (LeanTask & { estateId?: LeanEstate | string })[] = [];
+  let recentExpenses: (LeanExpense & { estateId?: LeanEstate | string })[] = [];
 
-  const estates = estatesRaw as LeanEstate[];
-  const upcomingTasks = upcomingTasksRaw as (LeanTask & { estateId?: LeanEstate | string })[];
-  const recentExpenses = recentExpensesRaw as (LeanExpense & {
-    estateId?: LeanEstate | string;
-  })[];
+  let monthlyExpenseTotal = 0;
+  let monthlyRentTotal = 0;
+  let totalRentAllTime = 0;
+  let totalExpensesAllTime = 0;
 
-  const monthlyExpenses = monthlyExpensesRaw as LeanExpense[];
-  const monthlyRent = monthlyRentRaw as LeanRentPayment[];
-  const allRent = allRentRaw as LeanRentPayment[];
-  const allExpenses = allExpensesRaw as LeanExpense[];
+  let unpaidInvoiceTotal = 0;
+  let overdueInvoiceTotal = 0;
 
-  const expensesByCategoryThisMonth = monthlyExpenses.reduce<Record<string, number>>(
-    (acc, exp) => {
-      const key = exp.category || "Other";
-      acc[key] = (acc[key] || 0) + (exp.amount || 0);
-      return acc;
-    },
-    {},
-  );
+  let topCategoryLabel: string | null = null;
+  let topCategoryAmount = 0;
+  let largestExpenseThisMonth: LeanExpense | null = null;
 
-  const topCategoryEntry = Object.entries(expensesByCategoryThisMonth).sort(
-    (a, b) => b[1] - a[1],
-  )[0];
+  try {
+    await connectToDatabase();
 
-  const topCategoryLabel = topCategoryEntry?.[0] ?? null;
-  const topCategoryAmount = topCategoryEntry?.[1] ?? 0;
+    const [
+      estateCountRaw,
+      estatesRaw,
+      openTaskCountRaw,
+      contactCountRaw,
+      upcomingTasksRaw,
+      recentExpensesRaw,
+      monthlyExpensesRaw,
+      monthlyRentRaw,
+      allRentRaw,
+      allExpensesRaw,
+    ] = await Promise.all([
+      Estate.countDocuments({}),
+      Estate.find({})
+        .sort({ createdAt: -1 })
+        .limit(4)
+        .lean(),
+      Task.countDocuments({ status: "OPEN" }),
+      Contact.countDocuments({}),
+      Task.find({
+        status: "OPEN",
+        date: { $gte: startOfToday },
+      })
+        .sort({ date: 1 })
+        .limit(5)
+        .populate("estateId", "caseName decedentName courtCaseNumber")
+        .lean(),
+      Expense.find({})
+        .sort({ date: -1 })
+        .limit(5)
+        .populate("estateId", "caseName decedentName courtCaseNumber")
+        .lean(),
+      Expense.find({
+        date: { $gte: startOfMonth },
+      }).lean(),
+      RentPayment.find({
+        paymentDate: { $gte: startOfMonth },
+      }).lean(),
+      RentPayment.find({}).lean(),
+      Expense.find({}).lean(),
+    ]);
 
-  const largestExpenseThisMonth = monthlyExpenses.reduce<LeanExpense | null>(
-    (largest, exp) => {
-      if (!largest) return exp;
-      const currentAmount = exp.amount || 0;
-      const largestAmount = largest.amount || 0;
-      return currentAmount > largestAmount ? exp : largest;
-    },
-    null,
-  );
+    estateCount = estateCountRaw;
+    estates = estatesRaw as LeanEstate[];
+    openTaskCount = openTaskCountRaw;
+    contactCount = contactCountRaw;
+    upcomingTasks = upcomingTasksRaw as (LeanTask & { estateId?: LeanEstate | string })[];
+    recentExpenses = recentExpensesRaw as (LeanExpense & { estateId?: LeanEstate | string })[];
 
-  const monthlyExpenseTotal = monthlyExpenses.reduce(
-    (sum, exp) => sum + (exp.amount || 0),
-    0,
-  );
+    const monthlyExpenses = monthlyExpensesRaw as LeanExpense[];
+    const monthlyRent = monthlyRentRaw as LeanRentPayment[];
+    const allRent = allRentRaw as LeanRentPayment[];
+    const allExpenses = allExpensesRaw as LeanExpense[];
 
-  const monthlyRentTotal = monthlyRent.reduce(
-    (sum, payment) => sum + (payment.amount || 0),
-    0,
-  );
+    const expensesByCategoryThisMonth = monthlyExpenses.reduce<Record<string, number>>(
+      (acc, exp) => {
+        const key = exp.category || "Other";
+        acc[key] = (acc[key] || 0) + (exp.amount || 0);
+        return acc;
+      },
+      {},
+    );
 
-  const totalRentAllTime = allRent.reduce(
-    (sum, payment) => sum + (payment.amount || 0),
-    0,
-  );
+    const topCategoryEntry = Object.entries(expensesByCategoryThisMonth).sort(
+      (a, b) => b[1] - a[1],
+    )[0];
 
-  const totalExpensesAllTime = allExpenses.reduce(
-    (sum, exp) => sum + (exp.amount || 0),
-    0,
-  );
+    topCategoryLabel = topCategoryEntry?.[0] ?? null;
+    topCategoryAmount = topCategoryEntry?.[1] ?? 0;
+
+    largestExpenseThisMonth = monthlyExpenses.reduce<LeanExpense | null>(
+      (largest, exp) => {
+        if (!largest) return exp;
+        const currentAmount = exp.amount || 0;
+        const largestAmount = largest.amount || 0;
+        return currentAmount > largestAmount ? exp : largest;
+      },
+      null,
+    );
+
+    monthlyExpenseTotal = monthlyExpenses.reduce(
+      (sum, exp) => sum + (exp.amount || 0),
+      0,
+    );
+
+    monthlyRentTotal = monthlyRent.reduce(
+      (sum, payment) => sum + (payment.amount || 0),
+      0,
+    );
+
+    totalRentAllTime = allRent.reduce(
+      (sum, payment) => sum + (payment.amount || 0),
+      0,
+    );
+
+    totalExpensesAllTime = allExpenses.reduce(
+      (sum, exp) => sum + (exp.amount || 0),
+      0,
+    );
+
+    const unpaidInvoiceDocs = (await Invoice.find({
+      status: { $in: ["SENT", "UNPAID", "PARTIAL"] },
+    }).lean()) as unknown as LeanInvoice[];
+
+    const unpaidInvoiceTotalLocal = unpaidInvoiceDocs.reduce(
+      (sum, inv) => sum + (inv.balanceDue ?? inv.total ?? 0),
+      0,
+    );
+
+    const overdueInvoiceTotalLocal = unpaidInvoiceDocs.reduce((sum, inv) => {
+      if (!inv.dueDate) return sum;
+      const due = typeof inv.dueDate === "string" ? new Date(inv.dueDate) : inv.dueDate;
+      if (!due || Number.isNaN(due.getTime())) return sum;
+      // Consider overdue if due date is before today
+      if (due < startOfToday) {
+        return sum + (inv.balanceDue ?? inv.total ?? 0);
+      }
+      return sum;
+    }, 0);
+
+    unpaidInvoiceTotal = unpaidInvoiceTotalLocal;
+    overdueInvoiceTotal = overdueInvoiceTotalLocal;
+  } catch (error) {
+    console.error("AppDashboardPage: failed to load dashboard data", error);
+    // We intentionally swallow the error here so the dashboard still renders
+    // with the safe default values defined above.
+  }
 
   const netThisMonth = monthlyRentTotal - monthlyExpenseTotal;
   const netAllTime = totalRentAllTime - totalExpensesAllTime;
@@ -333,6 +393,31 @@ export default async function AppDashboardPage() {
           <p className="mt-2 text-[10px] text-slate-500">
             All-time net: {formatCurrency(netAllTime)} (rent minus expenses).
           </p>
+        </div>
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4 shadow-sm shadow-slate-950/60">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+            Outstanding invoices
+          </p>
+          <p className="mt-2 text-2xl font-semibold text-rose-200">
+            {formatCurrency(unpaidInvoiceTotal)}
+          </p>
+          <p className="mt-1 text-xs text-slate-400">
+            Overdue:{" "}
+            <span className="font-semibold text-amber-200">
+              {formatCurrency(overdueInvoiceTotal)}
+            </span>
+          </p>
+          <p className="mt-2 text-[10px] text-slate-500">
+            Invoices marked Sent, Unpaid, or Partial across all estates.
+          </p>
+          <div className="mt-3">
+            <Link
+              href="/app/invoices"
+              className="text-xs font-medium text-rose-300 hover:text-rose-200"
+            >
+              Go to invoices →
+            </Link>
+          </div>
         </div>
       </section>
 
