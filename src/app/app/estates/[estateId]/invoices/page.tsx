@@ -11,11 +11,39 @@ type URLSearchParamsType = {
   [key: string]: string | string[] | undefined;
 };
 
+function buildSearchParamsFromObject(spObj?: URLSearchParamsType): URLSearchParams {
+  const sp = new URLSearchParams();
+
+  if (!spObj) return sp;
+
+  Object.entries(spObj).forEach(([key, value]) => {
+    if (typeof value === "string") {
+      sp.set(key, value);
+    } else if (Array.isArray(value)) {
+      value.forEach((v) => {
+        if (typeof v === "string") {
+          sp.append(key, v);
+        }
+      });
+    }
+  });
+
+  return sp;
+}
+
+function isPromise<T>(value: T | Promise<T>): value is Promise<T> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "then" in (value as Record<string, unknown>)
+  );
+}
+
 type PageProps = {
   params: Promise<{
     estateId: string;
   }>;
-  searchParams?: URLSearchParamsType;
+  searchParams?: URLSearchParamsType | Promise<URLSearchParamsType>;
 };
 
 type InvoiceStatus =
@@ -65,6 +93,12 @@ export default async function EstateInvoicesPage({
   // ✅ Handle Next 16 async params and guard against undefined estateId
   const { estateId } = await params;
 
+  const resolvedSearchParams: URLSearchParamsType = !searchParams
+    ? {}
+    : isPromise(searchParams)
+    ? ((await searchParams) ?? {})
+    : searchParams;
+
   if (!estateId || estateId === "undefined") {
     redirect("/app/estates");
   }
@@ -88,8 +122,8 @@ export default async function EstateInvoicesPage({
 
   // Filters from searchParams (optional)
   const statusFilterRaw =
-    typeof searchParams?.status === "string"
-      ? searchParams.status.toUpperCase()
+    typeof resolvedSearchParams.status === "string"
+      ? resolvedSearchParams.status.toUpperCase()
       : "ALL";
 
   const statusFilter: InvoiceStatus | "ALL" =
@@ -103,7 +137,9 @@ export default async function EstateInvoicesPage({
       : "ALL";
 
   const sortRaw =
-    typeof searchParams?.sort === "string" ? searchParams.sort : "issueDateDesc";
+    typeof resolvedSearchParams.sort === "string"
+      ? resolvedSearchParams.sort
+      : "issueDateDesc";
 
   const sortOption: "issueDateAsc" | "issueDateDesc" | "dueDateAsc" | "dueDateDesc" =
     sortRaw === "issueDateAsc" ||
@@ -113,14 +149,14 @@ export default async function EstateInvoicesPage({
       ? sortRaw
       : "issueDateDesc";
 
-const sortSpec: Record<string, "asc" | "desc"> =
+const sortSpec: Record<string, 1 | -1> =
   sortOption === "issueDateAsc"
-    ? { issueDate: "asc" }
+    ? { issueDate: 1 }
     : sortOption === "issueDateDesc"
-    ? { issueDate: "desc" }
+    ? { issueDate: -1 }
     : sortOption === "dueDateAsc"
-    ? { dueDate: "asc" }
-    : { dueDate: "desc" };
+    ? { dueDate: 1 }
+    : { dueDate: -1 };
 type EstateForLabel = {
   displayName?: string;
   caseName?: string;
@@ -224,11 +260,12 @@ const estateLabel =
         <div className="flex flex-wrap gap-1">
           {["ALL", "SENT", "UNPAID", "PARTIAL", "PAID"].map((status) => {
             const isActive = statusFilter === status;
-            const sp = new URLSearchParams(
-              searchParams as Record<string, string> | undefined,
-            );
-            if (status === "ALL") sp.delete("status");
-            else sp.set("status", status);
+            const sp = buildSearchParamsFromObject(resolvedSearchParams);
+            if (status === "ALL") {
+              sp.delete("status");
+            } else {
+              sp.set("status", status);
+            }
             const href = `/app/estates/${estateId}/invoices?${sp.toString()}`;
 
             return (
@@ -255,9 +292,7 @@ const estateLabel =
             { label: "Due ↑", val: "dueDateAsc" },
           ].map((opt) => {
             const isActive = sortOption === opt.val;
-            const sp = new URLSearchParams(
-              searchParams as Record<string, string> | undefined,
-            );
+            const sp = buildSearchParamsFromObject(resolvedSearchParams);
             sp.set("sort", opt.val);
             const href = `/app/estates/${estateId}/invoices?${sp.toString()}`;
 

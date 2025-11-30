@@ -1,10 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useParams } from "next/navigation";
 
-function EstateNav({ estateId }: { estateId: string }) {
+/**
+ * Estate overview page-level navigation.
+ *
+ * This is the main page component for /app/estates/[estateId].
+ * It renders a top tab bar (Overview, Tasks, Time, Invoices) and
+ * relies on other nested routes/layouts to show the actual content.
+ */
+export default function EstatePage() {
   const pathname = usePathname();
+  const params = useParams<{ estateId: string }>();
+  const estateId = params.estateId;
 
   const tabs: { name: string; href: string }[] = [
     { name: "Overview", href: `/app/estates/${estateId}` },
@@ -21,25 +30,26 @@ function EstateNav({ estateId }: { estateId: string }) {
   };
 
   return (
-    <nav className="mb-6 flex gap-6 border-b border-slate-800">
-      {tabs.map((t) => {
-        const active = isActive(t.href);
-        return (
-          <Link
-            key={t.href}
-            href={t.href}
-            className={
-              active
-                ? "border-b-2 border-sky-500 pb-2 text-slate-100"
-                : "pb-2 text-slate-400 hover:text-slate-200"
-            }
-          >
-            {t.name}
-          </Link>
-        );
-      })}
-    </nav>
+    <div>
+      <nav className="mb-6 flex gap-6 border-b border-slate-800">
+        {tabs.map((t) => {
+          const active = isActive(t.href);
+          return (
+            <Link
+              key={t.href}
+              href={t.href}
+              className={
+                active
+                  ? "border-b-2 border-sky-500 pb-2 text-slate-100"
+                  : "pb-2 text-slate-400 hover:text-slate-200"
+              }
+            >
+              {t.name}
+            </Link>
+          );
+        })}
+      </nav>
+      {/* You can later add estate overview content here, e.g. summary cards, recent activity, etc. */}
+    </div>
   );
 }
-
-export default EstateNav;

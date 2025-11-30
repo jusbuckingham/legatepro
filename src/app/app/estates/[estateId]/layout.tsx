@@ -19,6 +19,7 @@ function getNavItems(estateId: string) {
     { label: "Expenses", href: `/app/estates/${estateId}/expenses` },
     { label: "Rent", href: `/app/estates/${estateId}/rent` },
     { label: "Timecard", href: `/app/estates/${estateId}/time` },
+    { label: "Invoices", href: `/app/estates/${estateId}/invoices` },
   ];
 }
 

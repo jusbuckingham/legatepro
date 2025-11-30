@@ -1,159 +1,203 @@
+import React from "react";
 import Link from "next/link";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 
-export const dynamic = "force-dynamic";
-
-type PageProps = {
-  searchParams?: Promise<{
-    estateId?: string;
-  }>;
-};
-
-type LeanEstate = {
-  _id: unknown;
-  decedentName?: string;
+type EstateListItem = {
+  _id: string;
+  displayName?: string;
   caseName?: string;
-  courtCaseNumber?: string;
-  status?: string;
-  createdAt?: Date | string;
+  caseNumber?: string;
 };
 
-function getEstateDisplayName(estate: LeanEstate): string {
-  if (estate.caseName) return estate.caseName;
-  if (estate.decedentName) return estate.decedentName;
-  if (estate.courtCaseNumber) return `Case ${estate.courtCaseNumber}`;
-  return "Untitled estate";
-}
+type EstateDocLean = {
+  _id: unknown;
+  displayName?: string;
+  caseName?: string;
+  caseNumber?: string;
+};
 
-function formatShortDate(value: Date | string | undefined | null): string {
-  if (!value) return "—";
-  const d = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "2-digit",
-  });
-}
+export const metadata = {
+  title: "New Invoice | LegatePro",
+};
 
-export default async function GlobalInvoiceNewPage({ searchParams }: PageProps) {
-  const sp = (await searchParams) ?? {};
-  const preselectedEstateId =
-    typeof sp.estateId === "string" ? sp.estateId : "";
+export default async function NewInvoicePage() {
+  const session = await getServerSession(authOptions);
+
+  if (!session || !session.user?.id) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-12">
+        <h1 className="text-2xl font-semibold text-slate-100 mb-4">
+          Start a new invoice
+        </h1>
+        <p className="text-slate-400">
+          You must be signed in to create invoices.
+        </p>
+      </div>
+    );
+  }
 
   await connectToDatabase();
 
-  const estateDocs = await Estate.find({})
+  const estateDocs = (await Estate.find({
+    ownerId: session.user.id,
+  })
     .sort({ createdAt: -1 })
-    .lean();
+    .lean()) as EstateDocLean[];
 
-  const estates = estateDocs as LeanEstate[];
+  const estates: EstateListItem[] = estateDocs.map((e) => ({
+    _id: String(e._id),
+    displayName: e.displayName,
+    caseName: e.caseName,
+    caseNumber: e.caseNumber,
+  }));
+
+  const hasEstates = estates.length > 0;
 
   return (
-    <div className="space-y-6 p-4 md:p-6 lg:p-8">
-      <header className="space-y-2 border-b border-slate-800 pb-4">
-        <p className="text-xs uppercase tracking-[0.2em] text-rose-400">
-          Invoicing
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-50 md:text-3xl">
-          New invoice
-        </h1>
-        <p className="max-w-2xl text-sm text-slate-300">
-          Start by choosing which estate this invoice is for. You&apos;ll then
-          be taken to the detailed invoice builder for that estate.
-        </p>
+    <div className="max-w-4xl mx-auto px-4 py-8 space-y-8">
+      <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-100">
+            Start a new invoice
+          </h1>
+          <p className="text-slate-400 text-sm mt-1">
+            Choose an estate to create a new invoice. You&apos;ll be taken to
+            that estate&apos;s invoice form.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/app/invoices"
+            className="inline-flex items-center rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-100 border border-slate-700 hover:bg-slate-700"
+          >
+            Back to Invoices
+          </Link>
+          <Link
+            href="/app/estates"
+            className="inline-flex items-center rounded-md bg-slate-900 px-3 py-2 text-xs font-medium text-slate-100 border border-slate-800 hover:bg-slate-800"
+          >
+            View Estates
+          </Link>
+        </div>
       </header>
 
-      {estates.length === 0 ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4 text-sm text-slate-200">
-          <p>No estates found yet.</p>
-          <p className="mt-1 text-xs text-slate-400">
-            Create an estate first, then you can generate invoices for that
-            estate.
+      {!hasEstates ? (
+        <section className="border border-slate-800 rounded-lg bg-slate-900/40 p-6">
+          <h2 className="text-sm font-medium text-slate-100 mb-2">
+            No estates found
+          </h2>
+          <p className="text-sm text-slate-400 mb-4">
+            To create an invoice, you&apos;ll need at least one estate in the
+            system.
           </p>
-          <div className="mt-3">
-            <Link
-              href="/app/estates/new"
-              className="inline-flex items-center rounded-full border border-rose-500/70 bg-rose-600/20 px-3 py-1.5 text-xs font-medium text-rose-100 shadow-sm shadow-rose-900/40 hover:bg-rose-600/40"
-            >
-              + New estate
-            </Link>
-          </div>
-        </div>
+          <Link
+            href="/app/estates/new"
+            className="inline-flex items-center rounded-md bg-sky-600 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-500"
+          >
+            Create your first estate
+          </Link>
+        </section>
       ) : (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-100">
-              Choose an estate
+        <section className="border border-slate-800 rounded-lg overflow-hidden bg-slate-900/40">
+          <div className="border-b border-slate-800 px-4 py-3 flex items-center justify-between">
+            <h2 className="text-sm font-medium text-slate-100">
+              Select an estate
             </h2>
-            <p className="text-[11px] text-slate-400">
-              Showing {estates.length} estate
-              {estates.length === 1 ? "" : "s"}.
+            <p className="text-xs text-slate-400">
+              {estates.length} estate{estates.length === 1 ? "" : "s"} available
+              for invoicing
             </p>
           </div>
 
-          <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-3">
-            <ul className="divide-y divide-slate-800 text-xs">
-              {estates.map((estate) => {
-                const id = String(estate._id);
-                const selected = preselectedEstateId === id;
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-xs">
+              <thead>
+                <tr className="border-b border-slate-800 bg-slate-900/60">
+                  <Th>Estate</Th>
+                  <Th>Case</Th>
+                  <Th>Case #</Th>
+                  <Th className="text-right">Action</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {estates.map((estate) => {
+                  const estateLabel =
+                    estate.displayName ||
+                    estate.caseName ||
+                    "Unnamed estate";
 
-                return (
-                  <li
-                    key={id}
-                    className="flex flex-col gap-2 py-3 first:pt-1 last:pb-1 md:flex-row md:items-center md:justify-between"
-                  >
-                    <div className="space-y-0.5">
-                      <p className="text-sm font-medium text-slate-50">
-                        {getEstateDisplayName(estate)}
-                      </p>
-                      {estate.courtCaseNumber && (
-                        <p className="text-[11px] text-slate-400">
-                          Case: {estate.courtCaseNumber}
-                        </p>
-                      )}
-                      {estate.createdAt && (
-                        <p className="text-[11px] text-slate-500">
-                          Opened{" "}
-                          {formatShortDate(
-                            typeof estate.createdAt === "string"
-                              ? estate.createdAt
-                              : estate.createdAt,
-                          )}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2 md:justify-end">
-                      {selected && (
-                        <span className="inline-flex items-center rounded-full border border-emerald-500/60 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-200">
-                          Preselected
-                        </span>
-                      )}
-                      <Link
-                        href={`/app/estates/${id}/invoices/new`}
-                        className="inline-flex items-center rounded-full border border-rose-500/70 bg-rose-600/15 px-3 py-1.5 text-[11px] font-medium text-rose-100 shadow-sm shadow-rose-900/40 hover:bg-rose-600/35"
-                      >
-                        Create invoice →
-                      </Link>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+                  return (
+                    <tr
+                      key={estate._id}
+                      className="border-b border-slate-800/70 hover:bg-slate-900/70"
+                    >
+                      <Td className="font-medium text-slate-100">
+                        <Link
+                          href={`/app/estates/${estate._id}`}
+                          className="hover:underline"
+                        >
+                          {estateLabel}
+                        </Link>
+                      </Td>
+                      <Td className="text-slate-300">
+                        {estate.caseName || "—"}
+                      </Td>
+                      <Td className="text-slate-300">
+                        {estate.caseNumber || "—"}
+                      </Td>
+                      <Td className="text-right">
+                        <Link
+                          href={`/app/estates/${estate._id}/invoices/new`}
+                          className="inline-flex items-center rounded-md bg-sky-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-sky-500"
+                        >
+                          Create invoice
+                        </Link>
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-
-          <p className="text-[11px] text-slate-500">
-            Tip: You can also go to an estate first (from{" "}
-            <code className="rounded bg-slate-900 px-1 py-[1px] text-[10px] text-slate-300">
-              /app/estates
-            </code>
-            ) and use its Invoices tab to create an invoice directly in that
-            context.
-          </p>
-        </div>
+        </section>
       )}
     </div>
+  );
+}
+
+type ThProps = {
+  children?: React.ReactNode;
+  className?: string;
+};
+
+function Th({ children, className }: ThProps) {
+  return (
+    <th
+      className={`px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-slate-400 ${
+        className ?? ""
+      }`}
+    >
+      {children}
+    </th>
+  );
+}
+
+type TdProps = {
+  children?: React.ReactNode;
+  className?: string;
+};
+
+function Td({ children, className }: TdProps) {
+  return (
+    <td
+      className={`px-3 py-2 align-middle text-xs text-slate-200 ${
+        className ?? ""
+      }`}
+    >
+      {children}
+    </td>
   );
 }

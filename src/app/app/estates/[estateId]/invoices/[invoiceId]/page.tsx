@@ -201,6 +201,35 @@ export default async function EstateInvoicePage({ params }: PageProps) {
           >
             {(invoice.status ?? "DRAFT").toString()}
           </span>
+
+          {/* Status actions */}
+          <form
+            action={`/api/invoices/${invoice._id}/status`}
+            method="POST"
+            className="flex items-center gap-2"
+          >
+            <label className="text-xs text-slate-400" htmlFor="status">
+              Update status
+            </label>
+            <select
+              id="status"
+              name="status"
+              defaultValue={(invoice.status as InvoiceStatus | undefined) ?? "DRAFT"}
+              className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="DRAFT">Draft</option>
+              <option value="SENT">Sent</option>
+              <option value="PAID">Paid</option>
+              <option value="VOID">Void</option>
+            </select>
+            <button
+              type="submit"
+              className="inline-flex items-center rounded-md bg-slate-700 px-3 py-1 text-xs font-medium text-slate-50 hover:bg-slate-600"
+            >
+              Save
+            </button>
+          </form>
+
           <div className="flex gap-2">
             <Link
               href={`/app/estates/${estateId}/invoices`}

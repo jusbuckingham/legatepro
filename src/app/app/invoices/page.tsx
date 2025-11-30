@@ -187,8 +187,8 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
         (typeof inv.balanceDue === "number"
           ? inv.balanceDue
           : typeof inv.total === "number"
-            ? inv.total
-            : 0),
+          ? inv.total
+          : 0),
       0,
     );
 
@@ -485,8 +485,9 @@ type ThProps = {
 function Th({ children, className }: ThProps) {
   return (
     <th
-      className={`px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-slate-400 ${className ?? ""
-        }`}
+      className={`px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-slate-400 ${
+        className ?? ""
+      }`}
     >
       {children}
     </th>
@@ -500,7 +501,11 @@ type TdProps = {
 
 function Td({ children, className }: TdProps) {
   return (
-    <td className={`px-3 py-2 align-middle text-xs text-slate-200 ${className ?? ""}`}>
+    <td
+      className={`px-3 py-2 align-middle text-xs text-slate-200 ${
+        className ?? ""
+      }`}
+    >
       {children}
     </td>
   );
@@ -520,7 +525,8 @@ function StatusPill({ status }: StatusPillProps) {
   } else if (status === "SENT") {
     variant = "bg-sky-500/15 text-sky-300 border border-sky-600/60";
   } else if (status === "PAID") {
-    variant = "bg-emerald-500/15 text-emerald-300 border border-emerald-600/60";
+    variant =
+      "bg-emerald-500/15 text-emerald-300 border border-emerald-600/60";
   } else if (status === "VOID") {
     variant = "bg-rose-500/15 text-rose-300 border border-rose-600/60";
   }
