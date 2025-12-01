@@ -1,23 +1,56 @@
-import React from "react";
+import { redirect } from "next/navigation";
 import Link from "next/link";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { format } from "date-fns";
+import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
-import { Estate } from "@/models/Estate";
-import { format, isAfter, subDays, startOfYear } from "date-fns";
 
 type InvoiceStatus = "DRAFT" | "SENT" | "PAID" | "VOID";
+
+type PageSearchParams = {
+  status?: string;
+  q?: string;
+  timeframe?: string;
+};
+
+type PageProps = {
+  searchParams: Promise<PageSearchParams>;
+};
+
+type PopulatedEstate = {
+  _id?: string | { toString: () => string };
+  displayName?: string;
+  caseName?: string;
+};
+
+type InvoiceLean = {
+  _id: string | { toString: () => string };
+  estateId?:
+    | string
+    | { toString: () => string }
+    | PopulatedEstate
+    | null
+    | undefined;
+  status?: string;
+  issueDate?: Date | string;
+  dueDate?: Date | string;
+  subtotal?: number;
+  totalAmount?: number;
+  total?: number;
+  notes?: string;
+  invoiceNumber?: string;
+};
 
 type InvoiceListItem = {
   _id: string;
   estateId: string;
-  number?: string;
-  status: InvoiceStatus | string;
-  issueDate?: string | Date;
-  dueDate?: string | Date;
-  total?: number;
-  balanceDue?: number;
+  status: string;
+  issueDate?: Date;
+  dueDate?: Date;
+  total: number;
+  balanceDue: number;
+  notes?: string;
+  invoiceNumber?: string;
   estate?: {
     _id: string;
     displayName?: string;
@@ -25,110 +58,123 @@ type InvoiceListItem = {
   };
 };
 
-type InvoiceDocPopulated = InvoiceListItem & {
-  estateId?:
-    | string
-    | {
-        _id?: string;
-        displayName?: string;
-        caseName?: string;
-      };
-  estate?: {
-    _id?: string;
-    displayName?: string;
-    caseName?: string;
-  };
-};
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount || 0);
+}
 
-type PageSearchParams =
-  | Record<string, string | string[] | undefined>
-  | Promise<Record<string, string | string[] | undefined>>;
+function formatDate(value?: Date): string {
+  if (!value) return "—";
+  try {
+    return format(value, "MMM d, yyyy");
+  } catch {
+    return "—";
+  }
+}
 
-type PageProps = {
-  searchParams?: PageSearchParams;
-};
+function getAmount(inv: InvoiceLean): number {
+  if (typeof inv.totalAmount === "number") return inv.totalAmount;
+  if (typeof inv.total === "number") return inv.total;
+  if (typeof inv.subtotal === "number") return inv.subtotal;
+  return 0;
+}
 
-type StatusFilter = "ALL" | InvoiceStatus;
-type PeriodFilter = "all" | "30d" | "90d" | "year";
-
-export const metadata = {
-  title: "Invoices | LegatePro",
-};
+function normalizeDate(value?: Date | string): Date | undefined {
+  if (!value) return undefined;
+  if (value instanceof Date) return value;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
 
 export default async function InvoicesPage({ searchParams }: PageProps) {
-  const sp = await Promise.resolve(searchParams ?? {});
-  const rawStatus =
-    typeof sp.status === "string" ? sp.status.toUpperCase() : "ALL";
-  const rawPeriod = typeof sp.period === "string" ? sp.period : "all";
+  const { status: statusRaw, q: qRaw, timeframe: timeframeRaw } =
+    await searchParams;
 
-  const statusFilter: StatusFilter =
-    rawStatus === "DRAFT" ||
-    rawStatus === "SENT" ||
-    rawStatus === "PAID" ||
-    rawStatus === "VOID"
-      ? (rawStatus as InvoiceStatus)
-      : "ALL";
-
-  const periodFilter: PeriodFilter =
-    rawPeriod === "30d" ||
-    rawPeriod === "90d" ||
-    rawPeriod === "year" ||
-    rawPeriod === "all"
-      ? rawPeriod
-      : "all";
-
-  const session = await getServerSession(authOptions);
-  if (!session || !session.user?.id) {
-    return (
-      <div className="max-w-6xl mx-auto px-4 py-12">
-        <h1 className="text-2xl font-semibold text-slate-100 mb-4">
-          Invoices
-        </h1>
-        <p className="text-slate-400">
-          You must be signed in to view invoices.
-        </p>
-      </div>
-    );
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect("/login");
   }
 
   await connectToDatabase();
 
-  // Fetch invoices for this user, with estate metadata
-  const invoiceDocs = (await Invoice.find({
+  const q = (qRaw ?? "").trim();
+  const statusFilter = (statusRaw ?? "ALL").toUpperCase();
+  const timeframe = timeframeRaw ?? "all";
+
+  const mongoQuery: { [key: string]: unknown } = {
     ownerId: session.user.id,
-  })
-    .populate({
-      path: "estateId",
-      select: "displayName caseName",
-      model: Estate,
-    })
-    .sort({ issueDate: -1 })
-    .lean()) as unknown as InvoiceDocPopulated[];
+  };
 
-  // Normalize data + attach estate info safely
+  // Status filter
+  if (statusFilter !== "ALL") {
+    mongoQuery.status = statusFilter as InvoiceStatus;
+  }
+
+  // Text search (notes + invoiceNumber)
+  if (q.length > 0) {
+    mongoQuery.$or = [
+      { notes: { $regex: q, $options: "i" } },
+      { invoiceNumber: { $regex: q, $options: "i" } },
+    ];
+  }
+
+  // Timeframe filter
+  const now = new Date();
+  if (timeframe === "30d") {
+    const past30 = new Date(now);
+    past30.setDate(now.getDate() - 30);
+    mongoQuery.issueDate = { $gte: past30 };
+  } else if (timeframe === "this-month") {
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    mongoQuery.issueDate = { $gte: startOfMonth };
+  }
+
+  const invoiceDocs = (await Invoice.find(mongoQuery)
+    .sort({ issueDate: -1, createdAt: -1 })
+    .populate("estateId", "displayName caseName")
+    .lean()) as InvoiceLean[];
+
   const invoices: InvoiceListItem[] = invoiceDocs.map((inv) => {
-    // estateId may be a string or a populated object depending on Mongoose
-    const estatePop =
-      typeof inv.estateId === "object" && inv.estateId !== null
-        ? inv.estateId
-        : inv.estate;
+    const amount = getAmount(inv);
+    const statusStr = String(inv.status || "DRAFT").toUpperCase();
 
-    const estateId =
-      typeof inv.estateId === "string"
-        ? inv.estateId
-        : estatePop && estatePop._id
-        ? String(estatePop._id)
-        : "";
+    const estatePop =
+      inv.estateId &&
+      typeof inv.estateId === "object" &&
+      "displayName" in inv.estateId
+        ? (inv.estateId as PopulatedEstate)
+        : undefined;
+
+    let estateId = "";
+    if (typeof inv.estateId === "string") {
+      estateId = inv.estateId;
+    } else if (estatePop && estatePop._id) {
+      estateId =
+        typeof estatePop._id === "string"
+          ? estatePop._id
+          : estatePop._id.toString();
+    }
+
+    const balanceDue =
+      statusStr === "PAID" || statusStr === "VOID" ? 0 : amount;
 
     return {
-      _id: String(inv._id),
+      _id:
+        typeof inv._id === "string"
+          ? inv._id
+          : inv._id.toString(),
       estateId,
-      number: inv.number,
-      status: inv.status,
-      issueDate: inv.issueDate,
-      dueDate: inv.dueDate,
-      total: inv.total,
-      balanceDue: inv.balanceDue,
+      status: statusStr,
+      issueDate: normalizeDate(inv.issueDate),
+      dueDate: normalizeDate(inv.dueDate),
+      total: amount,
+      balanceDue,
+      notes: inv.notes,
+      invoiceNumber: inv.invoiceNumber,
       estate: estatePop
         ? {
             _id: estateId,
@@ -139,143 +185,67 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
     };
   });
 
-  const now = new Date();
-  let fromDate: Date | null = null;
+  const totalInvoiced = invoices.reduce((sum, inv) => {
+    return sum + (inv.status !== "VOID" ? inv.total : 0);
+  }, 0);
 
-  if (periodFilter === "30d") {
-    fromDate = subDays(now, 30);
-  } else if (periodFilter === "90d") {
-    fromDate = subDays(now, 90);
-  } else if (periodFilter === "year") {
-    fromDate = startOfYear(now);
-  }
+  const totalCollected = invoices.reduce((sum, inv) => {
+    return sum + (inv.status === "PAID" ? inv.total : 0);
+  }, 0);
 
-  const filtered = invoices.filter((inv) => {
-    if (statusFilter !== "ALL") {
-      if (String(inv.status).toUpperCase() !== statusFilter) return false;
-    }
-
-    if (fromDate) {
-      const issue = inv.issueDate ? new Date(inv.issueDate) : null;
-      if (!issue || !isAfter(issue, fromDate)) return false;
-    }
-
-    return true;
-  });
-
-  // Analytics
-  const totalInvoiced = invoices.reduce(
-    (sum, inv) => sum + (typeof inv.total === "number" ? inv.total : 0),
-    0,
-  );
-  const totalPaid = invoices
-    .filter(
-      (inv) =>
-        String(inv.status).toUpperCase() === "PAID" &&
-        typeof inv.total === "number",
-    )
-    .reduce((sum, inv) => sum + (inv.total ?? 0), 0);
-  const totalOutstanding = invoices
-    .filter(
-      (inv) =>
-        String(inv.status).toUpperCase() !== "VOID" &&
-        String(inv.status).toUpperCase() !== "PAID",
-    )
-    .reduce(
-      (sum, inv) =>
-        sum +
-        (typeof inv.balanceDue === "number"
-          ? inv.balanceDue
-          : typeof inv.total === "number"
-          ? inv.total
-          : 0),
-      0,
-    );
-
-  const countByStatus: Record<InvoiceStatus, number> = {
-    DRAFT: 0,
-    SENT: 0,
-    PAID: 0,
-    VOID: 0,
-  };
-
-  invoices.forEach((inv) => {
-    const s = String(inv.status).toUpperCase() as InvoiceStatus;
-    if (s in countByStatus) {
-      countByStatus[s] += 1;
-    }
-  });
-
-  const overdueCount = invoices.filter((inv) => {
-    if (
-      String(inv.status).toUpperCase() === "PAID" ||
-      String(inv.status).toUpperCase() === "VOID"
-    ) {
-      return false;
-    }
-    if (!inv.dueDate) return false;
-    const due = new Date(inv.dueDate);
-    return due < now;
-  }).length;
+  const totalOutstanding = invoices.reduce((sum, inv) => {
+    return sum + (inv.status !== "PAID" && inv.status !== "VOID" ? inv.total : 0);
+  }, 0);
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 space-y-8">
-      <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <div className="space-y-6">
+      <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-100">
-            Invoices
-          </h1>
-          <p className="text-slate-400 text-sm mt-1">
-            Track all billed work across estates, with totals and quick
-            filters.
+          <p className="text-xs uppercase tracking-wide text-slate-500">
+            Billing
+          </p>
+          <h1 className="text-2xl font-semibold text-slate-100">Invoices</h1>
+          <p className="text-sm text-slate-400">
+            Track all invoices across your firm. Filter by status, timeframe,
+            or search by notes and invoice number.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href="/app/estates"
-            className="inline-flex items-center rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-slate-100 border border-slate-700 hover:bg-slate-700"
-          >
-            Back to Estates
-          </Link>
-        </div>
+
+        <Link
+          href="/app/invoices/new"
+          className="inline-flex items-center rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400"
+        >
+          New invoice
+        </Link>
       </header>
 
-      {/* Summary cards */}
-      <section className="grid gap-4 grid-cols-1 md:grid-cols-3">
-        <DataCard
-          label="Total Invoiced"
-          value={formatCurrency(totalInvoiced)}
-          subtitle={`${invoices.length} invoice${
-            invoices.length === 1 ? "" : "s"
-          }`}
-        />
-        <DataCard
-          label="Collected (Paid)"
-          value={formatCurrency(totalPaid)}
-          subtitle={`${countByStatus.PAID} paid`}
-        />
-        <DataCard
-          label="Outstanding"
-          value={formatCurrency(totalOutstanding)}
-          subtitle={`${overdueCount} overdue`}
-          accent="warning"
-        />
-      </section>
-
       {/* Filters */}
-      <section className="border border-slate-800 rounded-lg bg-slate-900/40 p-4">
-        <form className="flex flex-wrap items-end gap-4">
-          <div className="flex flex-col text-xs text-slate-300">
-            <label htmlFor="status" className="mb-1">
+      <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+        <form className="flex flex-wrap items-end gap-3" method="GET">
+          <div className="flex-1 min-w-[160px]">
+            <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              Search
+            </label>
+            <input
+              type="text"
+              name="q"
+              defaultValue={q}
+              placeholder="Notes, invoice number…"
+              className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
               Status
             </label>
             <select
-              id="status"
               name="status"
               defaultValue={statusFilter}
-              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              className="mt-1 rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
             >
               <option value="ALL">All</option>
+              <option value="UNPAID">Unpaid (DRAFT/SENT)</option>
               <option value="DRAFT">Draft</option>
               <option value="SENT">Sent</option>
               <option value="PAID">Paid</option>
@@ -283,138 +253,151 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
             </select>
           </div>
 
-          <div className="flex flex-col text-xs text-slate-300">
-            <label htmlFor="period" className="mb-1">
-              Time Period
+          <div>
+            <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              Timeframe
             </label>
             <select
-              id="period"
-              name="period"
-              defaultValue={periodFilter}
-              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              name="timeframe"
+              defaultValue={timeframe}
+              className="mt-1 rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
             >
               <option value="all">All time</option>
               <option value="30d">Last 30 days</option>
-              <option value="90d">Last 90 days</option>
-              <option value="year">This year</option>
+              <option value="this-month">This month</option>
             </select>
           </div>
 
           <button
             type="submit"
-            className="inline-flex items-center rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500"
+            className="inline-flex items-center rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-white"
           >
             Apply filters
           </button>
         </form>
       </section>
 
-      {/* Table */}
-      <section className="border border-slate-800 rounded-lg overflow-hidden bg-slate-900/40">
-        <div className="border-b border-slate-800 px-4 py-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium text-slate-100">
-            Invoices ({filtered.length})
+      {/* Summary cards */}
+      <section className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+          <p className="text-xs font-medium text-slate-400">
+            Total invoiced (filtered)
+          </p>
+          <p className="mt-2 text-xl font-semibold text-slate-50">
+            {formatCurrency(totalInvoiced)}
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Sum of all non-void invoices matching the current filters.
+          </p>
+        </div>
+
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+          <p className="text-xs font-medium text-slate-400">
+            Collected (PAID)
+          </p>
+          <p className="mt-2 text-xl font-semibold text-slate-50">
+            {formatCurrency(totalCollected)}
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Invoices marked PAID in the current view.
+          </p>
+        </div>
+
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+          <p className="text-xs font-medium text-slate-400">
+            Outstanding balance
+          </p>
+          <p className="mt-2 text-xl font-semibold text-slate-50">
+            {formatCurrency(totalOutstanding)}
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Total balance due on non-PAID, non-VOID invoices.
+          </p>
+        </div>
+      </section>
+
+      {/* Invoices table */}
+      <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-slate-100">
+            Invoices ({invoices.length})
           </h2>
         </div>
 
-        {filtered.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-slate-400">
-            No invoices match the selected filters.
-          </div>
+        {invoices.length === 0 ? (
+          <p className="text-xs text-slate-500">
+            No invoices match the current filters.
+          </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full text-xs">
+            <table className="min-w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-slate-800 bg-slate-900/60">
-                  <Th>Invoice</Th>
-                  <Th>Estate</Th>
-                  <Th className="text-right">Issue Date</Th>
-                  <Th className="text-right">Due Date</Th>
-                  <Th className="text-center">Status</Th>
-                  <Th className="text-right">Total</Th>
-                  <Th className="text-right">Balance</Th>
-                  <Th className="text-right">Actions</Th>
+                <tr className="border-b border-slate-800 text-slate-400">
+                  <th className="py-2 pr-4 font-medium">Invoice</th>
+                  <th className="py-2 pr-4 font-medium">Estate</th>
+                  <th className="py-2 pr-4 font-medium">Status</th>
+                  <th className="py-2 pr-4 font-medium">Issue date</th>
+                  <th className="py-2 pr-4 font-medium">Due date</th>
+                  <th className="py-2 pr-4 font-medium text-right">Total</th>
+                  <th className="py-2 pr-4 font-medium text-right">
+                    Balance due
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((inv) => {
-                  const issue = inv.issueDate
-                    ? format(new Date(inv.issueDate), "MMM d, yyyy")
-                    : "—";
-                  const due = inv.dueDate
-                    ? format(new Date(inv.dueDate), "MMM d, yyyy")
-                    : "—";
-                  const statusStr = String(inv.status).toUpperCase();
+                {invoices.map((inv) => {
+                  const label =
+                    inv.invoiceNumber ??
+                    (inv._id ? `…${inv._id.slice(-6)}` : inv._id);
+
                   const estateLabel =
-                    inv.estate?.displayName ||
-                    inv.estate?.caseName ||
-                    "Unnamed estate";
+                    inv.estate?.displayName ??
+                    inv.estate?.caseName ??
+                    "—";
 
-                  const totalVal =
-                    typeof inv.total === "number" ? inv.total : 0;
-                  const balanceVal =
-                    typeof inv.balanceDue === "number"
-                      ? inv.balanceDue
-                      : totalVal;
-
-                  const estateHref = inv.estateId
-                    ? `/app/estates/${inv.estateId}`
-                    : undefined;
-                  const invoiceHref =
-                    inv.estateId && inv._id
+                  const invoiceLink =
+                    inv.estateId.length > 0
                       ? `/app/estates/${inv.estateId}/invoices/${inv._id}`
-                      : "#";
+                      : `/app/invoices`;
 
                   return (
                     <tr
                       key={inv._id}
-                      className="border-b border-slate-800/70 hover:bg-slate-900/70"
+                      className="border-b border-slate-900 last:border-0"
                     >
-                      <Td className="font-medium text-slate-100">
+                      <td className="py-2 pr-4">
                         <Link
-                          href={invoiceHref}
-                          className="hover:underline"
-                        >
-                          {inv.number || shortId(inv._id)}
-                        </Link>
-                      </Td>
-                      <Td>
-                        {estateHref ? (
-                          <Link
-                            href={estateHref}
-                            className="hover:underline text-slate-200"
-                          >
-                            {estateLabel}
-                          </Link>
-                        ) : (
-                          <span className="text-slate-300">
-                            {estateLabel}
-                          </span>
-                        )}
-                      </Td>
-                      <Td className="text-right text-slate-300">
-                        {issue}
-                      </Td>
-                      <Td className="text-right text-slate-300">
-                        {due}
-                      </Td>
-                      <Td className="text-center">
-                        <StatusPill status={statusStr as InvoiceStatus} />
-                      </Td>
-                      <Td className="text-right">
-                        {formatCurrency(totalVal)}
-                      </Td>
-                      <Td className="text-right">
-                        {formatCurrency(balanceVal)}
-                      </Td>
-                      <Td className="text-right">
-                        <Link
-                          href={invoiceHref}
+                          href={invoiceLink}
                           className="text-xs text-sky-400 hover:text-sky-300"
                         >
-                          View
+                          {label}
                         </Link>
-                      </Td>
+                        {inv.notes && (
+                          <div className="mt-0.5 max-w-xs truncate text-[11px] text-slate-500">
+                            {inv.notes}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-2 pr-4 text-slate-200">
+                        {estateLabel}
+                      </td>
+                      <td className="py-2 pr-4">
+                        <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-300">
+                          {inv.status}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-4 text-slate-300">
+                        {formatDate(inv.issueDate)}
+                      </td>
+                      <td className="py-2 pr-4 text-slate-300">
+                        {formatDate(inv.dueDate)}
+                      </td>
+                      <td className="py-2 pr-4 text-right text-slate-100">
+                        {formatCurrency(inv.total)}
+                      </td>
+                      <td className="py-2 pr-4 text-right text-slate-100">
+                        {formatCurrency(inv.balanceDue)}
+                      </td>
                     </tr>
                   );
                 })}
@@ -424,116 +407,5 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
         )}
       </section>
     </div>
-  );
-}
-
-/* ---------- helpers & small components ---------- */
-
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-function shortId(id: string) {
-  if (!id) return "—";
-  return `#${id.slice(-6).toUpperCase()}`;
-}
-
-type DataCardProps = {
-  label: string;
-  value: string;
-  subtitle?: string;
-  accent?: "default" | "warning";
-};
-
-function DataCard({
-  label,
-  value,
-  subtitle,
-  accent = "default",
-}: DataCardProps) {
-  const accentClasses =
-    accent === "warning"
-      ? "border-amber-400/60 bg-amber-500/5"
-      : "border-slate-800 bg-slate-900/40";
-
-  return (
-    <div
-      className={`rounded-lg border px-4 py-3 flex flex-col gap-1 ${accentClasses}`}
-    >
-      <span className="text-[11px] uppercase tracking-wide text-slate-400">
-        {label}
-      </span>
-      <span className="text-lg font-semibold text-slate-50">
-        {value}
-      </span>
-      {subtitle && (
-        <span className="text-xs text-slate-500">{subtitle}</span>
-      )}
-    </div>
-  );
-}
-
-type ThProps = {
-  children?: React.ReactNode;
-  className?: string;
-};
-
-function Th({ children, className }: ThProps) {
-  return (
-    <th
-      className={`px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-slate-400 ${
-        className ?? ""
-      }`}
-    >
-      {children}
-    </th>
-  );
-}
-
-type TdProps = {
-  children?: React.ReactNode;
-  className?: string;
-};
-
-function Td({ children, className }: TdProps) {
-  return (
-    <td
-      className={`px-3 py-2 align-middle text-xs text-slate-200 ${
-        className ?? ""
-      }`}
-    >
-      {children}
-    </td>
-  );
-}
-
-type StatusPillProps = {
-  status: InvoiceStatus;
-};
-
-function StatusPill({ status }: StatusPillProps) {
-  const base =
-    "inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold";
-  let variant = "bg-slate-800 text-slate-200 border border-slate-700";
-
-  if (status === "DRAFT") {
-    variant = "bg-slate-800 text-slate-200 border border-slate-700";
-  } else if (status === "SENT") {
-    variant = "bg-sky-500/15 text-sky-300 border border-sky-600/60";
-  } else if (status === "PAID") {
-    variant =
-      "bg-emerald-500/15 text-emerald-300 border border-emerald-600/60";
-  } else if (status === "VOID") {
-    variant = "bg-rose-500/15 text-rose-300 border border-rose-600/60";
-  }
-
-  return (
-    <span className={`${base} ${variant}`}>
-      {status.charAt(0) + status.slice(1).toLowerCase()}
-    </span>
   );
 }
