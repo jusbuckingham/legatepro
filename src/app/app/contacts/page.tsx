@@ -1,247 +1,218 @@
-// src/app/app/contacts/page.tsx
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Contact } from "@/models/Contact";
-import { Estate } from "@/models/Estate";
 
-export const metadata = {
-  title: "Contacts | LegatePro",
-  description: "View all contacts across your estates.",
+type PageSearchParams = {
+  q?: string;
+  role?: string;
 };
 
-type RawContact = {
-  _id: string;
-  ownerId: string;
-  estateId: string | null;
-  name: string;
-  relationship?: string;
-  role?: string;
+type PageProps = {
+  searchParams: Promise<PageSearchParams>;
+};
+
+type ContactLean = {
+  _id: string | { toString: () => string };
+  name?: string;
   email?: string;
   phone?: string;
-  addressLine1?: string;
-  addressLine2?: string;
-  city?: string;
-  state?: string;
-  postalCode?: string;
-  country?: string;
-  notes?: string;
-  createdAt?: Date | string;
-  updatedAt?: Date | string;
-};
-
-type RawEstate = {
-  _id: string;
-  caseTitle?: string;
-  courtCaseNumber?: string;
+  role?: string;
+  estates?: Array<string | { toString: () => string }>;
 };
 
 type ContactListItem = {
-  id: string;
-  estateId: string | null;
-  estateLabel: string;
+  _id: string;
   name: string;
-  relationship?: string;
-  roleLabel?: string;
   email?: string;
   phone?: string;
-  createdAtLabel?: string;
+  role?: string;
+  estatesCount: number;
 };
 
-function formatDate(value?: Date | string): string | undefined {
-  if (!value) return undefined;
-  const date = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(date.getTime())) return undefined;
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "2-digit",
-    year: "numeric",
-  });
-}
+export default async function ContactsPage({ searchParams }: PageProps) {
+  const { q: qRaw, role: roleRaw } = await searchParams;
 
-function formatRole(role?: string): string | undefined {
-  if (!role) return undefined;
-  switch (role) {
-    case "PERSONAL_REPRESENTATIVE":
-      return "Personal Representative";
-    case "ATTORNEY":
-      return "Attorney";
-    case "HEIR":
-      return "Heir";
-    case "BENEFICIARY":
-      return "Beneficiary";
-    case "CREDITOR":
-      return "Creditor";
-    case "OTHER":
-      return "Other";
-    default:
-      return role.toString();
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect("/login");
   }
-}
 
-async function loadContacts(ownerId: string): Promise<{
-  items: ContactListItem[];
-}> {
   await connectToDatabase();
 
-  // Load all estates for label lookup
-  const estates = (await Estate.find({ ownerId })
-    .select("_id caseTitle courtCaseNumber")
-    .lean()) as unknown as RawEstate[];
+  const q = (qRaw ?? "").trim();
+  const roleFilter = (roleRaw ?? "ALL").toUpperCase();
 
-  const estateMap = new Map<string, string>();
-  for (const estate of estates) {
-    const key = String(estate._id);
-    const label =
-      estate.caseTitle ||
-      estate.courtCaseNumber ||
-      `Estate ${key.slice(-6).toUpperCase()}`;
-    estateMap.set(key, label);
+  const mongoQuery: Record<string, unknown> = {
+    ownerId: session.user.id,
+  };
+
+  if (q.length > 0) {
+    mongoQuery.$or = [
+      { name: { $regex: q, $options: "i" } },
+      { email: { $regex: q, $options: "i" } },
+      { phone: { $regex: q, $options: "i" } },
+    ];
   }
 
-  // Load all contacts for this owner
-  const contacts = (await Contact.find({ ownerId })
-    .sort({ createdAt: -1 })
-    .lean()) as unknown as RawContact[];
+  if (roleFilter !== "ALL") {
+    mongoQuery.role = roleFilter;
+  }
 
-  const items: ContactListItem[] = contacts.map((contact) => {
-    const id = String(contact._id);
-    const estateId = contact.estateId ? String(contact.estateId) : null;
-    const estateLabel =
-      (estateId && estateMap.get(estateId)) || "Unassigned Estate";
+  const contactsRaw = (await Contact.find(mongoQuery)
+    .sort({ name: 1, createdAt: -1 })
+    .lean()) as ContactLean[];
+
+  const contacts: ContactListItem[] = contactsRaw.map((c) => {
+    const id =
+      typeof c._id === "string" ? c._id : c._id.toString();
+
+    const name = c.name?.trim() || "Unnamed contact";
+
+    const estatesCount = Array.isArray(c.estates)
+      ? c.estates.length
+      : 0;
 
     return {
-      id,
-      estateId,
-      estateLabel,
-      name: contact.name,
-      relationship: contact.relationship,
-      roleLabel: formatRole(contact.role),
-      email: contact.email,
-      phone: contact.phone,
-      createdAtLabel: formatDate(contact.createdAt),
+      _id: id,
+      name,
+      email: c.email || undefined,
+      phone: c.phone || undefined,
+      role: c.role || undefined,
+      estatesCount,
     };
   });
 
-  return { items };
-}
-
-export default async function ContactsPage() {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    redirect("/login?callbackUrl=/app/contacts");
-  }
-
-  const ownerId = session.user.id;
-  const { items } = await loadContacts(ownerId);
-
   return (
-    <main className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6">
+      <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Contacts</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            All people related to your estates—attorneys, heirs, creditors, and
-            more.
+          <p className="text-xs uppercase tracking-wide text-slate-500">
+            People
+          </p>
+          <h1 className="text-2xl font-semibold text-slate-100">
+            Contacts
+          </h1>
+          <p className="text-sm text-slate-400">
+            Keep track of executors, heirs, attorneys, vendors, and
+            other people connected to your estates.
           </p>
         </div>
-        {/* In future: global “New Contact” that first asks which estate */}
-        <Link
-          href="/app/estates"
-          className="inline-flex items-center rounded-md border border-border bg-background px-3 py-2 text-sm font-medium shadow-sm hover:bg-accent hover:text-accent-foreground"
-        >
-          Go to Estates
-        </Link>
-      </div>
 
-      {items.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border bg-muted/30 p-6 text-center">
-          <p className="text-sm font-medium text-foreground">
-            No contacts yet.
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Create an estate first, then add contacts from within that estate.
-          </p>
-          <div className="mt-4">
-            <Link
-              href="/app/estates/new"
-              className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90"
-            >
-              Create your first estate
-            </Link>
+        <Link
+          href="/app/contacts/new"
+          className="inline-flex items-center rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400"
+        >
+          New contact
+        </Link>
+      </header>
+
+      {/* Filters */}
+      <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+        <form className="flex flex-wrap items-end gap-3" method="GET">
+          <div className="flex-1 min-w-[160px]">
+            <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              Search
+            </label>
+            <input
+              type="text"
+              name="q"
+              defaultValue={q}
+              placeholder="Name, email, phone…"
+              className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            />
           </div>
+
+          <div>
+            <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              Role
+            </label>
+            <select
+              name="role"
+              defaultValue={roleFilter}
+              className="mt-1 rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            >
+              <option value="ALL">All roles</option>
+              <option value="EXECUTOR">Executor</option>
+              <option value="ADMINISTRATOR">Administrator</option>
+              <option value="HEIR">Heir / Beneficiary</option>
+              <option value="ATTORNEY">Attorney</option>
+              <option value="CREDITOR">Creditor</option>
+              <option value="VENDOR">Vendor</option>
+              <option value="OTHER">Other</option>
+            </select>
+          </div>
+
+          <button
+            type="submit"
+            className="inline-flex items-center rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-white"
+          >
+            Apply filters
+          </button>
+        </form>
+      </section>
+
+      {/* Contacts table */}
+      <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-slate-100">
+            Contacts ({contacts.length})
+          </h2>
         </div>
-      ) : (
-        <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
-          <table className="min-w-full divide-y divide-border">
-            <thead className="bg-muted/50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Name
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Role
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Relationship
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Estate
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Contact
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border bg-card">
-              {items.map((contact) => (
-                <tr key={contact.id} className="hover:bg-muted/40">
-                  <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-foreground">
-                    {contact.name}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-sm text-muted-foreground">
-                    {contact.roleLabel || "—"}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-sm text-muted-foreground">
-                    {contact.relationship || "—"}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-sm text-muted-foreground">
-                    {contact.estateLabel}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-sm text-muted-foreground">
-                    {contact.email && (
-                      <span className="block truncate">{contact.email}</span>
-                    )}
-                    {contact.phone && (
-                      <span className="block truncate">{contact.phone}</span>
-                    )}
-                    {!contact.email && !contact.phone && "—"}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right text-sm">
-                    {contact.estateId ? (
-                      <Link
-                        href={`/app/estates/${contact.estateId}/contacts/${contact.id}`}
-                        className="text-sm font-medium text-primary hover:underline"
-                      >
-                        View
-                      </Link>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">
-                        No estate
-                      </span>
-                    )}
-                  </td>
+
+        {contacts.length === 0 ? (
+          <p className="text-xs text-slate-500">
+            You don&apos;t have any contacts yet. Create your first
+            contact to start linking people to estates.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400">
+                  <th className="py-2 pr-4 font-medium">Name</th>
+                  <th className="py-2 pr-4 font-medium">Email</th>
+                  <th className="py-2 pr-4 font-medium">Phone</th>
+                  <th className="py-2 pr-4 font-medium">Role</th>
+                  <th className="py-2 pr-4 font-medium text-right">
+                    Estates
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </main>
+              </thead>
+              <tbody>
+                {contacts.map((contact) => (
+                  <tr
+                    key={contact._id}
+                    className="border-b border-slate-900 last:border-0"
+                  >
+                    <td className="py-2 pr-4">
+                      <Link
+                        href={`/app/contacts/${contact._id}`}
+                        className="text-xs text-sky-400 hover:text-sky-300"
+                      >
+                        {contact.name}
+                      </Link>
+                    </td>
+                    <td className="py-2 pr-4 text-slate-200">
+                      {contact.email ?? "—"}
+                    </td>
+                    <td className="py-2 pr-4 text-slate-200">
+                      {contact.phone ?? "—"}
+                    </td>
+                    <td className="py-2 pr-4 text-slate-200">
+                      {contact.role ?? "—"}
+                    </td>
+                    <td className="py-2 pr-4 text-right text-slate-200">
+                      {contact.estatesCount}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
   );
 }

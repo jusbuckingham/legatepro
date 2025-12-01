@@ -1,100 +1,120 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { connectToDatabase } from "@/lib/db";
+import { Estate } from "@/models/Estate";
 import { Contact } from "@/models/Contact";
 
-interface RouteParams {
-  params: Promise<{
-    estateId: string;
-  }>;
-}
+type RouteParams = {
+  estateId: string;
+};
 
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+type LinkBody = {
+  contactId?: string;
+};
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<RouteParams> },
+) {
+  const { estateId } = await params;
+
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  await connectToDatabase();
+
+  let body: LinkBody;
   try {
-    const { estateId } = await params;
-    const session = await auth();
+    body = (await req.json()) as LinkBody;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
 
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    await connectToDatabase();
-
-    const contacts = await Contact.find({
-      estateId,
-      ownerId: session.user.id,
-    })
-      .sort({ name: 1 })
-      .lean();
-
-    return NextResponse.json({ contacts }, { status: 200 });
-  } catch (error) {
-    console.error("[GET /api/estates/[estateId]/contacts] Error:", error);
+  const contactId = body.contactId;
+  if (!contactId || typeof contactId !== "string") {
     return NextResponse.json(
-      { error: "Failed to fetch contacts" },
-      { status: 500 },
+      { error: "Missing or invalid contactId" },
+      { status: 400 },
     );
   }
+
+  const estate = await Estate.findOne({
+    _id: estateId,
+    ownerId: session.user.id,
+  })
+    .select("_id ownerId")
+    .lean();
+
+  if (!estate) {
+    return NextResponse.json({ error: "Estate not found" }, { status: 404 });
+  }
+
+  const contact = await Contact.findOne({
+    _id: contactId,
+    ownerId: session.user.id,
+  }).select("_id");
+
+  if (!contact) {
+    return NextResponse.json({ error: "Contact not found" }, { status: 404 });
+  }
+
+  await Contact.updateOne(
+    { _id: contactId, ownerId: session.user.id },
+    { $addToSet: { estates: estate._id } },
+  );
+
+  return NextResponse.json({ ok: true });
 }
 
-export async function POST(request: NextRequest, { params }: RouteParams) {
-  try {
-    const { estateId } = await params;
-    const session = await auth();
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<RouteParams> },
+) {
+  const { estateId } = await params;
 
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-    const body = (await request.json()) as {
-      name?: string;
-      relationship?: string;
-      role?: string;
-      email?: string;
-      phone?: string;
-      addressLine1?: string;
-      addressLine2?: string;
-      city?: string;
-      state?: string;
-      postalCode?: string;
-      country?: string;
-      notes?: string;
-      isPrimary?: boolean;
-    };
+  await connectToDatabase();
 
-    if (!body.name || body.name.trim().length === 0) {
-      return NextResponse.json(
-        { error: "Name is required" },
-        { status: 400 },
-      );
-    }
+  const url = new URL(req.url);
+  const contactId = url.searchParams.get("contactId");
 
-    await connectToDatabase();
-
-    const contact = await Contact.create({
-      ownerId: session.user.id,
-      estateId,
-      name: body.name.trim(),
-      relationship: body.relationship?.trim(),
-      role: body.role,
-      email: body.email?.trim(),
-      phone: body.phone?.trim(),
-      addressLine1: body.addressLine1?.trim(),
-      addressLine2: body.addressLine2?.trim(),
-      city: body.city?.trim(),
-      state: body.state?.trim(),
-      postalCode: body.postalCode?.trim(),
-      country: body.country?.trim(),
-      notes: body.notes?.trim(),
-      isPrimary: body.isPrimary ?? false,
-    });
-
-    return NextResponse.json({ contact }, { status: 201 });
-  } catch (error) {
-    console.error("[POST /api/estates/[estateId]/contacts] Error:", error);
+  if (!contactId) {
     return NextResponse.json(
-      { error: "Failed to create contact" },
-      { status: 500 },
+      { error: "Missing contactId query parameter" },
+      { status: 400 },
     );
   }
+
+  const estate = await Estate.findOne({
+    _id: estateId,
+    ownerId: session.user.id,
+  })
+    .select("_id ownerId")
+    .lean();
+
+  if (!estate) {
+    return NextResponse.json({ error: "Estate not found" }, { status: 404 });
+  }
+
+  const contact = await Contact.findOne({
+    _id: contactId,
+    ownerId: session.user.id,
+  }).select("_id");
+
+  if (!contact) {
+    return NextResponse.json({ error: "Contact not found" }, { status: 404 });
+  }
+
+  await Contact.updateOne(
+    { _id: contactId, ownerId: session.user.id },
+    { $pull: { estates: estate._id } },
+  );
+
+  return NextResponse.json({ ok: true });
 }

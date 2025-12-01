@@ -1,27 +1,53 @@
-"use client";
-
-import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useParams } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { format } from "date-fns";
+import { auth } from "@/lib/auth";
+import { connectToDatabase } from "@/lib/db";
+import { Estate } from "@/models/Estate";
+import { Invoice } from "@/models/Invoice";
+import { Contact } from "@/models/Contact";
+import { EstateContactsPanel } from "@/components/estate/EstateContactsPanel";
 
-type InvoiceSummaryItem = {
-  _id: string;
+type PageProps = {
+  params: Promise<{
+    estateId: string;
+  }>;
+};
+
+type EstateDoc = {
+  _id: string | { toString: () => string };
+  ownerId: string | { toString: () => string };
+  displayName?: string;
+  caseName?: string;
+  caseNumber?: string;
+  courtCounty?: string;
+  decedentName?: string;
   status?: string;
-  issueDate?: string;
-  dueDate?: string;
-  subtotal?: number;
+  createdAt?: Date;
+};
+
+type InvoiceLean = {
+  _id: string | { toString: () => string };
+  estateId: string | { toString: () => string };
+  status?: string;
+  issueDate?: Date;
+  dueDate?: Date;
   totalAmount?: number;
+  subtotal?: number;
   notes?: string;
+  invoiceNumber?: string;
 };
 
-type BillingSummary = {
-  unpaidTotal: number;
-  overdueCount: number;
-  mtdBilled: number;
-  latestInvoices: InvoiceSummaryItem[];
+type ContactLean = {
+  _id: string | { toString: () => string };
+  name?: string;
+  email?: string;
+  phone?: string;
+  role?: string;
+  estates?: Array<string | { toString: () => string }>;
 };
 
-function formatCurrency(amount: number): string {
+function formatMoney(amount: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
@@ -30,252 +56,284 @@ function formatCurrency(amount: number): string {
   }).format(amount || 0);
 }
 
-function formatDate(value?: string): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleDateString();
-}
+export default async function EstateDetailPage({ params }: PageProps) {
+  const { estateId } = await params;
 
-export default function EstatePage() {
-  const pathname = usePathname();
-  const params = useParams<{ estateId: string }>();
-  const estateId = params.estateId;
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect("/login");
+  }
 
-  const tabs = [
-    { name: "Overview", href: `/app/estates/${estateId}` },
-    { name: "Tasks", href: `/app/estates/${estateId}/tasks` },
-    { name: "Time", href: `/app/estates/${estateId}/time` },
-    { name: "Invoices", href: `/app/estates/${estateId}/invoices` },
-  ];
+  await connectToDatabase();
 
-  const [billing, setBilling] = useState<BillingSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const estate = (await Estate.findOne({
+    _id: estateId,
+    ownerId: session.user.id,
+  }).lean()) as EstateDoc | null;
 
-  useEffect(() => {
-    if (!estateId) return;
+  if (!estate) {
+    notFound();
+  }
 
-    let cancelled = false;
+  const estateIdStr =
+    typeof estate._id === "string" ? estate._id : estate._id.toString();
 
-    async function loadBilling() {
-      try {
-        setLoading(true);
-        setError(null);
+  const invoicesRaw = (await Invoice.find({
+    ownerId: session.user.id,
+    estateId: estateIdStr,
+  })
+    .sort({ issueDate: -1 })
+    .limit(20)
+    .lean()) as InvoiceLean[];
 
-        const res = await fetch(
-          `/api/invoices?estateId=${estateId}&summary=1`,
-          { cache: "no-store" },
-        );
+  const now = new Date();
 
-        if (!res.ok) {
-          throw new Error(`Request failed with status ${res.status}`);
-        }
+  const invoicesForList = invoicesRaw.map((inv) => {
+    const invId =
+      typeof inv._id === "string" ? inv._id : inv._id.toString();
 
-        const data = await res.json();
+    const status = (inv.status || "DRAFT").toUpperCase();
+    const amount =
+      typeof inv.totalAmount === "number"
+        ? inv.totalAmount
+        : typeof inv.subtotal === "number"
+        ? inv.subtotal
+        : 0;
 
-        if (cancelled) return;
+    const issueDateLabel = inv.issueDate
+      ? format(inv.issueDate, "MMM d, yyyy")
+      : "—";
 
-        const unpaidTotal = data?.summary?.unpaidTotal ?? 0;
-        const overdueCount = data?.summary?.overdueCount ?? 0;
-        const mtdBilled = data?.summary?.mtdBilled ?? 0;
-        const latestInvoices: InvoiceSummaryItem[] = Array.isArray(
-          data?.invoices,
-        )
-          ? data.invoices
-          : [];
+    const invoiceNumberLabel =
+      inv.invoiceNumber || `…${invId.slice(-6)}`;
 
-        setBilling({
-          unpaidTotal,
-          overdueCount,
-          mtdBilled,
-          latestInvoices,
-        });
-      } catch (err) {
-        if (!cancelled) {
-          setError("Could not load billing info");
-          console.error(err);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
+    const dueDate = inv.dueDate ?? null;
+
+    return {
+      _id: invId,
+      status,
+      amount,
+      invoiceNumberLabel,
+      issueDateLabel,
+      dueDate,
+    };
+  });
+
+  const {
+    totalInvoiced,
+    totalCollected,
+    totalOutstanding,
+    overdueCount,
+  } = invoicesForList.reduce(
+    (acc, inv) => {
+      if (inv.status !== "VOID") {
+        acc.totalInvoiced += inv.amount;
+      }
+      if (inv.status === "PAID") {
+        acc.totalCollected += inv.amount;
+      }
+      if (inv.status === "DRAFT" || inv.status === "SENT") {
+        acc.totalOutstanding += inv.amount;
+        if (inv.dueDate && inv.dueDate < now) {
+          acc.overdueCount += 1;
         }
       }
-    }
+      return acc;
+    },
+    {
+      totalInvoiced: 0,
+      totalCollected: 0,
+      totalOutstanding: 0,
+      overdueCount: 0,
+    },
+  );
 
-    void loadBilling();
+  const contactsLinkedRaw = (await Contact.find({
+    ownerId: session.user.id,
+    estates: estateIdStr,
+  })
+    .select("_id name email phone role estates")
+    .sort({ name: 1 })
+    .lean()) as ContactLean[];
 
-    return () => {
-      cancelled = true;
-    };
-  }, [estateId]);
+  const contactsAvailableRaw = (await Contact.find({
+    ownerId: session.user.id,
+    $or: [{ estates: { $exists: false } }, { estates: { $ne: estateIdStr } }],
+  })
+    .select("_id name role estates")
+    .sort({ name: 1 })
+    .lean()) as ContactLean[];
 
-  const isActive = (href: string) => {
-    if (pathname === href) return true;
-    if (pathname.startsWith(`${href}/`)) return true;
-    return false;
-  };
+  const linkedContacts = contactsLinkedRaw.map((c) => ({
+    _id:
+      typeof c._id === "string" ? c._id : c._id.toString(),
+    name: c.name?.trim() || "Unnamed contact",
+    email: c.email || undefined,
+    phone: c.phone || undefined,
+    role: c.role || undefined,
+  }));
 
-  const effectiveBilling = billing ?? {
-    unpaidTotal: 0,
-    overdueCount: 0,
-    mtdBilled: 0,
-    latestInvoices: [],
-  };
+  const availableContacts = contactsAvailableRaw.map((c) => ({
+    _id:
+      typeof c._id === "string" ? c._id : c._id.toString(),
+    name: c.name?.trim() || "Unnamed contact",
+    role: c.role || undefined,
+  }));
+
+  const estateName =
+    estate.displayName ||
+    estate.caseName ||
+    estate.decedentName ||
+    `Estate …${estateIdStr.slice(-6)}`;
+
+  const statusLabel =
+    estate.status?.trim() || "Active";
+
+  const createdLabel = estate.createdAt
+    ? format(estate.createdAt, "MMM d, yyyy")
+    : "";
 
   return (
-    <div>
-      <nav className="mb-6 flex gap-6 border-b border-slate-800">
-        {tabs.map((t) => {
-          const active = isActive(t.href);
-          return (
-            <Link
-              key={t.href}
-              href={t.href}
-              className={
-                active
-                  ? "border-b-2 border-sky-500 pb-2 text-slate-100"
-                  : "pb-2 text-slate-400 hover:text-slate-200"
-              }
-            >
-              {t.name}
-            </Link>
-          );
-        })}
-      </nav>
-
-      {/* Overview content */}
-      <div className="space-y-6">
-        {error && (
-          <p className="text-xs text-red-400">
-            {error} – billing numbers may be out of date.
+    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+      <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-wide text-slate-500">
+            Estate
           </p>
-        )}
-
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
-            <p className="text-xs font-medium text-slate-400">
-              Unpaid invoice total
-            </p>
-            <p className="mt-2 text-xl font-semibold text-slate-50">
-              {formatCurrency(effectiveBilling.unpaidTotal)}
-            </p>
-            <p className="mt-1 text-[11px] text-slate-500">
-              Sum of all non-PAID, non-VOID invoices for this estate.
-            </p>
-          </div>
-
-          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
-            <p className="text-xs font-medium text-slate-400">Overdue count</p>
-            <p className="mt-2 text-xl font-semibold text-slate-50">
-              {effectiveBilling.overdueCount}
-            </p>
-            <p className="mt-1 text-[11px] text-slate-500">
-              Invoices past due date and not marked PAID/VOID.
-            </p>
-          </div>
-
-          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
-            <p className="text-xs font-medium text-slate-400">
-              Month-to-date billed
-            </p>
-            <p className="mt-2 text-xl font-semibold text-slate-50">
-              {formatCurrency(effectiveBilling.mtdBilled)}
-            </p>
-            <p className="mt-1 text-[11px] text-slate-500">
-              Total amount on all invoices issued this month for this estate (excluding voided).
-            </p>
-          </div>
+          <h1 className="text-2xl font-semibold text-slate-100">
+            {estateName}
+          </h1>
+          <p className="text-xs text-slate-400">
+            {estate.caseNumber && (
+              <>
+                Case #{estate.caseNumber}
+                {estate.courtCounty ? ` · ${estate.courtCounty}` : ""}
+              </>
+            )}
+            {!estate.caseNumber && estate.courtCounty && (
+              <>Filed in {estate.courtCounty}</>
+            )}
+            {createdLabel && (
+              <>
+                {" "}
+                · Opened {createdLabel}
+              </>
+            )}
+          </p>
         </div>
 
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
-          <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex gap-2">
+          <span className="inline-flex items-center rounded-full border border-slate-700 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-200">
+            {statusLabel}
+          </span>
+          <Link
+            href={`/app/estates/${estateIdStr}/edit`}
+            className="inline-flex items-center rounded-md border border-slate-700 px-3 py-1.5 text-[11px] font-medium text-slate-200 hover:bg-slate-800"
+          >
+            Edit estate
+          </Link>
+        </div>
+      </header>
+
+      {/* Billing snapshot + recent invoices */}
+      <section className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            Billed
+          </p>
+          <p className="text-xl font-semibold text-slate-50">
+            {formatMoney(totalInvoiced)}
+          </p>
+          <p className="text-[11px] text-slate-500">
+            All non-void invoices for this estate.
+          </p>
+        </div>
+
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            Collected
+          </p>
+          <p className="text-xl font-semibold text-emerald-400">
+            {formatMoney(totalCollected)}
+          </p>
+          <p className="text-[11px] text-slate-500">
+            Marked as paid.
+          </p>
+        </div>
+
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            Outstanding
+          </p>
+          <p className="text-xl font-semibold text-amber-300">
+            {formatMoney(totalOutstanding)}
+          </p>
+          <p className="text-[11px] text-slate-500">
+            {overdueCount > 0
+              ? `${overdueCount} invoice(s) overdue.`
+              : "No overdue invoices right now."}
+          </p>
+        </div>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)]">
+        {/* Recent invoices */}
+        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+          <div className="mb-1 flex items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-slate-100">
-              Latest invoices
+              Recent invoices
             </h2>
             <Link
-              href={`/app/estates/${estateId}/invoices`}
-              className="text-xs text-sky-400 hover:text-sky-300"
+              href={`/app/estates/${estateIdStr}/invoices`}
+              className="text-[11px] text-sky-400 hover:text-sky-300"
             >
               View all
             </Link>
           </div>
 
-          {loading && (
-            <p className="text-xs text-slate-500">Loading invoices…</p>
-          )}
-
-          {!loading && effectiveBilling.latestInvoices.length === 0 && (
+          {invoicesForList.length === 0 ? (
             <p className="text-xs text-slate-500">
-              No invoices yet for this estate.
+              No invoices created for this estate yet.
             </p>
+          ) : (
+            <ul className="divide-y divide-slate-800 text-sm">
+              {invoicesForList.slice(0, 5).map((inv) => (
+                <li
+                  key={inv._id}
+                  className="flex items-center justify-between gap-2 py-2"
+                >
+                  <div>
+                    <Link
+                      href={`/app/estates/${estateIdStr}/invoices/${inv._id}`}
+                      className="text-sky-400 hover:text-sky-300"
+                    >
+                      {inv.invoiceNumberLabel}
+                    </Link>
+                    <p className="text-[11px] text-slate-500">
+                      {inv.issueDateLabel}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-slate-100">
+                      {formatMoney(inv.amount)}
+                    </p>
+                    <p className="text-[11px] text-slate-400">
+                      {inv.status}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
+        </section>
 
-          {!loading && effectiveBilling.latestInvoices.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-800 text-slate-400">
-                    <th className="py-2 pr-4 font-medium">Invoice</th>
-                    <th className="py-2 pr-4 font-medium">Status</th>
-                    <th className="py-2 pr-4 font-medium">Issue date</th>
-                    <th className="py-2 pr-4 font-medium">Due date</th>
-                    <th className="py-2 pr-4 font-medium text-right">
-                      Amount
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {effectiveBilling.latestInvoices.map((inv) => {
-                    const status = (inv.status || "DRAFT").toString();
-                    const amountValue =
-                      typeof inv.totalAmount === "number"
-                        ? inv.totalAmount
-                        : typeof inv.subtotal === "number"
-                        ? inv.subtotal
-                        : 0;
-
-                    return (
-                      <tr
-                        key={inv._id}
-                        className="border-b border-slate-900 last:border-0"
-                      >
-                        <td className="py-2 pr-4">
-                          <Link
-                            href={`/app/estates/${estateId}/invoices/${inv._id}`}
-                            className="text-xs text-sky-400 hover:text-sky-300"
-                          >
-                            {inv._id.slice(-6)}
-                          </Link>
-                          {inv.notes && (
-                            <div className="mt-0.5 max-w-xs truncate text-[11px] text-slate-500">
-                              {inv.notes}
-                            </div>
-                          )}
-                        </td>
-                        <td className="py-2 pr-4">
-                          <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-300">
-                            {status}
-                          </span>
-                        </td>
-                        <td className="py-2 pr-4 text-slate-300">
-                          {formatDate(inv.issueDate)}
-                        </td>
-                        <td className="py-2 pr-4 text-slate-300">
-                          {formatDate(inv.dueDate)}
-                        </td>
-                        <td className="py-2 pl-4 text-right text-slate-100">
-                          {formatCurrency(amountValue)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
+        {/* Contacts panel */}
+        <EstateContactsPanel
+          estateId={estateIdStr}
+          linkedContacts={linkedContacts}
+          availableContacts={availableContacts}
+        />
+      </section>
     </div>
   );
 }

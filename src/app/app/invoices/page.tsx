@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
+import { Estate } from "@/models/Estate";
 
 type InvoiceStatus = "DRAFT" | "SENT" | "PAID" | "VOID";
 
@@ -11,6 +12,7 @@ type PageSearchParams = {
   status?: string;
   q?: string;
   timeframe?: string;
+  estateId?: string;
 };
 
 type PageProps = {
@@ -19,6 +21,12 @@ type PageProps = {
 
 type PopulatedEstate = {
   _id?: string | { toString: () => string };
+  displayName?: string;
+  caseName?: string;
+};
+
+type EstateOption = {
+  _id: string | { toString: () => string };
   displayName?: string;
   caseName?: string;
 };
@@ -91,8 +99,12 @@ function normalizeDate(value?: Date | string): Date | undefined {
 }
 
 export default async function InvoicesPage({ searchParams }: PageProps) {
-  const { status: statusRaw, q: qRaw, timeframe: timeframeRaw } =
-    await searchParams;
+  const {
+    status: statusRaw,
+    q: qRaw,
+    timeframe: timeframeRaw,
+    estateId: estateIdRaw,
+  } = await searchParams;
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -101,9 +113,15 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
 
   await connectToDatabase();
 
+  const estateDocs = (await Estate.find({ ownerId: session.user.id })
+    .select("_id displayName caseName")
+    .sort({ createdAt: -1 })
+    .lean()) as EstateOption[];
+
   const q = (qRaw ?? "").trim();
   const statusFilter = (statusRaw ?? "ALL").toUpperCase();
   const timeframe = timeframeRaw ?? "all";
+  const estateFilter = (estateIdRaw ?? "").trim();
 
   const mongoQuery: { [key: string]: unknown } = {
     ownerId: session.user.id,
@@ -112,6 +130,11 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
   // Status filter
   if (statusFilter !== "ALL") {
     mongoQuery.status = statusFilter as InvoiceStatus;
+  }
+
+  // Estate filter
+  if (estateFilter) {
+    mongoQuery.estateId = estateFilter;
   }
 
   // Text search (notes + invoiceNumber)
@@ -250,6 +273,34 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
               <option value="SENT">Sent</option>
               <option value="PAID">Paid</option>
               <option value="VOID">Void</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              Estate
+            </label>
+            <select
+              name="estateId"
+              defaultValue={estateFilter}
+              className="mt-1 rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            >
+              <option value="">All estates</option>
+              {estateDocs.map((est) => {
+                const id =
+                  typeof est._id === "string"
+                    ? est._id
+                    : est._id.toString();
+                const label =
+                  est.displayName ||
+                  est.caseName ||
+                  `Estate …${id.slice(-6)}`;
+                return (
+                  <option key={id} value={id}>
+                    {label}
+                  </option>
+                );
+              })}
             </select>
           </div>
 
