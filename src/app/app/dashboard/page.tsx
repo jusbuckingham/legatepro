@@ -1,398 +1,256 @@
-import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
-import { Estate } from "@/models/Estate";
-import { Expense } from "@/models/Expense";
-import { TimeEntry } from "@/models/TimeEntry";
-import { Task } from "@/models/Task";
-import { format } from "date-fns";
+"use client";
 
-type TaskStatus = "OPEN" | "DONE";
-type TaskPriority = "LOW" | "MEDIUM" | "HIGH";
+import React, { useEffect, useState } from "react";
+import Link from "next/link";
 
-interface TaskListItem {
+type InvoiceSummaryItem = {
   _id: string;
-  subject: string;
-  status: TaskStatus;
-  priority: TaskPriority;
-  date?: Date | string | null;
-}
+  estateId?: string;
+  status?: string;
+  issueDate?: string;
+  dueDate?: string;
+  subtotal?: number;
+  totalAmount?: number;
+  notes?: string;
+};
 
-interface TimeEntryListItem {
-  _id: string;
-  minutes: number;
-  date?: Date | string | null;
-  notes?: string | null;
-}
-
-interface ExpenseListItem {
-  _id: string;
-  description?: string | null;
-  amount: number;
-  incurredAt?: Date | string | null;
-  category?: string | null;
-}
-
-function formatDate(value?: Date | string | null): string {
-  if (!value) return "—";
-  const d = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(d.getTime())) return "—";
-  return format(d, "MMM d, yyyy");
-}
+type BillingSummary = {
+  unpaidTotal: number;
+  overdueCount: number;
+  mtdBilled: number;
+  latestInvoices: InvoiceSummaryItem[];
+};
 
 function formatCurrency(amount: number): string {
-  return amount.toLocaleString("en-US", {
+  return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  });
+  }).format(amount || 0);
 }
 
-function minutesToHours(minutes: number): number {
-  if (!minutes || Number.isNaN(minutes)) return 0;
-  return minutes / 60;
+function formatDate(value?: string): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString();
 }
 
-export default async function DashboardPage() {
-  const session = await auth();
+export default function DashboardPage() {
+  const [billing, setBilling] = useState<BillingSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  useEffect(() => {
+    let cancelled = false;
 
-  const userId = session.user.id;
-  await connectToDatabase();
+    async function loadBilling() {
+      try {
+        setLoading(true);
+        setError(null);
 
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const sevenDaysAgo = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate() - 7,
-  );
+        const res = await fetch("/api/invoices?summary=1", {
+          cache: "no-store",
+        });
 
-  // Run the heavy queries in parallel
-  const [
-    estateCount,
-    openTaskCount,
-    doneTaskThisWeekCount,
-    overdueTaskCount,
-    timeEntriesMonth,
-    timeEntriesAllTime,
-    expensesThisMonth,
-    recentTasksRaw,
-    recentTimeEntriesRaw,
-    recentExpensesRaw,
-  ] = await Promise.all([
-    Estate.countDocuments({ ownerId: userId }),
-    Task.countDocuments({ ownerId: userId, status: "OPEN" as TaskStatus }),
-    Task.countDocuments({
-      ownerId: userId,
-      status: "DONE" as TaskStatus,
-      updatedAt: { $gte: sevenDaysAgo },
-    }),
-    Task.countDocuments({
-      ownerId: userId,
-      status: "OPEN" as TaskStatus,
-      date: { $lt: startOfToday },
-    }),
-    TimeEntry.find({
-      ownerId: userId,
-      date: { $gte: startOfMonth },
-    })
-      .sort({ date: -1 })
-      .lean(),
-    TimeEntry.find({
-      ownerId: userId,
-    })
-      .sort({ date: -1 })
-      .lean(),
-    Expense.find({
-      ownerId: userId,
-      incurredAt: { $gte: startOfMonth },
-    })
-      .sort({ incurredAt: -1 })
-      .lean(),
-    Task.find({
-      ownerId: userId,
-    })
-      .sort({ updatedAt: -1 })
-      .limit(5)
-      .lean(),
-    TimeEntry.find({
-      ownerId: userId,
-    })
-      .sort({ date: -1 })
-      .limit(5)
-      .lean(),
-    Expense.find({
-      ownerId: userId,
-    })
-      .sort({ incurredAt: -1 })
-      .limit(5)
-      .lean(),
-  ]);
+        if (!res.ok) {
+          throw new Error(`Request failed with status ${res.status}`);
+        }
 
-  // Light shaping for list items with safe casting
-  const recentTasks = (recentTasksRaw as unknown as TaskListItem[]).map(
-    (task) => ({
-      ...task,
-      date: task.date ?? null,
-    }),
-  );
+        const data = await res.json();
+        if (cancelled) return;
 
-  const recentTimeEntries = (
-    recentTimeEntriesRaw as unknown as TimeEntryListItem[]
-  ).map((entry) => ({
-    ...entry,
-    date: entry.date ?? null,
-    notes: entry.notes ?? null,
-  }));
+        const unpaidTotal = data?.summary?.unpaidTotal ?? 0;
+        const overdueCount = data?.summary?.overdueCount ?? 0;
+        const mtdBilled = data?.summary?.mtdBilled ?? 0;
 
-  const recentExpenses = (
-    recentExpensesRaw as unknown as ExpenseListItem[]
-  ).map((exp) => ({
-    ...exp,
-    description: exp.description ?? null,
-    incurredAt: exp.incurredAt ?? null,
-    category: exp.category ?? null,
-  }));
-
-  // Aggregate time + expenses
-  const totalMinutesThisMonth = (timeEntriesMonth as unknown as TimeEntryListItem[]).reduce(
-    (sum, entry) => sum + (entry.minutes || 0),
-    0,
-  );
-  const totalMinutesAllTime = (timeEntriesAllTime as unknown as TimeEntryListItem[]).reduce(
-    (sum, entry) => sum + (entry.minutes || 0),
-    0,
-  );
-
-  const totalHoursThisMonth = minutesToHours(totalMinutesThisMonth);
-  const totalHoursAllTime = minutesToHours(totalMinutesAllTime);
-
-  const totalExpensesThisMonth = (expensesThisMonth as unknown as ExpenseListItem[]).reduce(
-    (sum, exp) => sum + (exp.amount || 0),
-    0,
-  );
-
-  const openTasksPercentage =
-    openTaskCount + doneTaskThisWeekCount > 0
-      ? Math.round(
-          (openTaskCount / (openTaskCount + doneTaskThisWeekCount)) * 100,
+        const latestInvoices: InvoiceSummaryItem[] = Array.isArray(
+          data?.invoices,
         )
-      : 0;
+          ? data.invoices
+          : [];
+
+        setBilling({
+          unpaidTotal,
+          overdueCount,
+          mtdBilled,
+          latestInvoices,
+        });
+      } catch (err) {
+        if (!cancelled) {
+          setError("Could not load billing info");
+          console.error(err);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadBilling();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const effectiveBilling = billing ?? {
+    unpaidTotal: 0,
+    overdueCount: 0,
+    mtdBilled: 0,
+    latestInvoices: [],
+  };
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
-            Dashboard
-          </h1>
-          <p className="mt-1 text-sm text-slate-300/80">
-            High-level overview of your estates, time, tasks, and spending.
+    <div className="space-y-6">
+      <header className="space-y-1">
+        <p className="text-xs uppercase tracking-wide text-slate-500">
+          Dashboard
+        </p>
+        <h1 className="text-2xl font-semibold text-slate-100">
+          Firm overview
+        </h1>
+        <p className="text-sm text-slate-400">
+          High-level billing snapshot across all estates.
+        </p>
+      </header>
+
+      {error && (
+        <p className="text-xs text-red-400">
+          {error} – billing numbers may be out of date.
+        </p>
+      )}
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+          <p className="text-xs font-medium text-slate-400">
+            Unpaid invoice total
+          </p>
+          <p className="mt-2 text-xl font-semibold text-slate-50">
+            {formatCurrency(effectiveBilling.unpaidTotal)}
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Sum of all non-PAID, non-VOID invoices across every estate.
           </p>
         </div>
-        <div className="text-right text-xs text-slate-400">
-          <div>As of {format(now, "MMM d, yyyy, h:mm a")}</div>
+
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+          <p className="text-xs font-medium text-slate-400">Overdue count</p>
+          <p className="mt-2 text-xl font-semibold text-slate-50">
+            {effectiveBilling.overdueCount}
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Invoices past due date and not marked PAID/VOID.
+          </p>
+        </div>
+
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+          <p className="text-xs font-medium text-slate-400">
+            Month-to-date billed
+          </p>
+          <p className="mt-2 text-xl font-semibold text-slate-50">
+            {formatCurrency(effectiveBilling.mtdBilled)}
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Total amount on all invoices issued this month (excluding voided).
+          </p>
         </div>
       </div>
 
-      {/* KPI cards */}
-      <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-          <div className="text-xs font-medium uppercase tracking-wide text-slate-400">
-            Active Estates
-          </div>
-          <div className="mt-2 text-3xl font-semibold text-slate-50">
-            {estateCount}
-          </div>
-          <p className="mt-1 text-xs text-slate-400">
-            Matters you&apos;re currently tracking in LegatePro.
-          </p>
+      <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-slate-100">
+            Recent invoices
+          </h2>
+          <Link
+            href="/app/invoices"
+            className="text-xs text-sky-400 hover:text-sky-300"
+          >
+            View all invoices
+          </Link>
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-          <div className="text-xs font-medium uppercase tracking-wide text-slate-400">
-            Hours Logged (This Month)
-          </div>
-          <div className="mt-2 text-3xl font-semibold text-slate-50">
-            {totalHoursThisMonth.toFixed(1)}
-          </div>
-          <p className="mt-1 text-xs text-slate-400">
-            From {timeEntriesMonth.length} time entries logged since{" "}
-            {format(startOfMonth, "MMM d, yyyy")}.
-          </p>
-        </div>
+        {loading && (
+          <p className="text-xs text-slate-500">Loading invoices…</p>
+        )}
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-          <div className="text-xs font-medium uppercase tracking-wide text-slate-400">
-            Open Tasks
-          </div>
-          <div className="mt-2 text-3xl font-semibold text-slate-50">
-            {openTaskCount}
-          </div>
-          <p className="mt-1 text-xs text-slate-400">
-            {openTasksPercentage}% of your work items are still open.
+        {!loading && effectiveBilling.latestInvoices.length === 0 && (
+          <p className="text-xs text-slate-500">
+            No invoices have been created yet.
           </p>
-        </div>
+        )}
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-          <div className="text-xs font-medium uppercase tracking-wide text-slate-400">
-            Expenses (This Month)
-          </div>
-          <div className="mt-2 text-3xl font-semibold text-slate-50">
-            {formatCurrency(totalExpensesThisMonth)}
-          </div>
-          <p className="mt-1 text-xs text-slate-400">
-            From {expensesThisMonth.length} expense records since{" "}
-            {format(startOfMonth, "MMM d, yyyy")}.
-          </p>
-        </div>
-      </section>
+        {!loading && effectiveBilling.latestInvoices.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400">
+                  <th className="py-2 pr-4 font-medium">Invoice</th>
+                  <th className="py-2 pr-4 font-medium">Status</th>
+                  <th className="py-2 pr-4 font-medium">Issue date</th>
+                  <th className="py-2 pr-4 font-medium">Due date</th>
+                  <th className="py-2 pr-4 font-medium text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {effectiveBilling.latestInvoices.map((inv) => {
+                  const status = (inv.status || "DRAFT").toString();
+                  const amountValue =
+                    typeof inv.totalAmount === "number"
+                      ? inv.totalAmount
+                      : typeof inv.subtotal === "number"
+                      ? inv.subtotal
+                      : 0;
 
-      {/* Detailed sections */}
-      <section className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-4 lg:col-span-2">
-          {/* Time overview */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-slate-50">Time Overview</h2>
-            </div>
-            <dl className="grid grid-cols-2 gap-4 text-sm text-slate-400">
-              <div>
-                <dt>Hours Logged (This Month)</dt>
-                <dd className="mt-1 text-lg font-medium text-slate-50">
-                  {totalHoursThisMonth.toFixed(1)}
-                </dd>
-              </div>
-              <div>
-                <dt>Hours Logged (All Time)</dt>
-                <dd className="mt-1 text-lg font-medium text-slate-50">
-                  {totalHoursAllTime.toFixed(1)}
-                </dd>
-              </div>
-            </dl>
-            <div className="mt-6">
-              <h3 className="mb-2 text-sm font-semibold text-slate-50">
-                Recent Time Entries
-              </h3>
-              <table className="w-full table-fixed border-collapse text-sm text-slate-300">
-                <thead>
-                  <tr>
-                    <th className="w-1/4 border-b border-slate-700 pb-1 text-left">
-                      Date
-                    </th>
-                    <th className="w-1/4 border-b border-slate-700 pb-1 text-right">
-                      Hours
-                    </th>
-                    <th className="border-b border-slate-700 pb-1 text-left">
-                      Notes
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentTimeEntries.length === 0 && (
-                    <tr>
-                      <td colSpan={3} className="py-2 text-center text-slate-500">
-                        No recent time entries.
+                  const estateId = inv.estateId;
+
+                  const invoiceLink =
+                    estateId != null
+                      ? `/app/estates/${estateId}/invoices/${inv._id}`
+                      : `/app/invoices`;
+
+                  return (
+                    <tr
+                      key={inv._id}
+                      className="border-b border-slate-900 last:border-0"
+                    >
+                      <td className="py-2 pr-4">
+                        <Link
+                          href={invoiceLink}
+                          className="text-xs text-sky-400 hover:text-sky-300"
+                        >
+                          {inv._id.slice(-6)}
+                        </Link>
+                        {inv.notes && (
+                          <div className="mt-0.5 max-w-xs truncate text-[11px] text-slate-500">
+                            {inv.notes}
+                          </div>
+                        )}
                       </td>
-                    </tr>
-                  )}
-                  {recentTimeEntries.map((entry: TimeEntryListItem) => (
-                    <tr key={entry._id} className="border-b border-slate-800 last:border-0">
-                      <td className="py-1">{formatDate(entry.date)}</td>
-                      <td className="py-1 text-right">
-                        {minutesToHours(entry.minutes).toFixed(2)}
-                      </td>
-                      <td className="py-1 truncate" title={entry.notes ?? undefined}>
-                        {entry.notes ? entry.notes.slice(0, 80) : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Tasks overview */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
-            <h2 className="mb-4 text-lg font-semibold text-slate-50">Recent Tasks</h2>
-            {recentTasks.length === 0 ? (
-              <p className="text-sm text-slate-500">No recent tasks found.</p>
-            ) : (
-              <ul className="divide-y divide-slate-800 text-sm text-slate-300">
-                {recentTasks.map((task: TaskListItem) => (
-                  <li key={task._id} className="flex justify-between py-2">
-                    <div>
-                      <span
-                        className={`inline-block rounded px-2 py-0.5 font-medium ${
-                          task.priority === "HIGH"
-                            ? "bg-red-600 text-red-100"
-                            : task.priority === "MEDIUM"
-                            ? "bg-yellow-600 text-yellow-100"
-                            : "bg-slate-700 text-slate-200"
-                        }`}
-                      >
-                        {task.priority}
-                      </span>{" "}
-                      <span
-                        className={`${
-                          task.status === "DONE" ? "line-through text-slate-500" : ""
-                        }`}
-                      >
-                        {task.subject}
-                      </span>
-                    </div>
-                    <div className="text-xs text-slate-400">
-                      {formatDate(task.date)}
-                      {task.status === "OPEN" && overdueTaskCount > 0 && (
-                        <span className="ml-2 rounded bg-red-700 px-1 text-xs font-semibold text-red-300">
-                          Overdue
+                      <td className="py-2 pr-4">
+                        <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-300">
+                          {status}
                         </span>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
+                      </td>
+                      <td className="py-2 pr-4 text-slate-300">
+                        {formatDate(inv.issueDate)}
+                      </td>
+                      <td className="py-2 pr-4 text-slate-300">
+                        {formatDate(inv.dueDate)}
+                      </td>
+                      <td className="py-2 pl-4 text-right text-slate-100">
+                        {formatCurrency(amountValue)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        </div>
-
-        {/* Expenses */}
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
-            <h2 className="mb-4 text-lg font-semibold text-slate-50">Recent Expenses</h2>
-            {recentExpenses.length === 0 ? (
-              <p className="text-sm text-slate-500">No recent expenses found.</p>
-            ) : (
-              <ul className="divide-y divide-slate-800 text-sm text-slate-300">
-                {recentExpenses.map((exp: ExpenseListItem) => (
-                  <li key={exp._id} className="flex justify-between py-2">
-                    <div>
-                      <div className="font-medium text-slate-50">
-                        {exp.description ?? "No description"}
-                      </div>
-                      <div className="text-xs text-slate-400">
-                        {exp.category ?? "Uncategorized"}
-                      </div>
-                    </div>
-                    <div className="text-right text-sm text-slate-200">
-                      <div>{formatCurrency(exp.amount)}</div>
-                      <div className="text-xs text-slate-400">
-                        {formatDate(exp.incurredAt)}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      </section>
+        )}
+      </div>
     </div>
   );
 }

@@ -80,15 +80,18 @@ export async function GET(req: NextRequest) {
   }
 
   const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
   let unpaidTotal = 0;
   let overdueCount = 0;
+  let mtdBilled = 0;
 
   for (const inv of allInvoices) {
     const status = String(inv.status || "DRAFT").toUpperCase();
     const isPaidOrVoid = status === "PAID" || status === "VOID";
     const amount = toNumber(inv);
 
+    // Unpaid / overdue
     if (!isPaidOrVoid) {
       unpaidTotal += amount;
 
@@ -103,6 +106,18 @@ export async function GET(req: NextRequest) {
         overdueCount += 1;
       }
     }
+
+    // Month-to-date billed: count all non-VOID invoices issued this month
+    const issue =
+      inv.issueDate instanceof Date
+        ? inv.issueDate
+        : inv.issueDate
+        ? new Date(inv.issueDate)
+        : null;
+
+    if (issue && issue >= startOfMonth && issue <= now && status !== "VOID") {
+      mtdBilled += amount;
+    }
   }
 
   return NextResponse.json({
@@ -110,6 +125,7 @@ export async function GET(req: NextRequest) {
     summary: {
       unpaidTotal,
       overdueCount,
+      mtdBilled,
     },
   });
 }
@@ -196,9 +212,6 @@ export async function POST(req: NextRequest) {
 
   // Redirect to the new invoice detail page
   return NextResponse.redirect(
-    new URL(
-      `/app/estates/${estateId}/invoices/${invoiceDoc._id}`,
-      req.url,
-    ),
+    new URL(`/app/estates/${estateId}/invoices/${invoiceDoc._id}`, req.url),
   );
 }
