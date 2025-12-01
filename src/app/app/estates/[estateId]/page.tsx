@@ -17,6 +17,7 @@ type InvoiceSummaryItem = {
 type BillingSummary = {
   unpaidTotal: number;
   overdueCount: number;
+  mtdBilled: number;
   latestInvoices: InvoiceSummaryItem[];
 };
 
@@ -77,6 +78,7 @@ export default function EstatePage() {
 
         const unpaidTotal = data?.summary?.unpaidTotal ?? 0;
         const overdueCount = data?.summary?.overdueCount ?? 0;
+        const mtdBilled = data?.summary?.mtdBilled ?? 0;
         const latestInvoices: InvoiceSummaryItem[] = Array.isArray(
           data?.invoices,
         )
@@ -86,6 +88,7 @@ export default function EstatePage() {
         setBilling({
           unpaidTotal,
           overdueCount,
+          mtdBilled,
           latestInvoices,
         });
       } catch (err) {
@@ -116,6 +119,7 @@ export default function EstatePage() {
   const effectiveBilling = billing ?? {
     unpaidTotal: 0,
     overdueCount: 0,
+    mtdBilled: 0,
     latestInvoices: [],
   };
 
@@ -173,13 +177,13 @@ export default function EstatePage() {
 
           <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
             <p className="text-xs font-medium text-slate-400">
-              Recent invoice activity
+              Month-to-date billed
             </p>
             <p className="mt-2 text-xl font-semibold text-slate-50">
-              {effectiveBilling.latestInvoices.length}
+              {formatCurrency(effectiveBilling.mtdBilled)}
             </p>
             <p className="mt-1 text-[11px] text-slate-500">
-              Last few invoices created for this estate.
+              Total amount on all invoices issued this month for this estate (excluding voided).
             </p>
           </div>
         </div>
