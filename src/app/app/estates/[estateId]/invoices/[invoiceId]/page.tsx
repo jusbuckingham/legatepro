@@ -250,12 +250,13 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
           >
             Edit (coming soon)
           </button>
-          <button
-            type="button"
-            className="inline-flex cursor-not-allowed items-center rounded-md border border-slate-800 bg-slate-900/40 px-3 py-1.5 text-[11px] font-medium text-slate-500"
+          <Link
+            href={`/app/estates/${estateId}/invoices/${invoiceId}/print`}
+            target="_blank"
+            className="inline-flex items-center rounded-md border border-slate-800 bg-slate-900/40 px-3 py-1.5 text-[11px] font-medium text-slate-100 hover:bg-slate-800/60"
           >
-            Print (coming soon)
-          </button>
+            Print
+          </Link>
         </div>
 
         <form
