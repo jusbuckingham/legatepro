@@ -85,7 +85,6 @@ const InvoiceLineItemSchema = new Schema<InvoiceLineItem>(
   },
   {
     _id: true,
-    _idRequired: false,
   }
 );
 

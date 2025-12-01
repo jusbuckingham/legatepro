@@ -5,21 +5,19 @@ import { auth } from "@/lib/auth";
 
 type InvoiceStatus = "DRAFT" | "SENT" | "PAID" | "VOID";
 
-const ALLOWED_STATUSES: InvoiceStatus[] = ["DRAFT", "SENT", "PAID", "VOID"];
-
 export async function POST(
   req: NextRequest,
-  { params }: { params: { invoiceId: string } },
+  context: { params: Promise<{ invoiceId: string }> },
 ) {
   const session = await auth();
-
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { invoiceId } = params;
+  const { invoiceId } = await context.params;
 
-  // Handle form-encoded body from <form method="POST">
+  await connectToDatabase();
+
   const formData = await req.formData();
   const statusRaw = formData.get("status");
 
@@ -29,45 +27,36 @@ export async function POST(
 
   const status = statusRaw.toUpperCase() as InvoiceStatus;
 
-  if (!ALLOWED_STATUSES.includes(status)) {
-    return NextResponse.json({ error: "Invalid status" }, { status: 400 });
-  }
-
-  await connectToDatabase();
-
   const update: Record<string, unknown> = { status };
 
   if (status === "PAID") {
     // when marked PAID, record the paid date
     update.paidAt = new Date();
   } else {
-    // if status is changed away from PAID, clear paidAt
+    // if you change away from PAID, clear paidAt
     update.paidAt = undefined;
   }
 
-  const updated = await Invoice.findOneAndUpdate(
-    {
-      _id: invoiceId,
-      ownerId: session.user.id,
-    },
+  const invoice = await Invoice.findOneAndUpdate(
+    { _id: invoiceId, ownerId: session.user.id },
     update,
     { new: true },
   ).lean();
 
-  if (!updated) {
+  if (!invoice) {
     return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
   }
 
-  // Redirect back to invoice detail page
+  // Redirect back to the invoice detail page
   const estateIdStr =
-    typeof updated.estateId === "string"
-      ? updated.estateId
-      : (updated.estateId as { toString: () => string }).toString();
+    typeof invoice.estateId === "string"
+      ? invoice.estateId
+      : (invoice.estateId as { toString: () => string }).toString();
 
   const invoiceIdStr =
-    typeof updated._id === "string"
-      ? updated._id
-      : (updated._id as { toString: () => string }).toString();
+    typeof invoice._id === "string"
+      ? invoice._id
+      : (invoice._id as { toString: () => string }).toString();
 
   return NextResponse.redirect(
     new URL(
