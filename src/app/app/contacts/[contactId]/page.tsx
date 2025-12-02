@@ -109,13 +109,12 @@ export default async function ContactDetailPage({ params }: PageProps) {
           >
             Back to contacts
           </Link>
-          {/* Future: edit contact page */}
-          {/* <Link
-            href={`/app/contacts/${id}/edit`}
+          <Link
+            href={`/app/contacts/${contactId}/edit`}
             className="rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400"
           >
             Edit contact
-          </Link> */}
+          </Link>
         </div>
       </header>
 

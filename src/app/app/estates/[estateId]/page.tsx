@@ -6,6 +6,10 @@ import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 import { Invoice } from "@/models/Invoice";
 import { Contact } from "@/models/Contact";
+import {
+  EstateEvent,
+  type EstateEventType,
+} from "@/models/EstateEvent";
 import { EstateContactsPanel } from "@/components/estate/EstateContactsPanel";
 
 type PageProps = {
@@ -45,6 +49,25 @@ type ContactLean = {
   phone?: string;
   role?: string;
   estates?: Array<string | { toString: () => string }>;
+};
+
+type EstateEventLean = {
+  _id: string | { toString: () => string };
+  estateId: string | { toString: () => string };
+  ownerId: string | { toString: () => string };
+  type: EstateEventType;
+  summary: string;
+  detail?: string;
+  createdAt: Date;
+};
+
+type TimelineItem = {
+  id: string;
+  kind: "ESTATE_CREATED" | "INVOICE" | "EVENT";
+  label: string;
+  description?: string;
+  timestamp: Date;
+  href?: string;
 };
 
 function formatMoney(amount: number): string {
@@ -100,8 +123,10 @@ export default async function EstateDetailPage({ params }: PageProps) {
         ? inv.subtotal
         : 0;
 
-    const issueDateLabel = inv.issueDate
-      ? format(inv.issueDate, "MMM d, yyyy")
+    const issueDate = inv.issueDate ?? null;
+
+    const issueDateLabel = issueDate
+      ? format(issueDate, "MMM d, yyyy")
       : "—";
 
     const invoiceNumberLabel =
@@ -115,6 +140,7 @@ export default async function EstateDetailPage({ params }: PageProps) {
       amount,
       invoiceNumberLabel,
       issueDateLabel,
+      issueDate,
       dueDate,
     };
   });
@@ -193,6 +219,58 @@ export default async function EstateDetailPage({ params }: PageProps) {
     ? format(estate.createdAt, "MMM d, yyyy")
     : "";
 
+  // --- Synthetic timeline items (estate + invoices) ---
+  const syntheticTimelineItems: TimelineItem[] = [];
+
+  if (estate.createdAt) {
+    syntheticTimelineItems.push({
+      id: `estate-created-${estateIdStr}`,
+      kind: "ESTATE_CREATED",
+      label: "Estate opened",
+      description: estateName,
+      timestamp: estate.createdAt,
+    });
+  }
+
+  invoicesForList.forEach((inv) => {
+    const timestamp = inv.issueDate ?? now;
+
+    syntheticTimelineItems.push({
+      id: `invoice-${inv._id}`,
+      kind: "INVOICE",
+      label: `Invoice ${inv.invoiceNumberLabel}`,
+      description: `${inv.status} · ${formatMoney(inv.amount)}`,
+      timestamp,
+      href: `/app/estates/${estateIdStr}/invoices/${inv._id}`,
+    });
+  });
+
+  // --- Persisted estate events ---
+  const eventsRaw = (await EstateEvent.find({
+    ownerId: session.user.id,
+    estateId: estateIdStr,
+  })
+    .sort({ createdAt: -1 })
+    .limit(50)
+    .lean()) as EstateEventLean[];
+
+  const eventItems: TimelineItem[] = eventsRaw.map((ev) => ({
+    id:
+      typeof ev._id === "string" ? ev._id : ev._id.toString(),
+    kind: "EVENT",
+    label: ev.summary,
+    description: ev.detail,
+    timestamp: ev.createdAt,
+  }));
+
+  const timelineItems: TimelineItem[] = [...eventItems, ...syntheticTimelineItems];
+
+  timelineItems.sort(
+    (a, b) => b.timestamp.getTime() - a.timestamp.getTime(),
+  );
+
+  const limitedTimeline = timelineItems.slice(0, 10);
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -204,12 +282,10 @@ export default async function EstateDetailPage({ params }: PageProps) {
             {estateName}
           </h1>
           <p className="text-xs text-slate-400">
-            {estate.caseNumber && (
-              <>
-                Case #{estate.caseNumber}
+            {estate.caseNumber &&
+             (<>Case #{estate.caseNumber}
                 {estate.courtCounty ? ` · ${estate.courtCounty}` : ""}
-              </>
-            )}
+              </>)}
             {!estate.caseNumber && estate.courtCounty && (
               <>Filed in {estate.courtCounty}</>
             )}
@@ -235,7 +311,7 @@ export default async function EstateDetailPage({ params }: PageProps) {
         </div>
       </header>
 
-      {/* Billing snapshot + recent invoices */}
+      {/* Billing snapshot */}
       <section className="grid gap-4 md:grid-cols-3">
         <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-2">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
@@ -276,6 +352,7 @@ export default async function EstateDetailPage({ params }: PageProps) {
         </div>
       </section>
 
+      {/* Recent invoices + contacts */}
       <section className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)]">
         {/* Recent invoices */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
@@ -333,6 +410,56 @@ export default async function EstateDetailPage({ params }: PageProps) {
           linkedContacts={linkedContacts}
           availableContacts={availableContacts}
         />
+      </section>
+
+      {/* Activity timeline */}
+      <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-slate-100">
+            Timeline
+          </h2>
+          <p className="text-[11px] text-slate-500">
+            Recent activity on this estate.
+          </p>
+        </div>
+
+        {limitedTimeline.length === 0 ? (
+          <p className="text-xs text-slate-500">
+            No activity recorded yet.
+          </p>
+        ) : (
+          <ol className="space-y-3 text-sm">
+            {limitedTimeline.map((item) => (
+              <li key={item.id} className="flex gap-3">
+                <div className="mt-1 h-2 w-2 flex-shrink-0 rounded-full bg-sky-400" />
+                <div className="space-y-0.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {item.href ? (
+                      <Link
+                        href={item.href}
+                        className="text-sky-400 hover:text-sky-300"
+                      >
+                        {item.label}
+                      </Link>
+                    ) : (
+                      <span className="font-medium text-slate-100">
+                        {item.label}
+                      </span>
+                    )}
+                    <span className="text-[11px] text-slate-500">
+                      {format(item.timestamp, "MMM d, yyyy")}
+                    </span>
+                  </div>
+                  {item.description && (
+                    <p className="text-[11px] text-slate-400">
+                      {item.description}
+                    </p>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
       </section>
     </div>
   );

@@ -1,81 +1,162 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Contact } from "@/models/Contact";
 
-type RouteParams = { contactId: string };
+type RouteParams = {
+  contactId: string;
+};
+
+type ContactRole =
+  | "EXECUTOR"
+  | "ADMINISTRATOR"
+  | "HEIR"
+  | "ATTORNEY"
+  | "CREDITOR"
+  | "VENDOR"
+  | "OTHER";
+
+type UpdatePayload = {
+  name?: string;
+  email?: string;
+  phone?: string;
+  role?: ContactRole;
+  notes?: string;
+};
+
+type ContactLeanDoc = {
+  _id: unknown;
+  name?: string;
+  email?: string;
+  phone?: string;
+  role?: string;
+  notes?: string;
+  estates?: unknown;
+};
+
+function normalizeRole(raw?: string | null): ContactRole | undefined {
+  if (!raw) return undefined;
+  const upper = raw.toUpperCase();
+  if (
+    upper === "EXECUTOR" ||
+    upper === "ADMINISTRATOR" ||
+    upper === "HEIR" ||
+    upper === "ATTORNEY" ||
+    upper === "CREDITOR" ||
+    upper === "VENDOR" ||
+    upper === "OTHER"
+  ) {
+    return upper;
+  }
+  return "OTHER";
+}
 
 export async function GET(
   _req: NextRequest,
-  context: { params: Promise<RouteParams> }
+  { params }: { params: Promise<RouteParams> },
 ) {
-  try {
-    const { contactId } = await context.params;
+  const { contactId } = await params;
 
-    await connectToDatabase();
-    const contact = await Contact.findById(contactId);
-
-    if (!contact) {
-      return NextResponse.json({ error: "Contact not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({ contact }, { status: 200 });
-  } catch (error) {
-    console.error("[CONTACT_GET]", error);
-    return NextResponse.json(
-      { error: "Failed to fetch contact" },
-      { status: 500 }
-    );
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  await connectToDatabase();
+
+  const contact = (await Contact.findOne({
+    _id: contactId,
+    ownerId: session.user.id,
+  })
+    .select("_id name email phone role notes estates")
+    .lean()) as ContactLeanDoc | null;
+
+  if (!contact) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({
+    _id: contact._id,
+    name: contact.name ?? "",
+    email: contact.email ?? "",
+    phone: contact.phone ?? "",
+    role: contact.role ?? "OTHER",
+    notes: contact.notes ?? "",
+    estates: contact.estates ?? [],
+  });
 }
 
-export async function PUT(
+export async function PATCH(
   req: NextRequest,
-  context: { params: Promise<RouteParams> }
+  { params }: { params: Promise<RouteParams> },
 ) {
-  try {
-    const { contactId } = await context.params;
-    const body = await req.json();
+  const { contactId } = await params;
 
-    await connectToDatabase();
-    const contact = await Contact.findByIdAndUpdate(contactId, body, {
-      new: true,
-      runValidators: true,
-    });
-
-    if (!contact) {
-      return NextResponse.json({ error: "Contact not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({ contact }, { status: 200 });
-  } catch (error) {
-    console.error("[CONTACT_PUT]", error);
-    return NextResponse.json(
-      { error: "Failed to update contact" },
-      { status: 500 }
-    );
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-}
 
-export async function DELETE(
-  _req: NextRequest,
-  context: { params: Promise<RouteParams> }
-) {
+  await connectToDatabase();
+
+  let body: UpdatePayload;
   try {
-    const { contactId } = await context.params;
-
-    await connectToDatabase();
-    const contact = await Contact.findByIdAndDelete(contactId);
-
-    if (!contact) {
-      return NextResponse.json({ error: "Contact not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({ success: true }, { status: 200 });
-  } catch (error) {
-    console.error("[CONTACT_DELETE]", error);
-    return NextResponse.json(
-      { error: "Failed to delete contact" },
-      { status: 500 }
-    );
+    body = (await req.json()) as UpdatePayload;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
+
+  const update: UpdatePayload = {};
+
+  if (typeof body.name === "string") {
+    const trimmed = body.name.trim();
+    if (!trimmed) {
+      return NextResponse.json(
+        { error: "Name is required" },
+        { status: 400 },
+      );
+    }
+    update.name = trimmed;
+  }
+
+  if (typeof body.email === "string") {
+    const trimmed = body.email.trim();
+    update.email = trimmed || undefined;
+  }
+
+  if (typeof body.phone === "string") {
+    const trimmed = body.phone.trim();
+    update.phone = trimmed || undefined;
+  }
+
+  if (typeof body.role === "string") {
+    update.role = normalizeRole(body.role);
+  }
+
+  if (typeof body.notes === "string") {
+    const trimmed = body.notes.trim();
+    update.notes = trimmed || undefined;
+  }
+
+  const updated = (await Contact.findOneAndUpdate(
+    { _id: contactId, ownerId: session.user.id },
+    { $set: update },
+    { new: true },
+  )
+    .select("_id name email phone role notes estates")
+    .lean()) as ContactLeanDoc | null;
+
+  if (!updated) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({
+    _id: updated._id,
+    name: updated.name ?? "",
+    email: updated.email ?? "",
+    phone: updated.phone ?? "",
+    role: updated.role ?? "OTHER",
+    notes: updated.notes ?? "",
+    estates: updated.estates ?? [],
+  });
 }

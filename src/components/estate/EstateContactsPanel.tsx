@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 
 type LinkedContact = {
   _id: string;
@@ -262,12 +263,12 @@ export function EstateContactsPanel({
 
       <p className="text-[11px] text-slate-500">
         Need a new person?{" "}
-        <a
+        <Link
           href="/app/contacts/new"
           className="text-sky-400 hover:text-sky-300"
         >
           Create a contact
-        </a>{" "}
+        </Link>{" "}
         first, then link them here.
       </p>
     </section>

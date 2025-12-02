@@ -3,6 +3,22 @@ import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 import { Contact } from "@/models/Contact";
+import { logEstateEvent } from "@/lib/estateEvents";
+
+type EstateLean = {
+  _id: string | { toString: () => string };
+  displayName?: string;
+  caseName?: string;
+  decedentName?: string;
+};
+
+type ContactLean = {
+  _id: unknown;
+  name?: string;
+  email?: string;
+  phone?: string;
+  role?: string;
+};
 
 type RouteParams = {
   estateId: string;
@@ -40,21 +56,23 @@ export async function POST(
     );
   }
 
-  const estate = await Estate.findOne({
+  const estate = (await Estate.findOne({
     _id: estateId,
     ownerId: session.user.id,
   })
-    .select("_id ownerId")
-    .lean();
+    .select("_id ownerId displayName caseName decedentName")
+    .lean()) as EstateLean | null;
 
   if (!estate) {
     return NextResponse.json({ error: "Estate not found" }, { status: 404 });
   }
 
-  const contact = await Contact.findOne({
+  const contact = (await Contact.findOne({
     _id: contactId,
     ownerId: session.user.id,
-  }).select("_id");
+  })
+    .select("_id name email phone role")
+    .lean()) as ContactLean | null;
 
   if (!contact) {
     return NextResponse.json({ error: "Contact not found" }, { status: 404 });
@@ -62,8 +80,42 @@ export async function POST(
 
   await Contact.updateOne(
     { _id: contactId, ownerId: session.user.id },
-    { $addToSet: { estates: estate._id } },
+    { $addToSet: { estates: estateId } },
   );
+
+  // Log estate event
+  const estateIdStr =
+    typeof estate._id === "string" ? estate._id : estate._id.toString();
+
+  const contactName =
+    typeof contact.name === "string" && contact.name.trim().length > 0
+      ? contact.name.trim()
+      : "Unnamed contact";
+
+  const estateName =
+    estate.displayName ||
+    estate.caseName ||
+    estate.decedentName ||
+    `Estate …${estateIdStr.slice(-6)}`;
+
+  const parts: string[] = [];
+  if (contact.email) parts.push(contact.email);
+  if (contact.phone) parts.push(contact.phone);
+  const detail = parts.length > 0 ? parts.join(" · ") : undefined;
+
+  await logEstateEvent({
+    ownerId: session.user.id,
+    estateId: estateIdStr,
+    type: "CONTACT_LINKED",
+    summary: `Contact linked: ${contactName}`,
+    detail: detail
+      ? `${detail} (${estateName})`
+      : estateName,
+    meta: {
+      contactId,
+      contactRole: contact.role ?? null,
+    },
+  });
 
   return NextResponse.json({ ok: true });
 }
@@ -91,21 +143,23 @@ export async function DELETE(
     );
   }
 
-  const estate = await Estate.findOne({
+  const estate = (await Estate.findOne({
     _id: estateId,
     ownerId: session.user.id,
   })
-    .select("_id ownerId")
-    .lean();
+    .select("_id ownerId displayName caseName decedentName")
+    .lean()) as EstateLean | null;
 
   if (!estate) {
     return NextResponse.json({ error: "Estate not found" }, { status: 404 });
   }
 
-  const contact = await Contact.findOne({
+  const contact = (await Contact.findOne({
     _id: contactId,
     ownerId: session.user.id,
-  }).select("_id");
+  })
+    .select("_id name email phone role")
+    .lean()) as ContactLean | null;
 
   if (!contact) {
     return NextResponse.json({ error: "Contact not found" }, { status: 404 });
@@ -113,8 +167,42 @@ export async function DELETE(
 
   await Contact.updateOne(
     { _id: contactId, ownerId: session.user.id },
-    { $pull: { estates: estate._id } },
+    { $pull: { estates: estateId } },
   );
+
+  // Log estate event
+  const estateIdStr =
+    typeof estate._id === "string" ? estate._id : estate._id.toString();
+
+  const contactName =
+    typeof contact.name === "string" && contact.name.trim().length > 0
+      ? contact.name.trim()
+      : "Unnamed contact";
+
+  const estateName =
+    estate.displayName ||
+    estate.caseName ||
+    estate.decedentName ||
+    `Estate …${estateIdStr.slice(-6)}`;
+
+  const parts: string[] = [];
+  if (contact.email) parts.push(contact.email);
+  if (contact.phone) parts.push(contact.phone);
+  const detail = parts.length > 0 ? parts.join(" · ") : undefined;
+
+  await logEstateEvent({
+    ownerId: session.user.id,
+    estateId: estateIdStr,
+    type: "CONTACT_UNLINKED",
+    summary: `Contact removed: ${contactName}`,
+    detail: detail
+      ? `${detail} (${estateName})`
+      : estateName,
+    meta: {
+      contactId,
+      contactRole: contact.role ?? null,
+    },
+  });
 
   return NextResponse.json({ ok: true });
 }
