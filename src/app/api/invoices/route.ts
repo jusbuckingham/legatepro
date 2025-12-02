@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
 import { auth } from "@/lib/auth";
+import { logEstateEvent } from "@/lib/estateEvents";
 
 type InvoiceStatus = "DRAFT" | "SENT" | "PAID" | "VOID";
 
@@ -208,6 +209,35 @@ export async function POST(req: NextRequest) {
     notes,
     currency: "USD",
     lineItems,
+    subtotal: safeAmount,
+    totalAmount: safeAmount,
+  });
+
+  const invoiceIdStr = String(invoiceDoc._id);
+  const estateIdStr = String(invoiceDoc.estateId);
+
+  const amountNumber =
+    typeof invoiceDoc.totalAmount === "number"
+      ? invoiceDoc.totalAmount
+      : typeof invoiceDoc.subtotal === "number"
+      ? invoiceDoc.subtotal
+      : 0;
+
+  const statusStr = String(invoiceDoc.status || "DRAFT").toUpperCase();
+  const invoiceNumberLabel =
+    invoiceDoc.invoiceNumber || `…${invoiceIdStr.slice(-6)}`;
+
+  await logEstateEvent({
+    ownerId: session.user.id,
+    estateId: estateIdStr,
+    type: "INVOICE_CREATED",
+    summary: `Invoice created: ${invoiceNumberLabel}`,
+    detail: `Status: ${statusStr} · Amount: $${amountNumber.toFixed(2)}`,
+    meta: {
+      invoiceId: invoiceIdStr,
+      status: statusStr,
+      totalAmount: amountNumber,
+    },
   });
 
   // Redirect to the new invoice detail page

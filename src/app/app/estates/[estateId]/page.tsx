@@ -11,6 +11,7 @@ import {
   type EstateEventType,
 } from "@/models/EstateEvent";
 import { EstateContactsPanel } from "@/components/estate/EstateContactsPanel";
+import { EstateTimeline } from "@/components/estate/EstateTimeline";
 
 type PageProps = {
   params: Promise<{
@@ -413,54 +414,7 @@ export default async function EstateDetailPage({ params }: PageProps) {
       </section>
 
       {/* Activity timeline */}
-      <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-100">
-            Timeline
-          </h2>
-          <p className="text-[11px] text-slate-500">
-            Recent activity on this estate.
-          </p>
-        </div>
-
-        {limitedTimeline.length === 0 ? (
-          <p className="text-xs text-slate-500">
-            No activity recorded yet.
-          </p>
-        ) : (
-          <ol className="space-y-3 text-sm">
-            {limitedTimeline.map((item) => (
-              <li key={item.id} className="flex gap-3">
-                <div className="mt-1 h-2 w-2 flex-shrink-0 rounded-full bg-sky-400" />
-                <div className="space-y-0.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {item.href ? (
-                      <Link
-                        href={item.href}
-                        className="text-sky-400 hover:text-sky-300"
-                      >
-                        {item.label}
-                      </Link>
-                    ) : (
-                      <span className="font-medium text-slate-100">
-                        {item.label}
-                      </span>
-                    )}
-                    <span className="text-[11px] text-slate-500">
-                      {format(item.timestamp, "MMM d, yyyy")}
-                    </span>
-                  </div>
-                  {item.description && (
-                    <p className="text-[11px] text-slate-400">
-                      {item.description}
-                    </p>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+      <EstateTimeline items={limitedTimeline} />
     </div>
   );
 }
