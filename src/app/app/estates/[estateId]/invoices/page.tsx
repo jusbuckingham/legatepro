@@ -49,11 +49,10 @@ type PageProps = {
 type InvoiceStatus =
   | "DRAFT"
   | "SENT"
-  | "PAID"
-  | "PARTIAL"
-  | "VOID"
   | "UNPAID"
-  | string;
+  | "PARTIAL"
+  | "PAID"
+  | "VOID";
 
 type InvoiceDoc = {
   _id: unknown;
@@ -62,7 +61,10 @@ type InvoiceDoc = {
   issueDate?: Date | string | null;
   dueDate?: Date | string | null;
   total?: number;
+  totalAmount?: number;
+  subtotal?: number;
   balanceDue?: number;
+  amount?: number;
 };
 
 function formatCurrency(amount: number): string {
@@ -176,15 +178,32 @@ type EstateForLabel = {
     .sort(sortSpec)
     .lean()) as unknown as InvoiceDoc[];
 
-  const invoices = invoiceDocs.map((inv) => ({
-    _id: String(inv._id),
-    number: inv.number ?? "—",
-    status: inv.status ?? "DRAFT",
-    issueDate: inv.issueDate ? new Date(inv.issueDate) : null,
-    dueDate: inv.dueDate ? new Date(inv.dueDate) : null,
-    total: inv.total ?? 0,
-    balanceDue: inv.balanceDue ?? inv.total ?? 0,
-  }));
+  const invoices = invoiceDocs.map((inv) => {
+    const rawTotal =
+      (typeof inv.totalAmount === "number" && inv.totalAmount > 0
+        ? inv.totalAmount
+        : undefined) ??
+      (typeof inv.total === "number" && inv.total > 0 ? inv.total : undefined) ??
+      (typeof inv.subtotal === "number" && inv.subtotal > 0
+        ? inv.subtotal
+        : undefined) ??
+      (typeof inv.amount === "number" && inv.amount > 0 ? inv.amount : 0);
+
+    const rawBalance =
+      typeof inv.balanceDue === "number" && inv.balanceDue >= 0
+        ? inv.balanceDue
+        : rawTotal;
+
+    return {
+      _id: String(inv._id),
+      number: inv.number ?? "—",
+      status: inv.status ?? "DRAFT",
+      issueDate: inv.issueDate ? new Date(inv.issueDate) : null,
+      dueDate: inv.dueDate ? new Date(inv.dueDate) : null,
+      total: rawTotal,
+      balanceDue: rawBalance,
+    };
+  });
 
   const unpaidInvoices = invoices.filter((inv) => {
     const status = inv.status;

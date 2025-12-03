@@ -1,5 +1,10 @@
 import React from "react";
 import Link from "next/link";
+import type { Metadata } from "next";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { connectToDatabase } from "@/lib/db";
+import { WorkspaceSettings } from "@/models/WorkspaceSettings";
 
 type PageProps = {
   params: Promise<{
@@ -7,12 +12,68 @@ type PageProps = {
   }>;
 };
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "New Invoice | LegatePro",
 };
 
 export default async function EstateNewInvoicePage({ params }: PageProps) {
   const { estateId } = await params;
+
+  const session = await getServerSession(authOptions);
+
+  let currencyLabel = "USD";
+  let defaultRateLabel: string | null = null;
+  let defaultTermsLabel: string | null = null;
+
+  if (session?.user?.id) {
+    await connectToDatabase();
+
+    const settings = await WorkspaceSettings.findOne({
+      ownerId: session.user.id,
+    })
+      .lean()
+      .catch(() => null as unknown as null);
+
+    if (
+      settings &&
+      typeof settings.defaultCurrency === "string" &&
+      settings.defaultCurrency.trim().length > 0
+    ) {
+      currencyLabel = settings.defaultCurrency.trim().toUpperCase();
+    }
+
+    if (
+      settings &&
+      typeof settings.defaultHourlyRateCents === "number" &&
+      settings.defaultHourlyRateCents > 0
+    ) {
+      defaultRateLabel = `${currencyLabel} ${(
+        settings.defaultHourlyRateCents / 100
+      ).toFixed(2)}/hr`;
+    }
+
+    if (settings && typeof settings.defaultInvoiceTerms === "string") {
+      switch (settings.defaultInvoiceTerms) {
+        case "NET_15":
+          defaultTermsLabel = "NET 15 (15 days after issue date)";
+          break;
+        case "NET_30":
+          defaultTermsLabel = "NET 30 (30 days after issue date)";
+          break;
+        case "NET_45":
+          defaultTermsLabel = "NET 45 (45 days after issue date)";
+          break;
+        case "NET_60":
+          defaultTermsLabel = "NET 60 (60 days after issue date)";
+          break;
+        case "DUE_ON_RECEIPT":
+          defaultTermsLabel = "Due on receipt (no extra days)";
+          break;
+        default:
+          defaultTermsLabel = null;
+      }
+    }
+  }
 
   return (
     <div className="max-w-xl mx-auto px-4 py-8 space-y-6">
@@ -54,8 +115,14 @@ export default async function EstateNewInvoicePage({ params }: PageProps) {
             placeholder="e.g. 500.00"
           />
           <p className="text-[11px] text-slate-500">
-            The total amount to bill on this invoice. Line items will be inferred
-            from this value for now.
+            The total amount to bill on this invoice, in {currencyLabel}. Line
+            items will be inferred from this value for now.
+            {defaultRateLabel && (
+              <>
+                {" "}
+                Your workspace default hourly rate is {defaultRateLabel}.
+              </>
+            )}
           </p>
         </div>
 
@@ -88,6 +155,11 @@ export default async function EstateNewInvoicePage({ params }: PageProps) {
               type="date"
               className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
             />
+            <p className="mt-1 text-[11px] text-slate-500">
+              {defaultTermsLabel
+                ? `If left blank, your workspace invoice terms (${defaultTermsLabel}) will be applied automatically.`
+                : "If left blank, your workspace invoice terms (e.g., NET 30) will be applied automatically."}
+            </p>
           </div>
         </div>
 

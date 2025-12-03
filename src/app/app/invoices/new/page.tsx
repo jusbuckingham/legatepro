@@ -6,6 +6,8 @@ import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 
+import type { Metadata } from "next";
+
 type EstateListItem = {
   _id: string;
   displayName?: string;
@@ -26,7 +28,7 @@ type PageProps = {
   }>;
 };
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "New Invoice | LegatePro",
 };
 

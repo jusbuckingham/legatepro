@@ -3,9 +3,22 @@ import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
 import { auth } from "@/lib/auth";
 
-type InvoiceStatus = "DRAFT" | "SENT" | "PAID" | "VOID";
+type InvoiceStatus =
+  | "DRAFT"
+  | "SENT"
+  | "UNPAID"
+  | "PARTIAL"
+  | "PAID"
+  | "VOID";
 
-const ALLOWED_STATUSES: InvoiceStatus[] = ["DRAFT", "SENT", "PAID", "VOID"];
+const ALLOWED_STATUSES: InvoiceStatus[] = [
+  "DRAFT",
+  "SENT",
+  "UNPAID",
+  "PARTIAL",
+  "PAID",
+  "VOID",
+];
 
 export async function POST(
   req: NextRequest,

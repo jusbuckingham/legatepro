@@ -5,8 +5,6 @@ import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
 import { InvoiceEditForm } from "@/components/invoices/InvoiceEditForm";
 
-type InvoiceStatus = "DRAFT" | "SENT" | "PAID" | "VOID";
-
 type PageProps = {
   params: Promise<{
     estateId: string;
@@ -28,6 +26,9 @@ type InvoiceDocForEdit = {
     quantity?: number;
     rate?: number;
     amount?: number;
+    amountCents?: number;
+    rateCents?: number;
+    unitPriceCents?: number;
   }[];
 };
 
@@ -59,7 +60,13 @@ export default async function EstateInvoiceEditPage({ params }: PageProps) {
   const initialDueDate = format(dueDate, "yyyy-MM-dd");
   const initialNotes = invoice.notes ?? "";
 
-  const statusUpper = (invoice.status || "DRAFT").toUpperCase() as InvoiceStatus;
+  const rawStatus = (invoice.status || "DRAFT").toUpperCase();
+  const statusUpper: "DRAFT" | "SENT" | "PAID" | "VOID" =
+    rawStatus === "SENT" ||
+    rawStatus === "PAID" ||
+    rawStatus === "VOID"
+      ? (rawStatus as "SENT" | "PAID" | "VOID")
+      : "DRAFT";
 
   const initialLineItems =
     invoice.lineItems?.map((li, index) => {
@@ -71,9 +78,26 @@ export default async function EstateInvoiceEditPage({ params }: PageProps) {
           : "ADJUSTMENT";
 
       const quantity = typeof li.quantity === "number" ? li.quantity : 1;
-      const rate = typeof li.rate === "number" ? li.rate : 0;
-      const amount =
-        typeof li.amount === "number" ? li.amount : quantity * rate;
+
+      // Prefer cents-based values if present, and convert to dollars for the form.
+      const rateFromCents =
+        typeof li.rateCents === "number"
+          ? li.rateCents / 100
+          : typeof li.unitPriceCents === "number"
+          ? li.unitPriceCents / 100
+          : typeof li.rate === "number"
+          ? li.rate
+          : 0;
+
+      const amountFromCents =
+        typeof li.amountCents === "number"
+          ? li.amountCents / 100
+          : typeof li.amount === "number"
+          ? li.amount
+          : quantity * rateFromCents;
+
+      const rate = rateFromCents;
+      const amount = amountFromCents;
 
       const id =
         typeof li._id === "string"

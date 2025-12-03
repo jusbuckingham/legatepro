@@ -4,9 +4,16 @@ import { format } from "date-fns";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
 import { Estate } from "@/models/Estate";
+import { WorkspaceSettings } from "@/models/WorkspaceSettings";
 import { auth } from "@/lib/auth";
 
-type InvoiceStatus = "DRAFT" | "SENT" | "PAID" | "VOID";
+type InvoiceStatus =
+  | "DRAFT"
+  | "SENT"
+  | "UNPAID"
+  | "PARTIAL"
+  | "PAID"
+  | "VOID";
 
 type PageProps = {
   params: Promise<{
@@ -78,6 +85,103 @@ export default async function PrintableInvoicePage({ params }: PageProps) {
 
   await connectToDatabase();
 
+  const workspaceSettings = await WorkspaceSettings.findOne({
+    ownerId: session.user.id,
+  })
+    .lean()
+    .catch(() => null as unknown as null);
+
+  const ws = (workspaceSettings ?? null) as {
+    firmName?: string | null;
+    firmAddressLine1?: string | null;
+    firmAddressLine2?: string | null;
+    firmCity?: string | null;
+    firmRegion?: string | null;
+    firmPostalCode?: string | null;
+    firmEmail?: string | null;
+    firmPhone?: string | null;
+  } | null;
+
+  const firmName =
+    (ws?.firmName &&
+      typeof ws.firmName === "string" &&
+      ws.firmName.trim().length > 0 &&
+      ws.firmName.trim()) ||
+    "LegatePro Law";
+
+  const addressParts: string[] = [];
+
+  if (
+    ws?.firmAddressLine1 &&
+    typeof ws.firmAddressLine1 === "string" &&
+    ws.firmAddressLine1.trim().length > 0
+  ) {
+    addressParts.push(ws.firmAddressLine1.trim());
+  }
+
+  if (
+    ws?.firmAddressLine2 &&
+    typeof ws.firmAddressLine2 === "string" &&
+    ws.firmAddressLine2.trim().length > 0
+  ) {
+    addressParts.push(ws.firmAddressLine2.trim());
+  }
+
+  const cityRegionPostal: string[] = [];
+
+  if (
+    ws?.firmCity &&
+    typeof ws.firmCity === "string" &&
+    ws.firmCity.trim().length > 0
+  ) {
+    cityRegionPostal.push(ws.firmCity.trim());
+  }
+
+  if (
+    ws?.firmRegion &&
+    typeof ws.firmRegion === "string" &&
+    ws.firmRegion.trim().length > 0
+  ) {
+    cityRegionPostal.push(ws.firmRegion.trim());
+  }
+
+  if (
+    ws?.firmPostalCode &&
+    typeof ws.firmPostalCode === "string" &&
+    ws.firmPostalCode.trim().length > 0
+  ) {
+    cityRegionPostal.push(ws.firmPostalCode.trim());
+  }
+
+  if (
+    addressParts.length === 0 &&
+    (!ws || !ws.firmCity || !ws.firmRegion)
+  ) {
+    // Sensible default if nothing is configured
+    addressParts.push("Los Angeles, CA");
+  }
+
+  const contactParts: string[] = [];
+
+  if (
+    ws?.firmEmail &&
+    typeof ws.firmEmail === "string" &&
+    ws.firmEmail.trim().length > 0
+  ) {
+    contactParts.push(ws.firmEmail.trim());
+  }
+
+  if (
+    ws?.firmPhone &&
+    typeof ws.firmPhone === "string" &&
+    ws.firmPhone.trim().length > 0
+  ) {
+    contactParts.push(ws.firmPhone.trim());
+  }
+
+  const contactLine =
+    contactParts.length > 0 ? contactParts.join(" • ") : null;
+
   const rawInvoice = await Invoice.findOne({
     _id: invoiceId,
     ownerId: session.user.id,
@@ -138,7 +242,15 @@ export default async function PrintableInvoicePage({ params }: PageProps) {
   const invoiceNumberLabel =
     invoiceDoc.invoiceNumber || `…${invoiceDoc._id.slice(-6)}`;
 
-  const statusUpper = String(invoiceDoc.status || "DRAFT").toUpperCase();
+  const rawStatus = String(invoiceDoc.status || "DRAFT").toUpperCase();
+  const statusUpper: InvoiceStatus =
+    rawStatus === "SENT" ||
+    rawStatus === "UNPAID" ||
+    rawStatus === "PARTIAL" ||
+    rawStatus === "PAID" ||
+    rawStatus === "VOID"
+      ? rawStatus
+      : "DRAFT";
 
   return (
     <div className="min-h-screen bg-white text-slate-900 print:bg-white print:text-black">
@@ -154,8 +266,11 @@ export default async function PrintableInvoicePage({ params }: PageProps) {
             </p>
             <div className="mt-4 text-xs text-slate-600 space-y-0.5">
               <p className="font-semibold text-slate-800">From</p>
-              <p>LegatePro Law</p>
-              <p>Los Angeles, CA</p>
+              <p>{firmName}</p>
+              {addressParts.map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+              {contactLine && <p>{contactLine}</p>}
             </div>
           </div>
 

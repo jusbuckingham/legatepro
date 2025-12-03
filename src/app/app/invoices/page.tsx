@@ -6,7 +6,7 @@ import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
 import { Estate } from "@/models/Estate";
 
-type InvoiceStatus = "DRAFT" | "SENT" | "PAID" | "VOID";
+type InvoiceStatus = "DRAFT" | "SENT" | "UNPAID" | "PARTIAL" | "PAID" | "VOID";
 
 type PageSearchParams = {
   status?: string;
@@ -128,7 +128,12 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
   };
 
   // Status filter
-  if (statusFilter !== "ALL") {
+  if (statusFilter === "UNPAID") {
+    // Treat "Unpaid" as a group of statuses
+    mongoQuery.status = {
+      $in: ["DRAFT", "SENT", "UNPAID", "PARTIAL"],
+    };
+  } else if (statusFilter !== "ALL") {
     mongoQuery.status = statusFilter as InvoiceStatus;
   }
 

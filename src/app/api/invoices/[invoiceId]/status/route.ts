@@ -4,7 +4,7 @@ import { Invoice } from "@/models/Invoice";
 import { auth } from "@/lib/auth";
 import { logEstateEvent } from "@/lib/estateEvents";
 
-type InvoiceStatus = "DRAFT" | "SENT" | "PAID" | "VOID";
+type InvoiceStatus = "DRAFT" | "SENT" | "UNPAID" | "PARTIAL" | "PAID" | "VOID";
 
 export async function POST(
   req: NextRequest,
@@ -26,7 +26,23 @@ export async function POST(
     return NextResponse.json({ error: "Missing status" }, { status: 400 });
   }
 
-  const status = statusRaw.toUpperCase() as InvoiceStatus;
+  const normalizedStatus = statusRaw.toUpperCase();
+
+  if (
+    normalizedStatus !== "DRAFT" &&
+    normalizedStatus !== "SENT" &&
+    normalizedStatus !== "UNPAID" &&
+    normalizedStatus !== "PARTIAL" &&
+    normalizedStatus !== "PAID" &&
+    normalizedStatus !== "VOID"
+  ) {
+    return NextResponse.json(
+      { error: "Invalid status value" },
+      { status: 400 },
+    );
+  }
+
+  const status = normalizedStatus as InvoiceStatus;
 
   // fetch old invoice to capture previous status
   const existingInvoice = await Invoice.findOne(

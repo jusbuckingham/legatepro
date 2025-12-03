@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
 
-type InvoiceStatus = "DRAFT" | "SENT" | "PAID" | "VOID";
+type InvoiceStatus = "DRAFT" | "SENT" | "UNPAID" | "PARTIAL" | "PAID" | "VOID";
 
 type InvoiceUpdateLineItem = {
   type: "TIME" | "EXPENSE" | "ADJUSTMENT";
