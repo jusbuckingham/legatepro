@@ -5,20 +5,14 @@ import { auth } from "@/lib/auth";
 import { logEstateEvent } from "@/lib/estateEvents";
 import { WorkspaceSettings } from "@/models/WorkspaceSettings";
 
-type CreateInvoicePayload = {
+// Payload shape we accept for JSON-based invoice creation
+export type CreateInvoicePayload = {
   estateId: string;
   issueDate?: string | Date;
   dueDate?: string | Date;
   notes?: string;
   status?: "DRAFT" | "SENT" | "UNPAID" | "PARTIAL" | "PAID" | "VOID";
   currency?: string;
-
-  // Top-level amount fields (JSON or form)
-  amount?: number | string;
-  totalAmount?: number | string;
-  totalAmountCents?: number;
-  amountCents?: number;
-
   lineItems?: {
     // Legacy/editor-friendly fields
     description?: string;
@@ -28,30 +22,10 @@ type CreateInvoicePayload = {
     // New schema/editor fields
     label?: string;
     type?: string;
-    amount?: number; // may be dollars or cents depending on caller
-    rate?: number; // may be dollars or cents depending on caller
+    amount?: number; // dollars or cents depending on caller
+    rate?: number; // dollars or cents depending on caller
   }[];
 };
-
-function normalizeAmountToCents(value: unknown): number {
-  if (value == null) return 0;
-
-  if (typeof value === "number") {
-    if (!Number.isFinite(value) || value <= 0) return 0;
-    // Heuristic: if it's very large, assume it's already cents.
-    return value > 10_000 ? Math.round(value) : Math.round(value * 100);
-  }
-
-  if (typeof value === "string") {
-    const cleaned = value.replace(/[,$]/g, "").trim();
-    if (!cleaned) return 0;
-    const num = Number.parseFloat(cleaned);
-    if (!Number.isFinite(num) || num <= 0) return 0;
-    return num > 10_000 ? Math.round(num) : Math.round(num * 100);
-  }
-
-  return 0;
-}
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -112,7 +86,8 @@ export async function POST(req: NextRequest) {
 
   await connectToDatabase();
 
-  // Simple scalar amount (in cents) we can derive from either JSON or form.
+  // For simple form submissions, we may only get a single "amount" value.
+  // Track it separately so we can set subtotal/totalAmount without forcing lineItems.
   let amountFromFormCents = 0;
 
   const contentType = req.headers.get("content-type") ?? "";
@@ -120,15 +95,8 @@ export async function POST(req: NextRequest) {
   let body: CreateInvoicePayload;
 
   if (contentType.includes("application/json")) {
-    // JSON payload – assume the editor will send a top-level amount and/or lineItems.
+    // JSON payload – assume the editor will send proper lineItems and/or totals.
     body = (await req.json()) as CreateInvoicePayload;
-
-    amountFromFormCents = normalizeAmountToCents(
-      body.totalAmount ??
-        body.amount ??
-        body.totalAmountCents ??
-        body.amountCents,
-    );
   } else {
     // Handle standard form submissions (e.g., from the estate-scoped New Invoice page)
     const form = await req.formData();
@@ -139,17 +107,24 @@ export async function POST(req: NextRequest) {
     const notes = form.get("notes")?.toString() ?? undefined;
     const statusRaw = form.get("status")?.toString() ?? undefined;
     const currency = form.get("currency")?.toString() ?? undefined;
-
     const amountRaw =
-      form.get("amount") ??
-      form.get("amountCents") ??
-      form.get("totalAmount") ??
-      form.get("totalAmountCents") ??
+      form.get("amount")?.toString() ??
+      form.get("amountCents")?.toString() ??
+      form.get("totalAmount")?.toString() ??
+      form.get("totalAmountCents")?.toString() ??
       undefined;
 
-    // Try the explicit amount field(s) first.
-    if (amountRaw != null) {
-      amountFromFormCents = normalizeAmountToCents(amountRaw.toString());
+    // For schema-backed invoices, we don't want to create partial line items here
+    // (they would fail validation because amount/rate/label/type are required).
+    // Instead, capture a single total amount in cents and let lineItems be empty.
+    const lineItems: CreateInvoicePayload["lineItems"] = [];
+
+    if (typeof amountRaw === "string" && amountRaw.trim().length > 0) {
+      const cleaned = amountRaw.replace(/[,$]/g, "").trim();
+      const asNumber = Number.parseFloat(cleaned);
+      if (Number.isFinite(asNumber) && asNumber > 0) {
+        amountFromFormCents = Math.round(asNumber * 100);
+      }
     }
 
     // Fallback: scan all form fields for something that looks like an amount
@@ -161,9 +136,10 @@ export async function POST(req: NextRequest) {
         if (!valStr) continue;
         if (!/amount/i.test(key)) continue;
 
-        const cents = normalizeAmountToCents(valStr);
-        if (cents > 0) {
-          amountFromFormCents = cents;
+        const cleaned = valStr.replace(/[,$]/g, "").trim();
+        const parsed = Number.parseFloat(cleaned);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          amountFromFormCents = Math.round(parsed * 100);
           break;
         }
       }
@@ -182,8 +158,6 @@ export async function POST(req: NextRequest) {
     } else {
       status = undefined;
     }
-
-    const lineItems: CreateInvoicePayload["lineItems"] = [];
 
     body = {
       estateId,
@@ -316,35 +290,10 @@ export async function POST(req: NextRequest) {
     : 0;
 
   // Prefer explicit line-item-derived subtotal when available; otherwise fall back
-  // to the simple amount captured from the request.
+  // to the simple amount captured from the estate-scoped form.
   let safeAmount = subtotalFromItems;
   if (safeAmount === 0 && amountFromFormCents > 0) {
     safeAmount = amountFromFormCents;
-  }
-
-  // --- Invoice numbering (auto-increment via WorkspaceSettings) ---
-  let invoiceNumber: string | undefined;
-
-  try {
-    const updatedSettings = await WorkspaceSettings.findOneAndUpdate(
-      { ownerId: session.user.id },
-      { $inc: { invoiceNumberSequence: 1 } },
-      { new: true, upsert: true },
-    ).lean();
-
-    const seq = updatedSettings?.invoiceNumberSequence ?? 1;
-    const prefix = updatedSettings?.invoiceNumberPrefix ?? "";
-    const format = updatedSettings?.invoiceNumberFormat ?? "{PREFIX}{SEQ}";
-
-    // Zero‑pad sequence to 4 digits
-    const seqStr = seq.toString().padStart(4, "0");
-
-    invoiceNumber = format
-      .replace("{PREFIX}", prefix)
-      .replace("{SEQ}", seqStr)
-      .trim();
-  } catch {
-    invoiceNumber = undefined;
   }
 
   const invoiceDoc = await Invoice.create({
@@ -358,10 +307,9 @@ export async function POST(req: NextRequest) {
     lineItems: Array.isArray(lineItems) ? lineItems : [],
     subtotal: safeAmount,
     totalAmount: safeAmount,
-    invoiceNumber,
   });
 
-  // Log estate event for the new invoice
+  // Log estate event for the new invoice (best-effort, non-blocking)
   try {
     await logEstateEvent({
       estateId,
@@ -373,17 +321,30 @@ export async function POST(req: NextRequest) {
     // Don't block invoice creation if event logging fails
   }
 
-  return NextResponse.json(
-    {
-      id: String(invoiceDoc._id),
-      estateId: String(invoiceDoc.estateId),
-      status: invoiceDoc.status,
-      issueDate: invoiceDoc.issueDate,
-      dueDate: invoiceDoc.dueDate ?? null,
-      totalAmount: invoiceDoc.totalAmount ?? safeAmount,
-      currency: invoiceDoc.currency ?? currency,
-      invoiceNumber: invoiceDoc.invoiceNumber ?? invoiceNumber ?? null,
-    },
-    { status: 201 },
+  // If the client explicitly wants JSON (e.g., editor or API consumer), return JSON.
+  const acceptHeader = req.headers.get("accept") ?? "";
+  const wantsJson = acceptHeader.includes("application/json");
+
+  if (contentType.includes("application/json") || wantsJson) {
+    return NextResponse.json(
+      {
+        id: String(invoiceDoc._id),
+        estateId: String(invoiceDoc.estateId),
+        status: invoiceDoc.status,
+        issueDate: invoiceDoc.issueDate,
+        dueDate: invoiceDoc.dueDate ?? null,
+        totalAmount: invoiceDoc.totalAmount ?? safeAmount,
+        currency: invoiceDoc.currency ?? currency,
+      },
+      { status: 201 },
+    );
+  }
+
+  // Otherwise, assume a browser form post and redirect back into the app UI.
+  const detailUrl = new URL(
+    `/app/estates/${encodeURIComponent(estateId)}/invoices/${encodeURIComponent(String(invoiceDoc._id))}`,
+    req.url,
   );
+
+  return NextResponse.redirect(detailUrl, { status: 303 });
 }

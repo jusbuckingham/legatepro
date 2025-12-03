@@ -1,6 +1,7 @@
+import React from "react";
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { format } from "date-fns";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
@@ -8,32 +9,108 @@ import { Invoice } from "@/models/Invoice";
 import { WorkspaceSettings } from "@/models/WorkspaceSettings";
 
 type PageProps = {
-  params: {
+  params: Promise<{
     estateId: string;
     invoiceId: string;
-  };
+  }>;
 };
 
-type InvoiceLineItem = {
-  // Legacy fields
-  description?: string;
-  quantity?: number;
-  unitPriceCents?: number;
-  amountCents?: number;
-
-  // Newer editor fields
+type InvoiceLineItemLean = {
+  _id?: unknown;
   label?: string;
+  description?: string;
   type?: string;
-  amount?: number; // may be dollars or cents
-  rate?: number; // may be dollars or cents
+  quantity?: number;
+  rateCents?: number;
+  amountCents?: number;
+};
+
+type InvoiceLean = {
+  _id: unknown;
+  estateId: unknown;
+  status: "DRAFT" | "SENT" | "UNPAID" | "PARTIAL" | "PAID" | "VOID";
+  issueDate?: Date;
+  dueDate?: Date | null;
+  notes?: string;
+  currency?: string;
+  invoiceNumber?: string;
+  subtotal?: number;
+  totalAmount?: number;
+  lineItems?: InvoiceLineItemLean[];
+  createdAt?: Date;
 };
 
 type EstateLean = {
+  _id: unknown;
   displayName?: string;
   caseName?: string;
-} & Record<string, unknown>;
+};
+
+type WorkspaceSettingsLean = {
+  firmName?: string;
+  firmTagline?: string;
+  firmAddressLine1?: string;
+  firmAddressLine2?: string;
+  firmCity?: string;
+  firmState?: string;
+  firmPostalCode?: string;
+  firmCountry?: string;
+  firmEmail?: string;
+  firmPhone?: string;
+  firmWebsite?: string;
+  defaultCurrency?: string;
+};
+
+export const metadata: Metadata = {
+  title: "Invoice Detail | LegatePro",
+};
+
+function formatCurrencyFromCents(
+  amountCents: number | null | undefined,
+  currency = "USD",
+) {
+  const cents =
+    typeof amountCents === "number" && Number.isFinite(amountCents)
+      ? amountCents
+      : 0;
+  const dollars = cents / 100;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+  }).format(dollars);
+}
+
+function formatDate(date: Date | string | null | undefined) {
+  if (!date) return "—";
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function statusLabelClass(status: InvoiceLean["status"]) {
+  switch (status) {
+    case "PAID":
+      return "bg-emerald-500/15 text-emerald-300 border-emerald-500/40";
+    case "SENT":
+      return "bg-sky-500/10 text-sky-300 border-sky-500/40";
+    case "UNPAID":
+    case "PARTIAL":
+      return "bg-amber-500/10 text-amber-300 border-amber-500/40";
+    case "VOID":
+      return "bg-slate-700/40 text-slate-300 border-slate-600/60";
+    case "DRAFT":
+    default:
+      return "bg-slate-800 text-slate-200 border-slate-600";
+  }
+}
 
 export default async function InvoiceDetailPage({ params }: PageProps) {
+  const { estateId, invoiceId } = await params;
+
   const session = await auth();
   if (!session?.user?.id) {
     redirect("/login");
@@ -41,323 +118,272 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
 
   await connectToDatabase();
 
-  const { estateId, invoiceId } = params;
-
   const [estateDoc, invoiceDoc, settings] = await Promise.all([
     Estate.findOne({
       _id: estateId,
       ownerId: session.user.id,
     })
-      .lean()
+      .lean<EstateLean>()
       .exec(),
     Invoice.findOne({
       _id: invoiceId,
-      estateId,
       ownerId: session.user.id,
+      estateId,
     })
-      .lean()
+      .lean<InvoiceLean>()
       .exec(),
     WorkspaceSettings.findOne({
       ownerId: session.user.id,
     })
-      .lean()
-      .catch(() => null as unknown as null),
+      .lean<WorkspaceSettingsLean>()
+      .exec(),
   ]);
 
-  if (!estateDoc || !invoiceDoc) {
+  if (!invoiceDoc) {
     notFound();
   }
 
-  const estate = estateDoc as EstateLean;
+  const estateName =
+    estateDoc?.displayName || estateDoc?.caseName || "Estate";
 
-  const firmName = settings?.firmName ?? "Your Firm Name";
-  const firmAddressParts = [
-    settings?.firmAddressLine1,
-    settings?.firmAddressLine2,
-    [settings?.firmCity, settings?.firmState, settings?.firmPostalCode]
-      .filter(Boolean)
-      .join(", "),
-    settings?.firmCountry,
-  ]
-    .filter((part) => part && String(part).trim().length > 0)
-    .map((part) => String(part))
-    .join(" • ");
-
-  const defaultRateCents =
-    typeof settings?.defaultHourlyRateCents === "number"
-      ? settings.defaultHourlyRateCents
-      : 0;
-
-  const issueDateLabel = invoiceDoc.issueDate
-    ? format(new Date(invoiceDoc.issueDate), "MMM d, yyyy")
-    : "—";
-
-  const dueDateLabel = invoiceDoc.dueDate
-    ? format(new Date(invoiceDoc.dueDate), "MMM d, yyyy")
-    : "—";
+  const currency =
+    invoiceDoc.currency ||
+    settings?.defaultCurrency ||
+    "USD";
 
   const totalCents =
-    typeof invoiceDoc.totalAmount === "number"
-      ? invoiceDoc.totalAmount
-      : typeof invoiceDoc.subtotal === "number"
-      ? invoiceDoc.subtotal
-      : 0;
-
-  const currency = invoiceDoc.currency ?? "USD";
-
-  const formattedTotal = `${currency} ${(totalCents / 100).toFixed(2)}`;
+    invoiceDoc.totalAmount ?? invoiceDoc.subtotal ?? 0;
 
   const invoiceNumberLabel =
     invoiceDoc.invoiceNumber ||
-    (invoiceDoc._id && typeof invoiceDoc._id === "string"
-      ? `…${invoiceDoc._id.slice(-6)}`
-      : "Invoice");
+    `…${String(invoiceDoc._id).slice(-6)}`;
 
-  const statusLabel = invoiceDoc.status ?? "DRAFT";
+  const firmName = settings?.firmName || "Your firm";
+  const firmTagline = settings?.firmTagline || null;
 
-  const lineItemsArray = Array.isArray(invoiceDoc.lineItems)
-    ? (invoiceDoc.lineItems as InvoiceLineItem[])
-    : [];
+  const addressLines: string[] = [];
+  if (settings?.firmAddressLine1) {
+    addressLines.push(settings.firmAddressLine1);
+  }
+  if (settings?.firmAddressLine2) {
+    addressLines.push(settings.firmAddressLine2);
+  }
+  const cityLineParts = [
+    settings?.firmCity,
+    settings?.firmState,
+    settings?.firmPostalCode,
+  ].filter(Boolean);
+  const cityLine = cityLineParts.join(", ");
+  if (cityLine) {
+    addressLines.push(cityLine);
+  }
+  if (settings?.firmCountry) {
+    addressLines.push(settings.firmCountry);
+  }
 
-  // Support both legacy and new line-item shape for subtotal
-  const subtotalCents =
-    typeof invoiceDoc.subtotal === "number"
-      ? invoiceDoc.subtotal
-      : lineItemsArray.reduce((acc: number, item: InvoiceLineItem) => {
-          const quantity =
-            typeof item.quantity === "number" ? item.quantity : 0;
+  const contactLines: string[] = [];
+  if (settings?.firmEmail) {
+    contactLines.push(settings.firmEmail);
+  }
+  if (settings?.firmPhone) {
+    contactLines.push(settings.firmPhone);
+  }
+  if (settings?.firmWebsite) {
+    contactLines.push(settings.firmWebsite);
+  }
 
-          const unitPriceCents =
-            typeof item.unitPriceCents === "number"
-              ? item.unitPriceCents
-              : 0;
-
-          const amountCentsField =
-            typeof item.amountCents === "number" ? item.amountCents : 0;
-
-          const amountField =
-            typeof item.amount === "number" ? item.amount : 0;
-
-          const rateField =
-            typeof item.rate === "number" ? item.rate : 0;
-
-          const explicitAmount =
-            amountCentsField > 0
-              ? amountCentsField
-              : amountField > 0
-              ? amountField > 10_000
-                ? Math.round(amountField)
-                : Math.round(amountField * 100)
-              : 0;
-
-          let effectiveUnit = 0;
-
-          if (unitPriceCents > 0) {
-            effectiveUnit = unitPriceCents;
-          } else if (rateField > 0) {
-            effectiveUnit =
-              rateField > 10_000
-                ? Math.round(rateField)
-                : Math.round(rateField * 100);
-          } else if (defaultRateCents > 0) {
-            effectiveUnit = defaultRateCents;
-          }
-
-          const derived =
-            quantity > 0 && effectiveUnit > 0
-              ? quantity * effectiveUnit
-              : 0;
-
-          return acc + (explicitAmount || derived);
-        }, 0);
-
-  const subtotalLabel = `${currency} ${(subtotalCents / 100).toFixed(2)}`;
+  const lineItems = invoiceDoc.lineItems ?? [];
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
-      {/* Firm branding from workspace settings */}
-      <section className="space-y-0.5 text-xs text-slate-400">
-        <div className="font-semibold text-slate-100">{firmName}</div>
-        {firmAddressParts && firmAddressParts.length > 0 && (
-          <div className="text-[11px] text-slate-400">
-            {firmAddressParts}
-          </div>
-        )}
-      </section>
-
-      <div className="flex items-center justify-between gap-3">
+    <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+      <header className="flex flex-col gap-2 border-b border-slate-800 pb-4 md:flex-row md:items-center md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-lg font-semibold text-slate-100">
+          <p className="text-xs uppercase tracking-wide text-slate-500">
+            Invoice
+          </p>
+          <h1 className="text-2xl font-semibold text-slate-100">
             Invoice {invoiceNumberLabel}
           </h1>
-          <p className="text-xs text-slate-400">
-            Estate:{" "}
+          <p className="text-sm text-slate-400">
+            For{" "}
             <Link
               href={`/app/estates/${estateId}`}
               className="text-sky-400 hover:text-sky-300"
             >
-              {estate.displayName ?? estate.caseName ?? "Estate"}
+              {estateName}
             </Link>
           </p>
-          <p className="text-xs text-slate-400">
-            Status:{" "}
-            <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-200">
-              {statusLabel}
-            </span>
+        </div>
+        <div className="flex flex-col items-start gap-2 md:items-end">
+          <span
+            className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${statusLabelClass(
+              invoiceDoc.status,
+            )}`}
+          >
+            {invoiceDoc.status}
+          </span>
+          <div className="text-right">
+            <p className="text-xs uppercase tracking-wide text-slate-500">
+              Total
+            </p>
+            <p className="text-xl font-semibold text-slate-50">
+              {formatCurrencyFromCents(totalCents, currency)}
+            </p>
+          </div>
+        </div>
+      </header>
+
+      <section className="grid gap-6 md:grid-cols-2">
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            From
           </p>
+          <div className="space-y-0.5 text-sm text-slate-200">
+            <p className="font-medium">{firmName}</p>
+            {firmTagline && (
+              <p className="text-slate-400 text-xs">{firmTagline}</p>
+            )}
+            {addressLines.length > 0 && (
+              <div className="text-slate-300">
+                {addressLines.map((line) => (
+                  <p key={line}>{line}</p>
+                ))}
+              </div>
+            )}
+            {contactLines.length > 0 && (
+              <div className="mt-1 text-slate-400 text-xs">
+                {contactLines.map((line) => (
+                  <p key={line}>{line}</p>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="space-y-1 text-right text-xs text-slate-400">
-          <p>
-            Issue date:{" "}
-            <span className="text-slate-100">{issueDateLabel}</span>
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Invoice details
           </p>
-          <p>
-            Due date:{" "}
-            <span className="text-slate-100">{dueDateLabel}</span>
-          </p>
-          <p>
-            Total:{" "}
-            <span className="font-semibold text-slate-100">
-              {formattedTotal}
-            </span>
-          </p>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-slate-200">
+            <dt className="text-slate-400">Invoice #</dt>
+            <dd>{invoiceNumberLabel}</dd>
+            <dt className="text-slate-400">Issue date</dt>
+            <dd>{formatDate(invoiceDoc.issueDate ?? null)}</dd>
+            <dt className="text-slate-400">Due date</dt>
+            <dd>{formatDate(invoiceDoc.dueDate ?? null)}</dd>
+            <dt className="text-slate-400">Currency</dt>
+            <dd>{currency}</dd>
+          </dl>
         </div>
-      </div>
+      </section>
 
-      <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-100">
-            Line items
-          </h2>
-        </div>
-
-        {lineItemsArray.length === 0 ? (
-          <p className="text-xs text-slate-500">
-            No line items recorded on this invoice.
-          </p>
-        ) : (
-          <table className="w-full text-xs text-slate-200">
-            <thead className="border-b border-slate-800 text-slate-400">
+      <section className="space-y-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Line items
+        </p>
+        <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/40">
+          <table className="min-w-full border-collapse text-sm">
+            <thead className="bg-slate-900/70 text-xs uppercase tracking-wide text-slate-400">
               <tr>
-                <th className="py-1 text-left font-medium">Description</th>
-                <th className="py-1 text-right font-medium">Qty</th>
-                <th className="py-1 text-right font-medium">Rate</th>
-                <th className="py-1 text-right font-medium">Amount</th>
+                <th className="px-4 py-2 text-left font-medium">Description</th>
+                <th className="px-4 py-2 text-right font-medium">Qty</th>
+                <th className="px-4 py-2 text-right font-medium">Rate</th>
+                <th className="px-4 py-2 text-right font-medium">Amount</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
-              {lineItemsArray.map((item: InvoiceLineItem, idx: number) => {
-                const quantity =
-                  typeof item.quantity === "number"
-                    ? item.quantity
-                    : null;
+              {lineItems.length === 0 ? (
+                <tr>
+                  <td
+                    className="px-4 py-4 text-center text-slate-500"
+                    colSpan={4}
+                  >
+                    No line items recorded for this invoice yet.
+                  </td>
+                </tr>
+              ) : (
+                lineItems.map((item, idx) => {
+                  const qty =
+                    typeof item.quantity === "number" ? item.quantity : 0;
+                  const rateCents =
+                    typeof item.rateCents === "number"
+                      ? item.rateCents
+                      : 0;
+                  const amountCents =
+                    typeof item.amountCents === "number"
+                      ? item.amountCents
+                      : 0;
 
-                const unitPriceCents =
-                  typeof item.unitPriceCents === "number"
-                    ? item.unitPriceCents
-                    : 0;
+                  const description =
+                    item.label ||
+                    item.description ||
+                    (item.type ? `${item.type} line item` : "Line item");
 
-                const amountCentsField =
-                  typeof item.amountCents === "number"
-                    ? item.amountCents
-                    : 0;
-
-                const amountField =
-                  typeof item.amount === "number" ? item.amount : 0;
-
-                const rateField =
-                  typeof item.rate === "number" ? item.rate : 0;
-
-                const explicitAmount =
-                  amountCentsField > 0
-                    ? amountCentsField
-                    : amountField > 0
-                    ? amountField > 10_000
-                      ? Math.round(amountField)
-                      : Math.round(amountField * 100)
-                    : 0;
-
-                let effectiveUnit = 0;
-
-                if (unitPriceCents > 0) {
-                  effectiveUnit = unitPriceCents;
-                } else if (rateField > 0) {
-                  effectiveUnit =
-                    rateField > 10_000
-                      ? Math.round(rateField)
-                      : Math.round(rateField * 100);
-                } else if (defaultRateCents > 0) {
-                  effectiveUnit = defaultRateCents;
-                }
-
-                const derivedAmount =
-                  quantity !== null && quantity > 0 && effectiveUnit > 0
-                    ? quantity * effectiveUnit
-                    : 0;
-
-                const amount =
-                  explicitAmount > 0 ? explicitAmount : derivedAmount;
-
-                const rateLabel =
-                  effectiveUnit > 0
-                    ? `${currency} ${(effectiveUnit / 100).toFixed(2)}`
-                    : "—";
-
-                const amountLabel = `${currency} ${(amount / 100).toFixed(
-                  2,
-                )}`;
-
-                return (
-                  <tr key={idx}>
-                    <td className="py-1 pr-2 align-top">
-                      {item.label || item.description || "—"}
-                    </td>
-                    <td className="py-1 text-right align-top">
-                      {quantity !== null ? quantity : "—"}
-                    </td>
-                    <td className="py-1 text-right align-top">
-                      {rateLabel}
-                    </td>
-                    <td className="py-1 text-right align-top">
-                      {amountLabel}
-                    </td>
-                  </tr>
-                );
-              })}
+                  return (
+                    <tr key={(item._id as string) ?? idx}>
+                      <td className="px-4 py-2 align-top text-slate-100">
+                        <div className="font-medium">{description}</div>
+                        {item.type && (
+                          <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                            {item.type}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-right text-slate-200">
+                        {qty || "—"}
+                      </td>
+                      <td className="px-4 py-2 text-right text-slate-200">
+                        {rateCents
+                          ? formatCurrencyFromCents(rateCents, currency)
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-2 text-right text-slate-50">
+                        {formatCurrencyFromCents(amountCents, currency)}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
-            <tfoot className="border-t border-slate-800">
+            <tfoot className="bg-slate-900/60 text-sm text-slate-100">
               <tr>
-                <td colSpan={3} className="py-2 text-right text-slate-400">
-                  Subtotal
+                <td className="px-4 py-2" colSpan={3}>
+                  <span className="text-slate-400">Total</span>
                 </td>
-                <td className="py-2 text-right font-semibold text-slate-100">
-                  {subtotalLabel}
-                </td>
-              </tr>
-              <tr>
-                <td colSpan={3} className="py-1 text-right text-slate-400">
-                  Total
-                </td>
-                <td className="py-1 text-right font-semibold text-slate-100">
-                  {formattedTotal}
+                <td className="px-4 py-2 text-right font-semibold">
+                  {formatCurrencyFromCents(totalCents, currency)}
                 </td>
               </tr>
             </tfoot>
           </table>
-        )}
-      </div>
+        </div>
+      </section>
 
       {invoiceDoc.notes && (
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
-          <h2 className="mb-1 text-sm font-semibold text-slate-100">
-            Notes
-          </h2>
-          <p className="text-xs text-slate-300 whitespace-pre-line">
-            {invoiceDoc.notes}
+        <section className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Memo / notes
           </p>
-        </div>
+          <div className="rounded-lg border border-slate-800 bg-slate-950/60 px-4 py-3 text-sm text-slate-100 whitespace-pre-wrap">
+            {invoiceDoc.notes}
+          </div>
+        </section>
       )}
+
+      <footer className="flex items-center justify-between pt-4 text-xs text-slate-500">
+        <Link
+          href={`/app/estates/${estateId}/invoices`}
+          className="text-slate-400 hover:text-slate-200"
+        >
+          ← Back to invoices
+        </Link>
+        <Link
+          href={`/app/estates/${estateId}/invoices/${invoiceId}/print`}
+          className="rounded-md border border-slate-700 px-3 py-1 text-xs font-medium text-slate-100 hover:border-sky-500 hover:text-sky-200"
+        >
+          Print / PDF view
+        </Link>
+      </footer>
     </div>
   );
 }

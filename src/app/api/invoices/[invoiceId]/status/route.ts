@@ -6,6 +6,10 @@ import { logEstateEvent } from "@/lib/estateEvents";
 
 type InvoiceStatus = "DRAFT" | "SENT" | "UNPAID" | "PARTIAL" | "PAID" | "VOID";
 
+type StatusPayload = {
+  status?: string;
+};
+
 export async function POST(
   req: NextRequest,
   context: { params: Promise<{ invoiceId: string }> },
@@ -19,8 +23,16 @@ export async function POST(
 
   await connectToDatabase();
 
-  const formData = await req.formData();
-  const statusRaw = formData.get("status");
+  const contentType = req.headers.get("content-type") ?? "";
+  let statusRaw: unknown;
+
+  if (contentType.includes("application/json")) {
+    const body = (await req.json()) as StatusPayload;
+    statusRaw = body.status;
+  } else {
+    const formData = await req.formData();
+    statusRaw = formData.get("status");
+  }
 
   if (typeof statusRaw !== "string") {
     return NextResponse.json({ error: "Missing status" }, { status: 400 });
@@ -78,7 +90,7 @@ export async function POST(
     return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
   }
 
-  // Log estate event for status change
+  // Normalize IDs to strings
   const invoiceIdStr =
     typeof invoice._id === "string"
       ? invoice._id
@@ -93,18 +105,36 @@ export async function POST(
     (existingInvoice.invoiceNumber as string | undefined) ||
     `…${invoiceIdStr.slice(-6)}`;
 
-  await logEstateEvent({
-    ownerId: session.user.id,
-    estateId: estateIdStr,
-    type: "INVOICE_STATUS_CHANGED",
-    summary: `Invoice ${invoiceNumberLabel} marked ${status}`,
-    detail: `Status changed: ${previousStatus ?? "UNKNOWN"} → ${status}`,
-    meta: {
-      invoiceId: invoiceIdStr,
+  // Log estate event for status change
+  try {
+    await logEstateEvent({
+      ownerId: session.user.id,
+      estateId: estateIdStr,
+      type: "INVOICE_STATUS_CHANGED",
+      summary: `Invoice ${invoiceNumberLabel} marked ${status}`,
+      detail: `Status changed: ${previousStatus ?? "UNKNOWN"} → ${status}`,
+      meta: {
+        invoiceId: invoiceIdStr,
+        previousStatus,
+        newStatus: status,
+      },
+    });
+  } catch {
+    // Don't block status change if event logging fails
+  }
+
+  // For JSON callers, return JSON; for form posts, redirect back into the app
+  if (contentType.includes("application/json")) {
+    return NextResponse.json({
+      id: invoiceIdStr,
+      estateId: estateIdStr,
+      status: invoice.status,
       previousStatus,
-      newStatus: status,
-    },
-  });
+      subtotal: invoice.subtotal ?? null,
+      totalAmount: invoice.totalAmount ?? null,
+      paidAt: (invoice as { paidAt?: Date }).paidAt ?? null,
+    });
+  }
 
   return NextResponse.redirect(
     new URL(
