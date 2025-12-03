@@ -1,148 +1,250 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type InvoiceStatus = "DRAFT" | "SENT" | "PAID" | "VOID";
+export type InvoiceStatus =
+  | "DRAFT"
+  | "SENT"
+  | "UNPAID"
+  | "PARTIAL"
+  | "PAID"
+  | "VOID";
 
-type InvoiceLineItemType = "TIME" | "EXPENSE" | "ADJUSTMENT";
+const STATUS_OPTIONS: InvoiceStatus[] = [
+  "DRAFT",
+  "SENT",
+  "UNPAID",
+  "PARTIAL",
+  "PAID",
+  "VOID",
+];
 
-type LineItem = {
-  id?: string;
-  type: InvoiceLineItemType;
-  label: string;
-  quantity: number;
-  rate: number;
-  amount: number;
+export type RawLineItem = {
+  _id?: string;
+  label?: string;
+  description?: string;
+  type?: string;
+  quantity?: number;
+  rateCents?: number;
+  amountCents?: number;
 };
 
 type InvoiceEditFormProps = {
   invoiceId: string;
   estateId: string;
   initialStatus: InvoiceStatus;
-  initialIssueDate: string;
-  initialDueDate: string;
-  initialNotes: string;
-  initialLineItems: LineItem[];
+  initialNotes: string | null;
+  initialCurrency: string;
+  initialLineItems: RawLineItem[];
 };
 
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount || 0);
+type EditLineItem = {
+  id: string; // local key
+  mongoId?: string;
+  label: string;
+  type: "HOURLY" | "FLAT_FEE" | "EXPENSE" | "OTHER";
+  quantity: number;
+  rate: number; // dollars
+};
+
+function centsToDollars(cents: number | null | undefined): number {
+  if (typeof cents !== "number" || Number.isNaN(cents)) return 0;
+  return cents / 100;
 }
 
-export function InvoiceEditForm({
+function dollarsToCents(dollars: number): number {
+  if (!Number.isFinite(dollars) || dollars <= 0) return 0;
+  return Math.round(dollars * 100);
+}
+
+function formatMoney(cents: number, currency: string): string {
+  const dollars = centsToDollars(cents);
+  return `${currency} ${dollars.toFixed(2)}`;
+}
+
+export default function InvoiceEditForm({
   invoiceId,
   estateId,
   initialStatus,
-  initialIssueDate,
-  initialDueDate,
   initialNotes,
+  initialCurrency,
   initialLineItems,
 }: InvoiceEditFormProps) {
   const router = useRouter();
 
   const [status, setStatus] = useState<InvoiceStatus>(initialStatus);
-  const [issueDate, setIssueDate] = useState(initialIssueDate);
-  const [dueDate, setDueDate] = useState(initialDueDate);
-  const [notes, setNotes] = useState(initialNotes);
-  const [lineItems, setLineItems] = useState<LineItem[]>(
-    initialLineItems.length > 0
-      ? initialLineItems
-      : [
-          {
-            id: "li-1",
-            type: "ADJUSTMENT",
-            label: "",
-            quantity: 1,
-            rate: 0,
-            amount: 0,
-          },
-        ],
-  );
-  const [saving, setSaving] = useState(false);
+  const [notes, setNotes] = useState<string>(initialNotes ?? "");
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const updateLineItem = (
-    index: number,
-    patch: Partial<Pick<LineItem, "type" | "label" | "quantity" | "rate">>,
-  ) => {
-    setLineItems((prev) => {
-      const next = [...prev];
-      const current = next[index];
-      if (!current) return prev;
+  const [items, setItems] = useState<EditLineItem[]>(() => {
+    if (!Array.isArray(initialLineItems) || initialLineItems.length === 0) {
+      return [
+        {
+          id: "new-0",
+          label: "",
+          type: "HOURLY",
+          quantity: 1,
+          rate: 0,
+        },
+      ];
+    }
 
-      const updated: LineItem = {
-        ...current,
-        ...patch,
+    return initialLineItems.map((item, index) => {
+      const quantity =
+        typeof item.quantity === "number" && item.quantity > 0
+          ? item.quantity
+          : 1;
+
+      let rate = 0;
+      if (typeof item.rateCents === "number" && item.rateCents > 0) {
+        rate = centsToDollars(item.rateCents);
+      } else if (
+        typeof item.amountCents === "number" &&
+        item.amountCents > 0 &&
+        quantity > 0
+      ) {
+        rate = centsToDollars(item.amountCents) / quantity;
+      }
+
+      let normalizedType: EditLineItem["type"] = "OTHER";
+      if (
+        item.type === "HOURLY" ||
+        item.type === "FLAT_FEE" ||
+        item.type === "EXPENSE"
+      ) {
+        normalizedType = item.type;
+      }
+
+      return {
+        id: String(item._id ?? `local-${index}`),
+        mongoId: item._id ? String(item._id) : undefined,
+        label: (item.label ?? item.description ?? "").toString(),
+        type: normalizedType,
+        quantity,
+        rate,
       };
-
-      const quantity = patch.quantity ?? current.quantity;
-      const rate = patch.rate ?? current.rate;
-
-      const safeQuantity = Number.isFinite(quantity) ? quantity : 0;
-      const safeRate = Number.isFinite(rate) ? rate : 0;
-
-      updated.amount = safeQuantity * safeRate;
-
-      next[index] = updated;
-      return next;
     });
+  });
+
+  const subtotalCents = useMemo(() => {
+    return items.reduce((sum, item) => {
+      const qty =
+        Number.isFinite(item.quantity) && item.quantity > 0
+          ? item.quantity
+          : 0;
+      const rateDollars =
+        Number.isFinite(item.rate) && item.rate > 0 ? item.rate : 0;
+      const lineCents = dollarsToCents(rateDollars * qty);
+      return sum + lineCents;
+    }, 0);
+  }, [items]);
+
+  const handleItemChange = (
+    id: string,
+    field: keyof EditLineItem,
+    value: string,
+  ) => {
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+
+        if (field === "quantity") {
+          const asNumber = Number.parseFloat(value);
+          return {
+            ...item,
+            quantity:
+              Number.isFinite(asNumber) && asNumber > 0 ? asNumber : 0,
+          };
+        }
+
+        if (field === "rate") {
+          const asNumber = Number.parseFloat(value);
+          return {
+            ...item,
+            rate:
+              Number.isFinite(asNumber) && asNumber >= 0 ? asNumber : 0,
+          };
+        }
+
+        if (field === "type") {
+          const nextType: EditLineItem["type"] =
+            value === "HOURLY" ||
+            value === "FLAT_FEE" ||
+            value === "EXPENSE" ||
+            value === "OTHER"
+              ? (value as EditLineItem["type"])
+              : "OTHER";
+          return { ...item, type: nextType };
+        }
+
+        if (field === "label") {
+          return { ...item, label: value };
+        }
+
+        return item;
+      }),
+    );
   };
 
-  const addLineItem = () => {
-    setLineItems((prev) => [
+  const handleAddItem = () => {
+    setItems((prev) => [
       ...prev,
       {
-        id: `li-${prev.length + 1}`,
-        type: "ADJUSTMENT",
+        id: `new-${prev.length}`,
         label: "",
+        type: "HOURLY",
         quantity: 1,
         rate: 0,
-        amount: 0,
       },
     ]);
   };
 
-  const removeLineItem = (index: number) => {
-    setLineItems((prev) => {
-      if (prev.length === 1) return prev;
-      const next = [...prev];
-      next.splice(index, 1);
-      return next;
-    });
+  const handleRemoveItem = (id: string) => {
+    setItems((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const total = lineItems.reduce((sum, li) => sum + (li.amount || 0), 0);
-
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    setSaving(true);
+  const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
+    e.preventDefault();
+    setIsSaving(true);
     setError(null);
 
     try {
+      const cleanedItems = items
+        .map((item) => {
+          const qty =
+            Number.isFinite(item.quantity) && item.quantity > 0
+              ? item.quantity
+              : 0;
+          const rateDollars =
+            Number.isFinite(item.rate) && item.rate > 0 ? item.rate : 0;
+          const amountCents = dollarsToCents(rateDollars * qty);
+
+          if (!item.label.trim() || qty <= 0 || amountCents <= 0) {
+            return null;
+          }
+
+          return {
+            _id: item.mongoId,
+            label: item.label.trim(),
+            type: item.type,
+            quantity: qty,
+            // send both rate and amount in cents so the backend can compute safely
+            rate: dollarsToCents(rateDollars),
+            amountCents,
+          };
+        })
+        .filter(Boolean);
+
       const payload = {
-        estateId,
         status,
-        issueDate,
-        dueDate,
-        notes,
-        lineItems: lineItems.map((li) => ({
-          type: li.type,
-          label: li.label,
-          quantity: li.quantity,
-          rate: li.rate,
-          amount: li.amount,
-        })),
+        notes: notes.trim().length > 0 ? notes.trim() : undefined,
+        lineItems: cleanedItems,
       };
 
       const res = await fetch(`/api/invoices/${invoiceId}`, {
-        method: "PUT",
+        method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
@@ -150,236 +252,234 @@ export function InvoiceEditForm({
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        const message =
-          typeof data.error === "string"
-            ? data.error
-            : "Failed to save invoice changes.";
-        setError(message);
-        setSaving(false);
-        return;
+        const data = await res.json().catch(() => null);
+        const msg = data?.error || "Failed to update invoice.";
+        throw new Error(msg);
       }
 
       router.push(`/app/estates/${estateId}/invoices/${invoiceId}`);
+      router.refresh();
     } catch (err) {
-      console.error(err);
-      setError("Something went wrong while saving. Please try again.");
-      setSaving(false);
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Unexpected error updating invoice.";
+      setError(message);
+    } finally {
+      setIsSaving(false);
     }
   };
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="space-y-6 rounded-lg border border-slate-800 bg-slate-900/60 p-4"
-    >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-slate-50">
-            Edit invoice
-          </h1>
+          <h2 className="text-lg font-semibold text-slate-100">
+            Edit invoice details
+          </h2>
           <p className="text-xs text-slate-400">
-            Update dates, status, and line items. Totals will be recalculated
+            Adjust line items, status, and memo. Totals are recalculated
             automatically.
           </p>
         </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() =>
-              router.push(`/app/estates/${estateId}/invoices/${invoiceId}`)
-            }
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-60"
-          >
-            {saving ? "Saving…" : "Save changes"}
-          </button>
+
+        <div className="flex flex-col gap-1 text-right">
+          <span className="text-[11px] uppercase tracking-wide text-slate-500">
+            Subtotal
+          </span>
+          <span className="text-sm font-semibold text-slate-100">
+            {formatMoney(subtotalCents, initialCurrency || "USD")}
+          </span>
         </div>
       </div>
 
-      {error && (
-        <p className="text-xs text-red-400">
-          {error}
-        </p>
-      )}
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div>
-          <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
-            Status
-          </label>
-          <select
-            value={status}
-            onChange={(e) =>
-              setStatus(e.target.value.toUpperCase() as InvoiceStatus)
-            }
-            className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
-          >
-            <option value="DRAFT">Draft</option>
-            <option value="SENT">Sent</option>
-            <option value="PAID">Paid</option>
-            <option value="VOID">Void</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
-            Issue date
-          </label>
-          <input
-            type="date"
-            value={issueDate}
-            onChange={(e) => setIssueDate(e.target.value)}
-            className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
-          />
-        </div>
-
-        <div>
-          <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
-            Due date
-          </label>
-          <input
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
-          />
-        </div>
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-slate-300" htmlFor="status">
+          Status
+        </label>
+        <select
+          id="status"
+          value={status}
+          onChange={(e) => setStatus(e.target.value as InvoiceStatus)}
+          className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+        >
+          {STATUS_OPTIONS.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
       </div>
 
-      <div>
-        <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
-          Notes / memo
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-slate-300" htmlFor="notes">
+          Memo / description
         </label>
         <textarea
+          id="notes"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          rows={3}
-          className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          rows={4}
+          className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          placeholder="Describe the work performed, services rendered, or the purpose of this invoice."
         />
+        <p className="text-[11px] text-slate-500">
+          This memo appears on the invoice and helps you quickly recognize what
+          was billed.
+        </p>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-3 rounded-lg border border-slate-800 bg-slate-900/70 p-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-100">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
             Line items
-          </h2>
+          </h3>
           <button
             type="button"
-            onClick={addLineItem}
-            className="text-xs text-sky-400 hover:text-sky-300"
+            onClick={handleAddItem}
+            className="inline-flex items-center rounded-md bg-slate-800 px-2 py-1 text-[11px] font-semibold text-slate-100 hover:bg-slate-700"
           >
             + Add line item
           </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-800 text-slate-400">
-                <th className="py-2 pr-3 font-medium">Type</th>
-                <th className="py-2 pr-3 font-medium">Description</th>
-                <th className="py-2 pr-3 font-medium">Qty</th>
-                <th className="py-2 pr-3 font-medium">Rate</th>
-                <th className="py-2 pr-3 font-medium text-right">Amount</th>
-                <th className="py-2 pl-3 font-medium text-right" />
-              </tr>
-            </thead>
-            <tbody>
-              {lineItems.map((li, index) => (
-                <tr
-                  key={li.id ?? `li-${index}`}
-                  className="border-b border-slate-900 last:border-0"
-                >
-                  <td className="py-2 pr-3 align-top">
-                    <select
-                      value={li.type}
-                      onChange={(e) =>
-                        updateLineItem(index, {
-                          type: e.target
-                            .value as InvoiceLineItemType,
-                        })
-                      }
-                      className="w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                    >
-                      <option value="TIME">Time</option>
-                      <option value="EXPENSE">Expense</option>
-                      <option value="ADJUSTMENT">Adjustment</option>
-                    </select>
-                  </td>
-                  <td className="py-2 pr-3 align-top">
-                    <input
-                      type="text"
-                      value={li.label}
-                      onChange={(e) =>
-                        updateLineItem(index, { label: e.target.value })
-                      }
-                      placeholder="Description"
-                      className="w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                    />
-                  </td>
-                  <td className="py-2 pr-3 align-top">
-                    <input
-                      type="number"
-                      value={li.quantity}
-                      min={0}
-                      step={0.25}
-                      onChange={(e) =>
-                        updateLineItem(index, {
-                          quantity: Number(e.target.value) || 0,
-                        })
-                      }
-                      className="w-20 rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                    />
-                  </td>
-                  <td className="py-2 pr-3 align-top">
-                    <input
-                      type="number"
-                      value={li.rate}
-                      min={0}
-                      step={0.01}
-                      onChange={(e) =>
-                        updateLineItem(index, {
-                          rate: Number(e.target.value) || 0,
-                        })
-                      }
-                      className="w-24 rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                    />
-                  </td>
-                  <td className="py-2 pr-3 align-top text-right text-slate-100">
-                    {formatCurrency(li.amount)}
-                  </td>
-                  <td className="py-2 pl-3 align-top text-right">
-                    <button
-                      type="button"
-                      onClick={() => removeLineItem(index)}
-                      className="text-[11px] text-slate-400 hover:text-red-400"
-                    >
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {/* header row (desktop) */}
+        <div className="hidden grid-cols-12 gap-2 border-b border-slate-800 pb-2 text-[11px] text-slate-500 md:grid">
+          <div className="col-span-5">Label</div>
+          <div className="col-span-2">Type</div>
+          <div className="col-span-2 text-right">Qty</div>
+          <div className="col-span-2 text-right">
+            Rate ({initialCurrency || "USD"})
+          </div>
+          <div className="col-span-1 text-right">Remove</div>
         </div>
 
-        <div className="flex items-center justify-end border-t border-slate-800 pt-3">
-          <div className="text-right">
-            <p className="text-[11px] uppercase tracking-wide text-slate-400">
-              Total
+        <div className="space-y-2">
+          {items.map((item) => {
+            const lineCents = dollarsToCents(item.rate * item.quantity);
+            return (
+              <div
+                key={item.id}
+                className="grid grid-cols-1 gap-2 rounded-md border border-slate-800 bg-slate-900/60 p-2 text-sm md:grid-cols-12 md:items-center"
+              >
+                <div className="md:col-span-5">
+                  <label className="mb-1 block text-[11px] text-slate-500 md:hidden">
+                    Label
+                  </label>
+                  <input
+                    value={item.label}
+                    onChange={(e) =>
+                      handleItemChange(item.id, "label", e.target.value)
+                    }
+                    placeholder="e.g. Drafting petition, client call"
+                    className="w-full rounded-md border border-slate-700 bg-slate-950/60 px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="mb-1 block text-[11px] text-slate-500 md:hidden">
+                    Type
+                  </label>
+                  <select
+                    value={item.type}
+                    onChange={(e) =>
+                      handleItemChange(item.id, "type", e.target.value)
+                    }
+                    className="w-full rounded-md border border-slate-700 bg-slate-950/60 px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                  >
+                    <option value="HOURLY">Hourly</option>
+                    <option value="FLAT_FEE">Flat fee</option>
+                    <option value="EXPENSE">Expense</option>
+                    <option value="OTHER">Other</option>
+                  </select>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="mb-1 block text-[11px] text-slate-500 md:hidden">
+                    Quantity
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.25}
+                    value={Number.isFinite(item.quantity) ? item.quantity : ""}
+                    onChange={(e) =>
+                      handleItemChange(item.id, "quantity", e.target.value)
+                    }
+                    className="w-full rounded-md border border-slate-700 bg-slate-950/60 px-2 py-1 text-right text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="mb-1 block text-[11px] text-slate-500 md:hidden">
+                    Rate ({initialCurrency || "USD"})
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={Number.isFinite(item.rate) ? item.rate : ""}
+                    onChange={(e) =>
+                      handleItemChange(item.id, "rate", e.target.value)
+                    }
+                    className="w-full rounded-md border border-slate-700 bg-slate-950/60 px-2 py-1 text-right text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Line total:{" "}
+                    {formatMoney(lineCents, initialCurrency || "USD")}
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 md:col-span-1 md:flex-col md:items-end">
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveItem(item.id)}
+                    className="mt-1 inline-flex items-center rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-800"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
+          {items.length === 0 && (
+            <p className="text-xs text-slate-500">
+              No line items yet. Click &quot;+ Add line item&quot; to start building this
+              invoice.
             </p>
-            <p className="text-base font-semibold text-slate-50">
-              {formatCurrency(total)}
-            </p>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end border-t border-slate-800 pt-3 text-sm">
+          <div className="space-y-0.5 text-right">
+            <div className="flex items-center justify-between gap-6 text-xs text-slate-400">
+              <span>Subtotal</span>
+              <span className="font-mono text-slate-100">
+                {formatMoney(subtotalCents, initialCurrency || "USD")}
+              </span>
+            </div>
           </div>
         </div>
+      </div>
+
+      {error && <p className="text-xs text-red-400">{error}</p>}
+
+      <div className="flex items-center justify-end gap-2 pt-2">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={isSaving}
+          className="inline-flex items-center rounded-md bg-sky-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60"
+        >
+          {isSaving ? "Saving…" : "Save changes"}
+        </button>
       </div>
     </form>
   );

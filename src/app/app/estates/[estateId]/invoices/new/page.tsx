@@ -112,7 +112,7 @@ export default async function EstateNewInvoicePage({ params }: PageProps) {
             min="0"
             required
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
-            placeholder="e.g. 500.00"
+            placeholder={`e.g. 500.00 (${currencyLabel})`}
           />
           <p className="text-[11px] text-slate-500">
             The total amount to bill on this invoice, in {currencyLabel}. Line

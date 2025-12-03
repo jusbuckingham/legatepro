@@ -166,6 +166,16 @@ const InvoiceSchema = new Schema<InvoiceDocument>(
   }
 );
 
+// Ensure invoice numbers are unique per owner, but allow documents without an invoiceNumber.
+InvoiceSchema.index(
+  { ownerId: 1, invoiceNumber: 1 },
+  {
+    unique: true,
+    sparse: true,
+    name: "owner_invoiceNumber_unique",
+  }
+);
+
 // Keep monetary totals in sync before save.
 // This is defensive: callers can set amount explicitly per line,
 // but if they don't, we compute from quantity * rate.

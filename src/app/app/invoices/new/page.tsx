@@ -1,12 +1,12 @@
 import React from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
+
 import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
-
-import type { Metadata } from "next";
 
 type EstateListItem = {
   _id: string;
@@ -23,6 +23,7 @@ type EstateLean = {
 };
 
 type PageProps = {
+  // Next 16: searchParams is now a Promise-like dynamic API
   searchParams?: Promise<{
     estateId?: string;
   }>;
@@ -33,6 +34,7 @@ export const metadata: Metadata = {
 };
 
 export default async function GlobalNewInvoicePage({ searchParams }: PageProps) {
+  // Safely unwrap the promised searchParams (or fall back to empty object)
   const sp = (await searchParams) || {};
   const preselectedEstateId = sp.estateId;
 
@@ -53,18 +55,15 @@ export default async function GlobalNewInvoicePage({ searchParams }: PageProps) 
     .lean()) as EstateLean[];
 
   const estates: EstateListItem[] = estatesRaw.map((e) => ({
-    _id:
-      typeof e._id === "string"
-        ? e._id
-        : e._id.toString(),
+    _id: typeof e._id === "string" ? e._id : e._id.toString(),
     displayName: e.displayName,
     caseName: e.caseName,
     caseNumber: e.caseNumber,
   }));
 
+  // If an estateId is already provided in the query string, jump straight
+  // into the estate-specific invoice creation flow.
   if (preselectedEstateId) {
-    // If an estateId is already provided in the query string, jump straight
-    // into the estate-specific invoice creation flow.
     return redirect(`/app/estates/${preselectedEstateId}/invoices/new`);
   }
 
@@ -93,8 +92,8 @@ export default async function GlobalNewInvoicePage({ searchParams }: PageProps) 
           <div className="space-y-2 text-sm text-slate-400">
             <p>You don&apos;t have any estates yet.</p>
             <p>
-              Create an estate first, then you&apos;ll be able to generate invoices
-              for it.
+              Create an estate first, then you&apos;ll be able to generate
+              invoices for it.
             </p>
             <div className="mt-3">
               <Link
@@ -106,11 +105,7 @@ export default async function GlobalNewInvoicePage({ searchParams }: PageProps) 
             </div>
           </div>
         ) : (
-          <form
-            action="/app/invoices/new"
-            method="GET"
-            className="space-y-4"
-          >
+          <form action="/app/invoices/new" method="GET" className="space-y-4">
             <div className="flex flex-col gap-1">
               <label
                 htmlFor="estateId"
@@ -122,8 +117,8 @@ export default async function GlobalNewInvoicePage({ searchParams }: PageProps) 
                 id="estateId"
                 name="estateId"
                 defaultValue=""
-                className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
                 required
+                className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
               >
                 <option value="" disabled>
                   Select an estate…

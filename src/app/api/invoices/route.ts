@@ -322,6 +322,31 @@ export async function POST(req: NextRequest) {
     safeAmount = amountFromFormCents;
   }
 
+  // --- Invoice numbering (auto-increment via WorkspaceSettings) ---
+  let invoiceNumber: string | undefined;
+
+  try {
+    const updatedSettings = await WorkspaceSettings.findOneAndUpdate(
+      { ownerId: session.user.id },
+      { $inc: { invoiceNumberSequence: 1 } },
+      { new: true, upsert: true },
+    ).lean();
+
+    const seq = updatedSettings?.invoiceNumberSequence ?? 1;
+    const prefix = updatedSettings?.invoiceNumberPrefix ?? "";
+    const format = updatedSettings?.invoiceNumberFormat ?? "{PREFIX}{SEQ}";
+
+    // Zero‑pad sequence to 4 digits
+    const seqStr = seq.toString().padStart(4, "0");
+
+    invoiceNumber = format
+      .replace("{PREFIX}", prefix)
+      .replace("{SEQ}", seqStr)
+      .trim();
+  } catch {
+    invoiceNumber = undefined;
+  }
+
   const invoiceDoc = await Invoice.create({
     ownerId: session.user.id,
     estateId,
@@ -333,6 +358,7 @@ export async function POST(req: NextRequest) {
     lineItems: Array.isArray(lineItems) ? lineItems : [],
     subtotal: safeAmount,
     totalAmount: safeAmount,
+    invoiceNumber,
   });
 
   // Log estate event for the new invoice
@@ -356,6 +382,7 @@ export async function POST(req: NextRequest) {
       dueDate: invoiceDoc.dueDate ?? null,
       totalAmount: invoiceDoc.totalAmount ?? safeAmount,
       currency: invoiceDoc.currency ?? currency,
+      invoiceNumber: invoiceDoc.invoiceNumber ?? invoiceNumber ?? null,
     },
     { status: 201 },
   );

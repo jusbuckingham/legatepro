@@ -108,7 +108,7 @@ export async function POST(
 
   return NextResponse.redirect(
     new URL(
-      `/app/estates/${estateIdStr}/invoices/${invoiceIdStr}`,
+      `/app/estates/${estateIdStr}/invoices/${invoiceIdStr}?statusUpdated=1`,
       req.url,
     ),
   );

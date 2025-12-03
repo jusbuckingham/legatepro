@@ -15,10 +15,17 @@ type PageProps = {
 };
 
 type InvoiceLineItem = {
+  // Legacy fields
   description?: string;
   quantity?: number;
   unitPriceCents?: number;
   amountCents?: number;
+
+  // Newer editor fields
+  label?: string;
+  type?: string;
+  amount?: number; // may be dollars or cents
+  rate?: number; // may be dollars or cents
 };
 
 type EstateLean = {
@@ -109,35 +116,59 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
   const statusLabel = invoiceDoc.status ?? "DRAFT";
 
   const lineItemsArray = Array.isArray(invoiceDoc.lineItems)
-    ? invoiceDoc.lineItems
+    ? (invoiceDoc.lineItems as InvoiceLineItem[])
     : [];
 
+  // Support both legacy and new line-item shape for subtotal
   const subtotalCents =
     typeof invoiceDoc.subtotal === "number"
       ? invoiceDoc.subtotal
       : lineItemsArray.reduce((acc: number, item: InvoiceLineItem) => {
-          const q =
+          const quantity =
             typeof item.quantity === "number" ? item.quantity : 0;
-          const unit =
+
+          const unitPriceCents =
             typeof item.unitPriceCents === "number"
               ? item.unitPriceCents
               : 0;
-          const explicit =
-            typeof item.amountCents === "number"
-              ? item.amountCents
+
+          const amountCentsField =
+            typeof item.amountCents === "number" ? item.amountCents : 0;
+
+          const amountField =
+            typeof item.amount === "number" ? item.amount : 0;
+
+          const rateField =
+            typeof item.rate === "number" ? item.rate : 0;
+
+          const explicitAmount =
+            amountCentsField > 0
+              ? amountCentsField
+              : amountField > 0
+              ? amountField > 10_000
+                ? Math.round(amountField)
+                : Math.round(amountField * 100)
               : 0;
 
-          const effectiveUnit =
-            unit > 0
-              ? unit
-              : defaultRateCents > 0
-              ? defaultRateCents
-              : 0;
+          let effectiveUnit = 0;
+
+          if (unitPriceCents > 0) {
+            effectiveUnit = unitPriceCents;
+          } else if (rateField > 0) {
+            effectiveUnit =
+              rateField > 10_000
+                ? Math.round(rateField)
+                : Math.round(rateField * 100);
+          } else if (defaultRateCents > 0) {
+            effectiveUnit = defaultRateCents;
+          }
 
           const derived =
-            q > 0 && effectiveUnit > 0 ? q * effectiveUnit : 0;
+            quantity > 0 && effectiveUnit > 0
+              ? quantity * effectiveUnit
+              : 0;
 
-          return acc + (explicit || derived);
+          return acc + (explicitAmount || derived);
         }, 0);
 
   const subtotalLabel = `${currency} ${(subtotalCents / 100).toFixed(2)}`;
@@ -217,38 +248,62 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
             </thead>
             <tbody className="divide-y divide-slate-800">
               {lineItemsArray.map((item: InvoiceLineItem, idx: number) => {
-                const q =
+                const quantity =
                   typeof item.quantity === "number"
                     ? item.quantity
                     : null;
-                const unit =
+
+                const unitPriceCents =
                   typeof item.unitPriceCents === "number"
                     ? item.unitPriceCents
-                    : null;
-                const explicitAmount =
+                    : 0;
+
+                const amountCentsField =
                   typeof item.amountCents === "number"
                     ? item.amountCents
                     : 0;
 
-                const effectiveUnit =
-                  unit != null && unit > 0
-                    ? unit
-                    : defaultRateCents > 0
-                    ? defaultRateCents
-                    : null;
+                const amountField =
+                  typeof item.amount === "number" ? item.amount : 0;
+
+                const rateField =
+                  typeof item.rate === "number" ? item.rate : 0;
+
+                const explicitAmount =
+                  amountCentsField > 0
+                    ? amountCentsField
+                    : amountField > 0
+                    ? amountField > 10_000
+                      ? Math.round(amountField)
+                      : Math.round(amountField * 100)
+                    : 0;
+
+                let effectiveUnit = 0;
+
+                if (unitPriceCents > 0) {
+                  effectiveUnit = unitPriceCents;
+                } else if (rateField > 0) {
+                  effectiveUnit =
+                    rateField > 10_000
+                      ? Math.round(rateField)
+                      : Math.round(rateField * 100);
+                } else if (defaultRateCents > 0) {
+                  effectiveUnit = defaultRateCents;
+                }
 
                 const derivedAmount =
-                  q != null && effectiveUnit != null
-                    ? q * effectiveUnit
+                  quantity !== null && quantity > 0 && effectiveUnit > 0
+                    ? quantity * effectiveUnit
                     : 0;
 
                 const amount =
                   explicitAmount > 0 ? explicitAmount : derivedAmount;
 
                 const rateLabel =
-                  effectiveUnit != null
+                  effectiveUnit > 0
                     ? `${currency} ${(effectiveUnit / 100).toFixed(2)}`
                     : "—";
+
                 const amountLabel = `${currency} ${(amount / 100).toFixed(
                   2,
                 )}`;
@@ -256,10 +311,10 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
                 return (
                   <tr key={idx}>
                     <td className="py-1 pr-2 align-top">
-                      {item.description || "—"}
+                      {item.label || item.description || "—"}
                     </td>
                     <td className="py-1 text-right align-top">
-                      {q != null ? q : "—"}
+                      {quantity !== null ? quantity : "—"}
                     </td>
                     <td className="py-1 text-right align-top">
                       {rateLabel}

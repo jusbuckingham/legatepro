@@ -31,6 +31,11 @@ export interface WorkspaceSettingsAttrs {
   defaultInvoiceTerms?: InvoiceTermsCode;
   defaultCurrency?: string;
 
+  // Invoice numbering configuration
+  invoiceNumberPrefix?: string;
+  invoiceNumberSequence?: number;
+  invoiceNumberFormat?: string;
+
   // Billing / subscription plumbing (kept flexible)
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
@@ -78,6 +83,20 @@ const WorkspaceSettingsSchema = new Schema<
     defaultCurrency: {
       type: String,
       default: "USD",
+    },
+
+    // Invoice numbering configuration
+    invoiceNumberPrefix: {
+      type: String,
+      default: "",
+    },
+    invoiceNumberSequence: {
+      type: Number,
+      default: 0,
+    },
+    invoiceNumberFormat: {
+      type: String,
+      default: "{PREFIX}{SEQ}",
     },
 
     // Billing / subscription plumbing

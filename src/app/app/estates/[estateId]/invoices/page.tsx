@@ -86,6 +86,17 @@ function formatShortDate(date: Date | string | null | undefined): string {
   });
 }
 
+function normalizeMoneyFromDb(raw?: number): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return 0;
+
+  // Heuristic: if the value is large, assume it is stored as cents and convert to dollars.
+  if (raw > 10_000) {
+    return raw / 100;
+  }
+
+  return raw;
+}
+
 export const dynamic = "force-dynamic";
 
 export default async function EstateInvoicesPage({
@@ -194,14 +205,17 @@ type EstateForLabel = {
         ? inv.balanceDue
         : rawTotal;
 
+    const total = normalizeMoneyFromDb(rawTotal);
+    const balanceDue = normalizeMoneyFromDb(rawBalance);
+
     return {
       _id: String(inv._id),
       number: inv.number ?? "—",
       status: inv.status ?? "DRAFT",
       issueDate: inv.issueDate ? new Date(inv.issueDate) : null,
       dueDate: inv.dueDate ? new Date(inv.dueDate) : null,
-      total: rawTotal,
-      balanceDue: rawBalance,
+      total,
+      balanceDue,
     };
   });
 

@@ -1,9 +1,19 @@
+import React from "react";
+import type { Metadata } from "next";
+import { getServerSession } from "next-auth";
 import { notFound, redirect } from "next/navigation";
-import { format } from "date-fns";
-import { auth } from "@/lib/auth";
+
+import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
-import { InvoiceEditForm } from "@/components/invoices/InvoiceEditForm";
+import InvoiceEditForm, {
+  type InvoiceStatus,
+  type RawLineItem,
+} from "@/components/invoices/InvoiceEditForm";
+
+export const metadata: Metadata = {
+  title: "Edit Invoice | LegatePro",
+};
 
 type PageProps = {
   params: Promise<{
@@ -12,129 +22,60 @@ type PageProps = {
   }>;
 };
 
-type InvoiceDocForEdit = {
-  _id: string | { toString: () => string };
-  estateId: string | { toString: () => string };
-  status?: string;
-  issueDate?: Date;
-  dueDate?: Date;
-  notes?: string;
-  lineItems?: {
-    _id?: string | { toString: () => string };
-    type?: string;
-    label?: string;
-    quantity?: number;
-    rate?: number;
-    amount?: number;
-    amountCents?: number;
-    rateCents?: number;
-    unitPriceCents?: number;
-  }[];
-};
-
-export default async function EstateInvoiceEditPage({ params }: PageProps) {
+export default async function InvoiceEditPage({ params }: PageProps) {
   const { estateId, invoiceId } = await params;
 
-  const session = await auth();
+  const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     redirect("/login");
   }
 
   await connectToDatabase();
 
-  const invoice = (await Invoice.findOne({
+  const invoice = await Invoice.findOne({
     _id: invoiceId,
-    ownerId: session.user.id,
+    ownerId: session!.user!.id,
     estateId,
   })
-    .lean()) as InvoiceDocForEdit | null;
+    .lean()
+    .exec();
 
   if (!invoice) {
     notFound();
   }
 
-  const issueDate = invoice.issueDate ?? new Date();
-  const dueDate = invoice.dueDate ?? issueDate;
+  const status = (invoice.status || "DRAFT") as InvoiceStatus;
 
-  const initialIssueDate = format(issueDate, "yyyy-MM-dd");
-  const initialDueDate = format(dueDate, "yyyy-MM-dd");
-  const initialNotes = invoice.notes ?? "";
+  const initialLineItems: RawLineItem[] = Array.isArray(invoice.lineItems)
+    ? (invoice.lineItems as RawLineItem[])
+    : [];
 
-  const rawStatus = (invoice.status || "DRAFT").toUpperCase();
-  const statusUpper: "DRAFT" | "SENT" | "PAID" | "VOID" =
-    rawStatus === "SENT" ||
-    rawStatus === "PAID" ||
-    rawStatus === "VOID"
-      ? (rawStatus as "SENT" | "PAID" | "VOID")
-      : "DRAFT";
-
-  const initialLineItems =
-    invoice.lineItems?.map((li, index) => {
-      const rawType =
-        typeof li.type === "string" ? li.type.toUpperCase() : "ADJUSTMENT";
-      const type: "TIME" | "EXPENSE" | "ADJUSTMENT" =
-        rawType === "TIME" || rawType === "EXPENSE" || rawType === "ADJUSTMENT"
-          ? rawType
-          : "ADJUSTMENT";
-
-      const quantity = typeof li.quantity === "number" ? li.quantity : 1;
-
-      // Prefer cents-based values if present, and convert to dollars for the form.
-      const rateFromCents =
-        typeof li.rateCents === "number"
-          ? li.rateCents / 100
-          : typeof li.unitPriceCents === "number"
-          ? li.unitPriceCents / 100
-          : typeof li.rate === "number"
-          ? li.rate
-          : 0;
-
-      const amountFromCents =
-        typeof li.amountCents === "number"
-          ? li.amountCents / 100
-          : typeof li.amount === "number"
-          ? li.amount
-          : quantity * rateFromCents;
-
-      const rate = rateFromCents;
-      const amount = amountFromCents;
-
-      const id =
-        typeof li._id === "string"
-          ? li._id
-          : li._id
-          ? li._id.toString()
-          : `li-${index + 1}`;
-
-      return {
-        id,
-        type,
-        label: li.label ?? "",
-        quantity,
-        rate,
-        amount,
-      };
-    }) ?? [];
-
-  const normalizedInvoiceId =
-    typeof invoice._id === "string"
-      ? invoice._id
-      : invoice._id.toString();
-
-  const normalizedEstateId =
-    typeof invoice.estateId === "string"
-      ? invoice.estateId
-      : invoice.estateId.toString();
+  const currency =
+    typeof invoice.currency === "string" && invoice.currency.trim().length > 0
+      ? invoice.currency.trim().toUpperCase()
+      : "USD";
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
+      <header className="space-y-1">
+        <p className="text-xs uppercase tracking-wide text-slate-500">
+          Invoices
+        </p>
+        <h1 className="text-2xl font-semibold text-slate-100">
+          Edit invoice
+        </h1>
+        <p className="text-sm text-slate-400">
+          Update line items, memo, and status for this invoice. Totals will be
+          recalculated automatically.
+        </p>
+      </header>
+
       <InvoiceEditForm
-        invoiceId={normalizedInvoiceId}
-        estateId={normalizedEstateId}
-        initialStatus={statusUpper}
-        initialIssueDate={initialIssueDate}
-        initialDueDate={initialDueDate}
-        initialNotes={initialNotes}
+        invoiceId={String(invoice._id)}
+        estateId={estateId}
+        initialStatus={status}
+        initialNotes={(invoice.notes as string | null) ?? null}
+        initialCurrency={currency}
         initialLineItems={initialLineItems}
       />
     </div>

@@ -9,8 +9,8 @@ type InvoiceUpdateLineItem = {
   type: "TIME" | "EXPENSE" | "ADJUSTMENT";
   label: string;
   quantity: number;
-  rate: number;
-  amount: number;
+  rateCents: number;
+  amountCents: number;
 };
 
 type InvoiceUpdateBody = {
@@ -111,23 +111,45 @@ export async function PUT(
         typeof obj.label === "string" ? obj.label.trim() : "Line item";
 
       const quantity = toNumber(obj.quantity);
-      const rate = toNumber(obj.rate);
-      const amount = quantity * rate;
+
+      // We accept either rate (dollars) or rateCents (cents) from the client.
+      const rawRate =
+        "rateCents" in obj && typeof (obj as Record<string, unknown>).rateCents !== "undefined"
+          ? toNumber((obj as Record<string, unknown>).rateCents)
+          : toNumber(obj.rate);
+
+      // Normalize to cents: if the value is large, treat as already cents,
+      // otherwise treat as dollars and multiply by 100.
+      const rateCents =
+        rawRate > 10_000 ? Math.round(rawRate) : Math.round(rawRate * 100);
+
+      // We also accept explicit amount/amountCents from the client, otherwise derive from quantity * rateCents.
+      const rawAmount =
+        "amountCents" in obj && typeof (obj as Record<string, unknown>).amountCents !== "undefined"
+          ? toNumber((obj as Record<string, unknown>).amountCents)
+          : toNumber(
+              "amount" in obj ? (obj as Record<string, unknown>).amount : undefined,
+            );
+
+      const amountCents =
+        rawAmount > 0
+          ? (rawAmount > 10_000 ? Math.round(rawAmount) : Math.round(rawAmount * 100))
+          : quantity * rateCents;
 
       return {
         type,
         label,
         quantity,
-        rate,
-        amount,
+        rateCents,
+        amountCents,
       };
     });
   } else {
-    normalizedLineItems = (invoiceDoc.lineItems ?? []) as InvoiceUpdateLineItem[];
+    normalizedLineItems = (invoiceDoc.lineItems ?? []) as unknown as InvoiceUpdateLineItem[];
   }
 
   const subtotal = normalizedLineItems.reduce(
-    (sum, li) => sum + (li.amount ?? 0),
+    (sum, li) => sum + (li.amountCents ?? 0),
     0,
   );
 

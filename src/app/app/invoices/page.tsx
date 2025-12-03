@@ -42,9 +42,9 @@ type InvoiceLean = {
   status?: string;
   issueDate?: Date | string;
   dueDate?: Date | string;
-  subtotal?: number;
-  totalAmount?: number;
-  total?: number;
+  subtotal?: number;      // may be dollars (legacy) or cents (new)
+  totalAmount?: number;   // may be dollars (legacy) or cents (new)
+  total?: number;         // legacy field
   notes?: string;
   invoiceNumber?: string;
 };
@@ -55,8 +55,8 @@ type InvoiceListItem = {
   status: string;
   issueDate?: Date;
   dueDate?: Date;
-  total: number;
-  balanceDue: number;
+  total: number;        // always normalized to dollars for display
+  balanceDue: number;   // always normalized to dollars for display
   notes?: string;
   invoiceNumber?: string;
   estate?: {
@@ -84,11 +84,36 @@ function formatDate(value?: Date): string {
   }
 }
 
+/**
+ * Handle legacy invoices that stored dollars directly AND
+ * new invoices that store integer cents.
+ *
+ * Heuristic:
+ * - If value is large (> 10_000), treat as cents and divide by 100.
+ * - Otherwise, assume it's already dollars.
+ */
+function normalizeMoneyFromDb(raw?: number): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return 0;
+
+  // Anything big is assumed to be cents.
+  if (raw > 10_000) {
+    return raw / 100;
+  }
+
+  return raw;
+}
+
 function getAmount(inv: InvoiceLean): number {
-  if (typeof inv.totalAmount === "number") return inv.totalAmount;
-  if (typeof inv.total === "number") return inv.total;
-  if (typeof inv.subtotal === "number") return inv.subtotal;
-  return 0;
+  const raw =
+    typeof inv.totalAmount === "number"
+      ? inv.totalAmount
+      : typeof inv.total === "number"
+      ? inv.total
+      : typeof inv.subtotal === "number"
+      ? inv.subtotal
+      : 0;
+
+  return normalizeMoneyFromDb(raw);
 }
 
 function normalizeDate(value?: Date | string): Date | undefined {
@@ -273,7 +298,9 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
               className="mt-1 rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
             >
               <option value="ALL">All</option>
-              <option value="UNPAID">Unpaid (DRAFT/SENT)</option>
+              <option value="UNPAID">
+                Unpaid (DRAFT/SENT/UNPAID/PARTIAL)
+              </option>
               <option value="DRAFT">Draft</option>
               <option value="SENT">Sent</option>
               <option value="PAID">Paid</option>

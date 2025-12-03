@@ -96,7 +96,7 @@ export default async function PrintableInvoicePage({ params }: PageProps) {
     firmAddressLine1?: string | null;
     firmAddressLine2?: string | null;
     firmCity?: string | null;
-    firmRegion?: string | null;
+    firmState?: string | null;
     firmPostalCode?: string | null;
     firmEmail?: string | null;
     firmPhone?: string | null;
@@ -138,11 +138,11 @@ export default async function PrintableInvoicePage({ params }: PageProps) {
   }
 
   if (
-    ws?.firmRegion &&
-    typeof ws.firmRegion === "string" &&
-    ws.firmRegion.trim().length > 0
+    ws?.firmState &&
+    typeof ws.firmState === "string" &&
+    ws.firmState.trim().length > 0
   ) {
-    cityRegionPostal.push(ws.firmRegion.trim());
+    cityRegionPostal.push(ws.firmState.trim());
   }
 
   if (
@@ -153,9 +153,13 @@ export default async function PrintableInvoicePage({ params }: PageProps) {
     cityRegionPostal.push(ws.firmPostalCode.trim());
   }
 
+  if (cityRegionPostal.length > 0) {
+    addressParts.push(cityRegionPostal.join(", "));
+  }
+
   if (
     addressParts.length === 0 &&
-    (!ws || !ws.firmCity || !ws.firmRegion)
+    (!ws || !ws.firmCity || !ws.firmState)
   ) {
     // Sensible default if nothing is configured
     addressParts.push("Los Angeles, CA");
@@ -316,7 +320,7 @@ export default async function PrintableInvoicePage({ params }: PageProps) {
               Invoice total
             </p>
             <p className="mt-1 text-xl font-semibold text-slate-900">
-              {formatCurrency(amount, invoiceDoc.currency)}
+              {formatCurrency(amount / 100, invoiceDoc.currency)}
             </p>
           </div>
         </section>
@@ -342,7 +346,7 @@ export default async function PrintableInvoicePage({ params }: PageProps) {
                     : "Professional services rendered"}
                 </td>
                 <td className="px-3 py-3 text-right text-slate-800">
-                  {formatCurrency(amount, invoiceDoc.currency)}
+                  {formatCurrency(amount / 100, invoiceDoc.currency)}
                 </td>
               </tr>
             </tbody>
@@ -356,7 +360,7 @@ export default async function PrintableInvoicePage({ params }: PageProps) {
               <span className="text-slate-700">Subtotal</span>
               <span className="text-slate-900">
                 {formatCurrency(
-                  invoiceDoc.subtotal ?? amount,
+                  (invoiceDoc.subtotal ?? amount) / 100,
                   invoiceDoc.currency,
                 )}
               </span>
@@ -370,7 +374,7 @@ export default async function PrintableInvoicePage({ params }: PageProps) {
             <div className="mt-2 border-t border-slate-200 pt-2 flex items-center justify-between">
               <span className="font-semibold text-slate-900">Total</span>
               <span className="font-semibold text-slate-900">
-                {formatCurrency(amount, invoiceDoc.currency)}
+                {formatCurrency(amount / 100, invoiceDoc.currency)}
               </span>
             </div>
           </div>
