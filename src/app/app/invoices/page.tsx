@@ -13,6 +13,8 @@ type PageSearchParams = {
   q?: string;
   timeframe?: string;
   estateId?: string;
+  sortBy?: string;
+  invoiceNumber?: string;
 };
 
 type PageProps = {
@@ -42,9 +44,9 @@ type InvoiceLean = {
   status?: string;
   issueDate?: Date | string;
   dueDate?: Date | string;
-  subtotal?: number;      // may be dollars (legacy) or cents (new)
-  totalAmount?: number;   // may be dollars (legacy) or cents (new)
-  total?: number;         // legacy field
+  subtotal?: number; // may be dollars (legacy) or cents (new)
+  totalAmount?: number; // may be dollars (legacy) or cents (new)
+  total?: number; // legacy field
   notes?: string;
   invoiceNumber?: string;
 };
@@ -55,8 +57,8 @@ type InvoiceListItem = {
   status: string;
   issueDate?: Date;
   dueDate?: Date;
-  total: number;        // always normalized to dollars for display
-  balanceDue: number;   // always normalized to dollars for display
+  total: number; // always normalized to dollars for display
+  balanceDue: number; // always normalized to dollars for display
   notes?: string;
   invoiceNumber?: string;
   estate?: {
@@ -129,6 +131,8 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
     q: qRaw,
     timeframe: timeframeRaw,
     estateId: estateIdRaw,
+    sortBy: sortByRaw,
+    invoiceNumber: invoiceNumberRaw,
   } = await searchParams;
 
   const session = await auth();
@@ -147,6 +151,8 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
   const statusFilter = (statusRaw ?? "ALL").toUpperCase();
   const timeframe = timeframeRaw ?? "all";
   const estateFilter = (estateIdRaw ?? "").trim();
+  const sortBy = sortByRaw ?? "recent";
+  const invoiceNumberFilter = (invoiceNumberRaw ?? "").trim();
 
   const mongoQuery: { [key: string]: unknown } = {
     ownerId: session.user.id,
@@ -165,6 +171,14 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
   // Estate filter
   if (estateFilter) {
     mongoQuery.estateId = estateFilter;
+  }
+
+  // Invoice number filter (more exact than the generic q search)
+  if (invoiceNumberFilter.length > 0) {
+    mongoQuery.invoiceNumber = {
+      $regex: invoiceNumberFilter,
+      $options: "i",
+    };
   }
 
   // Text search (notes + invoiceNumber)
@@ -186,8 +200,22 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
     mongoQuery.issueDate = { $gte: startOfMonth };
   }
 
+  // Sorting: recent by default, or by invoice number
+  const sortOption: Record<string, 1 | -1> = {};
+  if (sortBy === "invoice-asc") {
+    sortOption.invoiceNumber = 1;
+    sortOption.createdAt = -1;
+  } else if (sortBy === "invoice-desc") {
+    sortOption.invoiceNumber = -1;
+    sortOption.createdAt = -1;
+  } else {
+    // "recent"
+    sortOption.issueDate = -1;
+    sortOption.createdAt = -1;
+  }
+
   const invoiceDocs = (await Invoice.find(mongoQuery)
-    .sort({ issueDate: -1, createdAt: -1 })
+    .sort(sortOption)
     .populate("estateId", "displayName caseName")
     .lean()) as InvoiceLean[];
 
@@ -247,7 +275,10 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
   }, 0);
 
   const totalOutstanding = invoices.reduce((sum, inv) => {
-    return sum + (inv.status !== "PAID" && inv.status !== "VOID" ? inv.total : 0);
+    return (
+      sum +
+      (inv.status !== "PAID" && inv.status !== "VOID" ? inv.total : 0)
+    );
   }, 0);
 
   return (
@@ -284,6 +315,19 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
               name="q"
               defaultValue={q}
               placeholder="Notes, invoice number…"
+              className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            />
+          </div>
+
+          <div className="min-w-[140px]">
+            <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              Invoice #
+            </label>
+            <input
+              type="text"
+              name="invoiceNumber"
+              defaultValue={invoiceNumberFilter}
+              placeholder="e.g. INV-2024-001"
               className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
             />
           </div>
@@ -348,6 +392,21 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
               <option value="all">All time</option>
               <option value="30d">Last 30 days</option>
               <option value="this-month">This month</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              Sort by
+            </label>
+            <select
+              name="sortBy"
+              defaultValue={sortBy}
+              className="mt-1 rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            >
+              <option value="recent">Recent (issue date)</option>
+              <option value="invoice-asc">Invoice # (A–Z)</option>
+              <option value="invoice-desc">Invoice # (Z–A)</option>
             </select>
           </div>
 

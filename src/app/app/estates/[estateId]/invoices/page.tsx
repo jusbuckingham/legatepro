@@ -1,403 +1,482 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-
+import { format } from "date-fns";
+import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 import { Invoice } from "@/models/Invoice";
-import { authOptions } from "@/lib/auth";
 
-type URLSearchParamsType = {
-  [key: string]: string | string[] | undefined;
+type InvoiceStatus = "DRAFT" | "SENT" | "UNPAID" | "PARTIAL" | "PAID" | "VOID";
+
+type PageSearchParams = {
+  status?: string;
+  q?: string;
+  timeframe?: string;
+  sortBy?: string;
+  invoiceNumber?: string;
 };
-
-function buildSearchParamsFromObject(spObj?: URLSearchParamsType): URLSearchParams {
-  const sp = new URLSearchParams();
-
-  if (!spObj) return sp;
-
-  Object.entries(spObj).forEach(([key, value]) => {
-    if (typeof value === "string") {
-      sp.set(key, value);
-    } else if (Array.isArray(value)) {
-      value.forEach((v) => {
-        if (typeof v === "string") {
-          sp.append(key, v);
-        }
-      });
-    }
-  });
-
-  return sp;
-}
-
-function isPromise<T>(value: T | Promise<T>): value is Promise<T> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "then" in (value as Record<string, unknown>)
-  );
-}
 
 type PageProps = {
   params: Promise<{
     estateId: string;
   }>;
-  searchParams?: URLSearchParamsType | Promise<URLSearchParamsType>;
+  searchParams: Promise<PageSearchParams>;
 };
 
-type InvoiceStatus =
-  | "DRAFT"
-  | "SENT"
-  | "UNPAID"
-  | "PARTIAL"
-  | "PAID"
-  | "VOID";
+type EstateDocLean = {
+  _id: string | { toString: () => string };
+  displayName?: string;
+  caseName?: string;
+};
 
-type InvoiceDoc = {
-  _id: unknown;
-  number?: string;
-  status?: InvoiceStatus;
-  issueDate?: Date | string | null;
-  dueDate?: Date | string | null;
-  total?: number;
-  totalAmount?: number;
-  subtotal?: number;
-  balanceDue?: number;
-  amount?: number;
+type InvoiceLean = {
+  _id: string | { toString: () => string };
+  estateId?: string | { toString: () => string } | null | undefined;
+  status?: string;
+  issueDate?: Date | string;
+  dueDate?: Date | string;
+  subtotal?: number; // may be dollars (legacy) or cents (new)
+  totalAmount?: number; // may be dollars (legacy) or cents (new)
+  total?: number; // legacy field
+  notes?: string;
+  invoiceNumber?: string;
+};
+
+type InvoiceListItem = {
+  _id: string;
+  status: string;
+  issueDate?: Date;
+  dueDate?: Date;
+  total: number; // normalized to dollars
+  balanceDue: number; // normalized to dollars
+  notes?: string;
+  invoiceNumber?: string;
 };
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(amount);
+  }).format(amount || 0);
 }
 
-function formatShortDate(date: Date | string | null | undefined): string {
-  if (!date) return "—";
-  const d = typeof date === "string" ? new Date(date) : date;
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+function formatDate(value?: Date): string {
+  if (!value) return "—";
+  try {
+    return format(value, "MMM d, yyyy");
+  } catch {
+    return "—";
+  }
 }
 
+/**
+ * Handle legacy invoices that stored dollars directly AND
+ * new invoices that store integer cents.
+ */
 function normalizeMoneyFromDb(raw?: number): number {
   if (typeof raw !== "number" || !Number.isFinite(raw)) return 0;
-
-  // Heuristic: if the value is large, assume it is stored as cents and convert to dollars.
   if (raw > 10_000) {
     return raw / 100;
   }
-
   return raw;
 }
 
-export const dynamic = "force-dynamic";
+function getAmount(inv: InvoiceLean): number {
+  const raw =
+    typeof inv.totalAmount === "number"
+      ? inv.totalAmount
+      : typeof inv.total === "number"
+      ? inv.total
+      : typeof inv.subtotal === "number"
+      ? inv.subtotal
+      : 0;
+
+  return normalizeMoneyFromDb(raw);
+}
+
+function normalizeDate(value?: Date | string): Date | undefined {
+  if (!value) return undefined;
+  if (value instanceof Date) return value;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
 
 export default async function EstateInvoicesPage({
   params,
   searchParams,
 }: PageProps) {
-  // ✅ Handle Next 16 async params and guard against undefined estateId
   const { estateId } = await params;
+  const {
+    status: statusRaw,
+    q: qRaw,
+    timeframe: timeframeRaw,
+    sortBy: sortByRaw,
+    invoiceNumber: invoiceNumberRaw,
+  } = await searchParams;
 
-  const resolvedSearchParams: URLSearchParamsType = !searchParams
-    ? {}
-    : isPromise(searchParams)
-    ? ((await searchParams) ?? {})
-    : searchParams;
-
-  if (!estateId || estateId === "undefined") {
-    redirect("/app/estates");
-  }
-
-  const session = await getServerSession(authOptions);
-  if (!session || !session.user || !session.user.id) {
+  const session = await auth();
+  if (!session?.user?.id) {
     redirect("/login");
   }
 
   await connectToDatabase();
 
-  // Load the estate to validate access + display header info
-  const estate = await Estate.findOne({
+  const estateDoc = (await Estate.findOne({
     _id: estateId,
     ownerId: session.user.id,
-  }).lean();
+  })
+    .select("_id displayName caseName")
+    .lean()) as EstateDocLean | null;
 
-  if (!estate) {
+  if (!estateDoc) {
     redirect("/app/estates");
   }
 
-  // Filters from searchParams (optional)
-  const statusFilterRaw =
-    typeof resolvedSearchParams.status === "string"
-      ? resolvedSearchParams.status.toUpperCase()
-      : "ALL";
+  const q = (qRaw ?? "").trim();
+  const statusFilter = (statusRaw ?? "ALL").toUpperCase();
+  const timeframe = timeframeRaw ?? "all";
+  const sortBy = sortByRaw ?? "recent";
+  const invoiceNumberFilter = (invoiceNumberRaw ?? "").trim();
 
-  const statusFilter: InvoiceStatus | "ALL" =
-    statusFilterRaw === "DRAFT" ||
-    statusFilterRaw === "SENT" ||
-    statusFilterRaw === "PAID" ||
-    statusFilterRaw === "PARTIAL" ||
-    statusFilterRaw === "VOID" ||
-    statusFilterRaw === "UNPAID"
-      ? (statusFilterRaw as InvoiceStatus)
-      : "ALL";
-
-  const sortRaw =
-    typeof resolvedSearchParams.sort === "string"
-      ? resolvedSearchParams.sort
-      : "issueDateDesc";
-
-  const sortOption: "issueDateAsc" | "issueDateDesc" | "dueDateAsc" | "dueDateDesc" =
-    sortRaw === "issueDateAsc" ||
-    sortRaw === "issueDateDesc" ||
-    sortRaw === "dueDateAsc" ||
-    sortRaw === "dueDateDesc"
-      ? sortRaw
-      : "issueDateDesc";
-
-const sortSpec: Record<string, 1 | -1> =
-  sortOption === "issueDateAsc"
-    ? { issueDate: 1 }
-    : sortOption === "issueDateDesc"
-    ? { issueDate: -1 }
-    : sortOption === "dueDateAsc"
-    ? { dueDate: 1 }
-    : { dueDate: -1 };
-type EstateForLabel = {
-  displayName?: string;
-  caseName?: string;
-  decedentName?: string;
-};
-
-  const query: Record<string, unknown> = {
-    estateId,
+  const mongoQuery: { [key: string]: unknown } = {
     ownerId: session.user.id,
+    estateId,
   };
 
-  if (statusFilter !== "ALL") {
-    query.status = statusFilter;
+  // Status filter
+  if (statusFilter === "UNPAID") {
+    mongoQuery.status = {
+      $in: ["DRAFT", "SENT", "UNPAID", "PARTIAL"],
+    };
+  } else if (statusFilter !== "ALL") {
+    mongoQuery.status = statusFilter as InvoiceStatus;
   }
 
-  const invoiceDocs = (await Invoice.find(query)
-    .sort(sortSpec)
-    .lean()) as unknown as InvoiceDoc[];
+  // Invoice number filter
+  if (invoiceNumberFilter.length > 0) {
+    mongoQuery.invoiceNumber = {
+      $regex: invoiceNumberFilter,
+      $options: "i",
+    };
+  }
 
-  const invoices = invoiceDocs.map((inv) => {
-    const rawTotal =
-      (typeof inv.totalAmount === "number" && inv.totalAmount > 0
-        ? inv.totalAmount
-        : undefined) ??
-      (typeof inv.total === "number" && inv.total > 0 ? inv.total : undefined) ??
-      (typeof inv.subtotal === "number" && inv.subtotal > 0
-        ? inv.subtotal
-        : undefined) ??
-      (typeof inv.amount === "number" && inv.amount > 0 ? inv.amount : 0);
+  // Text search (notes + invoiceNumber)
+  if (q.length > 0) {
+    mongoQuery.$or = [
+      { notes: { $regex: q, $options: "i" } },
+      { invoiceNumber: { $regex: q, $options: "i" } },
+    ];
+  }
 
-    const rawBalance =
-      typeof inv.balanceDue === "number" && inv.balanceDue >= 0
-        ? inv.balanceDue
-        : rawTotal;
+  // Timeframe filter
+  const now = new Date();
+  if (timeframe === "30d") {
+    const past30 = new Date(now);
+    past30.setDate(now.getDate() - 30);
+    mongoQuery.issueDate = { $gte: past30 };
+  } else if (timeframe === "this-month") {
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    mongoQuery.issueDate = { $gte: startOfMonth };
+  }
 
-    const total = normalizeMoneyFromDb(rawTotal);
-    const balanceDue = normalizeMoneyFromDb(rawBalance);
+  // Sorting
+  const sortOption: Record<string, 1 | -1> = {};
+  if (sortBy === "invoice-asc") {
+    sortOption.invoiceNumber = 1;
+    sortOption.createdAt = -1;
+  } else if (sortBy === "invoice-desc") {
+    sortOption.invoiceNumber = -1;
+    sortOption.createdAt = -1;
+  } else {
+    sortOption.issueDate = -1;
+    sortOption.createdAt = -1;
+  }
+
+  const invoiceDocs = (await Invoice.find(mongoQuery)
+    .sort(sortOption)
+    .lean()) as InvoiceLean[];
+
+  const invoices: InvoiceListItem[] = invoiceDocs.map((inv) => {
+    const amount = getAmount(inv);
+    const statusStr = String(inv.status || "DRAFT").toUpperCase();
+
+    const balanceDue =
+      statusStr === "PAID" || statusStr === "VOID" ? 0 : amount;
 
     return {
-      _id: String(inv._id),
-      number: inv.number ?? "—",
-      status: inv.status ?? "DRAFT",
-      issueDate: inv.issueDate ? new Date(inv.issueDate) : null,
-      dueDate: inv.dueDate ? new Date(inv.dueDate) : null,
-      total,
+      _id:
+        typeof inv._id === "string"
+          ? inv._id
+          : inv._id.toString(),
+      status: statusStr,
+      issueDate: normalizeDate(inv.issueDate),
+      dueDate: normalizeDate(inv.dueDate),
+      total: amount,
       balanceDue,
+      notes: inv.notes,
+      invoiceNumber: inv.invoiceNumber,
     };
   });
 
-  const unpaidInvoices = invoices.filter((inv) => {
-    const status = inv.status;
+  const totalInvoiced = invoices.reduce((sum, inv) => {
+    return sum + (inv.status !== "VOID" ? inv.total : 0);
+  }, 0);
+
+  const totalCollected = invoices.reduce((sum, inv) => {
+    return sum + (inv.status === "PAID" ? inv.total : 0);
+  }, 0);
+
+  const totalOutstanding = invoices.reduce((sum, inv) => {
     return (
-      status === "SENT" ||
-      status === "UNPAID" ||
-      status === "PARTIAL"
+      sum +
+      (inv.status !== "PAID" && inv.status !== "VOID" ? inv.total : 0)
     );
-  });
+  }, 0);
 
-  const unpaidTotal = unpaidInvoices.reduce(
-    (sum, inv) => sum + inv.balanceDue,
-    0,
-  );
+  const estateIdStr =
+    typeof estateDoc._id === "string"
+      ? estateDoc._id
+      : estateDoc._id.toString();
 
-  const overdueCount = unpaidInvoices.filter((inv) => {
-    if (!inv.dueDate) return false;
-    const today = new Date();
-    const due = inv.dueDate;
-    return due < today;
-  }).length;
-
-const estateForLabel = estate as unknown as EstateForLabel;
-
-const estateLabel =
-  estateForLabel.displayName ||
-  estateForLabel.caseName ||
-  estateForLabel.decedentName ||
-  "Estate";
+  const estateLabel =
+    estateDoc.displayName ||
+    estateDoc.caseName ||
+    `Estate …${estateIdStr.slice(-6)}`;
 
   return (
-    <div className="space-y-6 p-4 md:p-6 lg:p-8">
-      {/* Header */}
-      <header className="space-y-2 border-b border-slate-800 pb-4">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-rose-400">
-              Estate invoices
-            </p>
-            <h1 className="text-xl font-semibold text-slate-50 md:text-2xl">
-              {estateLabel}
-            </h1>
-            <p className="text-xs text-slate-400">
-              Track billing for this estate — invoices, balances, and due dates.
-            </p>
-          </div>
-
-          <Link
-            href={`/app/estates/${estateId}/invoices/new`}
-            className="inline-flex items-center rounded-full border border-rose-500/80 bg-rose-600/20 px-3 py-1.5 text-xs font-medium text-rose-100 shadow-sm shadow-rose-900/40 hover:bg-rose-600/40"
-          >
-            + New invoice
-          </Link>
+    <div className="space-y-6">
+      <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-wide text-slate-500">
+            Estate billing
+          </p>
+          <h1 className="text-2xl font-semibold text-slate-100">
+            Invoices for {estateLabel}
+          </h1>
+          <p className="text-sm text-slate-400">
+            View all invoices associated with this estate. Filter by status,
+            timeframe, or search by notes and invoice number.
+          </p>
+          <p className="mt-1 text-xs">
+            <Link
+              href={`/app/estates/${estateIdStr}`}
+              className="text-sky-400 hover:text-sky-300"
+            >
+              ← Back to estate overview
+            </Link>
+          </p>
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-300">
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400">Unpaid total:</span>
-            <span className="font-semibold text-rose-200">
-              {formatCurrency(unpaidTotal)}
-            </span>
-          </div>
-          {overdueCount > 0 && (
-            <div className="inline-flex items-center rounded-full border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-200">
-              {overdueCount} overdue
-            </div>
-          )}
-        </div>
+        <Link
+          href={`/app/estates/${estateIdStr}/invoices/new`}
+          className="inline-flex items-center rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400"
+        >
+          New invoice
+        </Link>
       </header>
 
       {/* Filters */}
-      <section className="flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div className="flex flex-wrap gap-1">
-          {["ALL", "SENT", "UNPAID", "PARTIAL", "PAID"].map((status) => {
-            const isActive = statusFilter === status;
-            const sp = buildSearchParamsFromObject(resolvedSearchParams);
-            if (status === "ALL") {
-              sp.delete("status");
-            } else {
-              sp.set("status", status);
-            }
-            const href = `/app/estates/${estateId}/invoices?${sp.toString()}`;
+      <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+        <form className="flex flex-wrap items-end gap-3" method="GET">
+          <div className="flex-1 min-w-[160px]">
+            <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              Search
+            </label>
+            <input
+              type="text"
+              name="q"
+              defaultValue={q}
+              placeholder="Notes, invoice number…"
+              className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            />
+          </div>
 
-            return (
-              <Link
-                key={status}
-                href={href}
-                className={
-                  isActive
-                    ? "rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-900"
-                    : "rounded-full border border-slate-700 px-3 py-1 text-slate-300 hover:border-slate-500 hover:text-slate-100"
-                }
-              >
-                {status === "ALL" ? "All" : status.toLowerCase()}
-              </Link>
-            );
-          })}
+          <div className="min-w-[140px]">
+            <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              Invoice #
+            </label>
+            <input
+              type="text"
+              name="invoiceNumber"
+              defaultValue={invoiceNumberFilter}
+              placeholder="e.g. INV-2024-001"
+              className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              Status
+            </label>
+            <select
+              name="status"
+              defaultValue={statusFilter}
+              className="mt-1 rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            >
+              <option value="ALL">All</option>
+              <option value="UNPAID">
+                Unpaid (DRAFT/SENT/UNPAID/PARTIAL)
+              </option>
+              <option value="DRAFT">Draft</option>
+              <option value="SENT">Sent</option>
+              <option value="PAID">Paid</option>
+              <option value="VOID">Void</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              Timeframe
+            </label>
+            <select
+              name="timeframe"
+              defaultValue={timeframe}
+              className="mt-1 rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            >
+              <option value="all">All time</option>
+              <option value="30d">Last 30 days</option>
+              <option value="this-month">This month</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              Sort by
+            </label>
+            <select
+              name="sortBy"
+              defaultValue={sortBy}
+              className="mt-1 rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            >
+              <option value="recent">Recent (issue date)</option>
+              <option value="invoice-asc">Invoice # (A–Z)</option>
+              <option value="invoice-desc">Invoice # (Z–A)</option>
+            </select>
+          </div>
+
+          <button
+            type="submit"
+            className="inline-flex items-center rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-white"
+          >
+            Apply filters
+          </button>
+        </form>
+      </section>
+
+      {/* Summary cards */}
+      <section className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+          <p className="text-xs font-medium text-slate-400">
+            Total invoiced (filtered)
+          </p>
+          <p className="mt-2 text-xl font-semibold text-slate-50">
+            {formatCurrency(totalInvoiced)}
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Sum of all non-void invoices matching the current filters.
+          </p>
         </div>
 
-        <div className="flex flex-wrap gap-1">
-          {[
-            { label: "Issue ↓", val: "issueDateDesc" },
-            { label: "Issue ↑", val: "issueDateAsc" },
-            { label: "Due ↓", val: "dueDateDesc" },
-            { label: "Due ↑", val: "dueDateAsc" },
-          ].map((opt) => {
-            const isActive = sortOption === opt.val;
-            const sp = buildSearchParamsFromObject(resolvedSearchParams);
-            sp.set("sort", opt.val);
-            const href = `/app/estates/${estateId}/invoices?${sp.toString()}`;
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+          <p className="text-xs font-medium text-slate-400">
+            Collected (PAID)
+          </p>
+          <p className="mt-2 text-xl font-semibold text-slate-50">
+            {formatCurrency(totalCollected)}
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Invoices marked PAID in the current view.
+          </p>
+        </div>
 
-            return (
-              <Link
-                key={opt.val}
-                href={href}
-                className={
-                  isActive
-                    ? "rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-900"
-                    : "rounded-full border border-slate-700 px-3 py-1 text-slate-300 hover:border-slate-500 hover:text-slate-100"
-                }
-              >
-                {opt.label}
-              </Link>
-            );
-          })}
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+          <p className="text-xs font-medium text-slate-400">
+            Outstanding balance
+          </p>
+          <p className="mt-2 text-xl font-semibold text-slate-50">
+            {formatCurrency(totalOutstanding)}
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Total balance due on non-PAID, non-VOID invoices.
+          </p>
         </div>
       </section>
 
-      {/* Table */}
-      <section className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
+      {/* Invoices table */}
+      <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-slate-100">
+            Invoices ({invoices.length})
+          </h2>
+        </div>
+
         {invoices.length === 0 ? (
-          <p className="text-xs text-slate-400">
-            No invoices yet for this estate. When you create invoices, they’ll
-            appear here with status, due dates, and balances.
+          <p className="text-xs text-slate-500">
+            No invoices match the current filters.
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full border-separate border-spacing-y-1 text-xs">
-              <thead className="text-[11px] uppercase tracking-wide text-slate-400">
-                <tr>
-                  <th className="px-2 py-1 text-left font-medium">Invoice</th>
-                  <th className="px-2 py-1 text-left font-medium">Status</th>
-                  <th className="px-2 py-1 text-right font-medium">Total</th>
-                  <th className="px-2 py-1 text-right font-medium">
+            <table className="min-w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400">
+                  <th className="py-2 pr-4 font-medium">Invoice</th>
+                  <th className="py-2 pr-4 font-medium">Status</th>
+                  <th className="py-2 pr-4 font-medium">Issue date</th>
+                  <th className="py-2 pr-4 font-medium">Due date</th>
+                  <th className="py-2 pr-4 font-medium text-right">Total</th>
+                  <th className="py-2 pr-4 font-medium text-right">
                     Balance due
                   </th>
-                  <th className="px-2 py-1 text-right font-medium">Due</th>
                 </tr>
               </thead>
               <tbody>
-                {invoices.map((inv) => (
-                  <tr
-                    key={inv._id}
-                    className="rounded-xl bg-slate-900/70 align-middle text-slate-100"
-                  >
-                    <td className="px-2 py-1.5">
-                      <Link
-                        href={`/app/estates/${estateId}/invoices/${inv._id}`}
-                        className="text-[11px] font-medium text-slate-50 hover:text-rose-200"
-                      >
-                        #{inv.number}
-                      </Link>
-                      <div className="text-[10px] text-slate-400">
-                        Issued {formatShortDate(inv.issueDate)}
-                      </div>
-                    </td>
-                    <td className="px-2 py-1.5 text-[11px] text-slate-300">
-                      {inv.status}
-                    </td>
-                    <td className="px-2 py-1.5 text-right text-[11px]">
-                      {formatCurrency(inv.total)}
-                    </td>
-                    <td className="px-2 py-1.5 text-right text-[11px] text-rose-200">
-                      {formatCurrency(inv.balanceDue)}
-                    </td>
-                    <td className="px-2 py-1.5 text-right text-[11px] text-slate-300">
-                      {formatShortDate(inv.dueDate)}
-                    </td>
-                  </tr>
-                ))}
+                {invoices.map((inv) => {
+                  const label =
+                    inv.invoiceNumber ??
+                    (inv._id ? `…${inv._id.slice(-6)}` : inv._id);
+
+                  const detailLink = `/app/estates/${estateIdStr}/invoices/${inv._id}`;
+
+                  return (
+                    <tr
+                      key={inv._id}
+                      className="border-b border-slate-900 last:border-0"
+                    >
+                      <td className="py-2 pr-4">
+                        <Link
+                          href={detailLink}
+                          className="text-xs text-sky-400 hover:text-sky-300"
+                        >
+                          {label}
+                        </Link>
+                        {inv.notes && (
+                          <div className="mt-0.5 max-w-xs truncate text-[11px] text-slate-500">
+                            {inv.notes}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-2 pr-4">
+                        <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-300">
+                          {inv.status}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-4 text-slate-300">
+                        {formatDate(inv.issueDate)}
+                      </td>
+                      <td className="py-2 pr-4 text-slate-300">
+                        {formatDate(inv.dueDate)}
+                      </td>
+                      <td className="py-2 pr-4 text-right text-slate-100">
+                        {formatCurrency(inv.total)}
+                      </td>
+                      <td className="py-2 pr-4 text-right text-slate-100">
+                        {formatCurrency(inv.balanceDue)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

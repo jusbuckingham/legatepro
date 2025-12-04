@@ -5,22 +5,7 @@ import { auth } from "@/lib/auth";
 import { logEstateEvent } from "@/lib/estateEvents";
 import { WorkspaceSettings } from "@/models/WorkspaceSettings";
 
-// Narrow type for the lean()ed invoice objects we return from GET
-type InvoiceListRow = {
-  _id: unknown;
-  estateId: unknown;
-  status?: string;
-  issueDate?: Date;
-  dueDate?: Date | null;
-  totalAmount?: number;
-  subtotal?: number;
-  currency?: string;
-  invoiceNumber?: string | null;
-  createdAt?: Date;
-};
-
-// Payload shape we accept for JSON-based invoice creation
-export type CreateInvoicePayload = {
+type CreateInvoicePayload = {
   estateId: string;
   issueDate?: string | Date;
   dueDate?: string | Date;
@@ -36,9 +21,21 @@ export type CreateInvoicePayload = {
     // New schema/editor fields
     label?: string;
     type?: string;
-    amount?: number; // dollars or cents depending on caller
-    rate?: number; // dollars or cents depending on caller
+    amount?: number; // may be dollars or cents depending on caller
+    rate?: number; // may be dollars or cents depending on caller
   }[];
+};
+
+type InvoiceListRow = {
+  id: string;
+  estateId: string;
+  status: string;
+  issueDate: Date | undefined;
+  dueDate: Date | null;
+  totalAmount: number;
+  currency: string;
+  invoiceNumber?: string | null;
+  createdAt: Date | undefined;
 };
 
 export async function GET(req: NextRequest) {
@@ -77,23 +74,19 @@ export async function GET(req: NextRequest) {
     .lean()
     .exec();
 
-  return NextResponse.json(
-    invoices.map((inv) => {
-      const row = inv as InvoiceListRow;
+  const rows: InvoiceListRow[] = invoices.map((inv) => ({
+    id: String(inv._id),
+    estateId: String(inv.estateId),
+    status: inv.status ?? "DRAFT",
+    issueDate: inv.issueDate,
+    dueDate: inv.dueDate ?? null,
+    totalAmount: inv.totalAmount ?? inv.subtotal ?? 0,
+    currency: inv.currency ?? "USD",
+    invoiceNumber: inv.invoiceNumber ?? null,
+    createdAt: inv.createdAt,
+  }));
 
-      return {
-        id: String(row._id),
-        estateId: String(row.estateId),
-        status: row.status ?? "DRAFT",
-        issueDate: row.issueDate,
-        dueDate: row.dueDate ?? null,
-        totalAmount: row.totalAmount ?? row.subtotal ?? 0,
-        currency: row.currency ?? "USD",
-        invoiceNumber: row.invoiceNumber ?? null,
-        createdAt: row.createdAt,
-      };
-    }),
-  );
+  return NextResponse.json(rows);
 }
 
 export async function POST(req: NextRequest) {
@@ -314,6 +307,35 @@ export async function POST(req: NextRequest) {
     safeAmount = amountFromFormCents;
   }
 
+  // 🔢 Auto-generate a human-friendly invoice number per owner.
+  // Best-effort, non-transactional sequence suitable for MVP.
+  let invoiceNumber: string | undefined;
+  try {
+    const lastInvoiceForOwner = await Invoice.findOne({
+      ownerId: session.user.id,
+    })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+
+    let nextSeq = 1;
+    if (lastInvoiceForOwner?.invoiceNumber) {
+      const match = lastInvoiceForOwner.invoiceNumber.match(/(\d+)$/);
+      if (match) {
+        const parsed = Number.parseInt(match[1], 10);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          nextSeq = parsed + 1;
+        }
+      }
+    }
+
+    invoiceNumber = `INV-${nextSeq.toString().padStart(6, "0")}`;
+  } catch {
+    // Fallback: timestamp-based suffix if something goes wrong.
+    const fallback = Date.now().toString().slice(-6);
+    invoiceNumber = `INV-${fallback}`;
+  }
+
   const invoiceDoc = await Invoice.create({
     ownerId: session.user.id,
     estateId,
@@ -325,9 +347,10 @@ export async function POST(req: NextRequest) {
     lineItems: Array.isArray(lineItems) ? lineItems : [],
     subtotal: safeAmount,
     totalAmount: safeAmount,
+    invoiceNumber,
   });
 
-  // Log estate event for the new invoice (best-effort, non-blocking)
+  // Log estate event for the new invoice
   try {
     await logEstateEvent({
       estateId,
@@ -339,32 +362,28 @@ export async function POST(req: NextRequest) {
     // Don't block invoice creation if event logging fails
   }
 
-  // If the client explicitly wants JSON (e.g., editor or API consumer), return JSON.
+  // Redirect back to the app UI after create (for form submits) while preserving JSON for XHR/SPA.
   const acceptHeader = req.headers.get("accept") ?? "";
-  const wantsJson = acceptHeader.includes("application/json");
+  const isHtmlRequest = acceptHeader.includes("text/html");
 
-  if (contentType.includes("application/json") || wantsJson) {
-    return NextResponse.json(
-      {
-        id: String(invoiceDoc._id),
-        estateId: String(invoiceDoc.estateId),
-        status: invoiceDoc.status,
-        issueDate: invoiceDoc.issueDate,
-        dueDate: invoiceDoc.dueDate ?? null,
-        totalAmount: invoiceDoc.totalAmount ?? safeAmount,
-        currency: invoiceDoc.currency ?? currency,
-      },
-      { status: 201 },
-    );
+  if (isHtmlRequest) {
+    const redirectUrl = `/app/estates/${estateId}/invoices/${invoiceDoc._id}`;
+    return NextResponse.redirect(new URL(redirectUrl, req.url), {
+      status: 303,
+    });
   }
 
-  // Otherwise, assume a browser form post and redirect back into the app UI.
-  const detailUrl = new URL(
-    `/app/estates/${encodeURIComponent(
-      estateId,
-    )}/invoices/${encodeURIComponent(String(invoiceDoc._id))}`,
-    req.url,
+  return NextResponse.json(
+    {
+      id: String(invoiceDoc._id),
+      estateId: String(invoiceDoc.estateId),
+      status: invoiceDoc.status,
+      issueDate: invoiceDoc.issueDate,
+      dueDate: invoiceDoc.dueDate ?? null,
+      totalAmount: invoiceDoc.totalAmount ?? safeAmount,
+      currency: invoiceDoc.currency ?? currency,
+      invoiceNumber: invoiceDoc.invoiceNumber ?? invoiceNumber ?? null,
+    },
+    { status: 201 },
   );
-
-  return NextResponse.redirect(detailUrl, { status: 303 });
 }
