@@ -377,12 +377,20 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
         >
           ← Back to invoices
         </Link>
-        <Link
-          href={`/app/estates/${estateId}/invoices/${invoiceId}/print`}
-          className="rounded-md border border-slate-700 px-3 py-1 text-xs font-medium text-slate-100 hover:border-sky-500 hover:text-sky-200"
-        >
-          Print / PDF view
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/app/estates/${estateId}/invoices/${invoiceId}/edit`}
+            className="rounded-md border border-slate-700 px-3 py-1 text-xs font-medium text-slate-100 hover:border-sky-500 hover:text-sky-200"
+          >
+            Edit invoice
+          </Link>
+          <Link
+            href={`/app/estates/${estateId}/invoices/${invoiceId}/print`}
+            className="rounded-md border border-slate-700 px-3 py-1 text-xs font-medium text-slate-100 hover:border-sky-500 hover:text-sky-200"
+          >
+            Print / PDF view
+          </Link>
+        </div>
       </footer>
     </div>
   );

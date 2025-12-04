@@ -5,6 +5,20 @@ import { auth } from "@/lib/auth";
 import { logEstateEvent } from "@/lib/estateEvents";
 import { WorkspaceSettings } from "@/models/WorkspaceSettings";
 
+// Narrow type for the lean()ed invoice objects we return from GET
+type InvoiceListRow = {
+  _id: unknown;
+  estateId: unknown;
+  status?: string;
+  issueDate?: Date;
+  dueDate?: Date | null;
+  totalAmount?: number;
+  subtotal?: number;
+  currency?: string;
+  invoiceNumber?: string | null;
+  createdAt?: Date;
+};
+
 // Payload shape we accept for JSON-based invoice creation
 export type CreateInvoicePayload = {
   estateId: string;
@@ -64,17 +78,21 @@ export async function GET(req: NextRequest) {
     .exec();
 
   return NextResponse.json(
-    invoices.map((inv) => ({
-      id: String(inv._id),
-      estateId: String(inv.estateId),
-      status: inv.status,
-      issueDate: inv.issueDate,
-      dueDate: inv.dueDate ?? null,
-      totalAmount: inv.totalAmount ?? inv.subtotal ?? 0,
-      currency: inv.currency ?? "USD",
-      invoiceNumber: inv.invoiceNumber ?? null,
-      createdAt: inv.createdAt,
-    })),
+    invoices.map((inv) => {
+      const row = inv as InvoiceListRow;
+
+      return {
+        id: String(row._id),
+        estateId: String(row.estateId),
+        status: row.status ?? "DRAFT",
+        issueDate: row.issueDate,
+        dueDate: row.dueDate ?? null,
+        totalAmount: row.totalAmount ?? row.subtotal ?? 0,
+        currency: row.currency ?? "USD",
+        invoiceNumber: row.invoiceNumber ?? null,
+        createdAt: row.createdAt,
+      };
+    }),
   );
 }
 
@@ -342,7 +360,9 @@ export async function POST(req: NextRequest) {
 
   // Otherwise, assume a browser form post and redirect back into the app UI.
   const detailUrl = new URL(
-    `/app/estates/${encodeURIComponent(estateId)}/invoices/${encodeURIComponent(String(invoiceDoc._id))}`,
+    `/app/estates/${encodeURIComponent(
+      estateId,
+    )}/invoices/${encodeURIComponent(String(invoiceDoc._id))}`,
     req.url,
   );
 

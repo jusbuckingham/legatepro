@@ -1,44 +1,59 @@
-import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
+import { auth } from "@/lib/auth";
 
-type InvoiceStatus = "DRAFT" | "SENT" | "UNPAID" | "PARTIAL" | "PAID" | "VOID";
+type RouteParams = {
+  params: {
+    invoiceId: string;
+  };
+};
 
-type InvoiceUpdateLineItem = {
-  type: "TIME" | "EXPENSE" | "ADJUSTMENT";
+type IncomingLineItem = {
+  id?: string;
+  label?: string;
+  type?: string;
+  description?: string;
+  quantity?: number | string | null;
+  rate?: number | string | null;
+  amount?: number | string | null;
+};
+
+type NormalizedLineItem = {
   label: string;
+  type: string;
+  description: string;
   quantity: number;
+  rate: number;
+  amount: number;
   rateCents: number;
   amountCents: number;
 };
 
-type InvoiceUpdateBody = {
-  estateId?: string;
-  status?: string;
-  issueDate?: string;
-  dueDate?: string;
-  notes?: string;
-  lineItems?: unknown;
-};
+const allowedStatuses = [
+  "DRAFT",
+  "SENT",
+  "UNPAID",
+  "PARTIAL",
+  "PAID",
+  "VOID",
+] as const;
 
-const allowedLineItemTypes = ["TIME", "EXPENSE", "ADJUSTMENT"] as const;
+type InvoiceStatus = (typeof allowedStatuses)[number];
 
-function toNumber(value: unknown): number {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : 0;
+function coerceStatus(value: unknown): InvoiceStatus | undefined {
+  if (typeof value !== "string") return undefined;
+  if ((allowedStatuses as readonly string[]).includes(value)) {
+    return value as InvoiceStatus;
   }
-  return 0;
+  return undefined;
 }
 
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: Promise<{ invoiceId: string }> },
-) {
-  const { invoiceId } = await params;
-
+/**
+ * GET: return a single invoice (used by edit UI / debugging)
+ */
+export async function GET(_req: NextRequest, { params }: RouteParams) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -46,125 +61,215 @@ export async function PUT(
 
   await connectToDatabase();
 
-  let body: InvoiceUpdateBody | null = null;
-  try {
-    body = (await req.json()) as InvoiceUpdateBody;
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
-
-  if (!body || typeof body !== "object") {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-  }
-
-  const { estateId, status, issueDate, dueDate, notes, lineItems } = body;
-
-  if (!estateId || typeof estateId !== "string") {
-    return NextResponse.json(
-      { error: "Missing or invalid estateId" },
-      { status: 400 },
-    );
-  }
-
-  const invoiceDoc = await Invoice.findOne({
-    _id: invoiceId,
+  const invoice = await Invoice.findOne({
+    _id: params.invoiceId,
     ownerId: session.user.id,
-    estateId,
-  });
+  })
+    .lean()
+    .exec();
 
-  if (!invoiceDoc) {
-    return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+  if (!invoice) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const parsedIssueDate =
-    typeof issueDate === "string" && issueDate
-      ? new Date(issueDate)
-      : invoiceDoc.issueDate ?? new Date();
+  return NextResponse.json({
+    id: String(invoice._id),
+    estateId: String(invoice.estateId),
+    status: invoice.status,
+    issueDate: invoice.issueDate,
+    dueDate: invoice.dueDate ?? null,
+    notes: invoice.notes ?? "",
+    currency: invoice.currency ?? "USD",
+    subtotal: invoice.subtotal ?? 0,
+    totalAmount: invoice.totalAmount ?? 0,
+    lineItems: invoice.lineItems ?? [],
+  });
+}
 
-  const parsedDueDate =
-    typeof dueDate === "string" && dueDate
-      ? new Date(dueDate)
-      : invoiceDoc.dueDate ?? parsedIssueDate;
+/**
+ * PUT: update invoice, with full line-item save logic.
+ * Critical: we normalize each line item so that label, rate, and amount
+ * are present if the row is not blank, and drop "empty" rows.
+ */
+export async function PUT(req: NextRequest, { params }: RouteParams) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-  const statusUpper = (
-    typeof status === "string" && status
-      ? status.toUpperCase()
-      : invoiceDoc.status || "DRAFT"
-  ) as InvoiceStatus;
+  await connectToDatabase();
 
-  let normalizedLineItems: InvoiceUpdateLineItem[];
+  const body = (await req.json()) as {
+    status?: string;
+    issueDate?: string | Date | null;
+    dueDate?: string | Date | null;
+    notes?: string | null;
+    currency?: string | null;
+    lineItems?: IncomingLineItem[];
+  };
 
-  if (Array.isArray(lineItems) && lineItems.length > 0) {
-    normalizedLineItems = lineItems.map((raw): InvoiceUpdateLineItem => {
-      const obj = raw as Record<string, unknown>;
+  const { status, issueDate, dueDate, notes, currency, lineItems } = body;
 
-      const typeRaw =
-        typeof obj.type === "string" ? obj.type.toUpperCase() : "ADJUSTMENT";
+  const nextStatus = coerceStatus(status);
 
-      const type = (allowedLineItemTypes.includes(
-        typeRaw as (typeof allowedLineItemTypes)[number],
-      )
-        ? typeRaw
-        : "ADJUSTMENT") as InvoiceUpdateLineItem["type"];
+  const itemsArray = Array.isArray(lineItems) ? lineItems : [];
 
-      const label =
-        typeof obj.label === "string" ? obj.label.trim() : "Line item";
+  const normalizedItems: NormalizedLineItem[] = itemsArray
+    .map((raw: IncomingLineItem): NormalizedLineItem => {
+      const label = (raw.label ?? "").toString().trim();
+      const type = ((raw.type ?? "FEE").toString().trim() || "FEE") as string;
+      const description =
+        raw.description != null ? raw.description.toString() : "";
 
-      const quantity = toNumber(obj.quantity);
+      const quantityNum =
+        raw.quantity == null || raw.quantity === ""
+          ? 1
+          : Number(raw.quantity);
 
-      // We accept either rate (dollars) or rateCents (cents) from the client.
-      const rawRate =
-        "rateCents" in obj && typeof (obj as Record<string, unknown>).rateCents !== "undefined"
-          ? toNumber((obj as Record<string, unknown>).rateCents)
-          : toNumber(obj.rate);
-
-      // Normalize to cents: if the value is large, treat as already cents,
-      // otherwise treat as dollars and multiply by 100.
-      const rateCents =
-        rawRate > 10_000 ? Math.round(rawRate) : Math.round(rawRate * 100);
-
-      // We also accept explicit amount/amountCents from the client, otherwise derive from quantity * rateCents.
-      const rawAmount =
-        "amountCents" in obj && typeof (obj as Record<string, unknown>).amountCents !== "undefined"
-          ? toNumber((obj as Record<string, unknown>).amountCents)
-          : toNumber(
-              "amount" in obj ? (obj as Record<string, unknown>).amount : undefined,
+      const rateNum =
+        raw.rate == null || raw.rate === ""
+          ? 0
+          : Number(
+              typeof raw.rate === "string"
+                ? raw.rate.replace(/[,$]/g, "")
+                : raw.rate,
             );
 
-      const amountCents =
-        rawAmount > 0
-          ? (rawAmount > 10_000 ? Math.round(rawAmount) : Math.round(rawAmount * 100))
-          : quantity * rateCents;
+      const amountNum =
+        raw.amount == null || raw.amount === ""
+          ? 0
+          : Number(
+              typeof raw.amount === "string"
+                ? raw.amount.replace(/[,$]/g, "")
+                : raw.amount,
+            );
+
+      // Compute a sensible amount if not explicitly provided
+      const finalRate = Number.isFinite(rateNum) && rateNum > 0 ? rateNum : 0;
+      const finalQuantity =
+        Number.isFinite(quantityNum) && quantityNum > 0 ? quantityNum : 0;
+
+      let finalAmount = 0;
+      if (Number.isFinite(amountNum) && amountNum > 0) {
+        finalAmount = amountNum;
+      } else if (finalRate > 0 && finalQuantity > 0) {
+        finalAmount = finalRate * finalQuantity;
+      }
 
       return {
-        type,
         label,
-        quantity,
-        rateCents,
-        amountCents,
+        type,
+        description,
+        quantity: finalQuantity || 0,
+        rate: finalRate || 0,
+        amount: finalAmount || 0,
+        rateCents:
+          finalRate > 0
+            ? Math.round((finalRate as number) * 100)
+            : 0,
+        amountCents:
+          finalAmount > 0
+            ? Math.round((finalAmount as number) * 100)
+            : 0,
       };
+    })
+    // Drop rows that are effectively empty to avoid validation errors
+    .filter((item) => {
+      const hasLabel = item.label && item.label.trim().length > 0;
+      const hasAmount = typeof item.amount === "number" && item.amount > 0;
+      const hasRate = typeof item.rate === "number" && item.rate > 0;
+      return hasLabel || hasAmount || hasRate;
     });
-  } else {
-    normalizedLineItems = (invoiceDoc.lineItems ?? []) as unknown as InvoiceUpdateLineItem[];
-  }
 
-  const subtotal = normalizedLineItems.reduce(
-    (sum, li) => sum + (li.amountCents ?? 0),
+  // Recompute subtotal/total in cents from normalized line items
+  const subtotalCents = normalizedItems.reduce(
+    (sum: number, item: { amountCents?: number; amount?: number }) => {
+      if (typeof item.amountCents === "number" && item.amountCents > 0) {
+        return sum + item.amountCents;
+      }
+      if (typeof item.amount === "number" && item.amount > 0) {
+        return sum + Math.round(item.amount * 100);
+      }
+      return sum;
+    },
     0,
   );
 
-  invoiceDoc.set({
-    status: statusUpper,
-    issueDate: parsedIssueDate,
-    dueDate: parsedDueDate,
-    notes:
-      typeof notes === "string" ? notes.trim() : (invoiceDoc.notes as string),
-    lineItems: normalizedLineItems,
-    subtotal,
-    totalAmount: subtotal,
-  });
+  const updateDoc: Record<string, unknown> = {};
 
-  await invoiceDoc.save();
+  if (nextStatus) updateDoc.status = nextStatus;
+  if (issueDate != null && issueDate !== "") updateDoc.issueDate = issueDate;
+  if (dueDate != null && dueDate !== "") updateDoc.dueDate = dueDate;
 
-  return NextResponse.json({ ok: true });
+  if (typeof notes === "string") {
+    updateDoc.notes = notes.trim();
+  }
+
+  if (typeof currency === "string" && currency.trim()) {
+    updateDoc.currency = currency.trim().toUpperCase();
+  }
+
+  updateDoc.lineItems = normalizedItems;
+  updateDoc.subtotal = subtotalCents;
+  updateDoc.totalAmount = subtotalCents;
+
+  try {
+    const updated = await Invoice.findOneAndUpdate(
+      {
+        _id: params.invoiceId,
+        ownerId: session.user.id,
+      },
+      { $set: updateDoc },
+      { new: true, runValidators: true },
+    )
+      .lean()
+      .exec();
+
+    if (!updated) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // On success, redirect back to the invoice detail page
+    const estateId = String(updated.estateId);
+    const invoiceId = String(updated._id);
+
+    return NextResponse.redirect(
+      new URL(`/app/estates/${estateId}/invoices/${invoiceId}`, req.url),
+      303,
+    );
+  } catch (err) {
+    console.error("Error updating invoice", err);
+    return NextResponse.json(
+      { error: "Failed to update invoice" },
+      { status: 500 },
+    );
+  }
+}
+
+/**
+ * DELETE: delete an invoice
+ */
+export async function DELETE(_req: NextRequest, { params }: RouteParams) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  await connectToDatabase();
+
+  const deleted = await Invoice.findOneAndDelete({
+    _id: params.invoiceId,
+    ownerId: session.user.id,
+  })
+    .lean()
+    .exec();
+
+  if (!deleted) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  return NextResponse.json(
+    { success: true, id: String(deleted._id) },
+    { status: 200 },
+  );
 }
