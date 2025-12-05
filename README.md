@@ -20,11 +20,11 @@ With structured workflows, automation, and AI‑assisted guidance, LegatePro aim
 ### 📂 Estate Management  
 - Create & manage multiple estates  
 - Decedent details, court info, PR compensation structure  
-- Organized dashboard with tasks, expenses, rent, documents, and more  
+- Organized dashboard with tasks, expenses, rent, documents, utilities, contacts, and billing  
 
 ### ✅ Task Tracking  
 - Full CRUD task management  
-- Status, priority, dates, notes  
+- Status, priority, due dates, and notes  
 - Filterable task views  
 
 ### 💵 Expense Tracking  
@@ -39,8 +39,8 @@ With structured workflows, automation, and AI‑assisted guidance, LegatePro aim
 
 ### 🏠 Property & Rent Management  
 - Track rental properties inside an estate  
-- Tenant names, rent history, periods, methods, reference numbers  
-- Property‑level ledgers + estate‑wide summaries  
+- Tenant names, rent history, payment periods, reference numbers  
+- Property‑level ledgers + estate‑wide rent summaries  
 
 ### 🔌 Utilities Tracker  
 - Manage all utility accounts tied to each property  
@@ -52,12 +52,21 @@ With structured workflows, automation, and AI‑assisted guidance, LegatePro aim
 - Notes, phone numbers, bar IDs, claim IDs, retainer fees  
 
 ### ⏱️ PR Time Tracking  
-- Court‑friendly timecard for Personal Representative hours  
-- Auto‑calculates totals  
-- Export‑ready for court filings  
+- Court‑friendly timecard system for Personal Representative hours  
+- Edit, delete, and manage entries  
+- Auto‑calculates totals + unbilled time  
+- Integrates with invoice creation  
+
+### 🧾 Invoice Management  
+- Create invoices per estate  
+- Auto‑generated invoice numbers  
+- Workspace billing defaults (currency, terms, hourly rate)  
+- Edit, print, and manage invoice status (Draft, Sent, Paid, etc.)  
+- Line item editor with rate/amount normalization  
+- Estate timeline events log invoice creation/updates  
 
 ### 🤖 AI‑Assisted Probate (Coming Soon)  
-- Automated document generation (receipts, letters, notices)  
+- Automated document drafting (receipts, letters, notices)  
 - Smart suggestions based on probate stage  
 - Auto‑classification of uploaded documents  
 
@@ -194,14 +203,14 @@ Brand direction aligns with trust, clarity, and professional legal tech standard
 
 ## 📌 Roadmap
 
-- [ ] Full CRUD tasks  
-- [x] Expense module (initial version)  
+- [x] Full CRUD tasks  
+- [x] Expense module  
 - [ ] Enhanced document index  
-- [x] Property management (core features)  
+- [x] Property management  
 - [ ] Utility workflows  
 - [x] Contacts system  
-- [ ] PR timecard exports  
-- [x] Authentication  
+- [x] PR time tracking + unbilled totals  
+- [x] Invoice creation, editing, printing, numbering  
 - [ ] Stripe billing integration  
 - [ ] PDF generation  
 - [ ] AI assistants & automation  

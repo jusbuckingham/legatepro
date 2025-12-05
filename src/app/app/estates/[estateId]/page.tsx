@@ -6,10 +6,12 @@ import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 import { Invoice } from "@/models/Invoice";
 import { Contact } from "@/models/Contact";
+import { TimeEntry } from "@/models/TimeEntry";
 import {
   EstateEvent,
   type EstateEventType,
 } from "@/models/EstateEvent";
+import { WorkspaceSettings } from "@/models/WorkspaceSettings";
 import { EstateContactsPanel } from "@/components/estate/EstateContactsPanel";
 import { EstateTimeline } from "@/components/estate/EstateTimeline";
 
@@ -50,6 +52,20 @@ type ContactLean = {
   phone?: string;
   role?: string;
   estates?: Array<string | { toString: () => string }>;
+};
+
+type TimeEntryLean = {
+  _id: string | { toString: () => string };
+  estateId: string | { toString: () => string };
+  ownerId: string | { toString: () => string };
+  durationMinutes?: number;
+  minutes?: number;
+  billableMinutes?: number;
+  createdAt?: Date;
+};
+
+type WorkspaceSettingsLean = {
+  defaultHourlyRateCents?: number;
 };
 
 type EstateEventLean = {
@@ -98,6 +114,12 @@ export default async function EstateDetailPage({ params }: PageProps) {
   if (!estate) {
     notFound();
   }
+
+  const settings = (await WorkspaceSettings.findOne({
+    ownerId: session.user.id,
+  })
+    .lean()
+    .catch(() => null as unknown as null)) as WorkspaceSettingsLean | null;
 
   const estateIdStr =
     typeof estate._id === "string" ? estate._id : estate._id.toString();
@@ -174,6 +196,55 @@ export default async function EstateDetailPage({ params }: PageProps) {
       overdueCount: 0,
     },
   );
+
+  // --- Time tracking totals for this estate ---
+  const timeEntriesRaw = (await TimeEntry.find({
+    ownerId: session.user.id,
+    estateId: estateIdStr,
+  })
+    .select("_id estateId ownerId durationMinutes minutes billableMinutes createdAt")
+    .lean()) as TimeEntryLean[];
+
+  const {
+    totalMinutes,
+    billableMinutes,
+  } = timeEntriesRaw.reduce(
+    (acc, entry) => {
+      const minutes =
+        typeof entry.durationMinutes === "number"
+          ? entry.durationMinutes
+          : typeof entry.minutes === "number"
+          ? entry.minutes
+          : 0;
+
+      const billable =
+        typeof entry.billableMinutes === "number"
+          ? entry.billableMinutes
+          : minutes;
+
+      acc.totalMinutes += minutes;
+      acc.billableMinutes += billable;
+
+      return acc;
+    },
+    {
+      totalMinutes: 0,
+      billableMinutes: 0,
+    },
+  );
+
+  const totalHours = totalMinutes / 60;
+  const billableHours = billableMinutes / 60;
+
+  const defaultHourlyRateCents =
+    typeof settings?.defaultHourlyRateCents === "number"
+      ? settings.defaultHourlyRateCents
+      : 0;
+
+  const unbilledTimeValue =
+    defaultHourlyRateCents > 0
+      ? (billableMinutes / 60) * (defaultHourlyRateCents / 100)
+      : 0;
 
   const contactsLinkedRaw = (await Contact.find({
     ownerId: session.user.id,
@@ -319,7 +390,7 @@ export default async function EstateDetailPage({ params }: PageProps) {
       </header>
 
       {/* Billing snapshot */}
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-4 md:grid-cols-4">
         <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-2">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
             Billed
@@ -329,6 +400,9 @@ export default async function EstateDetailPage({ params }: PageProps) {
           </p>
           <p className="text-[11px] text-slate-500">
             All non-void invoices for this estate.
+            {totalMinutes > 0 && (
+              <> · {totalHours.toFixed(1)}h tracked ({billableHours.toFixed(1)}h billable)</>
+            )}
           </p>
         </div>
 
@@ -356,6 +430,24 @@ export default async function EstateDetailPage({ params }: PageProps) {
               ? `${overdueCount} invoice(s) overdue.`
               : "No overdue invoices right now."}
           </p>
+        </div>
+
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            Unbilled time value
+          </p>
+          <p className="text-xl font-semibold text-slate-50">
+            {formatMoney(unbilledTimeValue)}
+          </p>
+          {defaultHourlyRateCents > 0 ? (
+            <p className="text-[11px] text-slate-500">
+              Estimated value of {billableHours.toFixed(1)}h billable at your workspace rate.
+            </p>
+          ) : (
+            <p className="text-[11px] text-slate-500">
+              Set a default hourly rate in workspace settings to see estimated unbilled time value.
+            </p>
+          )}
         </div>
       </section>
 
