@@ -13,6 +13,8 @@ export type InvoiceTermsCode =
   | "NET_45"
   | "NET_60";
 
+export type InvoiceNumberResetPolicy = "NEVER" | "YEARLY";
+
 export interface WorkspaceSettingsAttrs {
   ownerId: string;
 
@@ -35,6 +37,17 @@ export interface WorkspaceSettingsAttrs {
   invoiceNumberPrefix?: string;
   invoiceNumberSequence?: number;
   invoiceNumberFormat?: string;
+  /**
+   * How the invoice number sequence should reset over time.
+   * - NEVER: single global sequence for the workspace
+   * - YEARLY: sequence resets each calendar year
+   */
+  invoiceNumberResetPolicy?: InvoiceNumberResetPolicy;
+  /**
+   * Minimum number of digits to left-pad the numeric portion of the invoice number.
+   * e.g. padding 4 => INV-0001, INV-0002, etc.
+   */
+  invoiceNumberPadding?: number;
 
   // Billing / subscription plumbing (kept flexible)
   stripeCustomerId?: string;
@@ -97,6 +110,15 @@ const WorkspaceSettingsSchema = new Schema<
     invoiceNumberFormat: {
       type: String,
       default: "{PREFIX}{SEQ}",
+    },
+    invoiceNumberResetPolicy: {
+      type: String,
+      enum: ["NEVER", "YEARLY"],
+      default: "NEVER",
+    },
+    invoiceNumberPadding: {
+      type: Number,
+      default: 4,
     },
 
     // Billing / subscription plumbing

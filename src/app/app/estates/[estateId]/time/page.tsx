@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useState, FormEvent, use as usePromise } from "react";
+import Link from "next/link";
 
 interface TimeEntry {
   _id?: string;
@@ -18,6 +19,17 @@ interface PageProps {
   params: Promise<{
     estateId: string;
   }>;
+}
+
+
+function formatDisplayDate(isoLike: string): string {
+  if (!isoLike) return "";
+  const d = new Date(isoLike);
+  if (Number.isNaN(d.getTime())) {
+    // Fall back to the raw string if it isn't a valid date
+    return isoLike;
+  }
+  return d.toLocaleDateString();
 }
 
 function isValidObjectId(id: unknown): id is string {
@@ -500,38 +512,36 @@ export default function EstateTimecardPage({ params }: PageProps) {
                       key={hasValidId ? entry._id : `${entry.date}-${index}`}
                       className="border-b border-slate-800/60 last:border-b-0"
                     >
-                    <td className="py-2 pr-4 align-top text-slate-100">
-                      {new Date(entry.date).toLocaleDateString()}
-                    </td>
-                    <td className="py-2 pr-4 align-top text-slate-100">
-                      {entry.description}
-                    </td>
-                    <td className="py-2 pr-4 align-top text-right text-slate-100">
-                      {Number.isFinite(entry.hours)
-                        ? entry.hours.toFixed(2)
-                        : "0.00"}
-                    </td>
-                    <td className="py-2 pr-4 align-top text-slate-300">
-                      {entry.notes || "—"}
-                    </td>
-                    <td className="py-2 pr-4 align-top text-right text-slate-300">
-                      {entry.isBillable ? "Yes" : "No"}
-                    </td>
-                    <td className="py-2 pl-2 pr-0 align-top text-right">
-                      {hasValidId ? (
-                        <a
-                          href={`/app/estates/${estateId}/time/${entry._id}`}
-                          className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800"
-                        >
-                          View / edit
-                        </a>
-                      ) : (
-                        <span className="text-[11px] text-slate-500">
-                          No ID available
-                        </span>
-                      )}
-                    </td>
-                  </tr>
+                      <td className="py-2 pr-4 align-top text-slate-100">
+                        {formatDisplayDate(entry.date)}
+                      </td>
+                      <td className="py-2 pr-4 align-top text-slate-100">
+                        {entry.description}
+                      </td>
+                      <td className="py-2 pr-4 align-top text-right text-slate-100">
+                        {Number.isFinite(entry.hours) ? entry.hours.toFixed(2) : "0.00"}
+                      </td>
+                      <td className="py-2 pr-4 align-top text-slate-300">
+                        {entry.notes || "—"}
+                      </td>
+                      <td className="py-2 pr-4 align-top text-right text-slate-300">
+                        {entry.isBillable ? "Yes" : "No"}
+                      </td>
+                      <td className="py-2 pl-2 pr-0 align-top text-right">
+                        {hasValidId ? (
+                          <Link
+                            href={`/app/estates/${estateId}/time/${entry._id}`}
+                            className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800"
+                          >
+                            View / edit
+                          </Link>
+                        ) : (
+                          <span className="text-[11px] text-slate-500">
+                            No ID available
+                          </span>
+                        )}
+                      </td>
+                    </tr>
                   );
                 })}
                 <tr className="border-t border-slate-700 font-semibold text-slate-100">

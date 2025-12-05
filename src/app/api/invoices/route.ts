@@ -64,10 +64,20 @@ export async function GET(req: NextRequest) {
   }
 
   const sortOption: Record<string, 1 | -1> = {};
-  if (sort === "issueDateAsc") sortOption.issueDate = 1;
-  else if (sort === "dueDateAsc") sortOption.dueDate = 1;
-  else if (sort === "dueDateDesc") sortOption.dueDate = -1;
-  else sortOption.issueDate = -1;
+  if (sort === "issueDateAsc") {
+    sortOption.issueDate = 1;
+  } else if (sort === "dueDateAsc") {
+    sortOption.dueDate = 1;
+  } else if (sort === "dueDateDesc") {
+    sortOption.dueDate = -1;
+  } else if (sort === "invoiceNumberAsc") {
+    sortOption.invoiceNumber = 1;
+  } else if (sort === "invoiceNumberDesc") {
+    sortOption.invoiceNumber = -1;
+  } else {
+    // Default sort: newest first by issue date
+    sortOption.issueDate = -1;
+  }
 
   const invoices = await Invoice.find(query)
     .sort(sortOption)

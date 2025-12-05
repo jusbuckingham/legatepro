@@ -5,9 +5,9 @@ import { Invoice } from "@/models/Invoice";
 import { auth } from "@/lib/auth";
 
 type RouteParams = {
-  params: {
+  params: Promise<{
     invoiceId: string;
-  };
+  }>;
 };
 
 type IncomingLineItem = {
@@ -34,8 +34,6 @@ type NormalizedLineItem = {
 const allowedStatuses = [
   "DRAFT",
   "SENT",
-  "UNPAID",
-  "PARTIAL",
   "PAID",
   "VOID",
 ] as const;
@@ -61,8 +59,10 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 
   await connectToDatabase();
 
+  const { invoiceId } = await params;
+
   const invoice = await Invoice.findOne({
-    _id: params.invoiceId,
+    _id: invoiceId,
     ownerId: session.user.id,
   })
     .lean()
@@ -109,6 +109,8 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
   };
 
   const { status, issueDate, dueDate, notes, currency, lineItems } = body;
+
+  const { invoiceId } = await params;
 
   const nextStatus = coerceStatus(status);
 
@@ -214,9 +216,9 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
   updateDoc.totalAmount = subtotalCents;
 
   try {
-    const updated = await Invoice.findOneAndUpdate(
+    const updated: unknown = await Invoice.findOneAndUpdate(
       {
-        _id: params.invoiceId,
+        _id: invoiceId,
         ownerId: session.user.id,
       },
       { $set: updateDoc },
@@ -229,12 +231,17 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    const updatedDoc = updated as { estateId: unknown; _id: unknown };
+
     // On success, redirect back to the invoice detail page
-    const estateId = String(updated.estateId);
-    const invoiceId = String(updated._id);
+    const estateId = String(updatedDoc.estateId);
+    const updatedInvoiceId = String(updatedDoc._id);
 
     return NextResponse.redirect(
-      new URL(`/app/estates/${estateId}/invoices/${invoiceId}`, req.url),
+      new URL(
+        `/app/estates/${estateId}/invoices/${updatedInvoiceId}`,
+        req.url,
+      ),
       303,
     );
   } catch (err) {
@@ -257,8 +264,10 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
 
   await connectToDatabase();
 
+  const { invoiceId } = await params;
+
   const deleted = await Invoice.findOneAndDelete({
-    _id: params.invoiceId,
+    _id: invoiceId,
     ownerId: session.user.id,
   })
     .lean()

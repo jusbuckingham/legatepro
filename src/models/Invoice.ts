@@ -17,8 +17,8 @@ export interface InvoiceLineItem {
   sourceExpenseId?: Types.ObjectId;
 
   quantity: number; // hours for time, 1 for expenses by default, etc.
-  rate: number; // hourly rate or unit cost
-  amount: number; // quantity * rate (or explicit override)
+  rate: number; // hourly rate or unit cost, stored in minor units (e.g. cents)
+  amount: number; // quantity * rate (or explicit override), stored in minor units (e.g. cents)
 }
 
 export interface InvoiceAttrs {
@@ -36,10 +36,10 @@ export interface InvoiceAttrs {
 
   lineItems?: InvoiceLineItem[];
 
-  subtotal?: number;
-  taxRate?: number; // e.g. 0.0–0.15
-  taxAmount?: number;
-  totalAmount?: number;
+  subtotal?: number; // stored in minor units (e.g. cents)
+  taxRate?: number; // e.g. 0.0–0.15, percentage as a fraction
+  taxAmount?: number; // stored in minor units (e.g. cents)
+  totalAmount?: number; // stored in minor units (e.g. cents)
 }
 
 export interface InvoiceDocument extends Document, InvoiceAttrs {

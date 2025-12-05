@@ -304,6 +304,12 @@ export default async function EstateDetailPage({ params }: PageProps) {
             {statusLabel}
           </span>
           <Link
+            href={`/app/estates/${estateIdStr}/tasks`}
+            className="inline-flex items-center rounded-md border border-slate-700 px-3 py-1.5 text-[11px] font-medium text-sky-300 hover:bg-slate-800"
+          >
+            Tasks &amp; time
+          </Link>
+          <Link
             href={`/app/estates/${estateIdStr}/edit`}
             className="inline-flex items-center rounded-md border border-slate-700 px-3 py-1.5 text-[11px] font-medium text-slate-200 hover:bg-slate-800"
           >
