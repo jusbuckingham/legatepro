@@ -303,6 +303,24 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
         </Link>
       </header>
 
+      {/* Tab strip: All vs AR aging */}
+      <div className="mb-4 border-b border-slate-800">
+        <div className="flex gap-2">
+          <Link
+            href="/app/invoices"
+            className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-950"
+          >
+            All invoices
+          </Link>
+          <Link
+            href="/app/invoices/aging"
+            className="inline-flex items-center rounded-full px-3 py-1 text-[11px] font-medium text-slate-400 hover:text-slate-100"
+          >
+            AR aging
+          </Link>
+        </div>
+      </div>
+
       {/* Filters */}
       <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
         <form className="flex flex-wrap items-end gap-3" method="GET">
