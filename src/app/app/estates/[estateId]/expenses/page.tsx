@@ -10,6 +10,7 @@ import { Estate } from "@/models/Estate";
 import { Expense } from "@/models/Expense";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
+// A focused row type for the UI layer
 type EstateExpenseRow = {
   id: string;
   date?: Date;
@@ -17,8 +18,11 @@ type EstateExpenseRow = {
   description: string;
   amountCents: number;
   status: string;
+  hasReceipt: boolean;
 };
 
+// Narrowed version of the lean Mongoose doc so we can safely access fields
+// without pulling in the full ExpenseDocument type.
 type LeanExpenseDoc = {
   _id: unknown;
   amountCents?: number;
@@ -27,6 +31,9 @@ type LeanExpenseDoc = {
   description?: string;
   date?: Date;
   createdAt?: Date;
+  // Optional receipt-related fields (if present in the schema)
+  hasReceipt?: boolean;
+  receiptUrl?: string | null;
 };
 
 type PageProps = {
@@ -94,6 +101,14 @@ export default async function EstateExpensesPage({ params }: PageProps) {
         ? exp.createdAt
         : undefined;
 
+    const hasReceiptExplicit =
+      typeof exp.hasReceipt === "boolean" ? exp.hasReceipt : undefined;
+
+    const hasReceiptFromUrl =
+      typeof exp.receiptUrl === "string" && exp.receiptUrl.trim().length > 0;
+
+    const hasReceipt = hasReceiptExplicit ?? hasReceiptFromUrl;
+
     return {
       id: String(exp._id),
       date,
@@ -101,6 +116,7 @@ export default async function EstateExpensesPage({ params }: PageProps) {
       description,
       amountCents,
       status,
+      hasReceipt,
     };
   });
 
@@ -166,7 +182,8 @@ export default async function EstateExpensesPage({ params }: PageProps) {
               Actions
             </p>
             <p className="mt-1 text-[11px] text-slate-500">
-              Use the global Expenses page to add or edit entries.
+              Use the global Expenses page to add or edit entries, or jump
+              directly into a specific expense from the table below.
             </p>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -221,6 +238,8 @@ export default async function EstateExpensesPage({ params }: PageProps) {
                   <th className="px-4 py-2">Description</th>
                   <th className="px-4 py-2 text-right">Amount</th>
                   <th className="px-4 py-2 text-right">Status</th>
+                  <th className="px-4 py-2 text-right">Receipt</th>
+                  <th className="px-4 py-2 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -252,6 +271,33 @@ export default async function EstateExpensesPage({ params }: PageProps) {
                       >
                         {exp.status}
                       </span>
+                    </td>
+                    <td className="px-4 py-2 align-top text-xs text-right">
+                      {exp.hasReceipt ? (
+                        <span className="inline-flex items-center rounded-full border border-emerald-700/70 bg-emerald-900/40 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-200">
+                          Receipt on file
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full border border-slate-700 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                          None
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 align-top text-xs text-right">
+                      <div className="inline-flex items-center gap-2">
+                        <Link
+                          href={`/app/expenses/${exp.id}/edit`}
+                          className="text-[11px] font-medium text-sky-400 hover:text-sky-300"
+                        >
+                          Edit
+                        </Link>
+                        <Link
+                          href={`/app/expenses/${exp.id}`}
+                          className="text-[11px] text-slate-400 hover:text-slate-200"
+                        >
+                          View
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}
