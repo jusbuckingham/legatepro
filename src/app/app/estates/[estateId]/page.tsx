@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 import { Invoice } from "@/models/Invoice";
+import { EstateDocument } from "@/models/EstateDocument";
 
 type PageProps = {
   params: Promise<{
@@ -39,6 +40,30 @@ type InvoiceLean = {
   totalAmount?: number | null;
 };
 
+type EstateDocumentRow = {
+  _id: string;
+  label: string;
+  subject?: string | null;
+  url?: string | null;
+  location?: string | null;
+  fileName?: string | null;
+  fileType?: string | null;
+  fileSizeBytes?: number | null;
+  createdAt?: string | null;
+};
+
+type EstateDocumentLean = {
+  _id: unknown;
+  label?: string | null;
+  subject?: string | null;
+  url?: string | null;
+  location?: string | null;
+  fileName?: string | null;
+  fileType?: string | null;
+  fileSizeBytes?: number | null;
+  createdAt?: Date | string | null;
+};
+
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: "Draft",
   SENT: "Sent",
@@ -46,6 +71,21 @@ const STATUS_LABELS: Record<string, string> = {
   PARTIAL: "Partial",
   PAID: "Paid",
   VOID: "Void",
+};
+
+/** Human-readable document subject labels */
+const DOCUMENT_SUBJECT_LABELS: Record<string, string> = {
+  BANKING: "Banking",
+  AUTO: "Auto",
+  MEDICAL: "Medical",
+  INCOME_TAX: "Income tax",
+  PROPERTY: "Property",
+  INSURANCE: "Insurance",
+  IDENTITY: "Identity / ID",
+  LEGAL: "Legal",
+  ESTATE_ACCOUNTING: "Estate accounting",
+  RECEIPTS: "Receipts",
+  OTHER: "Other",
 };
 
 function formatCurrency(amount: number | null | undefined): string {
@@ -95,6 +135,23 @@ export default async function EstateOverviewPage({ params }: PageProps) {
     .lean()
     .exec()) as InvoiceLean[];
 
+  const documentDocs = (await EstateDocument.find(
+    { estateId, ownerId: session.user.id },
+    {
+      label: 1,
+      subject: 1,
+      url: 1,
+      location: 1,
+      fileName: 1,
+      fileType: 1,
+      fileSizeBytes: 1,
+      createdAt: 1,
+    },
+  )
+    .lean()
+    .exec()) as EstateDocumentLean[];
+
+  /** INVOICES → clean rows */
   const invoices: DashboardInvoice[] = invoiceDocs.map((doc) => {
     const rawAmount =
       typeof doc.totalAmount === "number"
@@ -133,6 +190,32 @@ export default async function EstateOverviewPage({ params }: PageProps) {
     };
   });
 
+  /** DOCUMENTS → clean rows */
+  const documents: EstateDocumentRow[] = documentDocs.map((doc) => {
+    const createdAt =
+      doc.createdAt instanceof Date
+        ? doc.createdAt.toISOString()
+        : (doc.createdAt as string | null | undefined) ?? null;
+
+    const label =
+      typeof doc.label === "string" && doc.label.trim().length > 0
+        ? doc.label
+        : "Document";
+
+    return {
+      _id: String(doc._id),
+      label,
+      subject: doc.subject ?? null,
+      url: doc.url ?? null,
+      location: doc.location ?? null,
+      fileName: doc.fileName ?? null,
+      fileType: doc.fileType ?? null,
+      fileSizeBytes:
+        typeof doc.fileSizeBytes === "number" ? doc.fileSizeBytes : null,
+      createdAt,
+    };
+  });
+
   const totalInvoiced = invoices.reduce(
     (sum, inv) => sum + (inv.amount ?? 0),
     0,
@@ -164,6 +247,14 @@ export default async function EstateOverviewPage({ params }: PageProps) {
     .sort((a, b) => {
       const aDate = a.issueDate ? new Date(a.issueDate).getTime() : 0;
       const bDate = b.issueDate ? new Date(b.issueDate).getTime() : 0;
+      return bDate - aDate;
+    })
+    .slice(0, 5);
+
+  const recentDocuments = [...documents]
+    .sort((a, b) => {
+      const aDate = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bDate = b.createdAt ? new Date(b.createdAt).getTime() : 0;
       return bDate - aDate;
     })
     .slice(0, 5);
@@ -325,6 +416,76 @@ export default async function EstateOverviewPage({ params }: PageProps) {
                     </tr>
                   );
                 })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* Documents preview */}
+      <section className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">
+            Documents{documents.length > 0 ? ` (${documents.length})` : ""}
+          </h2>
+          <Link
+            href={`/app/estates/${estateId}/documents`}
+            className="text-xs font-medium text-blue-600 hover:underline"
+          >
+            View all
+          </Link>
+        </div>
+
+        {recentDocuments.length === 0 ? (
+          <p className="text-sm text-gray-500">
+            No documents have been recorded for this estate yet.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead>
+                <tr className="border-b text-xs uppercase text-gray-500">
+                  <th className="px-3 py-2">Label</th>
+                  <th className="px-3 py-2">Subject</th>
+                  <th className="px-3 py-2">Added</th>
+                  <th className="px-3 py-2">Location</th>
+                  <th className="px-3 py-2 text-right">Link</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentDocuments.map((doc) => (
+                  <tr key={doc._id} className="border-b last:border-0">
+                    <td className="px-3 py-2 align-top">
+                      <span className="font-medium">{doc.label}</span>
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      {doc.subject
+                        ? DOCUMENT_SUBJECT_LABELS[doc.subject] ??
+                          doc.subject
+                        : "Other"}
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      {doc.createdAt ? formatDate(doc.createdAt) : "—"}
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      {doc.location ?? "—"}
+                    </td>
+                    <td className="px-3 py-2 align-top text-right">
+                      {doc.url ? (
+                        <a
+                          href={doc.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs font-medium text-blue-600 hover:underline"
+                        >
+                          Open
+                        </a>
+                      ) : (
+                        <span className="text-xs text-gray-400">No link</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

@@ -18,7 +18,7 @@ export interface IEstateDocument {
   estateId: Types.ObjectId; // required
 
   subject: EstateDocumentSubject;
-  label: string; // human‑friendly description
+  label: string; // human-friendly description
 
   location?: string; // e.g. "Google Drive", "iCloud", "Physical safe"
   url?: string; // digital link
