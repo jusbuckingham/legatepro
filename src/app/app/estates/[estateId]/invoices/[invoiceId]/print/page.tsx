@@ -8,10 +8,10 @@ import { WorkspaceSettings } from "@/models/WorkspaceSettings";
 import { auth } from "@/lib/auth";
 
 type PageProps = {
-  params: {
+  params: Promise<{
     estateId: string;
     invoiceId: string;
-  };
+  }>;
 };
 
 type InvoiceStatus =
@@ -75,7 +75,7 @@ function formatDate(value: Date | string | null | undefined): string {
 }
 
 export default async function PrintableInvoicePage({ params }: PageProps) {
-  const { estateId, invoiceId } = params;
+  const { estateId, invoiceId } = await params;
 
   const session = await auth();
   if (!session?.user?.id) {
