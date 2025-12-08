@@ -6,13 +6,22 @@ import { notFound, redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
-import InvoiceEditForm, {
-  type InvoiceStatus,
-  type RawLineItem,
-} from "@/components/invoices/InvoiceEditForm";
+import InvoiceEditForm from "@/components/invoices/InvoiceEditForm";
 
 export const metadata: Metadata = {
   title: "Edit Invoice | LegatePro",
+};
+
+type InvoiceStatus = "DRAFT" | "SENT" | "UNPAID" | "PARTIAL" | "PAID" | "VOID";
+
+type InvoiceEditLineItemLocal = {
+  _id?: string;
+  label: string;
+  type: "TIME" | "EXPENSE" | "FEE" | "COST";
+  description: string;
+  quantity?: number | null;
+  unitPrice?: number | null;
+  total?: number | null;
 };
 
 type PageProps = {
@@ -44,10 +53,44 @@ export default async function InvoiceEditPage({ params }: PageProps) {
     notFound();
   }
 
-  const status = (invoice.status || "DRAFT") as InvoiceStatus;
+  const status = (
+    typeof invoice.status === "string" && invoice.status.trim().length > 0
+      ? (invoice.status.trim().toUpperCase() as InvoiceStatus)
+      : "DRAFT"
+  ) as InvoiceStatus;
 
-  const initialLineItems: RawLineItem[] = Array.isArray(invoice.lineItems)
-    ? (invoice.lineItems as RawLineItem[])
+  const initialLineItems: InvoiceEditLineItemLocal[] = Array.isArray(
+    invoice.lineItems,
+  )
+    ? (invoice.lineItems as unknown[]).map((item, index) => {
+        const src = item as {
+          _id?: unknown;
+          description?: unknown;
+          quantity?: unknown;
+          unitPrice?: unknown;
+          total?: unknown;
+        };
+
+        const description =
+          typeof src.description === "string" ? src.description : "";
+
+        const quantity =
+          typeof src.quantity === "number" ? src.quantity : null;
+        const unitPrice =
+          typeof src.unitPrice === "number" ? src.unitPrice : null;
+        const total =
+          typeof src.total === "number" ? src.total : null;
+
+        return {
+          _id: src._id ? String(src._id) : undefined,
+          label: description || `Line item ${index + 1}`,
+          type: "FEE",
+          description,
+          quantity,
+          unitPrice,
+          total,
+        };
+      })
     : [];
 
   const currency =
