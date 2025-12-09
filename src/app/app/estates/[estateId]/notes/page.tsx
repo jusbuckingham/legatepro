@@ -62,7 +62,8 @@ async function createNote(formData: FormData): Promise<void> {
 
   await connectToDatabase();
 
-  const pinned = pinnedRaw === "on" || pinnedRaw === "true" || pinnedRaw === "1";
+  const pinned =
+    pinnedRaw === "on" || pinnedRaw === "true" || pinnedRaw === "1";
 
   await EstateNote.create({
     estateId,
@@ -217,7 +218,7 @@ export default async function EstateNotesPage({
   return (
     <div className="space-y-6 p-6">
       {/* Header / breadcrumb */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+      <div className="flex flex-col gap-3 border-b border-gray-100 pb-4 md:flex-row md:items-start md:justify-between">
         <div className="space-y-2">
           <nav className="text-xs text-gray-500">
             <Link href="/app/estates" className="hover:underline">
@@ -238,26 +239,30 @@ export default async function EstateNotesPage({
               Notes for this estate
             </h1>
             <p className="mt-1 max-w-2xl text-sm text-gray-600">
-              Use notes to capture conversations, ideas, questions, and
-              reminders that don&apos;t belong in invoices or documents.
-              Everything here is private to you.
+              Use notes as your running log—calls, advice, ideas, and things you
+              don&apos;t want to forget. This space is private and not shared
+              with the court or other parties.
             </p>
           </div>
         </div>
 
         <div className="mt-1 flex flex-col items-end gap-1 text-xs text-gray-500">
-          <div>
-            <span className="font-medium">{notes.length}</span> note
-            {notes.length === 1 ? "" : "s"}
+          <div className="flex flex-wrap items-center gap-2">
+            <span>
+              <span className="font-medium">{notes.length}</span> note
+              {notes.length === 1 ? "" : "s"}
+            </span>
             {pinnedCount > 0 && (
               <>
-                {" "}
-                · <span className="font-medium">{pinnedCount}</span> pinned
+                <span>·</span>
+                <span>
+                  <span className="font-medium">{pinnedCount}</span> pinned
+                </span>
               </>
             )}
           </div>
           <span className="text-[11px] text-gray-400">
-            Notes are not shared with the court or other parties.
+            Think of this as your private journal for this estate.
           </span>
         </div>
       </div>
@@ -267,11 +272,11 @@ export default async function EstateNotesPage({
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-700">
-              Add note
+              Add a note
             </h2>
             <p className="mt-1 text-xs text-gray-500">
-              Jot down what&apos;s on your mind about this estate—calls you
-              made, advice you received, or next steps.
+              Write in full sentences if it helps future you. Capture who you
+              spoke with, what they said, and any deadlines you heard.
             </p>
           </div>
         </div>
@@ -287,8 +292,8 @@ export default async function EstateNotesPage({
               name="body"
               required
               rows={4}
-              placeholder="Example: Spoke with court clerk about upcoming hearing; they recommended bringing bank statements for the last 3 months."
-              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+              placeholder="Example: 4/15 – Spoke with court clerk about upcoming hearing. Need to bring last 6 months of bank statements and a list of creditors."
+              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900 placeholder:text-gray-400"
             />
           </div>
 
@@ -329,7 +334,7 @@ export default async function EstateNotesPage({
               id="q"
               name="q"
               defaultValue={searchQuery}
-              placeholder="Search notes…"
+              placeholder="Search within your notes…"
               className="h-7 w-full rounded-md border border-gray-300 px-2 text-xs text-gray-900 placeholder:text-gray-400"
             />
           </div>
@@ -362,9 +367,9 @@ export default async function EstateNotesPage({
       <section className="space-y-2 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
         {notes.length === 0 ? (
           <p className="text-sm text-gray-500">
-            You haven&apos;t added any notes yet. Start with what&apos;s
-            bothering you the most about this estate, or what you&apos;re
-            planning to do next.
+            You haven&apos;t added any notes yet. Start with what&apos;s on
+            your mind—what feels confusing, what you&apos;re worried about, or
+            what you need to remember for your next call or court date.
           </p>
         ) : filteredNotes.length === 0 ? (
           <p className="text-sm text-gray-500">
@@ -382,7 +387,7 @@ export default async function EstateNotesPage({
                 }`}
               >
                 <div className="mb-1 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
                     {note.pinned && (
                       <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-[11px] font-medium text-yellow-800">
                         Pinned

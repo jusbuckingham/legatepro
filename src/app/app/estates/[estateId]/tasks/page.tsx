@@ -270,36 +270,55 @@ export default async function EstateTasksPage({
   return (
     <div className="space-y-6 p-6">
       {/* Header / breadcrumb */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+      <div className="flex flex-col gap-3 border-b border-gray-100 pb-4 md:flex-row md:items-start md:justify-between">
         <div className="space-y-2">
           <nav className="text-xs text-gray-500">
             <Link href="/app/estates" className="hover:underline">
               Estates
             </Link>
             <span className="mx-1 text-gray-400">/</span>
-            <span className="text-gray-400">Current estate</span>
+            <Link
+              href={`/app/estates/${estateId}`}
+              className="hover:underline"
+            >
+              Overview
+            </Link>
             <span className="mx-1 text-gray-400">/</span>
             <span className="text-gray-900">Tasks</span>
           </nav>
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-gray-900">
-              Tasks &amp; probate checklist
+              Checklist &amp; tasks for this estate
             </h1>
             <p className="mt-1 max-w-2xl text-sm text-gray-600">
-              Keep track of everything you need to do for this estate—court
-              deadlines, banking steps, paperwork, and follow-ups.
+              Keep everything you need to do in one place—court dates, bank
+              calls, paperwork, and follow-ups. Mark items done as you go.
             </p>
           </div>
         </div>
 
         <div className="mt-1 flex flex-col items-end gap-1 text-xs text-gray-500">
-          <div>
-            <span className="font-medium">{openCount}</span> open ·{" "}
-            <span className="font-medium">{doneCount}</span> done ·{" "}
-            <span className="font-medium">{overdueCount}</span> overdue
+          <div className="flex flex-wrap items-center gap-2">
+            <span>
+              <span className="font-medium">{openCount}</span> open
+            </span>
+            <span>·</span>
+            <span>
+              <span className="font-medium">{doneCount}</span> done
+            </span>
+            <span>·</span>
+            <span
+              className={
+                overdueCount > 0
+                  ? "font-medium text-red-600"
+                  : "font-medium text-gray-500"
+              }
+            >
+              {overdueCount} overdue
+            </span>
           </div>
           <span className="text-[11px] text-gray-400">
-            This list is private to you and not shared with the court.
+            This checklist is private to you and not shared with the court.
           </span>
         </div>
       </div>
@@ -309,11 +328,12 @@ export default async function EstateTasksPage({
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-700">
-              Add task
+              Add a new task
             </h2>
             <p className="mt-1 text-xs text-gray-500">
-              Start with concrete, actionable steps: call the court, request
-              statements, meet with an attorney, etc.
+              Capture clear, concrete steps—&quot;Call bank about estate
+              account&quot;, &quot;Gather property tax statements&quot;, or
+              &quot;Prepare inventory for court&quot;.
             </p>
           </div>
         </div>
@@ -329,7 +349,7 @@ export default async function EstateTasksPage({
               name="title"
               required
               placeholder="e.g. File initial inventory with the court"
-              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900 placeholder:text-gray-400"
             />
           </div>
 
@@ -340,8 +360,8 @@ export default async function EstateTasksPage({
             <textarea
               name="description"
               rows={2}
-              placeholder="Any helpful notes or next steps…"
-              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+              placeholder="Any notes, phone numbers, or details to remember…"
+              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900 placeholder:text-gray-400"
             />
           </div>
 
@@ -440,8 +460,9 @@ export default async function EstateTasksPage({
       <section className="space-y-2 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
         {tasks.length === 0 ? (
           <p className="text-sm text-gray-500">
-            You don&apos;t have any tasks yet. Use this space as your
-            estate-specific checklist.
+            You don&apos;t have any tasks yet. Start with the next 3–5 things
+            you know you need to do—no need to be perfect, you can always
+            adjust later.
           </p>
         ) : filteredTasks.length === 0 ? (
           <p className="text-sm text-gray-500">
