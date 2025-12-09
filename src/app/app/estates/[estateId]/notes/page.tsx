@@ -1,44 +1,59 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { EstateNote, NoteCategory } from "@/models/EstateNote";
-import type { Types } from "mongoose";
+import { EstateNote } from "@/models/EstateNote";
 
-export const metadata = {
-  title: "Estate Notes | LegatePro",
-};
+export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: Promise<{
     estateId: string;
   }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-type RawNote = {
-  _id: Types.ObjectId;
-  ownerId: Types.ObjectId | string;
-  estateId: Types.ObjectId | string;
-  subject: string;
+type EstateNoteLean = {
+  _id: unknown;
+  body?: string | null;
+  pinned?: boolean | null;
+  createdAt?: Date | string | null;
+};
+
+type NoteItem = {
+  _id: string;
   body: string;
-  category?: NoteCategory;
-  isPinned: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  pinned: boolean;
+  createdAt?: string | null;
 };
 
-type NoteListItem = {
-  id: string;
-  subject: string;
-  body: string;
-  category?: NoteCategory;
-  isPinned: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
+function formatDate(value: string | null | undefined): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString();
+}
 
-export default async function EstateNotesPage({ params }: PageProps) {
-  const { estateId } = await params;
+function truncate(text: string, max = 300): string {
+  if (text.length <= max) return text;
+  return text.slice(0, max).trimEnd() + "…";
+}
+
+/**
+ * Server action: create a new note for the estate.
+ */
+async function createNote(formData: FormData): Promise<void> {
+  "use server";
+
+  const estateId = formData.get("estateId")?.toString();
+  const body = formData.get("body")?.toString().trim() ?? "";
+  const pinnedRaw = formData.get("pinned")?.toString();
+
+  if (!estateId || !body) {
+    return;
+  }
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -47,226 +62,372 @@ export default async function EstateNotesPage({ params }: PageProps) {
 
   await connectToDatabase();
 
-  const noteDocs = await EstateNote.find({
+  const pinned = pinnedRaw === "on" || pinnedRaw === "true" || pinnedRaw === "1";
+
+  await EstateNote.create({
     estateId,
     ownerId: session.user.id,
-  })
-    .sort({ isPinned: -1, createdAt: -1 })
-    .lean<RawNote[]>();
+    body,
+    pinned,
+  });
 
-  const notes: NoteListItem[] = noteDocs.map((doc: RawNote) => ({
-    id: doc._id.toString(),
-    subject: doc.subject,
-    body: doc.body,
-    category: doc.category,
-    isPinned: doc.isPinned,
-    createdAt: doc.createdAt.toISOString(),
-    updatedAt: doc.updatedAt.toISOString(),
-  }));
+  revalidatePath(`/app/estates/${estateId}/notes`);
+}
 
-  async function createNote(formData: FormData) {
-    "use server";
+/**
+ * Server action: toggle pinned state for a note.
+ */
+async function togglePinned(formData: FormData): Promise<void> {
+  "use server";
 
-    const session = await auth();
-    if (!session?.user?.id) {
-      redirect("/login");
-    }
+  const estateId = formData.get("estateId")?.toString();
+  const noteId = formData.get("noteId")?.toString();
+  const nextPinnedRaw = formData.get("nextPinned")?.toString();
 
-    await connectToDatabase();
-
-    const subject = formData.get("subject");
-    const body = formData.get("body");
-    const category = formData.get("category") as NoteCategory | null;
-    const isPinned = formData.get("isPinned") === "on";
-
-    if (!subject || !body) {
-      // Basic guard; in a real UI you'd show validation errors.
-      redirect(`/app/estates/${estateId}/notes`);
-    }
-
-    await EstateNote.create({
-      ownerId: session.user.id,
-      estateId,
-      subject: String(subject),
-      body: String(body),
-      category: category ?? "GENERAL",
-      isPinned,
-    });
-
-    redirect(`/app/estates/${estateId}/notes`);
+  if (!estateId || !noteId || !nextPinnedRaw) {
+    return;
   }
+
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect("/login");
+  }
+
+  await connectToDatabase();
+
+  const nextPinned =
+    nextPinnedRaw === "true" || nextPinnedRaw === "1" || nextPinnedRaw === "on";
+
+  await EstateNote.findOneAndUpdate(
+    { _id: noteId, estateId, ownerId: session.user.id },
+    { pinned: nextPinned },
+  );
+
+  revalidatePath(`/app/estates/${estateId}/notes`);
+}
+
+/**
+ * Server action: delete a note.
+ */
+async function deleteNote(formData: FormData): Promise<void> {
+  "use server";
+
+  const estateId = formData.get("estateId")?.toString();
+  const noteId = formData.get("noteId")?.toString();
+
+  if (!estateId || !noteId) {
+    return;
+  }
+
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect("/login");
+  }
+
+  await connectToDatabase();
+
+  await EstateNote.findOneAndDelete({
+    _id: noteId,
+    estateId,
+    ownerId: session.user.id,
+  });
+
+  revalidatePath(`/app/estates/${estateId}/notes`);
+}
+
+export default async function EstateNotesPage({
+  params,
+  searchParams,
+}: PageProps) {
+  const { estateId } = await params;
+
+  let searchQuery = "";
+  let showPinnedOnly = false;
+
+  if (searchParams) {
+    const sp = await searchParams;
+
+    const qRaw = sp.q;
+    searchQuery =
+      typeof qRaw === "string"
+        ? qRaw.trim()
+        : Array.isArray(qRaw)
+        ? (qRaw[0] ?? "").trim()
+        : "";
+
+    const pinnedRaw = sp.pinned;
+    const pinnedValue =
+      typeof pinnedRaw === "string"
+        ? pinnedRaw
+        : Array.isArray(pinnedRaw)
+        ? pinnedRaw[0]
+        : "";
+
+    showPinnedOnly =
+      pinnedValue === "1" ||
+      pinnedValue === "true" ||
+      pinnedValue === "on";
+  }
+
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect(`/login?callbackUrl=/app/estates/${estateId}/notes`);
+  }
+
+  await connectToDatabase();
+
+  const docs = (await EstateNote.find(
+    { estateId, ownerId: session.user.id },
+    { body: 1, pinned: 1, createdAt: 1 },
+  )
+    .sort({ pinned: -1, createdAt: -1 })
+    .lean()) as EstateNoteLean[];
+
+  const notes: NoteItem[] = docs.map((doc) => {
+    const body =
+      typeof doc.body === "string" && doc.body.trim().length > 0
+        ? doc.body.trim()
+        : "";
+
+    const createdAt =
+      doc.createdAt instanceof Date
+        ? doc.createdAt.toISOString()
+        : (doc.createdAt as string | null | undefined) ?? null;
+
+    return {
+      _id: String(doc._id),
+      body,
+      pinned: Boolean(doc.pinned),
+      createdAt,
+    };
+  });
+
+  const filteredNotes = notes.filter((note) => {
+    if (showPinnedOnly && !note.pinned) return false;
+
+    if (!searchQuery) return true;
+
+    const q = searchQuery.toLowerCase();
+    return note.body.toLowerCase().includes(q);
+  });
+
+  const pinnedCount = notes.filter((n) => n.pinned).length;
+  const hasFilters = !!searchQuery || showPinnedOnly;
 
   return (
     <div className="space-y-6 p-6">
-      <div className="flex flex-col gap-3 border-b border-slate-800 pb-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-50">
-            Estate Notes
-          </h1>
-          <p className="text-sm text-slate-400">
-            Capture key updates, phone call summaries, and reminders tied to
-            this estate.
-          </p>
+      {/* Header / breadcrumb */}
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-2">
+          <nav className="text-xs text-gray-500">
+            <Link href="/app/estates" className="hover:underline">
+              Estates
+            </Link>
+            <span className="mx-1 text-gray-400">/</span>
+            <Link
+              href={`/app/estates/${estateId}`}
+              className="hover:underline"
+            >
+              Overview
+            </Link>
+            <span className="mx-1 text-gray-400">/</span>
+            <span className="text-gray-900">Notes</span>
+          </nav>
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-gray-900">
+              Notes for this estate
+            </h1>
+            <p className="mt-1 max-w-2xl text-sm text-gray-600">
+              Use notes to capture conversations, ideas, questions, and
+              reminders that don&apos;t belong in invoices or documents.
+              Everything here is private to you.
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <Link
-            href={`/app/estates/${estateId}`}
-            className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:border-rose-700 hover:text-rose-200"
-          >
-            ← Back to estate overview
-          </Link>
+
+        <div className="mt-1 flex flex-col items-end gap-1 text-xs text-gray-500">
+          <div>
+            <span className="font-medium">{notes.length}</span> note
+            {notes.length === 1 ? "" : "s"}
+            {pinnedCount > 0 && (
+              <>
+                {" "}
+                · <span className="font-medium">{pinnedCount}</span> pinned
+              </>
+            )}
+          </div>
+          <span className="text-[11px] text-gray-400">
+            Notes are not shared with the court or other parties.
+          </span>
         </div>
       </div>
 
-      {/* Quick add form */}
-      <section className="grid gap-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4 shadow-sm shadow-rose-950/40 md:grid-cols-[2fr,3fr]">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-100">
-            Quick note
-          </h2>
-          <p className="mt-1 text-xs text-slate-400">
-            Jot down a quick update or reminder. Use pinned notes to keep
-            something at the top.
-          </p>
-        </div>
-        <form action={createNote} className="space-y-3">
-          <div className="space-y-1.5">
-            <label
-              htmlFor="subject"
-              className="text-xs font-medium text-slate-200"
-            >
-              Subject
-            </label>
-            <input
-              id="subject"
-              name="subject"
-              required
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-50 outline-none ring-rose-700/30 placeholder:text-slate-500 focus:border-rose-600 focus:ring-2"
-              placeholder="Call with attorney, status update, etc."
-            />
+      {/* New note form */}
+      <section className="space-y-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-700">
+              Add note
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">
+              Jot down what&apos;s on your mind about this estate—calls you
+              made, advice you received, or next steps.
+            </p>
           </div>
+        </div>
 
-          <div className="space-y-1.5">
-            <label
-              htmlFor="body"
-              className="text-xs font-medium text-slate-200"
-            >
-              Details
+        <form action={createNote} className="space-y-3 pt-1">
+          <input type="hidden" name="estateId" value={estateId} />
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-gray-800">
+              Note text
             </label>
             <textarea
-              id="body"
               name="body"
               required
-              rows={3}
-              className="w-full resize-none rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-50 outline-none ring-rose-700/30 placeholder:text-slate-500 focus:border-rose-600 focus:ring-2"
-              placeholder="Write a brief summary of the update..."
+              rows={4}
+              placeholder="Example: Spoke with court clerk about upcoming hearing; they recommended bringing bank statements for the last 3 months."
+              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="space-y-1.5">
-              <label
-                htmlFor="category"
-                className="text-xs font-medium text-slate-200"
-              >
-                Category
-              </label>
-              <select
-                id="category"
-                name="category"
-                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100 outline-none focus:border-rose-600 focus:ring-1 focus:ring-rose-700/50"
-                defaultValue="GENERAL"
-              >
-                <option value="GENERAL">General</option>
-                <option value="LEGAL">Legal</option>
-                <option value="FINANCIAL">Financial</option>
-                <option value="COMMUNICATION">Communication</option>
-              </select>
-            </div>
-
-            <label className="flex items-center gap-2 text-xs text-slate-200">
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 text-xs text-gray-700">
               <input
                 type="checkbox"
-                name="isPinned"
-                className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-rose-500 focus:ring-rose-600"
+                name="pinned"
+                className="h-3 w-3 rounded border-gray-300"
               />
-              Pin this note
+              <span>Pin this note to the top</span>
             </label>
 
             <button
               type="submit"
-              className="ml-auto rounded-md bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white shadow shadow-rose-900/50 transition hover:bg-rose-500"
+              className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800"
             >
-              Add note
+              Save note
             </button>
           </div>
         </form>
       </section>
 
-      {/* Notes list */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-100">
-            All notes ({notes.length})
-          </h2>
-        </div>
+      {/* Filters */}
+      <section className="space-y-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+        <form
+          method="GET"
+          className="flex flex-col gap-2 text-xs md:flex-row md:items-center md:justify-between"
+        >
+          <div className="flex flex-1 items-center gap-2">
+            <label
+              htmlFor="q"
+              className="whitespace-nowrap text-[11px] text-gray-500"
+            >
+              Search
+            </label>
+            <input
+              id="q"
+              name="q"
+              defaultValue={searchQuery}
+              placeholder="Search notes…"
+              className="h-7 w-full rounded-md border border-gray-300 px-2 text-xs text-gray-900 placeholder:text-gray-400"
+            />
+          </div>
 
+          <div className="flex items-center gap-3 md:w-auto">
+            <label className="flex items-center gap-1 text-[11px] text-gray-500">
+              <input
+                type="checkbox"
+                name="pinned"
+                value="1"
+                defaultChecked={showPinnedOnly}
+                className="h-3 w-3"
+              />
+              Pinned only
+            </label>
+
+            {hasFilters && (
+              <a
+                href={`/app/estates/${estateId}/notes`}
+                className="whitespace-nowrap text-[11px] text-gray-500 hover:text-gray-800"
+              >
+                Clear filters
+              </a>
+            )}
+          </div>
+        </form>
+      </section>
+
+      {/* Notes list */}
+      <section className="space-y-2 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
         {notes.length === 0 ? (
-          <p className="text-xs text-slate-400">
-            No notes yet. Use the form above to capture your first update.
+          <p className="text-sm text-gray-500">
+            You haven&apos;t added any notes yet. Start with what&apos;s
+            bothering you the most about this estate, or what you&apos;re
+            planning to do next.
+          </p>
+        ) : filteredNotes.length === 0 ? (
+          <p className="text-sm text-gray-500">
+            No notes match this search or filter.
           </p>
         ) : (
-          <div className="space-y-3">
-            {notes.map((note) => (
-              <article
-                key={note.id}
-                className="rounded-lg border border-slate-800 bg-slate-950/60 p-4 transition hover:border-rose-800/80"
+          <ul className="space-y-3">
+            {filteredNotes.map((note) => (
+              <li
+                key={note._id}
+                className={`rounded-md border p-3 text-sm ${
+                  note.pinned
+                    ? "border-yellow-200 bg-yellow-50"
+                    : "border-gray-200 bg-gray-50"
+                }`}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-semibold text-slate-50">
-                        {note.subject}
-                      </h3>
-                      {note.isPinned && (
-                        <span className="rounded-full border border-amber-400/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
-                          Pinned
-                        </span>
-                      )}
-                      {note.category && (
-                        <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-300">
-                          {note.category.toLowerCase()}
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-1 line-clamp-3 text-xs text-slate-300">
-                      {note.body}
-                    </p>
+                <div className="mb-1 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                    {note.pinned && (
+                      <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-[11px] font-medium text-yellow-800">
+                        Pinned
+                      </span>
+                    )}
+                    {note.createdAt && (
+                      <span className="text-[11px] text-gray-500">
+                        {formatDate(note.createdAt)}
+                      </span>
+                    )}
                   </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <p className="text-[10px] uppercase tracking-wide text-slate-500">
-                      {new Date(note.createdAt).toLocaleString()}
-                    </p>
-                    <div className="flex gap-2">
-                      <Link
-                        href={`/app/estates/${estateId}/notes/${note.id}`}
-                        className="text-[11px] font-medium text-rose-300 hover:text-rose-200"
+                  <div className="flex items-center gap-3 text-xs">
+                    <form action={togglePinned}>
+                      <input type="hidden" name="estateId" value={estateId} />
+                      <input type="hidden" name="noteId" value={note._id} />
+                      <input
+                        type="hidden"
+                        name="nextPinned"
+                        value={note.pinned ? "false" : "true"}
+                      />
+                      <button
+                        type="submit"
+                        className="text-gray-700 hover:underline"
                       >
-                        View
-                      </Link>
-                      <span className="text-slate-700">•</span>
-                      <Link
-                        href={`/app/estates/${estateId}/notes/${note.id}/edit`}
-                        className="text-[11px] font-medium text-slate-300 hover:text-slate-100"
+                        {note.pinned ? "Unpin" : "Pin"}
+                      </button>
+                    </form>
+                    <form action={deleteNote}>
+                      <input type="hidden" name="estateId" value={estateId} />
+                      <input type="hidden" name="noteId" value={note._id} />
+                      <button
+                        type="submit"
+                        className="text-red-600 hover:underline"
                       >
-                        Edit
-                      </Link>
-                    </div>
+                        Delete
+                      </button>
+                    </form>
                   </div>
                 </div>
-              </article>
+                <p className="whitespace-pre-wrap text-sm text-gray-900">
+                  {truncate(note.body, 1000)}
+                </p>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </section>
     </div>

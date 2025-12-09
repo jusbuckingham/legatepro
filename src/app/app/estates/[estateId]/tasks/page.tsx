@@ -1,341 +1,586 @@
-import React from "react";
-import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 
-import { authOptions } from "@/lib/auth";
+import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { Estate } from "@/models/Estate";
-import { Task } from "@/models/Task";
+import { EstateTask } from "@/models/EstateTask";
+
+export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: Promise<{
     estateId: string;
   }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-export const metadata: Metadata = {
-  title: "Estate Tasks | LegatePro",
-};
+type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "DONE";
 
-type EstateTaskRow = {
-  id: string;
-  title: string;
-  status: string;
-  dueDate: Date | null;
-  priority: string | null;
-  createdAt: Date | null;
-};
-
-type TaskDocLike = {
+type EstateTaskLean = {
   _id: unknown;
-  title?: unknown;
-  status?: unknown;
-  dueDate?: unknown;
-  priority?: unknown;
-  createdAt?: unknown;
+  title?: string | null;
+  description?: string | null;
+  status?: string | null;
+  dueDate?: Date | string | null;
+  completedAt?: Date | string | null;
 };
 
-function formatDate(value: Date | null): string {
-  if (!value || Number.isNaN(value.getTime())) {
-    return "";
-  }
+type TaskItem = {
+  _id: string;
+  title: string;
+  description?: string | null;
+  status: TaskStatus;
+  dueDate?: string | null;
+  isOverdue: boolean;
+};
 
-  return value.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+function parseStatus(raw: unknown): TaskStatus {
+  if (typeof raw !== "string") return "NOT_STARTED";
+  const upper = raw.toUpperCase();
+  if (upper === "IN_PROGRESS" || upper === "DONE") return upper;
+  return "NOT_STARTED";
 }
 
-function humanizeStatus(status: string): string {
-  switch (status) {
-    case "OPEN":
-      return "Open";
-    case "IN_PROGRESS":
-      return "In progress";
-    case "BLOCKED":
-      return "Blocked";
-    case "DONE":
-      return "Completed";
-    case "CANCELLED":
-      return "Cancelled";
-    default:
-      return status.charAt(0) + status.slice(1).toLowerCase();
-  }
+function formatDate(value: string | null | undefined): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString();
 }
 
-function statusBadgeClass(status: string): string {
-  switch (status) {
-    case "OPEN":
-      return "bg-amber-500/10 text-amber-300 border-amber-500/40";
-    case "IN_PROGRESS":
-      return "bg-sky-500/10 text-sky-300 border-sky-500/40";
-    case "BLOCKED":
-      return "bg-rose-500/10 text-rose-300 border-rose-500/40";
-    case "DONE":
-      return "bg-emerald-500/10 text-emerald-300 border-emerald-500/40";
-    case "CANCELLED":
-      return "bg-slate-600/20 text-slate-300 border-slate-500/40";
-    default:
-      return "bg-slate-700/40 text-slate-200 border-slate-500/40";
+/**
+ * Server action: create a new task for the estate.
+ */
+async function createTask(formData: FormData): Promise<void> {
+  "use server";
+
+  const estateId = formData.get("estateId")?.toString();
+  const title = formData.get("title")?.toString().trim();
+  const description = formData.get("description")?.toString().trim() || "";
+  const dueDateRaw = formData.get("dueDate")?.toString().trim() || "";
+  const statusRaw = formData.get("status")?.toString().trim() || "";
+
+  if (!estateId || !title) {
+    return;
   }
-}
 
-export default async function EstateTasksPage({ params }: PageProps) {
-  const { estateId } = await params;
-
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.id) {
-    // Middleware should already protect this, but guard anyway.
-    notFound();
+    redirect("/login");
   }
 
   await connectToDatabase();
 
-  const estate = await Estate.findOne({
-    _id: estateId,
-    ownerId: session.user.id,
-  })
-    .lean()
-    .exec();
-
-  if (!estate) {
-    notFound();
+  const status = parseStatus(statusRaw);
+  let dueDate: Date | undefined;
+  if (dueDateRaw) {
+    const d = new Date(dueDateRaw);
+    if (!Number.isNaN(d.getTime())) {
+      dueDate = d;
+    }
   }
 
-  const rawTasks = (await Task.find({
+  await EstateTask.create({
     estateId,
     ownerId: session.user.id,
-  })
-    .sort({ status: 1, dueDate: 1, createdAt: -1 })
-    .lean()
-    .exec()) as TaskDocLike[];
+    title,
+    description: description || undefined,
+    status,
+    dueDate,
+  });
 
-  const tasks: EstateTaskRow[] = rawTasks.map((doc) => {
+  redirect(`/app/estates/${estateId}/tasks`);
+}
+
+/**
+ * Server action: update status (and optionally due date) of a task.
+ */
+async function updateTaskStatus(formData: FormData): Promise<void> {
+  "use server";
+
+  const estateId = formData.get("estateId")?.toString();
+  const taskId = formData.get("taskId")?.toString();
+  const statusRaw = formData.get("status")?.toString().trim() || "";
+
+  if (!estateId || !taskId) return;
+
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect("/login");
+  }
+
+  await connectToDatabase();
+
+  const status = parseStatus(statusRaw);
+
+  const update: Partial<EstateTaskLean> = {
+    status,
+  };
+
+  if (status === "DONE") {
+    update.completedAt = new Date();
+  } else {
+    update.completedAt = null;
+  }
+
+  await EstateTask.findOneAndUpdate(
+    { _id: taskId, estateId, ownerId: session.user.id },
+    update,
+  );
+
+  revalidatePath(`/app/estates/${estateId}/tasks`);
+}
+
+/**
+ * Server action: delete a task.
+ */
+async function deleteTask(formData: FormData): Promise<void> {
+  "use server";
+
+  const estateId = formData.get("estateId")?.toString();
+  const taskId = formData.get("taskId")?.toString();
+
+  if (!estateId || !taskId) return;
+
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect("/login");
+  }
+
+  await connectToDatabase();
+
+  await EstateTask.findOneAndDelete({
+    _id: taskId,
+    estateId,
+    ownerId: session.user.id,
+  });
+
+  revalidatePath(`/app/estates/${estateId}/tasks`);
+}
+
+export default async function EstateTasksPage({
+  params,
+  searchParams,
+}: PageProps) {
+  const { estateId } = await params;
+
+  let searchQuery = "";
+  let statusFilter: TaskStatus | "ALL" = "ALL";
+
+  if (searchParams) {
+    const sp = await searchParams;
+    const qRaw = sp.q;
+    const statusRaw = sp.status;
+
+    searchQuery =
+      typeof qRaw === "string"
+        ? qRaw.trim()
+        : Array.isArray(qRaw)
+        ? (qRaw[0] ?? "").trim()
+        : "";
+
+    if (statusRaw) {
+      const raw =
+        typeof statusRaw === "string"
+          ? statusRaw
+          : Array.isArray(statusRaw)
+          ? statusRaw[0]
+          : "";
+      const upper = raw.toUpperCase();
+      if (
+        upper === "NOT_STARTED" ||
+        upper === "IN_PROGRESS" ||
+        upper === "DONE"
+      ) {
+        statusFilter = upper as TaskStatus;
+      } else {
+        statusFilter = "ALL";
+      }
+    }
+  }
+
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect(`/login?callbackUrl=/app/estates/${estateId}/tasks`);
+  }
+
+  await connectToDatabase();
+
+  const docs = (await EstateTask.find(
+    { estateId, ownerId: session.user.id },
+    { title: 1, description: 1, status: 1, dueDate: 1, completedAt: 1 },
+  )
+    .sort({ dueDate: 1, createdAt: 1 })
+    .lean()) as EstateTaskLean[];
+
+  const tasks: TaskItem[] = docs.map((doc) => {
+    const title =
+      typeof doc.title === "string" && doc.title.trim().length > 0
+        ? doc.title
+        : "Task";
+
+    const status = parseStatus(doc.status ?? null);
+
     const due =
       doc.dueDate instanceof Date
-        ? doc.dueDate
-        : typeof doc.dueDate === "string"
-        ? new Date(doc.dueDate)
-        : null;
+        ? doc.dueDate.toISOString()
+        : (doc.dueDate as string | null | undefined) ?? null;
 
-    const created =
-      doc.createdAt instanceof Date
-        ? doc.createdAt
-        : typeof doc.createdAt === "string"
-        ? new Date(doc.createdAt)
-        : null;
-
-    const rawStatus =
-      typeof doc.status === "string" && doc.status.trim().length > 0
-        ? doc.status.trim().toUpperCase()
-        : "OPEN";
-
-    const rawTitle =
-      typeof doc.title === "string" && doc.title.trim().length > 0
-        ? doc.title.trim()
-        : "Untitled task";
-
-    const rawPriority =
-      typeof doc.priority === "string" && doc.priority.trim().length > 0
-        ? doc.priority.trim().toUpperCase()
-        : null;
+    let isOverdue = false;
+    if (due) {
+      const dueDate = new Date(due);
+      const now = new Date();
+      if (!Number.isNaN(dueDate.getTime())) {
+        isOverdue = dueDate < now && status !== "DONE";
+      }
+    }
 
     return {
-      id: String(doc._id),
-      title: rawTitle,
-      status: rawStatus,
+      _id: String(doc._id),
+      title,
+      description: doc.description ?? null,
+      status,
       dueDate: due,
-      priority: rawPriority,
-      createdAt: created,
+      isOverdue,
     };
   });
 
-  const openTasks = tasks.filter(
-    (t) => t.status !== "DONE" && t.status !== "CANCELLED",
-  );
-  const completedTasks = tasks.filter((t) => t.status === "DONE");
+  const filteredTasks = tasks.filter((task) => {
+    if (statusFilter !== "ALL" && task.status !== statusFilter) {
+      return false;
+    }
 
-  const upcomingTasks = tasks
-    .filter((t) => t.dueDate && t.status !== "DONE" && t.status !== "CANCELLED")
-    .slice(0, 5);
+    if (!searchQuery) return true;
 
-  const estateDisplayName =
-    (estate as { displayName?: string; caseName?: string }).displayName ??
-    (estate as { caseName?: string }).caseName ??
-    "Estate";
+    const q = searchQuery.toLowerCase();
+    const title = task.title.toLowerCase();
+    const desc = (task.description ?? "").toLowerCase();
+
+    return title.includes(q) || desc.includes(q);
+  });
+
+  const openCount = tasks.filter((t) => t.status !== "DONE").length;
+  const doneCount = tasks.filter((t) => t.status === "DONE").length;
+  const overdueCount = tasks.filter((t) => t.isOverdue).length;
+
+  const hasFilters =
+    !!searchQuery || (statusFilter !== "ALL" && statusFilter !== undefined);
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
-      <header className="space-y-1">
-        <p className="text-xs uppercase tracking-wide text-slate-500">
-          Estate · Tasks
-        </p>
-        <h1 className="text-2xl font-semibold text-slate-100">
-          Tasks for {estateDisplayName}
-        </h1>
-        <p className="text-sm text-slate-400">
-          Track what needs to happen next for this estate, who&apos;s
-          responsible, and when it&apos;s due.
-        </p>
-      </header>
-
-      {/* Summary cards */}
-      <section className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-500">
-            Open tasks
-          </p>
-          <p className="mt-2 text-2xl font-semibold text-slate-100">
-            {openTasks.length}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Tasks that are not completed or cancelled.
-          </p>
-        </div>
-
-        <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-500">
-            Completed
-          </p>
-          <p className="mt-2 text-2xl font-semibold text-emerald-300">
-            {completedTasks.length}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Done tasks for this estate.
-          </p>
-        </div>
-
-        <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-500">
-            Upcoming
-          </p>
-          <p className="mt-2 text-2xl font-semibold text-sky-300">
-            {upcomingTasks.length}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Tasks with a due date still outstanding.
-          </p>
-        </div>
-      </section>
-
-      {/* Quick actions */}
-      <section className="flex flex-wrap items-center justify-between gap-3 pt-2">
-        <div className="text-xs text-slate-500">
-          Tasks here are scoped to this estate. For a global view, use the{" "}
-          <Link
-            href="/app/tasks"
-            className="text-sky-400 hover:text-sky-300 underline-offset-2 hover:underline"
-          >
-            Tasks
-          </Link>{" "}
-          tab.
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href={`/app/tasks?estateId=${estateId}`}
-            className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-800"
-          >
-            View in global tasks
-          </Link>
-          <Link
-            href={`/app/tasks/new?estateId=${estateId}`}
-            className="inline-flex items-center rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500"
-          >
-            + New task
-          </Link>
-        </div>
-      </section>
-
-      {/* Task table */}
-      <section className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/70">
-        {tasks.length === 0 ? (
-          <div className="px-4 py-10 text-center text-sm text-slate-400">
-            No tasks yet for this estate. Start by creating a task for your next
-            filing deadline, hearing date, or follow-up call.
+    <div className="space-y-6 p-6">
+      {/* Header / breadcrumb */}
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-2">
+          <nav className="text-xs text-gray-500">
+            <Link href="/app/estates" className="hover:underline">
+              Estates
+            </Link>
+            <span className="mx-1 text-gray-400">/</span>
+            <span className="text-gray-400">Current estate</span>
+            <span className="mx-1 text-gray-400">/</span>
+            <span className="text-gray-900">Tasks</span>
+          </nav>
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-gray-900">
+              Tasks &amp; probate checklist
+            </h1>
+            <p className="mt-1 max-w-2xl text-sm text-gray-600">
+              Keep track of everything you need to do for this estate—court
+              deadlines, banking steps, paperwork, and follow-ups.
+            </p>
           </div>
+        </div>
+
+        <div className="mt-1 flex flex-col items-end gap-1 text-xs text-gray-500">
+          <div>
+            <span className="font-medium">{openCount}</span> open ·{" "}
+            <span className="font-medium">{doneCount}</span> done ·{" "}
+            <span className="font-medium">{overdueCount}</span> overdue
+          </div>
+          <span className="text-[11px] text-gray-400">
+            This list is private to you and not shared with the court.
+          </span>
+        </div>
+      </div>
+
+      {/* New task form */}
+      <section className="space-y-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-700">
+              Add task
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">
+              Start with concrete, actionable steps: call the court, request
+              statements, meet with an attorney, etc.
+            </p>
+          </div>
+        </div>
+
+        <form action={createTask} className="space-y-3 pt-1">
+          <input type="hidden" name="estateId" value={estateId} />
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-gray-800">
+              Task title
+            </label>
+            <input
+              name="title"
+              required
+              placeholder="e.g. File initial inventory with the court"
+              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-gray-800">
+              Details (optional)
+            </label>
+            <textarea
+              name="description"
+              rows={2}
+              placeholder="Any helpful notes or next steps…"
+              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+            />
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-[1fr,1fr]">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-800">
+                Due date (optional)
+              </label>
+              <input
+                type="date"
+                name="dueDate"
+                className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-gray-800">
+                Status
+              </label>
+              <select
+                name="status"
+                className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+                defaultValue="NOT_STARTED"
+              >
+                <option value="NOT_STARTED">Not started</option>
+                <option value="IN_PROGRESS">In progress</option>
+                <option value="DONE">Done</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex justify-end border-t border-gray-100 pt-3">
+            <button
+              type="submit"
+              className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800"
+            >
+              Add task
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {/* Filters */}
+      <section className="space-y-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+        <form
+          method="GET"
+          className="flex flex-col gap-2 text-xs md:flex-row md:items-center md:justify-between"
+        >
+          <div className="flex flex-1 items-center gap-2">
+            <label
+              htmlFor="q"
+              className="whitespace-nowrap text-[11px] text-gray-500"
+            >
+              Search
+            </label>
+            <input
+              id="q"
+              name="q"
+              defaultValue={searchQuery}
+              placeholder="Search by title or details…"
+              className="h-7 w-full rounded-md border border-gray-300 px-2 text-xs text-gray-900 placeholder:text-gray-400"
+            />
+          </div>
+
+          <div className="flex items-center gap-2 md:w-auto">
+            <label
+              htmlFor="status"
+              className="whitespace-nowrap text-[11px] text-gray-500"
+            >
+              Status
+            </label>
+            <select
+              id="status"
+              name="status"
+              defaultValue={statusFilter}
+              className="h-7 rounded-md border border-gray-300 bg-white px-2 text-xs text-gray-900"
+            >
+              <option value="ALL">All</option>
+              <option value="NOT_STARTED">Not started</option>
+              <option value="IN_PROGRESS">In progress</option>
+              <option value="DONE">Done</option>
+            </select>
+
+            {hasFilters && (
+              <a
+                href={`/app/estates/${estateId}/tasks`}
+                className="whitespace-nowrap text-[11px] text-gray-500 hover:text-gray-800"
+              >
+                Clear
+              </a>
+            )}
+          </div>
+        </form>
+      </section>
+
+      {/* Task list */}
+      <section className="space-y-2 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        {tasks.length === 0 ? (
+          <p className="text-sm text-gray-500">
+            You don&apos;t have any tasks yet. Use this space as your
+            estate-specific checklist.
+          </p>
+        ) : filteredTasks.length === 0 ? (
+          <p className="text-sm text-gray-500">
+            No tasks match this search or status filter.
+          </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full border-separate border-spacing-0 text-sm">
+            <table className="min-w-full text-left text-sm">
               <thead>
-                <tr className="bg-slate-900/80">
-                  <th className="sticky left-0 z-10 border-b border-slate-800 bg-slate-900/90 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Task
-                  </th>
-                  <th className="border-b border-slate-800 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Status
-                  </th>
-                  <th className="border-b border-slate-800 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Due
-                  </th>
-                  <th className="border-b border-slate-800 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Priority
-                  </th>
-                  <th className="border-b border-slate-800 px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Actions
-                  </th>
+                <tr className="border-b text-xs uppercase text-gray-500">
+                  <th className="px-3 py-2">Task</th>
+                  <th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2">Due</th>
+                  <th className="px-3 py-2 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {tasks.map((task, index) => {
-                  const isOdd = index % 2 === 1;
-                  return (
-                    <tr
-                      key={task.id}
-                      className={isOdd ? "bg-slate-900/40" : "bg-slate-950/40"}
-                    >
-                      <td className="sticky left-0 z-10 max-w-md border-b border-slate-800 bg-inherit px-4 py-2 align-top text-sm text-slate-50">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="font-medium">{task.title}</span>
-                          {task.createdAt && (
-                            <span className="text-[11px] text-slate-500">
-                              Created {formatDate(task.createdAt)}
-                            </span>
-                          )}
+                {filteredTasks.map((task) => (
+                  <tr key={task._id} className="border-b last:border-0">
+                    <td className="px-3 py-2 align-top">
+                      <div className="space-y-0.5">
+                        <div className="font-medium text-gray-900">
+                          {task.title}
                         </div>
-                      </td>
-                      <td className="border-b border-slate-800 px-4 py-2 align-top">
+                        {task.description && (
+                          <div className="text-xs text-gray-500">
+                            {task.description}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
+                          task.status === "DONE"
+                            ? "bg-green-100 text-green-800"
+                            : task.isOverdue
+                            ? "bg-red-100 text-red-800"
+                            : task.status === "IN_PROGRESS"
+                            ? "bg-blue-100 text-blue-800"
+                            : "bg-gray-100 text-gray-800"
+                        }`}
+                      >
+                        {task.status === "NOT_STARTED"
+                          ? "Not started"
+                          : task.status === "IN_PROGRESS"
+                          ? "In progress"
+                          : "Done"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      {task.dueDate ? (
                         <span
-                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusBadgeClass(
-                            task.status,
-                          )}`}
+                          className={
+                            task.isOverdue && task.status !== "DONE"
+                              ? "text-red-600"
+                              : "text-gray-700"
+                          }
                         >
-                          {humanizeStatus(task.status)}
+                          {formatDate(task.dueDate)}
                         </span>
-                      </td>
-                      <td className="border-b border-slate-800 px-4 py-2 align-top text-sm text-slate-200">
-                        {task.dueDate ? (
-                          <span>{formatDate(task.dueDate)}</span>
-                        ) : (
-                          <span className="text-slate-500 text-xs">
-                            No due date
-                          </span>
+                      ) : (
+                        <span className="text-gray-400">No due date</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <div className="flex justify-end gap-2 text-xs">
+                        {task.status !== "DONE" && (
+                          <form action={updateTaskStatus}>
+                            <input
+                              type="hidden"
+                              name="estateId"
+                              value={estateId}
+                            />
+                            <input
+                              type="hidden"
+                              name="taskId"
+                              value={task._id}
+                            />
+                            <input
+                              type="hidden"
+                              name="status"
+                              value="DONE"
+                            />
+                            <button
+                              type="submit"
+                              className="text-green-700 hover:underline"
+                            >
+                              Mark done
+                            </button>
+                          </form>
                         )}
-                      </td>
-                      <td className="border-b border-slate-800 px-4 py-2 align-top text-sm text-slate-200">
-                        {task.priority ? (
-                          <span className="text-xs text-slate-200">
-                            {task.priority}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-500">
-                            —
-                          </span>
+                        {task.status === "DONE" && (
+                          <form action={updateTaskStatus}>
+                            <input
+                              type="hidden"
+                              name="estateId"
+                              value={estateId}
+                            />
+                            <input
+                              type="hidden"
+                              name="taskId"
+                              value={task._id}
+                            />
+                            <input
+                              type="hidden"
+                              name="status"
+                              value="IN_PROGRESS"
+                            />
+                            <button
+                              type="submit"
+                              className="text-blue-700 hover:underline"
+                            >
+                              Reopen
+                            </button>
+                          </form>
                         )}
-                      </td>
-                      <td className="border-b border-slate-800 px-4 py-2 align-top text-right text-xs">
-                        <Link
-                          href={`/app/tasks/${task.id}`}
-                          className="text-sky-400 hover:text-sky-300"
-                        >
-                          View
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        <form action={deleteTask}>
+                          <input
+                            type="hidden"
+                            name="estateId"
+                            value={estateId}
+                          />
+                          <input
+                            type="hidden"
+                            name="taskId"
+                            value={task._id}
+                          />
+                          <button
+                            type="submit"
+                            className="text-red-600 hover:underline"
+                          >
+                            Delete
+                          </button>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

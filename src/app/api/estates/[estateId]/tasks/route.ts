@@ -1,53 +1,34 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { Task } from "@/models/Task";
+import {
+  EstateTask,
+  type EstateTaskDocument,
+  type TaskStatus,
+} from "@/models/EstateTask";
 
-/**
- * GET /api/estates/[estateId]/tasks
- * List tasks for a specific estate belonging to the logged-in user
- */
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: Promise<{ estateId: string }> },
-) {
-  const { estateId } = await params;
+type RouteContext = {
+  params: {
+    estateId: string;
+  };
+};
 
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+const ALLOWED_STATUSES: TaskStatus[] = [
+  "NOT_STARTED",
+  "IN_PROGRESS",
+  "DONE",
+];
 
-  await connectToDatabase();
-
-  try {
-    const tasks = await Task.find({
-      estateId,
-      ownerId: session.user.id,
-    })
-      .sort({ date: -1, createdAt: -1 })
-      .lean();
-
-    return NextResponse.json({ tasks }, { status: 200 });
-  } catch (error) {
-    console.error("[GET /api/estates/[estateId]/tasks] Error:", error);
-    return NextResponse.json(
-      { error: "Failed to load tasks" },
-      { status: 500 },
-    );
-  }
+function parseStatus(raw: unknown): TaskStatus | undefined {
+  if (typeof raw !== "string") return undefined;
+  const upper = raw.toUpperCase() as TaskStatus;
+  return ALLOWED_STATUSES.includes(upper) ? upper : undefined;
 }
 
-/**
- * POST /api/estates/[estateId]/tasks
- * Create a new task for a specific estate
- */
 export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ estateId: string }> },
-) {
-  const { estateId } = await params;
-
+  req: Request,
+  { params }: RouteContext,
+): Promise<Response> {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -55,41 +36,90 @@ export async function POST(
 
   await connectToDatabase();
 
-  try {
-    const body = (await req.json()) as {
-      subject?: string;
-      description?: string;
-      date?: string;
-      status?: string;
-      priority?: string;
-      notes?: string;
-    };
-
-    const subject = body.subject?.trim();
-    if (!subject) {
-      return NextResponse.json(
-        { error: "Subject is required" },
-        { status: 400 },
-      );
-    }
-
-    const task = await Task.create({
-      estateId,
-      ownerId: session.user.id,
-      subject,
-      description: body.description ?? "",
-      notes: body.notes ?? "",
-      date: body.date ? new Date(body.date) : new Date(),
-      status: body.status ?? "OPEN",
-      priority: body.priority ?? "MEDIUM",
-    });
-
-    return NextResponse.json({ task }, { status: 201 });
-  } catch (error) {
-    console.error("[POST /api/estates/[estateId]/tasks] Error:", error);
+  const { estateId } = params;
+  if (!estateId) {
     return NextResponse.json(
-      { error: "Failed to create task" },
-      { status: 500 },
+      { error: "Missing estateId in route params" },
+      { status: 400 },
     );
   }
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid JSON body" },
+      { status: 400 },
+    );
+  }
+
+  if (
+    !body ||
+    typeof body !== "object" ||
+    typeof (body as { title?: unknown }).title !== "string" ||
+    !(body as { title: string }).title.trim()
+  ) {
+    return NextResponse.json(
+      { error: "Title is required" },
+      { status: 400 },
+    );
+  }
+
+  const {
+    title,
+    description,
+    dueDate,
+    status: rawStatus,
+    relatedDocumentId,
+    relatedInvoiceId,
+  } = body as {
+    title: string;
+    description?: string;
+    dueDate?: string | null;
+    status?: string;
+    relatedDocumentId?: string;
+    relatedInvoiceId?: string;
+  };
+
+  const status: TaskStatus = parseStatus(rawStatus) ?? "NOT_STARTED";
+
+  let parsedDueDate: Date | undefined;
+  if (dueDate) {
+    const d = new Date(dueDate);
+    if (!Number.isNaN(d.getTime())) {
+      parsedDueDate = d;
+    }
+  }
+
+  const taskDoc: EstateTaskDocument = await EstateTask.create({
+    estateId,
+    ownerId: session.user.id,
+    title: title.trim(),
+    description: description?.trim() || undefined,
+    status,
+    dueDate: parsedDueDate,
+    relatedDocumentId: relatedDocumentId || undefined,
+    relatedInvoiceId: relatedInvoiceId || undefined,
+  });
+
+  return NextResponse.json(
+    {
+      id: taskDoc.id,
+      estateId: taskDoc.estateId,
+      ownerId: taskDoc.ownerId,
+      title: taskDoc.title,
+      description: taskDoc.description ?? null,
+      status: taskDoc.status,
+      dueDate: taskDoc.dueDate ?? null,
+      completedAt: taskDoc.completedAt ?? null,
+      relatedDocumentId: taskDoc.relatedDocumentId ?? null,
+      relatedInvoiceId: taskDoc.relatedInvoiceId ?? null,
+      createdAt: taskDoc.createdAt,
+      updatedAt: taskDoc.updatedAt,
+    },
+    { status: 201 },
+  );
 }
+
+export const dynamic = "force-dynamic";

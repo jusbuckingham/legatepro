@@ -10,6 +10,8 @@ interface EstateDocumentsPageProps {
   params: Promise<{
     estateId: string;
   }>;
+  // Next 16+ exposes searchParams as a Promise in server components
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
 // Shape returned from Mongoose `.lean()`
@@ -117,8 +119,62 @@ async function deleteDocument(formData: FormData): Promise<void> {
 
 export default async function EstateDocumentsPage({
   params,
+  searchParams,
 }: EstateDocumentsPageProps) {
   const { estateId } = await params;
+
+  // Derive filters from searchParams (GET query string)
+  let searchQuery = "";
+  let subjectFilter = "";
+  let sensitiveOnly = false;
+  let presetSensitive = false; // for pre-checking the create-form sensitive checkbox
+
+  if (searchParams) {
+    const sp = await searchParams;
+
+    const qRaw = sp.q;
+    const subjectRaw = sp.subject;
+    const sensitiveRaw = sp.sensitive;
+    const presetRaw = sp.newSensitive;
+
+    searchQuery =
+      typeof qRaw === "string"
+        ? qRaw.trim()
+        : Array.isArray(qRaw)
+        ? (qRaw[0] ?? "").trim()
+        : "";
+
+    subjectFilter =
+      typeof subjectRaw === "string"
+        ? subjectRaw.trim()
+        : Array.isArray(subjectRaw)
+        ? (subjectRaw[0] ?? "").trim()
+        : "";
+
+    const sensitiveVal =
+      typeof sensitiveRaw === "string"
+        ? sensitiveRaw
+        : Array.isArray(sensitiveRaw)
+        ? sensitiveRaw[0]
+        : "";
+
+    sensitiveOnly =
+      sensitiveVal === "1" ||
+      sensitiveVal?.toLowerCase() === "true" ||
+      sensitiveVal === "on";
+
+    const presetVal =
+      typeof presetRaw === "string"
+        ? presetRaw
+        : Array.isArray(presetRaw)
+        ? presetRaw[0]
+        : "";
+
+    presetSensitive =
+      presetVal === "1" ||
+      presetVal?.toLowerCase() === "true" ||
+      presetVal === "on";
+  }
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -145,6 +201,35 @@ export default async function EstateDocumentsPage({
     isSensitive: doc.isSensitive ?? false,
   }));
 
+  // Apply filters in-memory on the mapped data
+  const filteredDocuments: EstateDocumentItem[] = documents.filter((doc) => {
+    if (subjectFilter && doc.subject !== subjectFilter) {
+      return false;
+    }
+
+    if (sensitiveOnly && !doc.isSensitive) {
+      return false;
+    }
+
+    if (!searchQuery) return true;
+
+    const q = searchQuery.toLowerCase();
+    const label = doc.label.toLowerCase();
+    const location = (doc.location ?? "").toLowerCase();
+    const notes = (doc.notes ?? "").toLowerCase();
+    const tagsStr = (doc.tags ?? []).join(" ").toLowerCase();
+
+    return (
+      label.includes(q) ||
+      location.includes(q) ||
+      notes.includes(q) ||
+      tagsStr.includes(q)
+    );
+  });
+
+  const hasActiveFilters =
+    !!searchQuery || !!subjectFilter || sensitiveOnly === true;
+
   return (
     <div className="space-y-6 p-6">
       {/* Header / breadcrumb */}
@@ -164,12 +249,13 @@ export default async function EstateDocumentsPage({
             </h1>
             <p className="mt-1 max-w-2xl text-sm text-slate-400">
               Keep a clean, court-ready index of every important document for this
-              estate—where it lives, what it covers, and how to find it again in seconds.
+              estate—where it lives, what it covers, and how to find it again in
+              seconds.
             </p>
           </div>
         </div>
 
-        {/* RIGHT SIDE WITH THE ADD BUTTON */}
+        {/* Right side: helper + Add button */}
         <div className="mt-1 flex flex-col items-end gap-2 text-xs text-slate-400">
           <span className="inline-flex items-center rounded-full border border-rose-500/40 bg-rose-950/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-rose-100 shadow-sm">
             <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-rose-400" />
@@ -178,8 +264,6 @@ export default async function EstateDocumentsPage({
           <span className="text-[11px] text-slate-500">
             Use this index when assembling your final inventory or accounting.
           </span>
-
-          {/* Add Document Button */}
           <a
             href="#add-document"
             className="inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20"
@@ -200,7 +284,8 @@ export default async function EstateDocumentsPage({
               Add a document to the index
             </h2>
             <p className="mt-1 text-xs text-slate-400">
-              You’re not uploading files here—just keeping a precise record of where each document lives.
+              You’re not uploading files here—just keeping a precise record of where each
+              document lives.
             </p>
           </div>
           <p className="hidden text-[11px] text-slate-500 md:block">
@@ -214,22 +299,30 @@ export default async function EstateDocumentsPage({
           {/* Subject + Location */}
           <div className="grid gap-3 md:grid-cols-[1.1fr,1.1fr]">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-200">Subject</label>
+              <label className="text-xs font-medium text-slate-200">
+                Subject
+              </label>
               <select
                 name="subject"
                 required
                 className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50"
                 defaultValue=""
               >
-                <option value="" disabled>Select a subject</option>
+                <option value="" disabled>
+                  Select a subject
+                </option>
                 {Object.entries(SUBJECT_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
                 ))}
               </select>
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-200">Location</label>
+              <label className="text-xs font-medium text-slate-200">
+                Location
+              </label>
               <input
                 name="location"
                 placeholder="Google Drive, Dropbox, file cabinet…"
@@ -240,7 +333,9 @@ export default async function EstateDocumentsPage({
 
           {/* Label */}
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-200">Document label</label>
+            <label className="text-xs font-medium text-slate-200">
+              Document label
+            </label>
             <input
               name="label"
               required
@@ -252,7 +347,9 @@ export default async function EstateDocumentsPage({
           {/* URL + Tags */}
           <div className="grid gap-3 md:grid-cols-[1.4fr,1fr]">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-200">Link / URL (optional)</label>
+              <label className="text-xs font-medium text-slate-200">
+                Link / URL (optional)
+              </label>
               <input
                 name="url"
                 type="url"
@@ -262,7 +359,9 @@ export default async function EstateDocumentsPage({
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-200">Tags (comma-separated)</label>
+              <label className="text-xs font-medium text-slate-200">
+                Tags (comma-separated)
+              </label>
               <input
                 name="tags"
                 placeholder="e.g. Chase, statements"
@@ -273,7 +372,9 @@ export default async function EstateDocumentsPage({
 
           {/* Notes */}
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-200">Notes</label>
+            <label className="text-xs font-medium text-slate-200">
+              Notes
+            </label>
             <textarea
               name="notes"
               rows={2}
@@ -285,7 +386,12 @@ export default async function EstateDocumentsPage({
           {/* Sensitive + Submit */}
           <div className="flex flex-col gap-3 border-t border-slate-800 pt-3 text-xs md:flex-row md:items-center md:justify-between">
             <label className="flex items-center gap-2 text-slate-300">
-              <input type="checkbox" name="isSensitive" className="h-3 w-3" />
+              <input
+                type="checkbox"
+                name="isSensitive"
+                className="h-3 w-3"
+                defaultChecked={presetSensitive}
+              />
               Mark as sensitive
             </label>
 
@@ -300,21 +406,99 @@ export default async function EstateDocumentsPage({
       </section>
 
       {/* Document index */}
-      <section className="space-y-2">
+      <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-300">
             Indexed documents
           </h2>
           {documents.length > 0 && (
             <p className="text-[11px] text-slate-500">
-              Use this table when preparing your court packet.
+              {filteredDocuments.length === documents.length && !hasActiveFilters
+                ? `You have ${documents.length} documents indexed.`
+                : `Showing ${filteredDocuments.length} of ${documents.length} documents${
+                    sensitiveOnly ? " (sensitive only)" : ""
+                  }.`}
             </p>
           )}
         </div>
 
+        {/* Filters (search + subject + sensitive) */}
+        {documents.length > 0 && (
+          <form
+            method="GET"
+            className="flex flex-col gap-2 rounded-lg border border-slate-800 bg-slate-950/80 px-3 py-2 text-xs md:flex-row md:items-center md:justify-between"
+          >
+            <div className="flex flex-1 items-center gap-2">
+              <label
+                htmlFor="q"
+                className="whitespace-nowrap text-[11px] text-slate-400"
+              >
+                Search
+              </label>
+              <input
+                id="q"
+                name="q"
+                defaultValue={searchQuery}
+                placeholder="Label, location, tags, notes…"
+                className="h-7 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-50 placeholder:text-slate-500"
+              />
+            </div>
+
+            <div className="flex flex-col gap-2 md:w-auto md:flex-row md:items-center md:gap-3">
+              <div className="flex items-center gap-2 md:w-64">
+                <label
+                  htmlFor="subject"
+                  className="whitespace-nowrap text-[11px] text-slate-400"
+                >
+                  Subject
+                </label>
+                <select
+                  id="subject"
+                  name="subject"
+                  defaultValue={subjectFilter}
+                  className="h-7 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-50"
+                >
+                  <option value="">All subjects</option>
+                  {Object.entries(SUBJECT_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Sensitive only toggle */}
+              <label className="flex items-center gap-2 text-[11px] text-slate-400">
+                <input
+                  type="checkbox"
+                  name="sensitive"
+                  value="1"
+                  defaultChecked={sensitiveOnly}
+                  className="h-3 w-3"
+                />
+                Sensitive only
+              </label>
+
+              {hasActiveFilters && (
+                <a
+                  href={`/app/estates/${estateId}/documents`}
+                  className="whitespace-nowrap text-[11px] text-slate-400 hover:text-slate-200"
+                >
+                  Clear
+                </a>
+              )}
+            </div>
+          </form>
+        )}
+
+        {/* Table / empty states */}
         {documents.length === 0 ? (
           <p className="rounded-xl border border-dashed border-slate-700 bg-slate-950/60 px-4 py-4 text-sm text-slate-400">
             No documents indexed yet.
+          </p>
+        ) : filteredDocuments.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-slate-700 bg-slate-950/60 px-4 py-4 text-sm text-slate-400">
+            No documents match this search, subject, or sensitivity filter.
           </p>
         ) : (
           <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/70 shadow-sm">
@@ -331,7 +515,7 @@ export default async function EstateDocumentsPage({
                 </tr>
               </thead>
               <tbody>
-                {documents.map((doc) => {
+                {filteredDocuments.map((doc) => {
                   const tags = doc.tags ?? [];
 
                   return (
