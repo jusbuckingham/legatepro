@@ -433,12 +433,20 @@ export default async function EstateOverviewPage({ params }: PageProps) {
           </div>
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">
-          <Link
-            href={`/app/estates/${estateId}/invoices`}
-            className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-          >
-            View all invoices
-          </Link>
+          <div className="flex gap-2">
+            <Link
+              href={`/app/estates/${estateId}/timeline`}
+              className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              View timeline
+            </Link>
+            <Link
+              href={`/app/estates/${estateId}/invoices`}
+              className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              View all invoices
+            </Link>
+          </div>
         </div>
       </header>
 
