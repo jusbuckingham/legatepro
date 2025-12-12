@@ -1,15 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
-import { connectToDatabase } from "@/lib/db";
 import { EstateNote } from "@/models/EstateNote";
-import { requireEstateAccess } from "@/lib/validators";
+import { requireViewer, requireEditor } from "@/lib/estateAccess";
 
 type RouteParams = {
   params: Promise<{
     estateId: string;
   }>;
 };
+
+function asRecord(v: unknown): Record<string, unknown> {
+  if (v && typeof v === "object") return v as Record<string, unknown>;
+  return {};
+}
+
+function getString(obj: unknown, key: string): string | null {
+  const rec = asRecord(obj);
+  const val = rec[key];
+  return typeof val === "string" ? val : null;
+}
+
+function getBoolean(obj: unknown, key: string): boolean {
+  const rec = asRecord(obj);
+  return Boolean(rec[key]);
+}
 
 // GET /api/estates/[estateId]/notes
 // List notes for an estate
@@ -20,14 +34,8 @@ export async function GET(
   try {
     const { estateId } = await params;
 
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    await requireEstateAccess(estateId, session.user.id);
-
-    await connectToDatabase();
+    const access = await requireViewer(estateId);
+    if (!access.ok) return access.res;
 
     const notes = await EstateNote.find({
       estateId,
@@ -61,15 +69,8 @@ export async function POST(
   try {
     const { estateId } = await params;
 
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const access = await requireEstateAccess(estateId, session.user.id);
-    if (!access.canEdit) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const access = await requireEditor(estateId);
+    if (!access.ok) return access.res;
 
     const json = (await req.json()) as CreateNotePayload;
 
@@ -80,10 +81,8 @@ export async function POST(
       );
     }
 
-    await connectToDatabase();
-
     const note = await EstateNote.create({
-      ownerId: session.user.id,
+      ownerId: access.userId,
       estateId,
       subject: json.subject,
       body: json.body,
@@ -93,18 +92,29 @@ export async function POST(
 
     // Activity log: note created
     try {
-      const bodyText = typeof note.body === "string" ? note.body.trim() : "";
+      const noteObj = typeof note.toObject === "function" ? (note.toObject() as unknown) : (note as unknown);
+
+      const bodyRaw = getString(noteObj, "body") ?? "";
+      const bodyText = bodyRaw.trim();
+
+      const kind = "NOTE" as unknown as Parameters<typeof logActivity>[0]["kind"];
+
+      const subject = getString(noteObj, "subject");
+      const category = getString(noteObj, "category");
+      const pinned = getBoolean(noteObj, "pinned");
+
       await logActivity({
-        ownerId: session.user.id,
+        ownerId: access.userId,
         estateId: String(estateId),
-        kind: "note",
-        action: "created",
+        kind,
+        action: "CREATED",
         entityId: String(note._id),
         message: "Note created",
         snapshot: {
-          subject: (note as { subject?: unknown }).subject ?? null,
-          category: (note as { category?: unknown }).category ?? null,
-          pinned: Boolean((note as { pinned?: unknown }).pinned),
+          noteId: String(note._id),
+          subject,
+          category,
+          pinned,
           bodyPreview: bodyText ? bodyText.slice(0, 240) : null,
         },
       });

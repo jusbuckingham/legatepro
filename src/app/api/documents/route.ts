@@ -1,13 +1,31 @@
 // src/app/api/documents/route.ts
-// Estate document index API for LegatePro (metadata only — not file upload yet)
+// Global estate document index API for LegatePro (metadata only — not file upload yet)
 
 import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase } from "../../../lib/db";
-import { EstateDocument } from "../../../models/EstateDocument";
+import { auth } from "@/lib/auth";
+import { connectToDatabase } from "@/lib/db";
+import { Estate } from "@/models/Estate";
+import { EstateDocument } from "@/models/EstateDocument";
+
+type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
+
+type CollaboratorLean = {
+  userId: unknown;
+  role?: unknown;
+};
+
+type EstateLean = {
+  _id: unknown;
+  ownerId?: unknown;
+  collaborators?: CollaboratorLean[];
+};
+
+type EstateIdOnlyLean = {
+  _id: unknown;
+};
 
 type DocumentFilter = {
-  ownerId: string;
-  estateId?: string;
+  estateId?: string | { $in: string[] };
   subject?: string;
   $or?: Array<Record<string, unknown>>;
 };
@@ -26,6 +44,55 @@ interface CreateDocumentPayload {
   fileSizeBytes?: number;
 }
 
+function jsonError(status: number, message: string) {
+  return NextResponse.json({ error: message }, { status });
+}
+
+function normalizeRole(input: unknown): EstateRole | null {
+  if (input === "OWNER" || input === "EDITOR" || input === "VIEWER") return input;
+  return null;
+}
+
+function getUserEstateRole(estate: EstateLean, userId: string): EstateRole | null {
+  const ownerId = estate?.ownerId != null ? String(estate.ownerId) : null;
+  if (ownerId && ownerId === userId) return "OWNER";
+
+  const collaborators: CollaboratorLean[] = Array.isArray(estate?.collaborators)
+    ? estate.collaborators
+    : [];
+
+  const match = collaborators.find((c) => String(c.userId) === userId);
+  return normalizeRole(match?.role);
+}
+
+async function getAccessibleEstateIds(userId: string) {
+  const estates = (await Estate.find(
+    {
+      $or: [{ ownerId: userId }, { "collaborators.userId": userId }],
+    },
+    { _id: 1 }
+  )
+    .lean()
+    .exec()) as unknown as EstateIdOnlyLean[];
+
+  return estates.map((e) => String(e._id));
+}
+
+async function requireEstateRole(
+  estateId: string,
+  userId: string,
+  allowed: EstateRole[]
+): Promise<{ ok: true; estate: EstateLean; role: EstateRole } | { ok: false; res: NextResponse }> {
+  const estate = (await Estate.findById(estateId).lean().exec()) as unknown as EstateLean | null;
+  if (!estate) return { ok: false, res: jsonError(404, "Estate not found") };
+
+  const role = getUserEstateRole(estate, userId);
+  if (!role) return { ok: false, res: jsonError(403, "Forbidden") };
+  if (!allowed.includes(role)) return { ok: false, res: jsonError(403, "Insufficient role") };
+
+  return { ok: true, estate, role };
+}
+
 // GET /api/documents
 // Optional query params:
 //   estateId: string              -> filter documents for a specific estate
@@ -33,21 +100,29 @@ interface CreateDocumentPayload {
 //   q: string                     -> search by label, location, tags, or notes
 export async function GET(request: NextRequest) {
   try {
-    await connectToDatabase();
+    const session = await auth();
+    const userId = session?.user?.id;
+    if (!userId) return jsonError(401, "Unauthorized");
 
-    // TODO: replace with real ownerId from auth/session
-    const ownerId = "demo-user";
+    await connectToDatabase();
 
     const { searchParams } = new URL(request.url);
     const estateId = searchParams.get("estateId");
     const subject = searchParams.get("subject");
     const q = searchParams.get("q")?.trim() ?? "";
 
-    const filter: DocumentFilter = { ownerId };
-
+    // If a specific estateId is requested, enforce viewer access on that estate.
     if (estateId) {
-      filter.estateId = estateId;
+      const access = await requireEstateRole(estateId, userId, ["OWNER", "EDITOR", "VIEWER"]);
+      if (!access.ok) return access.res;
     }
+
+    // Otherwise, only return docs for estates the user can access.
+    const accessibleEstateIds = estateId ? [estateId] : await getAccessibleEstateIds(userId);
+
+    const filter: DocumentFilter = {
+      estateId: { $in: accessibleEstateIds },
+    };
 
     if (subject) {
       filter.subject = subject;
@@ -64,15 +139,13 @@ export async function GET(request: NextRequest) {
 
     const documents = await EstateDocument.find(filter)
       .sort({ createdAt: -1, updatedAt: -1 })
-      .lean();
+      .lean()
+      .exec();
 
     return NextResponse.json({ documents }, { status: 200 });
   } catch (error) {
     console.error("GET /api/documents error", error);
-    return NextResponse.json(
-      { error: "Unable to load documents" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Unable to load documents" }, { status: 500 });
   }
 }
 
@@ -80,14 +153,13 @@ export async function GET(request: NextRequest) {
 // Creates a new estate document index entry (metadata only)
 export async function POST(request: NextRequest) {
   try {
+    const session = await auth();
+    const userId = session?.user?.id;
+    if (!userId) return jsonError(401, "Unauthorized");
+
     await connectToDatabase();
 
-    // TODO: replace with real ownerId from auth/session
-    const ownerId = "demo-user";
-
-    const rawBody = (await request.json()) as
-      | Partial<CreateDocumentPayload>
-      | null;
+    const rawBody = (await request.json()) as Partial<CreateDocumentPayload> | null;
 
     const {
       estateId,
@@ -103,34 +175,24 @@ export async function POST(request: NextRequest) {
       fileSizeBytes,
     } = rawBody ?? {};
 
-    if (!estateId) {
-      return NextResponse.json(
-        { error: "estateId is required" },
-        { status: 400 }
-      );
-    }
+    if (!estateId) return jsonError(400, "estateId is required");
+    if (!subject) return jsonError(400, "subject is required");
+    if (!label) return jsonError(400, "label is required");
 
-    if (!subject) {
-      return NextResponse.json(
-        { error: "subject is required" },
-        { status: 400 }
-      );
-    }
-
-    if (!label) {
-      return NextResponse.json(
-        { error: "label is required" },
-        { status: 400 }
-      );
-    }
+    // Creating documents requires Owner/Editor on the estate.
+    const access = await requireEstateRole(estateId, userId, ["OWNER", "EDITOR"]);
+    if (!access.ok) return access.res;
 
     const tags = Array.isArray(incomingTags)
       ? incomingTags
       : incomingTags
-      ? [String(incomingTags)]
-      : [];
+        ? [String(incomingTags)]
+        : [];
 
     const isSensitive = Boolean(incomingIsSensitive);
+
+    // Keep ownerId aligned with the estate owner for consistent ownership semantics.
+    const ownerId = String(access.estate.ownerId);
 
     const document = await EstateDocument.create({
       ownerId,
@@ -150,9 +212,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ document }, { status: 201 });
   } catch (error) {
     console.error("POST /api/documents error", error);
-    return NextResponse.json(
-      { error: "Unable to create document" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Unable to create document" }, { status: 500 });
   }
 }

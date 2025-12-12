@@ -2,8 +2,9 @@
 // Tasks API for LegatePro (estate to‑do list / required actions)
 
 import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase } from "../../../lib/db";
-import { Task } from "../../../models/Task";
+import { connectToDatabase } from "@/lib/db";
+import { Task } from "@/models/Task";
+import { requireViewer, requireEditor } from "@/lib/estateAccess";
 
 interface CreateTaskBody {
   estateId?: string;
@@ -16,28 +17,32 @@ interface CreateTaskBody {
 
 // GET /api/tasks
 // Optional query params:
-//   estateId: string            -> filter by estate
+//   estateId: string            -> filter by estate (required for access check)
 //   completed: "true" | "false" -> filter by completion
 //   category: string            -> filter by task category
 //   q: string                   -> search by title or notes
 export async function GET(request: NextRequest) {
   try {
-    await connectToDatabase();
-
-    // TODO: replace with real auth user id
-    const ownerId = "demo-user";
-
     const { searchParams } = new URL(request.url);
     const estateId = searchParams.get("estateId");
     const completed = searchParams.get("completed");
     const category = searchParams.get("category");
     const q = searchParams.get("q")?.trim() ?? "";
 
-    const filter: Record<string, unknown> = { ownerId };
-
-    if (estateId) {
-      filter.estateId = estateId;
+    if (!estateId) {
+      return NextResponse.json(
+        { error: "estateId is required" },
+        { status: 400 }
+      );
     }
+
+    // Viewer access is sufficient to read tasks
+    const access = await requireViewer(estateId);
+    if (!access.ok) return access.res;
+
+    await connectToDatabase();
+
+    const filter: Record<string, unknown> = { estateId };
 
     if (category) {
       filter.category = category;
@@ -66,40 +71,38 @@ export async function GET(request: NextRequest) {
     console.error("GET /api/tasks error", error);
     return NextResponse.json(
       { error: "Unable to load tasks" },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
 
 // POST /api/tasks
-// Creates a new task
+// Creates a new task (Owner / Editor only)
 export async function POST(request: NextRequest) {
   try {
-    await connectToDatabase();
-
-    // TODO: replace with real auth user id
-    const ownerId = "demo-user";
-
     const body = (await request.json()) as CreateTaskBody;
-
     const { estateId, title, category, dueDate, notes, isCompleted } = body;
 
     if (!estateId) {
       return NextResponse.json(
         { error: "estateId is required" },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
     if (!title) {
       return NextResponse.json(
         { error: "title is required" },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
+    const access = await requireEditor(estateId);
+    if (!access.ok) return access.res;
+
+    await connectToDatabase();
+
     const task = await Task.create({
-      ownerId,
       estateId,
       title,
       category,
@@ -113,7 +116,7 @@ export async function POST(request: NextRequest) {
     console.error("POST /api/tasks error", error);
     return NextResponse.json(
       { error: "Unable to create task" },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }

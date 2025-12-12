@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
-import { requireEstateAccess } from "@/lib/validators";
+import { requireEditor } from "@/lib/estateAccess";
 import {
   EstateTask,
   type EstateTaskDocument,
@@ -158,10 +158,8 @@ export async function PATCH(
   }
 
   // Enforce estate access (collaborators allowed) + edit permission
-  const access = await requireEstateAccess(String(existingTask.estateId), session.user.id);
-  if (!access.canEdit) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const access = await requireEditor(String(existingTask.estateId));
+  if (!access.ok) return access.res;
 
   const previousStatus = existingTask.status ? String(existingTask.status) : null;
   const previousTitle = existingTask.title ? String(existingTask.title) : null;
@@ -243,10 +241,8 @@ export async function DELETE(
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
 
-  const access = await requireEstateAccess(String(existingTask.estateId), session.user.id);
-  if (!access.canEdit) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const access = await requireEditor(String(existingTask.estateId));
+  if (!access.ok) return access.res;
 
   const deleted = await EstateTask.findByIdAndDelete(taskId);
   if (!deleted) {

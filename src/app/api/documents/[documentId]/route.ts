@@ -3,7 +3,7 @@ import { connectToDatabase } from "@/lib/db";
 import { EstateDocument } from "@/models/EstateDocument";
 import { auth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
-import { requireEstateAccess } from "@/lib/validators";
+import { requireViewer, requireEditor } from "@/lib/estateAccess";
 
 type RouteParams = { documentId: string };
 
@@ -29,10 +29,11 @@ export async function GET(
       );
     }
 
-    const access = await requireEstateAccess(String(document.estateId), session.user.id);
+    const access = await requireViewer(String(document.estateId));
+    if (!access.ok) return access.res;
 
     // VIEWER cannot fetch sensitive docs
-    if (Boolean(document.isSensitive) && !access.canViewSensitive) {
+    if (Boolean(document.isSensitive) && access.role === "VIEWER") {
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
 
@@ -65,17 +66,16 @@ export async function PUT(
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
 
-    const access = await requireEstateAccess(String(existing.estateId), session.user.id);
-    if (!access.canEdit) {
+    const access = await requireEditor(String(existing.estateId));
+    if (!access.ok) return access.res;
+
+    // Defense in depth: VIEWER should never reach this (requireEditor blocks it)
+    if (body?.isSensitive === true && access.role === "VIEWER") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Defense in depth: do not allow toggling sensitive without permission
-    if (body?.isSensitive === true && !access.canViewSensitive) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    if (Boolean(existing.isSensitive) && !access.canViewSensitive) {
+    // Consistent with GET/DELETE: VIEWER gets 404 for sensitive docs
+    if (Boolean(existing.isSensitive) && access.role === "VIEWER") {
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
 
@@ -138,12 +138,10 @@ export async function DELETE(
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
 
-    const access = await requireEstateAccess(String(document.estateId), session.user.id);
-    if (!access.canEdit) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const access = await requireEditor(String(document.estateId));
+    if (!access.ok) return access.res;
 
-    if (Boolean(document.isSensitive) && !access.canViewSensitive) {
+    if (Boolean(document.isSensitive) && access.role === "VIEWER") {
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
 

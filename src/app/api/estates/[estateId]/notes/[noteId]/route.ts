@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { auth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
-import { connectToDatabase } from "@/lib/db";
-import { requireEstateAccess } from "@/lib/validators";
+import { requireViewer, requireEditor } from "@/lib/estateAccess";
 import { EstateNote } from "@/models/EstateNote";
 
 type RouteParams = {
@@ -13,6 +11,22 @@ type RouteParams = {
   }>;
 };
 
+function asRecord(v: unknown): Record<string, unknown> {
+  if (v && typeof v === "object") return v as Record<string, unknown>;
+  return {};
+}
+
+function getString(obj: unknown, key: string): string | null {
+  const rec = asRecord(obj);
+  const val = rec[key];
+  return typeof val === "string" ? val : null;
+}
+
+function getBoolean(obj: unknown, key: string): boolean {
+  const rec = asRecord(obj);
+  return Boolean(rec[key]);
+}
+
 // GET /api/estates/[estateId]/notes/[noteId]
 export async function GET(
   _req: NextRequest,
@@ -21,15 +35,9 @@ export async function GET(
   try {
     const { estateId, noteId } = await params;
 
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     // Enforce estate access (collaborators allowed)
-    await requireEstateAccess(estateId, session.user.id);
-
-    await connectToDatabase();
+    const access = await requireViewer(estateId);
+    if (!access.ok) return access.res;
 
     const note = await EstateNote.findOne({
       _id: noteId,
@@ -65,20 +73,11 @@ export async function PATCH(
   try {
     const { estateId, noteId } = await params;
 
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     // Enforce estate access (collaborators allowed) + edit permission
-    const access = await requireEstateAccess(estateId, session.user.id);
-    if (!access.canEdit) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const access = await requireEditor(estateId);
+    if (!access.ok) return access.res;
 
     const json = (await req.json()) as UpdateNotePayload;
-
-    await connectToDatabase();
 
     const update: UpdateNotePayload = {};
     if (typeof json.subject === "string") update.subject = json.subject;
@@ -95,18 +94,20 @@ export async function PATCH(
       return NextResponse.json({ error: "Note not found" }, { status: 404 });
     }
 
-    const previousSubject = typeof (noteDoc as { subject?: unknown }).subject === "string" ? String((noteDoc as { subject?: unknown }).subject) : null;
-    const previousCategory = typeof (noteDoc as { category?: unknown }).category === "string" ? String((noteDoc as { category?: unknown }).category) : null;
-    const previousPinned = Boolean((noteDoc as { pinned?: unknown }).pinned);
-    const previousBody = typeof (noteDoc as { body?: unknown }).body === "string" ? String((noteDoc as { body?: unknown }).body) : null;
+    const beforeObj = typeof noteDoc.toObject === "function" ? (noteDoc.toObject() as unknown) : (noteDoc as unknown);
+    const previousSubject = getString(beforeObj, "subject");
+    const previousCategory = getString(beforeObj, "category");
+    const previousPinned = getBoolean(beforeObj, "pinned");
+    const previousBody = getString(beforeObj, "body");
 
     Object.assign(noteDoc, update);
     await noteDoc.save();
 
-    const nextSubject = typeof (noteDoc as { subject?: unknown }).subject === "string" ? String((noteDoc as { subject?: unknown }).subject) : null;
-    const nextCategory = typeof (noteDoc as { category?: unknown }).category === "string" ? String((noteDoc as { category?: unknown }).category) : null;
-    const nextPinned = Boolean((noteDoc as { pinned?: unknown }).pinned);
-    const nextBody = typeof (noteDoc as { body?: unknown }).body === "string" ? String((noteDoc as { body?: unknown }).body) : null;
+    const afterObj = typeof noteDoc.toObject === "function" ? (noteDoc.toObject() as unknown) : (noteDoc as unknown);
+    const nextSubject = getString(afterObj, "subject");
+    const nextCategory = getString(afterObj, "category");
+    const nextPinned = getBoolean(afterObj, "pinned");
+    const nextBody = getString(afterObj, "body");
 
     const didPinnedChange = previousPinned !== nextPinned;
 
@@ -115,14 +116,18 @@ export async function PATCH(
       const previousBodyPreview = previousBody ? previousBody.trim().slice(0, 240) : null;
       const newBodyPreview = nextBody ? nextBody.trim().slice(0, 240) : null;
 
+      const kind = "NOTE" as unknown as Parameters<typeof logActivity>[0]["kind"];
+      const action = didPinnedChange ? (nextPinned ? "PINNED" : "UNPINNED") : "UPDATED";
+
       await logActivity({
-        ownerId: session.user.id,
+        ownerId: access.userId,
         estateId: String(estateId),
-        kind: "note",
-        action: didPinnedChange ? (nextPinned ? "pinned" : "unpinned") : "updated",
+        kind,
+        action,
         entityId: String(noteDoc._id),
         message: didPinnedChange ? (nextPinned ? "Note pinned" : "Note unpinned") : "Note updated",
         snapshot: {
+          noteId: String(noteDoc._id),
           previousSubject,
           newSubject: nextSubject,
           previousCategory,
@@ -159,18 +164,9 @@ export async function DELETE(
   try {
     const { estateId, noteId } = await params;
 
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     // Enforce estate access (collaborators allowed) + edit permission
-    const access = await requireEstateAccess(estateId, session.user.id);
-    if (!access.canEdit) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    await connectToDatabase();
+    const access = await requireEditor(estateId);
+    if (!access.ok) return access.res;
 
     const deleted = await EstateNote.findOneAndDelete({
       _id: noteId,
@@ -183,18 +179,24 @@ export async function DELETE(
 
     // Activity log: note deleted
     try {
-      const bodyText = typeof (deleted as { body?: unknown }).body === "string" ? String((deleted as { body?: unknown }).body).trim() : "";
+      const kind = "NOTE" as unknown as Parameters<typeof logActivity>[0]["kind"];
+      const deletedObj = deleted as unknown;
+
+      const bodyRaw = getString(deletedObj, "body") ?? "";
+      const bodyText = bodyRaw.trim();
+
       await logActivity({
-        ownerId: session.user.id,
+        ownerId: access.userId,
         estateId: String(estateId),
-        kind: "note",
-        action: "deleted",
-        entityId: String((deleted as { _id: unknown })._id),
+        kind,
+        action: "DELETED",
+        entityId: String(asRecord(deletedObj)._id ?? noteId),
         message: "Note deleted",
         snapshot: {
-          subject: (deleted as { subject?: unknown }).subject ?? null,
-          category: (deleted as { category?: unknown }).category ?? null,
-          pinned: Boolean((deleted as { pinned?: unknown }).pinned),
+          noteId: String(asRecord(deletedObj)._id ?? noteId),
+          subject: getString(deletedObj, "subject"),
+          category: getString(deletedObj, "category"),
+          pinned: getBoolean(deletedObj, "pinned"),
           bodyPreview: bodyText ? bodyText.slice(0, 240) : null,
         },
       });

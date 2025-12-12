@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { connectToDatabase } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { EstateDocument } from "@/models/EstateDocument";
-import { requireEstateAccess } from "@/lib/validators";
+import { requireViewer, requireEditor } from "@/lib/estateAccess";
 
 interface RouteParams {
   params: Promise<{
@@ -25,14 +24,13 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const access = await requireEstateAccess(estateId, session.user.id);
-
-    await connectToDatabase();
+    const access = await requireViewer(estateId);
+    if (!access.ok) return access.res;
 
     const where: Record<string, unknown> = { estateId };
 
     // VIEWER cannot view sensitive docs regardless of query params
-    if (!access.canViewSensitive) {
+    if (access.role === "VIEWER") {
       where.isSensitive = false;
     }
 
@@ -63,12 +61,8 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const access = await requireEstateAccess(estateId, session.user.id);
-    if (!access.canEdit) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    await connectToDatabase();
+    const access = await requireEditor(estateId);
+    if (!access.ok) return access.res;
 
     const body = await request.json();
 
@@ -85,8 +79,9 @@ export async function POST(
       fileSizeBytes,
     } = body ?? {};
 
-    // Defense in depth: do not allow users without sensitive access to create sensitive docs
-    if (Boolean(isSensitive) && !access.canViewSensitive) {
+    // Defense in depth: do not allow VIEWER access (should already be blocked by requireEditor)
+    // and keep the policy that only non-VIEWER roles may create sensitive docs.
+    if (Boolean(isSensitive) && access.role === "VIEWER") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
-import { requireEstateAccess } from "@/lib/validators";
+import { requireViewer, requireEditor } from "@/lib/estateAccess";
 import {
   EstateTask,
   type EstateTaskDocument,
@@ -31,14 +29,8 @@ export async function GET(
   _req: Request,
   { params }: RouteContext,
 ): Promise<Response> {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  await connectToDatabase();
-
   const { estateId } = params;
+
   if (!estateId) {
     return NextResponse.json(
       { error: "Missing estateId in route params" },
@@ -47,7 +39,8 @@ export async function GET(
   }
 
   // Enforce estate access (collaborators allowed)
-  await requireEstateAccess(estateId, session.user.id);
+  const access = await requireViewer(estateId);
+  if (!access.ok) return access.res;
 
   const tasks = await EstateTask.find({ estateId })
     .sort({ createdAt: -1 })
@@ -76,12 +69,8 @@ export async function POST(
   req: Request,
   { params }: RouteContext,
 ): Promise<Response> {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const { estateId } = params;
+
   if (!estateId) {
     return NextResponse.json(
       { error: "Missing estateId in route params" },
@@ -90,12 +79,8 @@ export async function POST(
   }
 
   // Enforce estate access + edit permission
-  const access = await requireEstateAccess(estateId, session.user.id);
-  if (!access.canEdit) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  await connectToDatabase();
+  const access = await requireEditor(estateId);
+  if (!access.ok) return access.res;
 
   let body: unknown;
   try {
@@ -147,7 +132,7 @@ export async function POST(
 
   const taskDoc: EstateTaskDocument = await EstateTask.create({
     estateId,
-    ownerId: session.user.id,
+    ownerId: access.userId,
     title: title.trim(),
     description: description?.trim() || undefined,
     status,
@@ -159,7 +144,7 @@ export async function POST(
   // Activity log: task created
   try {
     await logActivity({
-      ownerId: session.user.id,
+      ownerId: access.userId,
       estateId: String(estateId),
       kind: "task",
       action: "created",
