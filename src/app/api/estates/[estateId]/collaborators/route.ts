@@ -8,6 +8,7 @@ import {
   type EstateCollaborator,
   type EstateRole,
 } from "@/models/Estate";
+import { logEstateEvent } from "@/lib/estateEvents";
 
 type AddCollaboratorBody = {
   userId: string;
@@ -122,6 +123,15 @@ export async function POST(
 
   await estate.save();
 
+  await logEstateEvent({
+    ownerId: session.user.id,
+    estateId,
+    type: "COLLABORATOR_ADDED",
+    summary: "Collaborator added",
+    detail: `Added collaborator ${body.userId} as ${body.role}`,
+    meta: { userId: body.userId, role: body.role },
+  });
+
   return NextResponse.json(
     { ok: true, collaborators: estate.collaborators ?? [] },
     { status: 200 }
@@ -170,9 +180,19 @@ export async function PATCH(
       { status: 404 }
     );
   }
+  const previousRole = collab.role;
 
   collab.role = body.role;
   await estate.save();
+
+  await logEstateEvent({
+    ownerId: session.user.id,
+    estateId,
+    type: "COLLABORATOR_ROLE_CHANGED",
+    summary: "Collaborator role changed",
+    detail: `Changed collaborator ${body.userId} from ${previousRole} to ${body.role}`,
+    meta: { userId: body.userId, previousRole, role: body.role },
+  });
 
   return NextResponse.json(
     { ok: true, collaborators: estate.collaborators ?? [] },
@@ -212,11 +232,22 @@ export async function DELETE(
     return NextResponse.json({ error: "Estate not found" }, { status: 404 });
   }
 
+  const removed = (estate.collaborators ?? []).find((c) => c.userId === body.userId);
+
   estate.collaborators = (estate.collaborators ?? []).filter(
     (c) => c.userId !== body.userId
   );
 
   await estate.save();
+
+  await logEstateEvent({
+    ownerId: session.user.id,
+    estateId,
+    type: "COLLABORATOR_REMOVED",
+    summary: "Collaborator removed",
+    detail: `Removed collaborator ${body.userId}`,
+    meta: { userId: body.userId, previousRole: removed?.role },
+  });
 
   return NextResponse.json(
     { ok: true, collaborators: estate.collaborators ?? [] },

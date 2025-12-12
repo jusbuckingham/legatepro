@@ -289,6 +289,58 @@ function formatNoteChangeDetail(
   return parts.length ? parts.join(" · ") : "Note updated";
 }
 
+function formatCollaboratorEvent(
+  type: string | null | undefined,
+  meta?: Record<string, unknown> | null,
+  fallbackDetail?: string,
+): { title: string; detail?: string } | null {
+  const t = (type ?? "").toUpperCase();
+
+  if (t !== "COLLABORATOR_ADDED" && t !== "COLLABORATOR_ROLE_CHANGED" && t !== "COLLABORATOR_REMOVED") {
+    return null;
+  }
+
+  const userId = safeString(meta?.userId) ?? safeString(meta?.collaboratorId);
+  const role = safeString(meta?.role);
+  const prevRole = safeString(meta?.previousRole);
+
+  if (t === "COLLABORATOR_ADDED") {
+    return {
+      title: "Collaborator added",
+      detail:
+        [userId ? `User: ${userId}` : null, role ? `Role: ${role}` : null]
+          .filter(Boolean)
+          .join(" · ") ||
+        fallbackDetail ||
+        "Collaborator added",
+    };
+  }
+
+  if (t === "COLLABORATOR_ROLE_CHANGED") {
+    const roleChange = prevRole || role ? `${prevRole ?? "Unknown"} → ${role ?? "Unknown"}` : null;
+    return {
+      title: "Collaborator role changed",
+      detail:
+        [userId ? `User: ${userId}` : null, roleChange ? `Role: ${roleChange}` : null]
+          .filter(Boolean)
+          .join(" · ") ||
+        fallbackDetail ||
+        "Collaborator role changed",
+    };
+  }
+
+  // COLLABORATOR_REMOVED
+  return {
+    title: "Collaborator removed",
+    detail:
+      [userId ? `User: ${userId}` : null, prevRole ? `Role: ${prevRole}` : null]
+        .filter(Boolean)
+        .join(" · ") ||
+      fallbackDetail ||
+      "Collaborator removed",
+  };
+}
+
 export default async function EstateTimelinePage({ params, searchParams }: PageProps) {
   const { estateId } = await params;
 
@@ -522,14 +574,22 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     if (!ts) continue;
 
     const summary = typeof ev.summary === "string" && ev.summary.trim() ? ev.summary.trim() : "Event";
-    const detail = typeof ev.detail === "string" ? ev.detail.trim() : "";
+    const detailRaw = typeof ev.detail === "string" ? ev.detail.trim() : "";
 
     // If it’s invoice-related, try to link to invoice detail via meta.invoiceId
     const metaInvoiceId = ev.meta && typeof ev.meta.invoiceId === "string" ? ev.meta.invoiceId : null;
-    const href =
-      metaInvoiceId && metaInvoiceId !== "undefined"
+
+    // Collaborator events should link to collaborators page and show structured detail.
+    const collaboratorFmt = formatCollaboratorEvent(ev.type, ev.meta, detailRaw);
+
+    const href = collaboratorFmt
+      ? `/app/estates/${estateId}/collaborators`
+      : metaInvoiceId && metaInvoiceId !== "undefined"
         ? `/app/estates/${estateId}/invoices/${metaInvoiceId}`
         : undefined;
+
+    const title = collaboratorFmt ? collaboratorFmt.title : summary;
+    const detail = collaboratorFmt ? (collaboratorFmt.detail ?? "") : detailRaw;
 
     // Skip legacy invoice status change events if Activity already recorded it
     if ((ev.type === "INVOICE_STATUS_CHANGED" || ev.type === "invoice.status_changed") && metaInvoiceId) {
@@ -542,7 +602,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
       id: `event-${String(ev._id)}`,
       kind: "event",
       estateId,
-      title: summary,
+      title,
       detail,
       timestamp: ts,
       href,
