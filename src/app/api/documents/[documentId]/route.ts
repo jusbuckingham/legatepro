@@ -3,6 +3,7 @@ import { connectToDatabase } from "@/lib/db";
 import { EstateDocument } from "@/models/EstateDocument";
 import { auth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
+import { requireEstateAccess } from "@/lib/validators";
 
 type RouteParams = { documentId: string };
 
@@ -13,6 +14,11 @@ export async function GET(
   try {
     const { documentId } = await context.params;
 
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     await connectToDatabase();
     const document = await EstateDocument.findById(documentId);
 
@@ -21,6 +27,13 @@ export async function GET(
         { error: "Document not found" },
         { status: 404 }
       );
+    }
+
+    const access = await requireEstateAccess(String(document.estateId), session.user.id);
+
+    // VIEWER cannot fetch sensitive docs
+    if (Boolean(document.isSensitive) && !access.canViewSensitive) {
+      return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
 
     return NextResponse.json({ document }, { status: 200 });
@@ -49,6 +62,20 @@ export async function PUT(
     await connectToDatabase();
     const existing = await EstateDocument.findById(documentId);
     if (!existing) {
+      return NextResponse.json({ error: "Document not found" }, { status: 404 });
+    }
+
+    const access = await requireEstateAccess(String(existing.estateId), session.user.id);
+    if (!access.canEdit) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    // Defense in depth: do not allow toggling sensitive without permission
+    if (body?.isSensitive === true && !access.canViewSensitive) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    if (Boolean(existing.isSensitive) && !access.canViewSensitive) {
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
 
@@ -108,6 +135,15 @@ export async function DELETE(
     await connectToDatabase();
     const document = await EstateDocument.findById(documentId);
     if (!document) {
+      return NextResponse.json({ error: "Document not found" }, { status: 404 });
+    }
+
+    const access = await requireEstateAccess(String(document.estateId), session.user.id);
+    if (!access.canEdit) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    if (Boolean(document.isSensitive) && !access.canViewSensitive) {
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
 

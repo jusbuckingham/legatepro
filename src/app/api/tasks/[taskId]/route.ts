@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
+import { requireEstateAccess } from "@/lib/validators";
 import {
   EstateTask,
   type EstateTaskDocument,
@@ -150,13 +151,16 @@ export async function PATCH(
     update.relatedInvoiceId = relatedInvoiceId || undefined;
   }
 
-  const existingTask = (await EstateTask.findOne({
-    _id: taskId,
-    ownerId: session.user.id,
-  })) as EstateTaskDocument | null;
+  const existingTask = (await EstateTask.findById(taskId)) as EstateTaskDocument | null;
 
   if (!existingTask) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
+  }
+
+  // Enforce estate access (collaborators allowed) + edit permission
+  const access = await requireEstateAccess(String(existingTask.estateId), session.user.id);
+  if (!access.canEdit) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const previousStatus = existingTask.status ? String(existingTask.status) : null;
@@ -234,11 +238,17 @@ export async function DELETE(
     );
   }
 
-  const deleted = await EstateTask.findOneAndDelete({
-    _id: taskId,
-    ownerId: session.user.id,
-  });
+  const existingTask = (await EstateTask.findById(taskId)) as EstateTaskDocument | null;
+  if (!existingTask) {
+    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+  }
 
+  const access = await requireEstateAccess(String(existingTask.estateId), session.user.id);
+  if (!access.canEdit) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const deleted = await EstateTask.findByIdAndDelete(taskId);
   if (!deleted) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }

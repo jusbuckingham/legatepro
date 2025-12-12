@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import type { FilterQuery } from "mongoose";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
@@ -294,9 +295,9 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   let searchQuery = "";
   let typeFilter: TimelineKind | "ALL" = "ALL";
 
-  if (searchParams) {
-    const sp = await searchParams;
+  const sp: Record<string, string | string[] | undefined> = searchParams ? await searchParams : {};
 
+  if (searchParams) {
     const qRaw = sp.q;
     searchQuery =
       typeof qRaw === "string"
@@ -328,6 +329,19 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     }
   }
 
+  // Pagination params
+  const beforeRaw = Array.isArray(sp.before) ? sp.before[0] : sp.before;
+  const limitRaw = Array.isArray(sp.limit) ? sp.limit[0] : sp.limit;
+
+  const beforeDate = typeof beforeRaw === "string" && beforeRaw ? new Date(beforeRaw) : null;
+  const isValidBefore = beforeDate instanceof Date && !Number.isNaN(beforeDate.getTime());
+
+  const parsedLimit = typeof limitRaw === "string" ? Number.parseInt(limitRaw, 10) : NaN;
+  const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 75;
+
+  const pageSize = limit;
+  const fetchSize = pageSize + 1;
+
   const session = await auth();
   if (!session?.user?.id) {
     redirect(`/login?callbackUrl=/app/estates/${estateId}/timeline`);
@@ -336,40 +350,72 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   await connectToDatabase();
 
   // Base entities
+  const invoiceWhere: FilterQuery<Record<string, unknown>> = { estateId, ownerId: session.user.id };
+  if (isValidBefore) invoiceWhere.createdAt = { $lt: beforeDate };
+
   const invoiceDocs = (await Invoice.find(
-    { estateId, ownerId: session.user.id },
+    invoiceWhere,
     { invoiceNumber: 1, status: 1, createdAt: 1, issueDate: 1, subtotal: 1, totalAmount: 1 },
-  ).lean()) as InvoiceLean[];
+  )
+    .sort({ createdAt: -1 })
+    .limit(fetchSize)
+    .lean()) as InvoiceLean[];
+
+  const documentWhere: FilterQuery<Record<string, unknown>> = { estateId, ownerId: session.user.id };
+  if (isValidBefore) documentWhere.createdAt = { $lt: beforeDate };
 
   const documentDocs = (await EstateDocument.find(
-    { estateId, ownerId: session.user.id },
+    documentWhere,
     { label: 1, subject: 1, createdAt: 1 },
-  ).lean()) as EstateDocumentLean[];
+  )
+    .sort({ createdAt: -1 })
+    .limit(fetchSize)
+    .lean()) as EstateDocumentLean[];
+
+  const taskWhere: FilterQuery<Record<string, unknown>> = { estateId, ownerId: session.user.id };
+  if (isValidBefore) taskWhere.createdAt = { $lt: beforeDate };
 
   const taskDocs = (await EstateTask.find(
-    { estateId, ownerId: session.user.id },
+    taskWhere,
     { title: 1, status: 1, createdAt: 1, dueDate: 1 },
-  ).lean()) as EstateTaskLean[];
+  )
+    .sort({ createdAt: -1 })
+    .limit(fetchSize)
+    .lean()) as EstateTaskLean[];
+
+  const noteWhere: FilterQuery<Record<string, unknown>> = { estateId, ownerId: session.user.id };
+  if (isValidBefore) noteWhere.createdAt = { $lt: beforeDate };
 
   const noteDocs = (await EstateNote.find(
-    { estateId, ownerId: session.user.id },
+    noteWhere,
     { body: 1, pinned: 1, createdAt: 1 },
-  ).lean()) as EstateNoteLean[];
+  )
+    .sort({ createdAt: -1 })
+    .limit(fetchSize)
+    .lean()) as EstateNoteLean[];
 
   // Legacy estate events (what logEstateEvent writes)
+  const estateEventWhere: FilterQuery<Record<string, unknown>> = { estateId, ownerId: session.user.id };
+  if (isValidBefore) estateEventWhere.createdAt = { $lt: beforeDate };
+
   const estateEventDocs = (await EstateEvent.find(
-    { estateId, ownerId: session.user.id },
+    estateEventWhere,
     { type: 1, summary: 1, detail: 1, meta: 1, createdAt: 1 },
   )
     .sort({ createdAt: -1 })
+    .limit(fetchSize)
     .lean()) as EstateEventLean[];
 
   // New activity events (what logActivity writes)
+  const estateActivityWhere: FilterQuery<Record<string, unknown>> = { estateId, ownerId: session.user.id };
+  if (isValidBefore) estateActivityWhere.createdAt = { $lt: beforeDate };
+
   const estateActivityDocs = (await EstateActivity.find(
-    { estateId, ownerId: session.user.id },
+    estateActivityWhere,
     { kind: 1, action: 1, entityId: 1, message: 1, snapshot: 1, createdAt: 1 },
   )
     .sort({ createdAt: -1 })
+    .limit(fetchSize)
     .lean()) as EstateActivityLean[];
 
   const events: TimelineEvent[] = [];
@@ -580,6 +626,45 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
 
   const hasFilters = !!searchQuery || typeFilter !== "ALL";
 
+  // Build href for filter chips, preserving current q param, before, and limit
+  const buildHref = (nextType: string, nextBefore?: string | null) => {
+    const base = `/app/estates/${estateId}/timeline`;
+    const params = new URLSearchParams();
+
+    if (searchQuery) params.set("q", searchQuery);
+    if (nextType && nextType !== "ALL") params.set("type", nextType);
+
+    const useBefore =
+      nextBefore === null
+        ? null
+        : typeof nextBefore === "string"
+        ? nextBefore
+        : isValidBefore && beforeDate
+        ? beforeDate.toISOString()
+        : null;
+
+    if (useBefore) params.set("before", useBefore);
+    if (pageSize !== 75) params.set("limit", String(pageSize));
+
+    const qs = params.toString();
+    return qs ? `${base}?${qs}` : base;
+  };
+
+  // Pagination: after filters, only show `pageSize` events
+  const sortedForPaging = [...filteredEvents].sort((a, b) => {
+    const at = new Date(a.timestamp).getTime();
+    const bt = new Date(b.timestamp).getTime();
+    return bt - at;
+  });
+
+  const hasMore = sortedForPaging.length > pageSize;
+  const pageEvents = hasMore ? sortedForPaging.slice(0, pageSize) : sortedForPaging;
+  const nextBefore = hasMore ? pageEvents[pageEvents.length - 1]?.timestamp : null;
+
+  const filteredCount = pageEvents.length;
+  const modeFilter: "ALL" | "activity" | "event" =
+    typeFilter === "activity" || typeFilter === "event" ? typeFilter : "ALL";
+
   // Day grouping
   const today = new Date();
   const todayKey = toDateKey(today);
@@ -588,12 +673,12 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayKey = toDateKey(yesterday);
 
-  const latestEventId = filteredEvents[0]?.id;
+  const latestEventId = pageEvents[0]?.id;
 
   const dayGroups: TimelineDayGroup[] = [];
   let currentGroup: TimelineDayGroup | null = null;
 
-  for (const ev of filteredEvents) {
+  for (const ev of pageEvents) {
     const d = new Date(ev.timestamp);
     if (Number.isNaN(d.getTime())) continue;
 
@@ -641,8 +726,13 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
 
         <div className="mt-1 flex flex-col items-end gap-1 text-xs text-gray-500">
           <span>
-            <span className="font-medium">{events.length}</span> event
-            {events.length === 1 ? "" : "s"}
+            <span className="font-medium">{hasFilters ? filteredCount : events.length}</span> event
+            {(hasFilters ? filteredCount : events.length) === 1 ? "" : "s"}
+            {hasFilters && !isValidBefore && (
+              <span className="ml-1 text-[11px] text-gray-400">
+                (of {events.length})
+              </span>
+            )}
           </span>
           <span className="text-[11px] text-gray-400">
             Includes invoices, documents, tasks, notes, and activity logs.
@@ -652,6 +742,77 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
 
       {/* Filters */}
       <section className="space-y-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          {[
+            { key: "ALL", label: "All" },
+            { key: "invoice", label: "Invoices" },
+            { key: "task", label: "Tasks" },
+            { key: "document", label: "Documents" },
+            { key: "note", label: "Notes" },
+          ].map((opt) => {
+            const isActive = typeFilter === opt.key;
+            return (
+              <Link
+                key={opt.key}
+                href={buildHref(opt.key)}
+                className={
+                  "inline-flex items-center rounded-full border px-3 py-1 text-xs " +
+                  (isActive
+                    ? "border-gray-900 bg-gray-900 text-white"
+                    : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50")
+                }
+              >
+                {opt.label}
+              </Link>
+            );
+          })}
+          <span className="ml-1 text-xs text-gray-500">
+            {filteredCount} shown
+          </span>
+          {(typeFilter === "invoice" || typeFilter === "task" || typeFilter === "document" || typeFilter === "note") && (
+            <Link
+              href={buildHref("ALL")}
+              className="ml-1 text-xs text-gray-500 hover:text-gray-800"
+            >
+              Clear type
+            </Link>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {[
+            { key: "ALL", label: "Everything" },
+            { key: "activity", label: "Activity log" },
+            { key: "event", label: "Legacy events" },
+          ].map((opt) => {
+            const isActive = modeFilter === opt.key;
+            return (
+              <Link
+                key={opt.key}
+                href={buildHref(opt.key)}
+                className={
+                  "inline-flex items-center rounded-full border px-3 py-1 text-xs " +
+                  (isActive
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50")
+                }
+              >
+                {opt.label}
+              </Link>
+            );
+          })}
+          <span className="ml-1 text-xs text-gray-500">
+            Quick view
+          </span>
+          {modeFilter !== "ALL" && (
+            <Link
+              href={buildHref("ALL")}
+              className="ml-1 text-xs text-gray-500 hover:text-gray-800"
+            >
+              Clear view
+            </Link>
+          )}
+        </div>
+
         <form method="GET" className="flex flex-col gap-2 text-xs md:flex-row md:items-center md:justify-between">
           <div className="flex flex-1 items-center gap-2">
             <label htmlFor="q" className="whitespace-nowrap text-[11px] text-gray-500">
@@ -709,10 +870,44 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
           </p>
         ) : (
           <div className="space-y-6">
+            <div className="flex flex-col gap-2 rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span>
+                  Showing <span className="font-medium text-gray-900">{filteredCount}</span>
+                  {filteredCount === 1 ? " event" : " events"}
+                </span>
+                <span className="text-gray-400">•</span>
+                <span>
+                  Page size: <span className="font-medium text-gray-900">{pageSize}</span>
+                </span>
+                {isValidBefore && beforeDate && (
+                  <>
+                    <span className="text-gray-400">•</span>
+                    <span>
+                      Older than <span className="font-medium text-gray-900">{beforeDate.toLocaleString()}</span>
+                    </span>
+                  </>
+                )}
+              </div>
+
+              {isValidBefore && (
+                <div className="flex items-center gap-3">
+                  <Link
+                    href={buildHref(typeFilter, null)}
+                    className="text-xs font-medium text-blue-700 hover:underline"
+                  >
+                    Back to newest
+                  </Link>
+                </div>
+              )}
+            </div>
             {dayGroups.map((group) => (
               <div key={group.dateKey}>
                 <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  {group.label}
+                  {group.label}{" "}
+                  <span className="text-[11px] font-normal text-gray-400">
+                    ({group.events.length})
+                  </span>
                 </h3>
 
                 <ol className="relative border-l border-gray-200 pl-4 text-sm">
@@ -783,6 +978,27 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
                 </ol>
               </div>
             ))}
+            {hasMore && nextBefore && (
+              <div className="mt-6 flex flex-col items-center justify-center gap-2 sm:flex-row">
+                <Link
+                  href={buildHref(typeFilter, nextBefore)}
+                  className="inline-flex items-center rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                >
+                  Load older
+                </Link>
+
+                {isValidBefore ? (
+                  <Link
+                    href={buildHref(typeFilter, null)}
+                    className="text-sm font-medium text-blue-700 hover:underline"
+                  >
+                    Back to newest
+                  </Link>
+                ) : (
+                  <span className="text-sm font-medium text-gray-400">Newest</span>
+                )}
+              </div>
+            )}
           </div>
         )}
       </section>

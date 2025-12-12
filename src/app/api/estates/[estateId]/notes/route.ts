@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { connectToDatabase } from "@/lib/db";
 import { EstateNote } from "@/models/EstateNote";
+import { requireEstateAccess } from "@/lib/validators";
 
 type RouteParams = {
   params: Promise<{
@@ -24,11 +25,12 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    await requireEstateAccess(estateId, session.user.id);
+
     await connectToDatabase();
 
     const notes = await EstateNote.find({
       estateId,
-      ownerId: session.user.id,
     })
       .sort({ pinned: -1, createdAt: -1 })
       .lean();
@@ -62,6 +64,11 @@ export async function POST(
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const access = await requireEstateAccess(estateId, session.user.id);
+    if (!access.canEdit) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const json = (await req.json()) as CreateNotePayload;

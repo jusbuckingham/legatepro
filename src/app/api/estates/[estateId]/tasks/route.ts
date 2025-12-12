@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
+import { requireEstateAccess } from "@/lib/validators";
 import {
   EstateTask,
   type EstateTaskDocument,
@@ -26,8 +27,8 @@ function parseStatus(raw: unknown): TaskStatus | undefined {
   return ALLOWED_STATUSES.includes(upper) ? upper : undefined;
 }
 
-export async function POST(
-  req: Request,
+export async function GET(
+  _req: Request,
   { params }: RouteContext,
 ): Promise<Response> {
   const session = await auth();
@@ -44,6 +45,57 @@ export async function POST(
       { status: 400 },
     );
   }
+
+  // Enforce estate access (collaborators allowed)
+  await requireEstateAccess(estateId, session.user.id);
+
+  const tasks = await EstateTask.find({ estateId })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  return NextResponse.json(
+    tasks.map((t) => ({
+      id: String((t as { _id: unknown })._id),
+      estateId: t.estateId,
+      ownerId: t.ownerId,
+      title: t.title,
+      description: (t as { description?: string | null }).description ?? null,
+      status: t.status,
+      dueDate: (t as { dueDate?: Date | null }).dueDate ?? null,
+      completedAt: (t as { completedAt?: Date | null }).completedAt ?? null,
+      relatedDocumentId: (t as { relatedDocumentId?: string | null }).relatedDocumentId ?? null,
+      relatedInvoiceId: (t as { relatedInvoiceId?: string | null }).relatedInvoiceId ?? null,
+      createdAt: (t as { createdAt?: Date }).createdAt,
+      updatedAt: (t as { updatedAt?: Date }).updatedAt,
+    })),
+    { status: 200 },
+  );
+}
+
+export async function POST(
+  req: Request,
+  { params }: RouteContext,
+): Promise<Response> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { estateId } = params;
+  if (!estateId) {
+    return NextResponse.json(
+      { error: "Missing estateId in route params" },
+      { status: 400 },
+    );
+  }
+
+  // Enforce estate access + edit permission
+  const access = await requireEstateAccess(estateId, session.user.id);
+  if (!access.canEdit) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  await connectToDatabase();
 
   let body: unknown;
   try {

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+
 import { auth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { connectToDatabase } from "@/lib/db";
+import { requireEstateAccess } from "@/lib/validators";
 import { EstateNote } from "@/models/EstateNote";
 
 type RouteParams = {
@@ -24,12 +26,14 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Enforce estate access (collaborators allowed)
+    await requireEstateAccess(estateId, session.user.id);
+
     await connectToDatabase();
 
     const note = await EstateNote.findOne({
       _id: noteId,
       estateId,
-      ownerId: session.user.id,
     }).lean();
 
     if (!note) {
@@ -66,6 +70,12 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Enforce estate access (collaborators allowed) + edit permission
+    const access = await requireEstateAccess(estateId, session.user.id);
+    if (!access.canEdit) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const json = (await req.json()) as UpdateNotePayload;
 
     await connectToDatabase();
@@ -79,7 +89,6 @@ export async function PATCH(
     const noteDoc = await EstateNote.findOne({
       _id: noteId,
       estateId,
-      ownerId: session.user.id,
     });
 
     if (!noteDoc) {
@@ -155,12 +164,17 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Enforce estate access (collaborators allowed) + edit permission
+    const access = await requireEstateAccess(estateId, session.user.id);
+    if (!access.canEdit) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     await connectToDatabase();
 
     const deleted = await EstateNote.findOneAndDelete({
       _id: noteId,
       estateId,
-      ownerId: session.user.id,
     }).lean();
 
     if (!deleted) {

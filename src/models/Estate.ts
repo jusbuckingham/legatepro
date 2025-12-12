@@ -1,6 +1,14 @@
 // src/models/Estate.ts
 import mongoose, { Schema, Document, Model } from "mongoose";
 
+export type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
+
+export interface EstateCollaborator {
+  userId: string;
+  role: EstateRole;
+  addedAt?: Date;
+}
+
 // Detailed decedent info (optional, but keeps room for your richer spreadsheet data)
 interface DecedentDetails {
   fullName?: string;
@@ -28,6 +36,8 @@ interface CompensationSettings {
 
 export interface IEstate {
   ownerId: string; // user who owns this estate workspace
+
+  collaborators?: EstateCollaborator[]; // additional users with access
 
   // Top-level names used throughout the UI & API
   decedentName?: string; // e.g. "Donald Buckingham"
@@ -85,9 +95,20 @@ const CompensationSchema = new Schema<CompensationSettings>(
   { _id: false }
 );
 
+const CollaboratorSchema = new Schema<EstateCollaborator>(
+  {
+    userId: { type: String, required: true, index: true },
+    role: { type: String, enum: ["OWNER", "EDITOR", "VIEWER"], required: true },
+    addedAt: { type: Date, default: () => new Date() },
+  },
+  { _id: false }
+);
+
 const EstateSchema = new Schema<EstateDocument>(
   {
     ownerId: { type: String, required: true, index: true },
+
+    collaborators: { type: [CollaboratorSchema], default: [] },
 
     // Primary names used in the UI & filters
     decedentName: { type: String, required: false, trim: true },
