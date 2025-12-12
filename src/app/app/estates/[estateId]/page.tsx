@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
+import { getEstateAccess } from "@/lib/validators";
 import { Estate } from "@/models/Estate";
 import { Invoice } from "@/models/Invoice";
 import { EstateDocument } from "@/models/EstateDocument";
@@ -148,10 +149,16 @@ export default async function EstateOverviewPage({ params }: PageProps) {
 
   await connectToDatabase();
 
-  const estateDoc = (await Estate.findOne({
-    _id: estateId,
-    ownerId: session.user.id,
-  })
+  const access = await getEstateAccess(estateId, session.user.id);
+  if (!access) {
+    // If the estate doesn't exist or the user has no access, send them back
+    redirect("/app/estates");
+  }
+
+  const canEdit = access.canEdit;
+  const canViewSensitive = access.canViewSensitive;
+
+  const estateDoc = (await Estate.findById(estateId)
     .lean()
     .exec()) as EstateLean | null;
 
@@ -160,7 +167,7 @@ export default async function EstateOverviewPage({ params }: PageProps) {
   }
 
   const invoiceDocs = (await Invoice.find(
-    { estateId, ownerId: session.user.id },
+    { estateId },
     {
       description: 1,
       status: 1,
@@ -173,8 +180,13 @@ export default async function EstateOverviewPage({ params }: PageProps) {
     .lean()
     .exec()) as InvoiceLean[];
 
+  const documentFilter: Record<string, unknown> = { estateId };
+  if (!canViewSensitive) {
+    documentFilter.isSensitive = false;
+  }
+
   const documentDocs = (await EstateDocument.find(
-    { estateId, ownerId: session.user.id },
+    documentFilter,
     {
       label: 1,
       subject: 1,
@@ -190,7 +202,7 @@ export default async function EstateOverviewPage({ params }: PageProps) {
     .exec()) as EstateDocumentLean[];
 
   const taskDocs = (await EstateTask.find(
-    { estateId, ownerId: session.user.id },
+    { estateId },
     {
       title: 1,
       description: 1,
@@ -203,7 +215,7 @@ export default async function EstateOverviewPage({ params }: PageProps) {
     .exec()) as EstateTaskLean[];
 
   const noteDocs = (await EstateNote.find(
-    { estateId, ownerId: session.user.id },
+    { estateId },
     { body: 1, pinned: 1, createdAt: 1 },
   )
     .sort({ pinned: -1, createdAt: -1 })
@@ -407,7 +419,24 @@ export default async function EstateOverviewPage({ params }: PageProps) {
               ← Back to estates
             </Link>
           </p>
-          <h1 className="mt-1 text-2xl font-semibold">{estateName}</h1>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold">{estateName}</h1>
+            <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-700">
+              {access.role === "OWNER"
+                ? "Owner"
+                : access.role === "EDITOR"
+                ? "Editor"
+                : "Viewer"}
+            </span>
+          </div>
+          {access.role === "VIEWER" && (
+            <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+              <div className="font-semibold">Read-only access</div>
+              <div className="mt-1 text-xs text-blue-900/80">
+                You can view this estate, but creating, editing, and deleting are disabled.
+              </div>
+            </div>
+          )}
           {decedentName && (
             <p className="text-sm text-gray-600">
               Decedent: <span className="font-medium">{decedentName}</span>
@@ -433,7 +462,7 @@ export default async function EstateOverviewPage({ params }: PageProps) {
           </div>
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Link
               href={`/app/estates/${estateId}/timeline`}
               className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
@@ -445,6 +474,12 @@ export default async function EstateOverviewPage({ params }: PageProps) {
               className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
             >
               View all invoices
+            </Link>
+            <Link
+              href={`/app/estates/${estateId}/collaborators`}
+              className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              {access.role === "OWNER" ? "Manage collaborators" : "View collaborators"}
             </Link>
           </div>
         </div>
@@ -644,12 +679,14 @@ export default async function EstateOverviewPage({ params }: PageProps) {
                           >
                             View
                           </Link>
-                          <Link
-                            href={`/app/estates/${estateId}/invoices/${inv._id}/edit`}
-                            className="text-blue-600 hover:underline"
-                          >
-                            Edit
-                          </Link>
+                          {canEdit && (
+                            <Link
+                              href={`/app/estates/${estateId}/invoices/${inv._id}/edit`}
+                              className="text-blue-600 hover:underline"
+                            >
+                              Edit
+                            </Link>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -797,15 +834,17 @@ export default async function EstateOverviewPage({ params }: PageProps) {
               </select>
 
               {/* Sensitive only toggle (mirrors index page behavior) */}
-              <label className="flex items-center gap-1 text-[11px] text-gray-500">
-                <input
-                  type="checkbox"
-                  name="sensitive"
-                  value="1"
-                  className="h-3 w-3"
-                />
-                Sensitive only
-              </label>
+              {canViewSensitive && (
+                <label className="flex items-center gap-1 text-[11px] text-gray-500">
+                  <input
+                    type="checkbox"
+                    name="sensitive"
+                    value="1"
+                    className="h-3 w-3"
+                  />
+                  Sensitive only
+                </label>
+              )}
 
               <button
                 type="submit"
@@ -820,12 +859,14 @@ export default async function EstateOverviewPage({ params }: PageProps) {
             >
               Open full index
             </Link>
-            <Link
-              href={`/app/estates/${estateId}/documents?newSensitive=1#add-document`}
-              className="text-xs font-medium text-rose-600 hover:underline"
-            >
-              Create sensitive doc
-            </Link>
+            {canEdit && canViewSensitive && (
+              <Link
+                href={`/app/estates/${estateId}/documents?newSensitive=1#add-document`}
+                className="text-xs font-medium text-rose-600 hover:underline"
+              >
+                Create sensitive doc
+              </Link>
+            )}
           </div>
         </div>
 
