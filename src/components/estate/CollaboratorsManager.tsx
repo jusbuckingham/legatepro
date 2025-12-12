@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-type Role = "OWNER" | "EDITOR" | "VIEWER";
+type Role = "EDITOR" | "VIEWER";
 
 type Collaborator = {
   userId: string;
@@ -25,17 +25,26 @@ export default function CollaboratorsManager({
   const [role, setRole] = useState<Role>("VIEWER");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   async function addCollaborator() {
     if (!userId) return;
 
+    const trimmed = userId.trim();
+    const existing = collaborators.find((c) => c.userId === trimmed);
+    if (existing && existing.role === role) {
+      setInfo("No changes to save.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
+    setInfo(null);
 
     const res = await fetch(`/api/estates/${estateId}/collaborators`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, role }),
+      body: JSON.stringify({ userId: trimmed, role }),
     });
 
     setLoading(false);
@@ -48,12 +57,20 @@ export default function CollaboratorsManager({
 
     setUserId("");
     setRole("VIEWER");
+    setInfo("Saved.");
     router.refresh();
   }
 
   async function updateRole(targetUserId: string, newRole: Role) {
+    const existing = collaborators.find((c) => c.userId === targetUserId);
+    if (existing && existing.role === newRole) {
+      setInfo("No changes to save.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
+    setInfo(null);
 
     const res = await fetch(`/api/estates/${estateId}/collaborators`, {
       method: "PATCH",
@@ -69,14 +86,16 @@ export default function CollaboratorsManager({
       return;
     }
 
+    setInfo("Saved.");
     router.refresh();
   }
 
   async function removeCollaborator(targetUserId: string) {
-    if (!confirm("Remove this collaborator?")) return;
+    if (!confirm(`Remove collaborator ${targetUserId}?`)) return;
 
     setLoading(true);
     setError(null);
+    setInfo(null);
 
     const res = await fetch(`/api/estates/${estateId}/collaborators`, {
       method: "DELETE",
@@ -92,6 +111,7 @@ export default function CollaboratorsManager({
       return;
     }
 
+    setInfo("Removed.");
     router.refresh();
   }
 
@@ -121,7 +141,7 @@ export default function CollaboratorsManager({
 
             <button
               onClick={addCollaborator}
-              disabled={loading}
+              disabled={loading || !userId.trim()}
               className="rounded-md bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
             >
               Add
@@ -129,8 +149,11 @@ export default function CollaboratorsManager({
           </div>
 
           {error && <div className="mt-2 text-xs text-red-600">{error}</div>}
+          {info && <div className="mt-2 text-xs text-gray-600">{info}</div>}
         </div>
       )}
+
+      {info && <div className="text-xs text-gray-600">{info}</div>}
 
       <div className="space-y-2">
         {collaborators.map((c) => (
@@ -147,10 +170,11 @@ export default function CollaboratorsManager({
               <div className="flex items-center gap-2">
                 <select
                   value={c.role}
+                  disabled={loading}
                   onChange={(e) =>
                     updateRole(c.userId, e.target.value as Role)
                   }
-                  className="rounded-md border border-gray-300 px-2 py-1 text-xs"
+                  className="rounded-md border border-gray-300 px-2 py-1 text-xs disabled:opacity-50"
                 >
                   <option value="VIEWER">Viewer</option>
                   <option value="EDITOR">Editor</option>
@@ -158,7 +182,8 @@ export default function CollaboratorsManager({
 
                 <button
                   onClick={() => removeCollaborator(c.userId)}
-                  className="text-xs text-red-600 hover:underline"
+                  disabled={loading}
+                  className="text-xs text-red-600 hover:underline disabled:opacity-50"
                 >
                   Remove
                 </button>
