@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 import { Task } from "@/models/Task";
@@ -66,8 +67,8 @@ function formatShortDate(value: Date | string | null | undefined) {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function formatCurrency(amount: number) {
-  if (!amount || Number.isNaN(amount)) return "$0.00";
+function formatCurrency(amount: number | null | undefined) {
+  if (amount == null || Number.isNaN(amount)) return "$0.00";
   return amount.toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
@@ -234,7 +235,14 @@ export default async function AppDashboardPage() {
   const netThisMonth = monthlyRentTotal - monthlyExpenseTotal;
   const netAllTime = totalRentAllTime - totalExpensesAllTime;
 
-  const userName = "there";
+  let userName = "there";
+  try {
+    const session = await auth();
+    const nameFromSession = session?.user?.name || session?.user?.email;
+    if (nameFromSession) userName = nameFromSession;
+  } catch {
+    // ignore; keep safe default
+  }
 
   return (
     <div className="space-y-8 p-4 md:p-6 lg:p-8">
@@ -283,7 +291,7 @@ export default async function AppDashboardPage() {
       </header>
 
       {/* Summary cards */}
-      <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4 shadow-sm shadow-slate-950/60">
           <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
             Estates

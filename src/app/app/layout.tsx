@@ -8,6 +8,25 @@ interface AppLayoutProps {
   children: ReactNode;
 }
 
+type NavItem = {
+  href: string;
+  label: string;
+  badge?: string;
+};
+
+function SignOutForm({ className }: { className?: string }) {
+  return (
+    <form action="/api/auth/signout?callbackUrl=/login" method="post" className={className}>
+      <button
+        type="submit"
+        className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-100 transition-colors hover:border-slate-500 hover:bg-slate-800"
+      >
+        Sign out
+      </button>
+    </form>
+  );
+}
+
 export default async function AppLayout({ children }: AppLayoutProps) {
   const session = await auth();
 
@@ -17,6 +36,17 @@ export default async function AppLayout({ children }: AppLayoutProps) {
 
   const user = session.user as { name?: string | null; email?: string | null };
   const userName = user.name || user.email || "User";
+
+  const navOverview: NavItem[] = [{ href: "/app", label: "Dashboard", badge: "Home" }];
+  const navEstates: NavItem[] = [
+    { href: "/app/estates", label: "Estates" },
+    { href: "/app/tasks", label: "Tasks & deadlines" },
+    { href: "/app/expenses", label: "Expenses & reimbursements" },
+    { href: "/app/rent", label: "Rent & income" },
+    { href: "/app/documents", label: "Documents" },
+    { href: "/app/contacts", label: "Contacts" },
+  ];
+  const navSystem: NavItem[] = [{ href: "/app/settings", label: "Settings" }];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 flex">
@@ -31,79 +61,53 @@ export default async function AppLayout({ children }: AppLayoutProps) {
           </div>
         </div>
 
-        <nav className="flex-1 space-y-1 text-sm">
+        <nav className="flex-1 space-y-1 text-sm" aria-label="App navigation">
           <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
             Overview
           </p>
-          <Link
-            href="/app"
-            className="mt-1 flex items-center justify-between rounded-lg px-2 py-1.5 text-slate-200 hover:bg-slate-900"
-          >
-            <span>Dashboard</span>
-            <span className="text-[10px] uppercase text-emerald-400">Home</span>
-          </Link>
+          {navOverview.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="mt-1 flex items-center justify-between rounded-lg px-2 py-1.5 text-slate-200 hover:bg-slate-900"
+            >
+              <span>{item.label}</span>
+              {item.badge ? (
+                <span className="text-[10px] uppercase text-emerald-400">{item.badge}</span>
+              ) : null}
+            </Link>
+          ))}
 
           <p className="mt-4 px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
             Estates
           </p>
-          <Link
-            href="/app/estates"
-            className="flex items-center rounded-lg px-2 py-1.5 text-slate-300 hover:bg-slate-900"
-          >
-            Estates
-          </Link>
-          <Link
-            href="/app/tasks"
-            className="flex items-center rounded-lg px-2 py-1.5 text-slate-300 hover:bg-slate-900"
-          >
-            Tasks &amp; deadlines
-          </Link>
-          <Link
-            href="/app/expenses"
-            className="flex items-center rounded-lg px-2 py-1.5 text-slate-300 hover:bg-slate-900"
-          >
-            Expenses &amp; reimbursements
-          </Link>
-          <Link
-            href="/app/rent"
-            className="flex items-center rounded-lg px-2 py-1.5 text-slate-300 hover:bg-slate-900"
-          >
-            Rent &amp; income
-          </Link>
-          <Link
-            href="/app/documents"
-            className="flex items-center rounded-lg px-2 py-1.5 text-slate-300 hover:bg-slate-900"
-          >
-            Documents
-          </Link>
-          <Link
-            href="/app/contacts"
-            className="flex items-center rounded-lg px-2 py-1.5 text-slate-300 hover:bg-slate-900"
-          >
-            Contacts
-          </Link>
+          {navEstates.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="flex items-center rounded-lg px-2 py-1.5 text-slate-300 hover:bg-slate-900"
+            >
+              {item.label}
+            </Link>
+          ))}
 
           <p className="mt-4 px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
             System
           </p>
-          <Link
-            href="/app/settings"
-            className="flex items-center rounded-lg px-2 py-1.5 text-slate-300 hover:bg-slate-900"
-          >
-            Settings
-          </Link>
+          {navSystem.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="flex items-center rounded-lg px-2 py-1.5 text-slate-300 hover:bg-slate-900"
+            >
+              {item.label}
+            </Link>
+          ))}
         </nav>
 
         <div className="mt-6 border-t border-slate-800 pt-4 text-xs text-slate-500">
           <div className="text-slate-300">{userName}</div>
-          <form action="/api/auth/signout?callbackUrl=/login" method="post" className="mt-1">
-            <button
-              type="submit"
-              className="inline-flex items-center text-[11px] font-medium text-slate-400 hover:text-slate-200"
-            >
-              Sign out
-            </button>
-          </form>
+          <SignOutForm className="mt-2" />
         </div>
       </aside>
 
@@ -118,14 +122,7 @@ export default async function AppLayout({ children }: AppLayoutProps) {
                 <span className="font-medium text-slate-200">{userName}</span>
               </p>
             </div>
-            <form action="/api/auth/signout?callbackUrl=/login" method="post">
-              <button
-                type="submit"
-                className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-800 hover:border-slate-500 transition-colors"
-              >
-                Sign out
-              </button>
-            </form>
+            <SignOutForm />
           </div>
         </header>
 

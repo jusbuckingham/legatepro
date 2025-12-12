@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/Status-Private%20Beta-orange" />
 </p>
 
-**A modern, elegant, AI‑powered probate management platform.**
+**A modern, elegant, role‑aware probate management platform.**
 
 LegatePro is a next‑generation probate administration system designed to streamline estate management for Personal Representatives (executors), attorneys, and fiduciaries.  
 With structured workflows, automation, and AI‑assisted guidance, LegatePro aims to become the *TurboTax for probate* — accurate, compliant, and built for real‑world estate complexity.
@@ -22,6 +22,12 @@ With structured workflows, automation, and AI‑assisted guidance, LegatePro aim
 - Decedent details, court info, PR compensation structure  
 - Organized dashboard with tasks, expenses, rent, documents, utilities, contacts, and billing  
 
+### 👥 Collaboration & Permissions
+- Invite collaborators by email with role-based access (Owner, Editor, Viewer)
+- Secure invite links with expiration and revocation
+- Read-only mode for viewers with UI + API enforcement
+- Inline collaborator management per estate
+
 ### ✅ Task Tracking  
 - Full CRUD task management  
 - Status, priority, due dates, and notes  
@@ -33,9 +39,10 @@ With structured workflows, automation, and AI‑assisted guidance, LegatePro aim
 - Automated totals and summaries  
 
 ### 🧾 Document Index  
-- Unified index for all estate‑related documents  
-- Tagging system (Banking, Auto, Insurance, Medical, etc.)  
-- Designed to link out to Google Drive, iCloud, Dropbox, etc.  
+- Unified index for all estate-related documents  
+- Subject tagging (Banking, Auto, Insurance, Medical, etc.)  
+- Sensitive document flag with filtered views  
+- Fast search, filtering, and preview from estate overview  
 
 ### 🏠 Property & Rent Management  
 - Track rental properties inside an estate  
@@ -65,10 +72,12 @@ With structured workflows, automation, and AI‑assisted guidance, LegatePro aim
 - Line item editor with rate/amount normalization  
 - Estate timeline events log invoice creation/updates  
 
-### 🤖 AI‑Assisted Probate (Coming Soon)  
-- Automated document drafting (receipts, letters, notices)  
-- Smart suggestions based on probate stage  
-- Auto‑classification of uploaded documents  
+### 🕒 Estate Timeline & Activity Log
+- Unified, chronological audit log per estate
+- Tracks invoices, tasks, documents, notes, and collaborators
+- Invite lifecycle events (sent, accepted, revoked)
+- Grouped by day (Today / Yesterday / dates)
+- Copy-friendly invite links surfaced directly in timeline
 
 ---
 
@@ -78,7 +87,7 @@ With structured workflows, automation, and AI‑assisted guidance, LegatePro aim
 - **TypeScript**  
 - **Tailwind CSS**  
 - **MongoDB + Mongoose**  
-- **NextAuth (Credentials + OAuth)**  
+- **Custom Auth Wrapper (NextAuth-compatible)**  
 - **Stripe Billing (coming soon)**  
 - **Server Actions**  
 - **Vercel Deployment**  
@@ -203,17 +212,19 @@ Brand direction aligns with trust, clarity, and professional legal tech standard
 
 ## 📌 Roadmap
 
-- [x] Full CRUD tasks  
-- [x] Expense module  
-- [ ] Enhanced document index  
-- [x] Property management  
-- [ ] Utility workflows  
-- [x] Contacts system  
-- [x] PR time tracking + unbilled totals  
-- [x] Invoice creation, editing, printing, numbering  
-- [ ] Stripe billing integration  
-- [ ] PDF generation  
-- [ ] AI assistants & automation  
+- [x] Full CRUD tasks
+- [x] Expense module
+- [x] Document index + sensitive docs
+- [x] Property management
+- [ ] Utility workflows
+- [x] Contacts system
+- [x] PR time tracking + unbilled totals
+- [x] Invoice creation, editing, printing, numbering
+- [x] Collaboration & role-based permissions
+- [x] Estate timeline & activity logging
+- [ ] Stripe billing integration
+- [ ] PDF generation
+- [ ] AI assistants & automation
 
 ---
 
