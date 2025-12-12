@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
+import { logActivity } from "@/lib/activity";
 import {
   EstateTask,
   type EstateTaskDocument,
@@ -102,6 +103,27 @@ export async function POST(
     relatedDocumentId: relatedDocumentId || undefined,
     relatedInvoiceId: relatedInvoiceId || undefined,
   });
+
+  // Activity log: task created
+  try {
+    await logActivity({
+      ownerId: session.user.id,
+      estateId: String(estateId),
+      kind: "task",
+      action: "created",
+      entityId: String(taskDoc._id),
+      message: `Task created: ${String(taskDoc.title ?? "Untitled")}`,
+      snapshot: {
+        title: taskDoc.title ?? null,
+        status: taskDoc.status ?? null,
+        dueDate: taskDoc.dueDate ?? null,
+        relatedDocumentId: taskDoc.relatedDocumentId ?? null,
+        relatedInvoiceId: taskDoc.relatedInvoiceId ?? null,
+      },
+    });
+  } catch {
+    // Don't block task creation if activity logging fails
+  }
 
   return NextResponse.json(
     {

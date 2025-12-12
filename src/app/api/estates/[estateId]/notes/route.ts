@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { logActivity } from "@/lib/activity";
 import { connectToDatabase } from "@/lib/db";
-import { EstateNote, NoteCategory } from "@/models/EstateNote";
+import { EstateNote } from "@/models/EstateNote";
 
 type RouteParams = {
   params: Promise<{
@@ -29,7 +30,7 @@ export async function GET(
       estateId,
       ownerId: session.user.id,
     })
-      .sort({ isPinned: -1, createdAt: -1 })
+      .sort({ pinned: -1, createdAt: -1 })
       .lean();
 
     return NextResponse.json({ notes }, { status: 200 });
@@ -45,8 +46,8 @@ export async function GET(
 interface CreateNotePayload {
   subject: string;
   body: string;
-  category?: NoteCategory;
-  isPinned?: boolean;
+  category?: string;
+  pinned?: boolean;
 }
 
 // POST /api/estates/[estateId]/notes
@@ -80,8 +81,29 @@ export async function POST(
       subject: json.subject,
       body: json.body,
       category: json.category ?? "GENERAL",
-      isPinned: Boolean(json.isPinned),
+      pinned: Boolean(json.pinned),
     });
+
+    // Activity log: note created
+    try {
+      const bodyText = typeof note.body === "string" ? note.body.trim() : "";
+      await logActivity({
+        ownerId: session.user.id,
+        estateId: String(estateId),
+        kind: "note",
+        action: "created",
+        entityId: String(note._id),
+        message: "Note created",
+        snapshot: {
+          subject: (note as { subject?: unknown }).subject ?? null,
+          category: (note as { category?: unknown }).category ?? null,
+          pinned: Boolean((note as { pinned?: unknown }).pinned),
+          bodyPreview: bodyText ? bodyText.slice(0, 240) : null,
+        },
+      });
+    } catch {
+      // Don't block note creation if activity logging fails
+    }
 
     return NextResponse.json({ note }, { status: 201 });
   } catch (error) {

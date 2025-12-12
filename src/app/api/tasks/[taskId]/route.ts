@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
+import { logActivity } from "@/lib/activity";
 import {
   EstateTask,
   type EstateTaskDocument,
@@ -149,17 +150,69 @@ export async function PATCH(
     update.relatedInvoiceId = relatedInvoiceId || undefined;
   }
 
-  const task = (await EstateTask.findOneAndUpdate(
-    { _id: taskId, ownerId: session.user.id },
-    update,
-    { new: true },
-  )) as EstateTaskDocument | null;
+  const existingTask = (await EstateTask.findOne({
+    _id: taskId,
+    ownerId: session.user.id,
+  })) as EstateTaskDocument | null;
 
-  if (!task) {
+  if (!existingTask) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
 
-  return NextResponse.json(serializeTask(task));
+  const previousStatus = existingTask.status ? String(existingTask.status) : null;
+  const previousTitle = existingTask.title ? String(existingTask.title) : null;
+  const previousDueDate = existingTask.dueDate ?? null;
+
+  // Apply updates and persist
+  Object.assign(existingTask, update);
+  await existingTask.save();
+
+  const nextStatus = existingTask.status ? String(existingTask.status) : null;
+  const nextTitle = existingTask.title ? String(existingTask.title) : null;
+  const nextDueDate = existingTask.dueDate ?? null;
+
+  const didStatusChange = previousStatus !== nextStatus;
+
+  // Activity log
+  try {
+    if (didStatusChange) {
+      await logActivity({
+        ownerId: session.user.id,
+        estateId: String(existingTask.estateId),
+        kind: "task",
+        action: "status_changed",
+        entityId: String(existingTask._id),
+        message: `Task status changed: ${String(existingTask.title ?? "Untitled")}`,
+        snapshot: {
+          previousStatus,
+          newStatus: nextStatus,
+          previousTitle,
+          newTitle: nextTitle,
+          previousDueDate,
+          newDueDate: nextDueDate,
+        },
+      });
+    } else {
+      await logActivity({
+        ownerId: session.user.id,
+        estateId: String(existingTask.estateId),
+        kind: "task",
+        action: "updated",
+        entityId: String(existingTask._id),
+        message: `Task updated: ${String(existingTask.title ?? "Untitled")}`,
+        snapshot: {
+          previousTitle,
+          newTitle: nextTitle,
+          previousDueDate,
+          newDueDate: nextDueDate,
+        },
+      });
+    }
+  } catch {
+    // Don't block task updates if activity logging fails
+  }
+
+  return NextResponse.json(serializeTask(existingTask));
 }
 
 export async function DELETE(
@@ -188,6 +241,25 @@ export async function DELETE(
 
   if (!deleted) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
+  }
+
+  // Activity log: task deleted
+  try {
+    await logActivity({
+      ownerId: session.user.id,
+      estateId: String(deleted.estateId),
+      kind: "task",
+      action: "deleted",
+      entityId: String(deleted._id),
+      message: `Task deleted: ${String(deleted.title ?? "Untitled")}`,
+      snapshot: {
+        title: deleted.title ?? null,
+        status: deleted.status ?? null,
+        dueDate: deleted.dueDate ?? null,
+      },
+    });
+  } catch {
+    // Don't block task deletion if activity logging fails
   }
 
   return new NextResponse(null, { status: 204 });

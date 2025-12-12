@@ -128,6 +128,7 @@ function formatCurrencyFromCents(cents: number | null | undefined): string | nul
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+
 function friendlyInvoiceStatus(status: string | null | undefined): string {
   switch ((status ?? "").toUpperCase()) {
     case "PAID":
@@ -141,6 +142,150 @@ function friendlyInvoiceStatus(status: string | null | undefined): string {
     default:
       return status ? status : "Unknown";
   }
+}
+
+function safeString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const t = value.trim();
+  return t.length ? t : null;
+}
+
+function formatStatusChangeDetail(snapshot?: Record<string, unknown> | null): string | null {
+  if (!snapshot) return null;
+  const prev = safeString(snapshot.previousStatusLabel) ?? safeString(snapshot.previousStatus);
+  const next = safeString(snapshot.newStatusLabel) ?? safeString(snapshot.newStatus);
+  if (!prev && !next) return null;
+  return `Status changed: ${prev ?? "Unknown"} → ${next ?? "Unknown"}`;
+}
+
+function formatTaskChangeDetail(snapshot?: Record<string, unknown> | null): string | null {
+  if (!snapshot) return null;
+  const prevStatus = safeString(snapshot.previousStatus);
+  const nextStatus = safeString(snapshot.newStatus);
+  if (prevStatus || nextStatus) {
+    return `Status changed: ${prevStatus ?? "Unknown"} → ${nextStatus ?? "Unknown"}`;
+  }
+  const prevTitle = safeString(snapshot.previousTitle);
+  const nextTitle = safeString(snapshot.newTitle);
+  if (prevTitle || nextTitle) {
+    if (prevTitle && nextTitle && prevTitle !== nextTitle) {
+      return `Title changed: ${prevTitle} → ${nextTitle}`;
+    }
+  }
+  return null;
+}
+
+function formatDocumentChangeDetail(
+  action: string,
+  snapshot?: Record<string, unknown> | null,
+): string | null {
+  if (action === "created") {
+    const subject = safeString(snapshot?.subject);
+    const isSensitive = typeof snapshot?.isSensitive === "boolean" ? snapshot.isSensitive : null;
+    const bits: string[] = [];
+    if (subject) bits.push(`Subject: ${subject}`);
+    if (isSensitive === true) bits.push("Sensitive");
+    return bits.length ? bits.join(" · ") : "Document created";
+  }
+
+  if (action === "deleted") {
+    const subject = safeString(snapshot?.subject);
+    const isSensitive = typeof snapshot?.isSensitive === "boolean" ? snapshot.isSensitive : null;
+    const bits: string[] = [];
+    if (subject) bits.push(`Subject: ${subject}`);
+    if (isSensitive === true) bits.push("Sensitive");
+    return bits.length ? bits.join(" · ") : "Document deleted";
+  }
+
+  // updated
+  const prev = (snapshot?.previous as Record<string, unknown> | undefined) ?? null;
+  const cur = (snapshot?.current as Record<string, unknown> | undefined) ?? null;
+
+  const prevLabel = safeString(prev?.label);
+  const curLabel = safeString(cur?.label);
+  const prevSubject = safeString(prev?.subject);
+  const curSubject = safeString(cur?.subject);
+
+  const prevSensitive = typeof prev?.isSensitive === "boolean" ? prev.isSensitive : null;
+  const curSensitive = typeof cur?.isSensitive === "boolean" ? cur.isSensitive : null;
+
+  const parts: string[] = [];
+
+  if (prevLabel && curLabel && prevLabel !== curLabel) {
+    parts.push(`Label: ${prevLabel} → ${curLabel}`);
+  }
+
+  if (prevSubject && curSubject && prevSubject !== curSubject) {
+    parts.push(`Subject: ${prevSubject} → ${curSubject}`);
+  } else if (!prevSubject && curSubject) {
+    parts.push(`Subject: ${curSubject}`);
+  }
+
+  if (prevSensitive !== null && curSensitive !== null && prevSensitive !== curSensitive) {
+    parts.push(curSensitive ? "Marked sensitive" : "Unmarked sensitive");
+  } else if (curSensitive === true) {
+    // If we can't compute a diff, still surface that it is sensitive
+    parts.push("Sensitive");
+  }
+
+  return parts.length ? parts.join(" · ") : "Document updated";
+}
+
+function formatNoteChangeDetail(
+  action: string,
+  snapshot?: Record<string, unknown> | null,
+): string | null {
+  if (action === "created") {
+    const category = safeString(snapshot?.category);
+    const pinned = typeof snapshot?.pinned === "boolean" ? snapshot.pinned : null;
+    const parts: string[] = [];
+    if (category) parts.push(`Category: ${category}`);
+    if (pinned === true) parts.push("Pinned");
+    return parts.length ? parts.join(" · ") : "Note created";
+  }
+
+  if (action === "deleted") {
+    const category = safeString(snapshot?.category);
+    const pinned = typeof snapshot?.pinned === "boolean" ? snapshot.pinned : null;
+    const parts: string[] = [];
+    if (category) parts.push(`Category: ${category}`);
+    if (pinned === true) parts.push("Pinned");
+    return parts.length ? parts.join(" · ") : "Note deleted";
+  }
+
+  if (action === "pinned") return "Pinned";
+  if (action === "unpinned") return "Unpinned";
+
+  // updated
+  const prevPinned = typeof snapshot?.previousPinned === "boolean" ? snapshot.previousPinned : null;
+  const nextPinned = typeof snapshot?.newPinned === "boolean" ? snapshot.newPinned : null;
+
+  const prevCat = safeString(snapshot?.previousCategory);
+  const nextCat = safeString(snapshot?.newCategory);
+
+  const parts: string[] = [];
+
+  if (prevCat && nextCat && prevCat !== nextCat) {
+    parts.push(`Category: ${prevCat} → ${nextCat}`);
+  } else if (!prevCat && nextCat) {
+    parts.push(`Category: ${nextCat}`);
+  }
+
+  if (prevPinned !== null && nextPinned !== null && prevPinned !== nextPinned) {
+    parts.push(nextPinned ? "Pinned" : "Unpinned");
+  } else if (nextPinned === true) {
+    parts.push("Pinned");
+  }
+
+  const prevBody = safeString(snapshot?.previousBodyPreview);
+  const nextBody = safeString(snapshot?.newBodyPreview);
+  if (prevBody && nextBody && prevBody !== nextBody) {
+    parts.push("Body updated");
+  } else if (!prevBody && nextBody) {
+    parts.push("Body added");
+  }
+
+  return parts.length ? parts.join(" · ") : "Note updated";
 }
 
 export default async function EstateTimelinePage({ params, searchParams }: PageProps) {
@@ -228,6 +373,17 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     .lean()) as EstateActivityLean[];
 
   const events: TimelineEvent[] = [];
+
+  // De-dupe: if we have a new Activity entry for an invoice status change, hide the legacy EstateEvent equivalent
+  const invoiceStatusActivityIds = new Set<string>();
+  for (const a of estateActivityDocs) {
+    const kind = typeof a.kind === "string" ? a.kind : "";
+    const action = typeof a.action === "string" ? a.action : "";
+    const entityId = typeof a.entityId === "string" ? a.entityId : null;
+    if (kind === "invoice" && action === "status_changed" && entityId) {
+      invoiceStatusActivityIds.add(entityId);
+    }
+  }
 
   // Invoices → timeline
   for (const inv of invoiceDocs) {
@@ -329,6 +485,13 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
         ? `/app/estates/${estateId}/invoices/${metaInvoiceId}`
         : undefined;
 
+    // Skip legacy invoice status change events if Activity already recorded it
+    if ((ev.type === "INVOICE_STATUS_CHANGED" || ev.type === "invoice.status_changed") && metaInvoiceId) {
+      if (invoiceStatusActivityIds.has(metaInvoiceId)) {
+        continue;
+      }
+    }
+
     events.push({
       id: `event-${String(ev._id)}`,
       kind: "event",
@@ -346,22 +509,44 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     if (!ts) continue;
 
     const message = typeof a.message === "string" && a.message.trim() ? a.message.trim() : "Activity";
-    const detailParts: string[] = [];
 
     const kind = typeof a.kind === "string" ? a.kind : "";
     const action = typeof a.action === "string" ? a.action : "";
-
-    if (kind) detailParts.push(kind);
-    if (action) detailParts.push(action);
-
-    const detail = detailParts.length ? detailParts.join(" · ") : undefined;
-
-    // Link to entity when possible (only invoices for now)
     const entityId = typeof a.entityId === "string" ? a.entityId : null;
-    const href =
-      kind === "invoice" && entityId
-        ? `/app/estates/${estateId}/invoices/${entityId}`
-        : undefined;
+
+    // Prefer meaningful detail derived from snapshot
+    let detail: string | undefined;
+    if (kind === "invoice" && action === "status_changed") {
+      detail = formatStatusChangeDetail(a.snapshot) ?? "Invoice status changed";
+    } else if (kind === "task" && action === "status_changed") {
+      detail = formatTaskChangeDetail(a.snapshot) ?? "Task status changed";
+    } else if (kind === "task" && action === "updated") {
+      detail = formatTaskChangeDetail(a.snapshot) ?? "Task updated";
+    } else if (kind === "task" && action === "created") {
+      detail = "Task created";
+    } else if (kind === "task" && action === "deleted") {
+      detail = "Task deleted";
+    } else if (kind === "document" && (action === "created" || action === "updated" || action === "deleted")) {
+      detail = formatDocumentChangeDetail(action, a.snapshot) ?? `Document ${action}`;
+    } else if (kind === "note") {
+      detail = formatNoteChangeDetail(action, a.snapshot) ?? (action ? `Note ${action}` : "Note activity");
+    } else if (kind && action) {
+      detail = `${kind} · ${action}`;
+    } else if (kind) {
+      detail = kind;
+    }
+
+    // Link to relevant page
+    let href: string | undefined;
+    if (kind === "invoice" && entityId) {
+      href = `/app/estates/${estateId}/invoices/${entityId}`;
+    } else if (kind === "task") {
+      href = `/app/estates/${estateId}/tasks`;
+    } else if (kind === "document") {
+      href = `/app/estates/${estateId}/documents`;
+    } else if (kind === "note") {
+      href = `/app/estates/${estateId}/notes`;
+    }
 
     events.push({
       id: `activity-${String(a._id)}`,
