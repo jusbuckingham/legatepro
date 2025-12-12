@@ -9,6 +9,22 @@ export interface EstateCollaborator {
   addedAt?: Date;
 }
 
+export type InviteRole = Exclude<EstateRole, "OWNER">;
+export type EstateInviteStatus = "PENDING" | "ACCEPTED" | "REVOKED" | "EXPIRED";
+
+export interface EstateInvite {
+  token: string;
+  email: string;
+  role: InviteRole;
+  status: EstateInviteStatus;
+  createdBy: string;
+  createdAt?: Date;
+  expiresAt?: Date;
+  acceptedBy?: string;
+  acceptedAt?: Date;
+  revokedAt?: Date;
+}
+
 // Detailed decedent info (optional, but keeps room for your richer spreadsheet data)
 interface DecedentDetails {
   fullName?: string;
@@ -38,6 +54,8 @@ export interface IEstate {
   ownerId: string; // user who owns this estate workspace
 
   collaborators?: EstateCollaborator[]; // additional users with access
+
+  invites?: EstateInvite[]; // pending/accepted collaborator invites (invite-link flow)
 
   // Top-level names used throughout the UI & API
   decedentName?: string; // e.g. "Donald Buckingham"
@@ -104,11 +122,40 @@ const CollaboratorSchema = new Schema<EstateCollaborator>(
   { _id: false }
 );
 
+const InviteSchema = new Schema<EstateInvite>(
+  {
+    token: { type: String, required: true, index: true },
+    email: {
+      type: String,
+      required: true,
+      trim: true,
+      lowercase: true,
+      index: true,
+    },
+    role: { type: String, enum: ["EDITOR", "VIEWER"], required: true },
+    status: {
+      type: String,
+      enum: ["PENDING", "ACCEPTED", "REVOKED", "EXPIRED"],
+      default: "PENDING",
+      index: true,
+    },
+    createdBy: { type: String, required: true, index: true },
+    createdAt: { type: Date, default: () => new Date(), index: true },
+    expiresAt: { type: Date, required: false, index: true },
+    acceptedBy: { type: String, required: false, index: true },
+    acceptedAt: { type: Date, required: false },
+    revokedAt: { type: Date, required: false },
+  },
+  { _id: false }
+);
+
 const EstateSchema = new Schema<EstateDocument>(
   {
     ownerId: { type: String, required: true, index: true },
 
     collaborators: { type: [CollaboratorSchema], default: [] },
+
+    invites: { type: [InviteSchema], default: [] },
 
     // Primary names used in the UI & filters
     decedentName: { type: String, required: false, trim: true },

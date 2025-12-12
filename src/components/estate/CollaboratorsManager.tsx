@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Role = "EDITOR" | "VIEWER";
@@ -8,6 +8,17 @@ type Role = "EDITOR" | "VIEWER";
 type Collaborator = {
   userId: string;
   role: Role;
+};
+
+type InviteStatus = "PENDING" | "ACCEPTED" | "REVOKED" | "EXPIRED";
+
+type Invite = {
+  token: string;
+  email: string;
+  role: Role;
+  status: InviteStatus;
+  createdAt?: string;
+  expiresAt?: string;
 };
 
 export default function CollaboratorsManager({
@@ -26,6 +37,136 @@ export default function CollaboratorsManager({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  // Invite-link flow (no email service)
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<Role>("VIEWER");
+  const [invites, setInvites] = useState<Invite[]>([]);
+  const [invitesLoading, setInvitesLoading] = useState(false);
+  const [invitesError, setInvitesError] = useState<string | null>(null);
+  const [createdInviteUrl, setCreatedInviteUrl] = useState<string | null>(null);
+
+  const canUseClipboard = useMemo(() => {
+    return typeof navigator !== "undefined" && !!navigator.clipboard?.writeText;
+  }, []);
+
+  async function copyToClipboard(text: string) {
+    try {
+      if (canUseClipboard) {
+        await navigator.clipboard.writeText(text);
+        setInfo("Copied link.");
+        return;
+      }
+    } catch {
+      // ignore
+    }
+
+    // Fallback
+    try {
+      const el = document.createElement("textarea");
+      el.value = text;
+      el.style.position = "fixed";
+      el.style.left = "-9999px";
+      document.body.appendChild(el);
+      el.focus();
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      setInfo("Copied link.");
+    } catch {
+      setInfo("Copy failed — please copy manually.");
+    }
+  }
+
+  async function fetchInvites() {
+    if (!isOwner) return;
+    setInvitesLoading(true);
+    setInvitesError(null);
+
+    const res = await fetch(`/api/estates/${estateId}/invites`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    setInvitesLoading(false);
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setInvitesError(data.error ?? "Failed to load invites");
+      return;
+    }
+
+    const data = (await res.json().catch(() => ({}))) as {
+      invites?: Invite[];
+    };
+
+    setInvites(Array.isArray(data.invites) ? data.invites : []);
+  }
+
+  useEffect(() => {
+    void fetchInvites();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estateId, isOwner]);
+
+  async function createInvite() {
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email) return;
+
+    setInvitesLoading(true);
+    setInvitesError(null);
+    setCreatedInviteUrl(null);
+    setInfo(null);
+
+    const res = await fetch(`/api/estates/${estateId}/invites`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, role: inviteRole }),
+    });
+
+    setInvitesLoading(false);
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setInvitesError(data.error ?? "Failed to create invite");
+      return;
+    }
+
+    const data = (await res.json().catch(() => ({}))) as {
+      inviteUrl?: string;
+    };
+
+    setInviteEmail("");
+    setInviteRole("VIEWER");
+    setCreatedInviteUrl(typeof data.inviteUrl === "string" ? data.inviteUrl : null);
+    setInfo("Invite created.");
+    await fetchInvites();
+  }
+
+  async function revokeInvite(inv: Invite) {
+    if (inv.status !== "PENDING") return;
+    if (!confirm(`Revoke invite for ${inv.email}?`)) return;
+
+    setInvitesLoading(true);
+    setInvitesError(null);
+    setInfo(null);
+
+    const res = await fetch(`/api/estates/${estateId}/invites`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: inv.token }),
+    });
+
+    setInvitesLoading(false);
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setInvitesError(data.error ?? "Failed to revoke invite");
+      return;
+    }
+
+    setInfo("Invite revoked.");
+    await fetchInvites();
+  }
 
   async function addCollaborator() {
     if (!userId) return;
@@ -154,6 +295,151 @@ export default function CollaboratorsManager({
       )}
 
       {info && <div className="text-xs text-gray-600">{info}</div>}
+
+      {isOwner && (
+        <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+          <div className="text-sm font-medium">Invites (link)</div>
+          <p className="mt-1 text-xs text-gray-600">
+            Create an invite link and share it manually (no email service required).
+          </p>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <input
+              type="email"
+              placeholder="Email address"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm"
+            />
+
+            <select
+              value={inviteRole}
+              onChange={(e) => setInviteRole(e.target.value as Role)}
+              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+            >
+              <option value="VIEWER">Viewer</option>
+              <option value="EDITOR">Editor</option>
+            </select>
+
+            <button
+              onClick={createInvite}
+              disabled={invitesLoading || !inviteEmail.trim()}
+              className="rounded-md bg-black px-3 py-1 text-sm text-white hover:bg-gray-900 disabled:opacity-50"
+            >
+              Create link
+            </button>
+          </div>
+
+          {createdInviteUrl && (
+            <div className="mt-3 rounded-md border border-gray-200 bg-white p-3">
+              <div className="text-xs font-medium text-gray-700">New invite link</div>
+              <div className="mt-1 flex items-center justify-between gap-2">
+                <a
+                  href={createdInviteUrl}
+                  className="min-w-0 flex-1 truncate text-xs text-blue-700 hover:underline"
+                >
+                  {createdInviteUrl}
+                </a>
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(createdInviteUrl)}
+                  className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs hover:bg-gray-50"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+          )}
+
+          {invitesError && (
+            <div className="mt-2 text-xs text-red-600">{invitesError}</div>
+          )}
+
+          <div className="mt-3">
+            <div className="mb-1 flex items-center justify-between">
+              <div className="text-xs font-medium text-gray-700">Recent invites</div>
+              <button
+                type="button"
+                onClick={fetchInvites}
+                disabled={invitesLoading}
+                className="text-xs text-blue-700 hover:underline disabled:opacity-50"
+              >
+                Refresh
+              </button>
+            </div>
+
+            {invitesLoading ? (
+              <div className="text-xs text-gray-600">Loading…</div>
+            ) : invites.length === 0 ? (
+              <div className="text-xs text-gray-600">No invites yet.</div>
+            ) : (
+              <div className="space-y-2">
+                {invites.map((inv) => {
+                  const badgeClass =
+                    inv.status === "PENDING"
+                      ? "bg-amber-100 text-amber-800"
+                      : inv.status === "ACCEPTED"
+                        ? "bg-green-100 text-green-800"
+                        : inv.status === "EXPIRED"
+                          ? "bg-gray-200 text-gray-700"
+                          : "bg-gray-200 text-gray-700";
+
+                  const inviteLink = `/app/invites/${inv.token}`;
+
+                  return (
+                    <div
+                      key={inv.token}
+                      className="rounded-md border border-gray-200 bg-white p-3"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-xs font-medium text-gray-800">
+                            {inv.email}
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                            <span className="rounded px-2 py-0.5 text-[11px] font-medium bg-gray-100 text-gray-700">
+                              {inv.role}
+                            </span>
+                            <span
+                              className={`rounded px-2 py-0.5 text-[11px] font-medium ${badgeClass}`}
+                            >
+                              {inv.status}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const origin = typeof window !== "undefined" ? window.location.origin : "";
+                              void copyToClipboard(origin ? `${origin}${inviteLink}` : inviteLink);
+                            }}
+                            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs hover:bg-gray-50"
+                          >
+                            Copy link
+                          </button>
+
+                          {inv.status === "PENDING" ? (
+                            <button
+                              type="button"
+                              onClick={() => revokeInvite(inv)}
+                              disabled={invitesLoading}
+                              className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100 disabled:opacity-50"
+                            >
+                              Revoke
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="space-y-2">
         {collaborators.map((c) => (

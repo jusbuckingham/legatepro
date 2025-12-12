@@ -30,6 +30,9 @@ type TimelineEvent = {
   detail?: string;
   timestamp: string; // ISO
   href?: string;
+  tags?: string[];
+  subtype?: string;
+  meta?: Record<string, unknown> | null;
 };
 
 type TimelineDayGroup = {
@@ -296,36 +299,93 @@ function formatCollaboratorEvent(
 ): { title: string; detail?: string } | null {
   const t = (type ?? "").toUpperCase();
 
-  if (t !== "COLLABORATOR_ADDED" && t !== "COLLABORATOR_ROLE_CHANGED" && t !== "COLLABORATOR_REMOVED") {
+  if (
+    t !== "COLLABORATOR_ADDED" &&
+    t !== "COLLABORATOR_ROLE_CHANGED" &&
+    t !== "COLLABORATOR_REMOVED" &&
+    t !== "COLLABORATOR_INVITE_SENT" &&
+    t !== "COLLABORATOR_INVITE_REVOKED" &&
+    t !== "COLLABORATOR_INVITE_ACCEPTED"
+  ) {
     return null;
   }
 
   const userId = safeString(meta?.userId) ?? safeString(meta?.collaboratorId);
+  const email = safeString(meta?.email) ?? safeString(meta?.collaboratorEmail);
   const role = safeString(meta?.role);
   const prevRole = safeString(meta?.previousRole);
 
   if (t === "COLLABORATOR_ADDED") {
+    const title = email && role ? `Invite accepted (${role})` : "Collaborator added";
     return {
-      title: "Collaborator added",
+      title,
       detail:
-        [userId ? `User: ${userId}` : null, role ? `Role: ${role}` : null]
+        [
+          email ? email : null,
+          userId ? `User: ${userId}` : null,
+          !email && role ? `Role: ${role}` : null,
+        ]
           .filter(Boolean)
           .join(" · ") ||
         fallbackDetail ||
-        "Collaborator added",
+        title,
     };
   }
 
   if (t === "COLLABORATOR_ROLE_CHANGED") {
     const roleChange = prevRole || role ? `${prevRole ?? "Unknown"} → ${role ?? "Unknown"}` : null;
+    const title = prevRole && role ? `Invite role updated (${roleChange})` : "Collaborator role changed";
     return {
-      title: "Collaborator role changed",
+      title,
       detail:
-        [userId ? `User: ${userId}` : null, roleChange ? `Role: ${roleChange}` : null]
+        [
+          email ? email : null,
+          userId ? `User: ${userId}` : null,
+          roleChange ? `Role: ${roleChange}` : null,
+        ]
           .filter(Boolean)
           .join(" · ") ||
         fallbackDetail ||
-        "Collaborator role changed",
+        title,
+    };
+  }
+
+  if (t === "COLLABORATOR_INVITE_SENT") {
+    const title = "Invite sent";
+    return {
+      title,
+      detail:
+        [email ? email : null, role ? `Role: ${role}` : null]
+          .filter(Boolean)
+          .join(" · ") ||
+        fallbackDetail ||
+        "Invite link created",
+    };
+  }
+
+  if (t === "COLLABORATOR_INVITE_REVOKED") {
+    const title = "Invite revoked";
+    return {
+      title,
+      detail:
+        [email ? email : null, role ? `Role: ${role}` : null]
+          .filter(Boolean)
+          .join(" · ") ||
+        fallbackDetail ||
+        "Invite revoked",
+    };
+  }
+
+  if (t === "COLLABORATOR_INVITE_ACCEPTED") {
+    const title = role ? `Invite accepted (${role})` : "Invite accepted";
+    return {
+      title,
+      detail:
+        [email ? email : null, userId ? `User: ${userId}` : null]
+          .filter(Boolean)
+          .join(" · ") ||
+        fallbackDetail ||
+        title,
     };
   }
 
@@ -581,6 +641,14 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
 
     // Collaborator events should link to collaborators page and show structured detail.
     const collaboratorFmt = formatCollaboratorEvent(ev.type, ev.meta, detailRaw);
+    const collaboratorIsInvite =
+      ev.type === "COLLABORATOR_INVITE_SENT" ||
+      ev.type === "COLLABORATOR_INVITE_REVOKED" ||
+      ev.type === "COLLABORATOR_INVITE_ACCEPTED" ||
+      !!(
+        ev.meta &&
+        (typeof ev.meta.email === "string" || typeof ev.meta.collaboratorEmail === "string")
+      );
 
     const href = collaboratorFmt
       ? `/app/estates/${estateId}/collaborators`
@@ -606,6 +674,9 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
       detail,
       timestamp: ts,
       href,
+      tags: collaboratorFmt && collaboratorIsInvite ? ["Invite"] : undefined,
+      subtype: typeof ev.type === "string" ? ev.type : undefined,
+      meta: ev.meta ?? null,
     });
   }
 
@@ -1011,6 +1082,13 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
                                 </span>
                               )}
                             </span>
+
+                            {ev.tags?.includes("Invite") ? (
+                              <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                                Invite
+                              </span>
+                            ) : null}
+
                             <span className="text-[11px] text-gray-500">
                               {formatDateTime(ev.timestamp)}
                             </span>
@@ -1031,6 +1109,22 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
                               {truncate(ev.detail, 220)}
                             </p>
                           )}
+                          {ev.kind === "event" &&
+                          (ev.subtype ?? "").toUpperCase() === "COLLABORATOR_INVITE_SENT" &&
+                          ev.meta &&
+                          typeof ev.meta.inviteUrl === "string" &&
+                          ev.meta.inviteUrl.trim() ? (
+                            <div className="mt-1 flex flex-col gap-1">
+                              <div className="text-[11px] font-medium text-gray-500">Invite link</div>
+                              <input
+                                readOnly
+                                value={ev.meta.inviteUrl}
+                                onFocus={(e) => e.currentTarget.select()}
+                                className="h-8 w-full rounded-md border border-gray-200 bg-gray-50 px-2 text-xs text-gray-700"
+                              />
+                              <div className="text-[11px] text-gray-400">Tip: click the field, then ⌘C / Ctrl+C</div>
+                            </div>
+                          ) : null}
                         </div>
                       </li>
                     );

@@ -8,7 +8,10 @@ export type EstateEventType =
   | "CONTACT_UNLINKED"
   | "COLLABORATOR_ADDED"
   | "COLLABORATOR_ROLE_CHANGED"
-  | "COLLABORATOR_REMOVED";
+  | "COLLABORATOR_REMOVED"
+  | "COLLABORATOR_INVITE_SENT"
+  | "COLLABORATOR_INVITE_REVOKED"
+  | "COLLABORATOR_INVITE_ACCEPTED";
 
 export interface EstateEventDocument extends Document {
   ownerId: Schema.Types.ObjectId | string;
@@ -45,6 +48,9 @@ const EstateEventSchema = new Schema<EstateEventDocument>(
         "COLLABORATOR_ADDED",
         "COLLABORATOR_ROLE_CHANGED",
         "COLLABORATOR_REMOVED",
+        "COLLABORATOR_INVITE_SENT",
+        "COLLABORATOR_INVITE_REVOKED",
+        "COLLABORATOR_INVITE_ACCEPTED",
       ],
     },
     summary: {
