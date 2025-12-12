@@ -3,28 +3,49 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
+
 import { Invoice } from "@/models/Invoice";
 import { EstateDocument } from "@/models/EstateDocument";
 import { EstateTask } from "@/models/EstateTask";
 import { EstateNote } from "@/models/EstateNote";
 
+import { EstateEvent } from "@/models/EstateEvent";
+import { EstateActivity } from "@/models/EstateActivity";
+
 export const dynamic = "force-dynamic";
 
 type PageProps = {
-  params: Promise<{
-    estateId: string;
-  }>;
+  params: Promise<{ estateId: string }>;
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
+type TimelineKind = "invoice" | "document" | "task" | "note" | "event" | "activity";
+
+type TimelineEvent = {
+  id: string;
+  kind: TimelineKind;
+  estateId: string;
+  title: string;
+  detail?: string;
+  timestamp: string; // ISO
+  href?: string;
+};
+
+type TimelineDayGroup = {
+  dateKey: string; // YYYY-MM-DD
+  label: string;
+  events: TimelineEvent[];
+};
+
+// Lean-ish types (loose on purpose)
 type InvoiceLean = {
   _id: unknown;
-  description?: string | null;
+  invoiceNumber?: string | null;
   status?: string | null;
-  issueDate?: Date | string | null;
   createdAt?: Date | string | null;
-  subtotal?: number | null;
+  issueDate?: Date | string | null;
   totalAmount?: number | null;
+  subtotal?: number | null;
 };
 
 type EstateDocumentLean = {
@@ -49,23 +70,37 @@ type EstateNoteLean = {
   createdAt?: Date | string | null;
 };
 
-type TimelineKind = "invoice" | "document" | "task" | "note";
-
-type TimelineEvent = {
-  id: string;
-  kind: TimelineKind;
-  estateId: string;
-  title: string;
-  detail?: string;
-  timestamp: string; // ISO
-  href?: string;
+type EstateEventLean = {
+  _id: unknown;
+  type?: string | null;
+  summary?: string | null;
+  detail?: string | null;
+  createdAt?: Date | string | null;
+  meta?: Record<string, unknown> | null;
 };
 
-type TimelineDayGroup = {
-  dateKey: string; // YYYY-MM-DD
-  label: string;
-  events: TimelineEvent[];
+type EstateActivityLean = {
+  _id: unknown;
+  kind?: string | null; // "invoice" | ...
+  action?: string | null; // "status_changed" | ...
+  entityId?: string | null;
+  message?: string | null;
+  snapshot?: Record<string, unknown> | null;
+  createdAt?: Date | string | null;
 };
+
+function toISO(d: Date | string | null | undefined): string | null {
+  if (!d) return null;
+  if (d instanceof Date) return d.toISOString();
+  const parsed = new Date(d);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
+function truncate(text: string, max = 160) {
+  if (text.length <= max) return text;
+  return text.slice(0, max).trimEnd() + "…";
+}
 
 function formatDateTime(value: string): string {
   const d = new Date(value);
@@ -73,48 +108,42 @@ function formatDateTime(value: string): string {
   return d.toLocaleString();
 }
 
-function formatDate(value: string | null | undefined): string {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString();
-}
-
-function truncate(text: string, max = 120): string {
-  if (text.length <= max) return text;
-  return text.slice(0, max).trimEnd() + "…";
-}
-
-function formatCurrencyFromCents(
-  cents: number | null | undefined,
-): string | null {
-  if (cents == null || Number.isNaN(cents)) return null;
-  const dollars = cents / 100;
-  return `$${dollars.toFixed(2)}`;
-}
-
 function toDateKey(date: Date): string {
-  // YYYY-MM-DD in local time
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  const y = date.getFullYear();
+  const m = `${date.getMonth() + 1}`.padStart(2, "0");
+  const d = `${date.getDate()}`.padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function getDayLabelFromKey(dateKey: string, todayKey: string, yesterdayKey: string): string {
   if (dateKey === todayKey) return "Today";
   if (dateKey === yesterdayKey) return "Yesterday";
-
-  // Fallback: parse dateKey back into Date for display
   const d = new Date(dateKey);
   if (Number.isNaN(d.getTime())) return dateKey;
   return d.toLocaleDateString();
 }
 
-export default async function EstateTimelinePage({
-  params,
-  searchParams,
-}: PageProps) {
+function formatCurrencyFromCents(cents: number | null | undefined): string | null {
+  if (cents == null || Number.isNaN(cents)) return null;
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+function friendlyInvoiceStatus(status: string | null | undefined): string {
+  switch ((status ?? "").toUpperCase()) {
+    case "PAID":
+      return "Paid";
+    case "SENT":
+      return "Sent";
+    case "VOID":
+      return "Void";
+    case "DRAFT":
+      return "Draft";
+    default:
+      return status ? status : "Unknown";
+  }
+}
+
+export default async function EstateTimelinePage({ params, searchParams }: PageProps) {
   const { estateId } = await params;
 
   let searchQuery = "";
@@ -144,9 +173,11 @@ export default async function EstateTimelinePage({
       normalized === "invoice" ||
       normalized === "document" ||
       normalized === "task" ||
-      normalized === "note"
+      normalized === "note" ||
+      normalized === "event" ||
+      normalized === "activity"
     ) {
-      typeFilter = normalized;
+      typeFilter = normalized as TimelineKind;
     } else {
       typeFilter = "ALL";
     }
@@ -159,124 +190,78 @@ export default async function EstateTimelinePage({
 
   await connectToDatabase();
 
+  // Base entities
   const invoiceDocs = (await Invoice.find(
     { estateId, ownerId: session.user.id },
-    {
-      description: 1,
-      status: 1,
-      issueDate: 1,
-      createdAt: 1,
-      subtotal: 1,
-      totalAmount: 1,
-    },
-  )
-    .lean()
-    .exec()) as InvoiceLean[];
+    { invoiceNumber: 1, status: 1, createdAt: 1, issueDate: 1, subtotal: 1, totalAmount: 1 },
+  ).lean()) as InvoiceLean[];
 
   const documentDocs = (await EstateDocument.find(
     { estateId, ownerId: session.user.id },
-    {
-      label: 1,
-      subject: 1,
-      createdAt: 1,
-    },
-  )
-    .lean()
-    .exec()) as EstateDocumentLean[];
+    { label: 1, subject: 1, createdAt: 1 },
+  ).lean()) as EstateDocumentLean[];
 
   const taskDocs = (await EstateTask.find(
     { estateId, ownerId: session.user.id },
-    {
-      title: 1,
-      status: 1,
-      createdAt: 1,
-      dueDate: 1,
-    },
-  )
-    .lean()
-    .exec()) as EstateTaskLean[];
+    { title: 1, status: 1, createdAt: 1, dueDate: 1 },
+  ).lean()) as EstateTaskLean[];
 
   const noteDocs = (await EstateNote.find(
     { estateId, ownerId: session.user.id },
-    {
-      body: 1,
-      pinned: 1,
-      createdAt: 1,
-    },
+    { body: 1, pinned: 1, createdAt: 1 },
+  ).lean()) as EstateNoteLean[];
+
+  // Legacy estate events (what logEstateEvent writes)
+  const estateEventDocs = (await EstateEvent.find(
+    { estateId, ownerId: session.user.id },
+    { type: 1, summary: 1, detail: 1, meta: 1, createdAt: 1 },
   )
-    .lean()
-    .exec()) as EstateNoteLean[];
+    .sort({ createdAt: -1 })
+    .lean()) as EstateEventLean[];
+
+  // New activity events (what logActivity writes)
+  const estateActivityDocs = (await EstateActivity.find(
+    { estateId, ownerId: session.user.id },
+    { kind: 1, action: 1, entityId: 1, message: 1, snapshot: 1, createdAt: 1 },
+  )
+    .sort({ createdAt: -1 })
+    .lean()) as EstateActivityLean[];
 
   const events: TimelineEvent[] = [];
 
-  // Invoices → events
-  for (const doc of invoiceDocs) {
-    const created =
-      doc.createdAt instanceof Date
-        ? doc.createdAt.toISOString()
-        : (doc.createdAt as string | null | undefined) ?? null;
+  // Invoices → timeline
+  for (const inv of invoiceDocs) {
+    const ts = toISO(inv.createdAt) ?? toISO(inv.issueDate);
+    if (!ts) continue;
 
-    const issue =
-      doc.issueDate instanceof Date
-        ? doc.issueDate.toISOString()
-        : (doc.issueDate as string | null | undefined) ?? null;
+    const invoiceNumberLabel =
+      typeof inv.invoiceNumber === "string" && inv.invoiceNumber.trim()
+        ? inv.invoiceNumber.trim()
+        : String(inv._id).slice(-6);
 
-    const timestamp = created ?? issue;
-    if (!timestamp) continue;
-
-    const amountLabel =
-      formatCurrencyFromCents(doc.totalAmount ?? doc.subtotal ?? null) ?? "";
-
-    const statusRaw =
-      typeof doc.status === "string" ? doc.status.toUpperCase() : "DRAFT";
-
-    const statusLabel =
-      statusRaw === "PAID"
-        ? "Paid"
-        : statusRaw === "SENT"
-        ? "Sent"
-        : statusRaw === "UNPAID"
-        ? "Unpaid"
-        : statusRaw === "PARTIAL"
-        ? "Partial"
-        : statusRaw === "VOID"
-        ? "Void"
-        : "Draft";
-
-    const description =
-      typeof doc.description === "string" && doc.description.trim().length > 0
-        ? doc.description.trim()
-        : "Invoice";
+    const statusLabel = friendlyInvoiceStatus(inv.status ?? "DRAFT");
+    const amt = formatCurrencyFromCents(inv.totalAmount ?? inv.subtotal ?? null);
 
     events.push({
-      id: `invoice-${String(doc._id)}`,
+      id: `invoice-${String(inv._id)}`,
       kind: "invoice",
       estateId,
-      title: description,
-      detail: [amountLabel, statusLabel].filter(Boolean).join(" · "),
-      timestamp,
-      href: `/app/estates/${estateId}/invoices/${String(doc._id)}`,
+      title: `Invoice ${invoiceNumberLabel}`,
+      detail: [amt, statusLabel].filter(Boolean).join(" · "),
+      timestamp: ts,
+      href: `/app/estates/${estateId}/invoices/${String(inv._id)}`,
     });
   }
 
-  // Documents → events
+  // Documents → timeline
   for (const doc of documentDocs) {
-    const created =
-      doc.createdAt instanceof Date
-        ? doc.createdAt.toISOString()
-        : (doc.createdAt as string | null | undefined) ?? null;
-
-    if (!created) continue;
+    const ts = toISO(doc.createdAt);
+    if (!ts) continue;
 
     const label =
-      typeof doc.label === "string" && doc.label.trim().length > 0
-        ? doc.label.trim()
-        : "Document";
-
+      typeof doc.label === "string" && doc.label.trim() ? doc.label.trim() : "Document";
     const subject =
-      typeof doc.subject === "string" && doc.subject.trim().length > 0
-        ? doc.subject.trim()
-        : "";
+      typeof doc.subject === "string" && doc.subject.trim() ? doc.subject.trim() : "";
 
     events.push({
       id: `doc-${String(doc._id)}`,
@@ -284,108 +269,128 @@ export default async function EstateTimelinePage({
       estateId,
       title: label,
       detail: subject ? `Document · ${subject}` : "Document added",
-      timestamp: created,
+      timestamp: ts,
       href: `/app/estates/${estateId}/documents`,
     });
   }
 
-  // Tasks → events
-  for (const doc of taskDocs) {
-    const created =
-      doc.createdAt instanceof Date
-        ? doc.createdAt.toISOString()
-        : (doc.createdAt as string | null | undefined) ?? null;
+  // Tasks → timeline
+  for (const t of taskDocs) {
+    const ts = toISO(t.createdAt);
+    if (!ts) continue;
 
-    if (!created) continue;
-
-    const title =
-      typeof doc.title === "string" && doc.title.trim().length > 0
-        ? doc.title.trim()
-        : "Task";
-
-    const statusRaw =
-      typeof doc.status === "string" ? doc.status.toUpperCase() : "NOT_STARTED";
-
-    const statusLabel =
-      statusRaw === "IN_PROGRESS"
-        ? "In progress"
-        : statusRaw === "DONE"
-        ? "Done"
-        : "Not started";
-
-    const due =
-      doc.dueDate instanceof Date
-        ? doc.dueDate.toISOString()
-        : (doc.dueDate as string | null | undefined) ?? null;
-
-    const dueLabel = due ? `Due ${formatDate(due)}` : "";
-
-    const detailPieces = [statusLabel, dueLabel].filter(Boolean);
+    const title = typeof t.title === "string" && t.title.trim() ? t.title.trim() : "Task";
+    const status = typeof t.status === "string" ? t.status : "";
+    const due = toISO(t.dueDate);
+    const dueLabel = due ? `Due ${new Date(due).toLocaleDateString()}` : "";
 
     events.push({
-      id: `task-${String(doc._id)}`,
+      id: `task-${String(t._id)}`,
       kind: "task",
       estateId,
       title,
-      detail:
-        detailPieces.length > 0
-          ? `Task · ${detailPieces.join(" · ")}`
-          : "Task",
-      timestamp: created,
+      detail: ["Task", status && `Status: ${status}`, dueLabel].filter(Boolean).join(" · "),
+      timestamp: ts,
       href: `/app/estates/${estateId}/tasks`,
     });
   }
 
-  // Notes → events
-  for (const doc of noteDocs) {
-    const created =
-      doc.createdAt instanceof Date
-        ? doc.createdAt.toISOString()
-        : (doc.createdAt as string | null | undefined) ?? null;
+  // Notes → timeline
+  for (const n of noteDocs) {
+    const ts = toISO(n.createdAt);
+    if (!ts) continue;
 
-    if (!created) continue;
-
-    const rawBody =
-      typeof doc.body === "string" && doc.body.trim().length > 0
-        ? doc.body.trim()
-        : "";
-
-    if (!rawBody) continue;
-
-    const summary = truncate(rawBody, 160);
-    const pinned = Boolean(doc.pinned);
+    const body = typeof n.body === "string" ? n.body.trim() : "";
+    if (!body) continue;
 
     events.push({
-      id: `note-${String(doc._id)}`,
+      id: `note-${String(n._id)}`,
       kind: "note",
       estateId,
-      title: pinned ? "Pinned note" : "Note",
-      detail: summary,
-      timestamp: created,
+      title: n.pinned ? "Pinned note" : "Note",
+      detail: truncate(body, 180),
+      timestamp: ts,
       href: `/app/estates/${estateId}/notes`,
+    });
+  }
+
+  // Legacy EstateEvent → timeline
+  for (const ev of estateEventDocs) {
+    const ts = toISO(ev.createdAt);
+    if (!ts) continue;
+
+    const summary = typeof ev.summary === "string" && ev.summary.trim() ? ev.summary.trim() : "Event";
+    const detail = typeof ev.detail === "string" ? ev.detail.trim() : "";
+
+    // If it’s invoice-related, try to link to invoice detail via meta.invoiceId
+    const metaInvoiceId = ev.meta && typeof ev.meta.invoiceId === "string" ? ev.meta.invoiceId : null;
+    const href =
+      metaInvoiceId && metaInvoiceId !== "undefined"
+        ? `/app/estates/${estateId}/invoices/${metaInvoiceId}`
+        : undefined;
+
+    events.push({
+      id: `event-${String(ev._id)}`,
+      kind: "event",
+      estateId,
+      title: summary,
+      detail,
+      timestamp: ts,
+      href,
+    });
+  }
+
+  // EstateActivity → timeline (this is the “enriched” path)
+  for (const a of estateActivityDocs) {
+    const ts = toISO(a.createdAt);
+    if (!ts) continue;
+
+    const message = typeof a.message === "string" && a.message.trim() ? a.message.trim() : "Activity";
+    const detailParts: string[] = [];
+
+    const kind = typeof a.kind === "string" ? a.kind : "";
+    const action = typeof a.action === "string" ? a.action : "";
+
+    if (kind) detailParts.push(kind);
+    if (action) detailParts.push(action);
+
+    const detail = detailParts.length ? detailParts.join(" · ") : undefined;
+
+    // Link to entity when possible (only invoices for now)
+    const entityId = typeof a.entityId === "string" ? a.entityId : null;
+    const href =
+      kind === "invoice" && entityId
+        ? `/app/estates/${estateId}/invoices/${entityId}`
+        : undefined;
+
+    events.push({
+      id: `activity-${String(a._id)}`,
+      kind: "activity",
+      estateId,
+      title: message,
+      detail,
+      timestamp: ts,
+      href,
     });
   }
 
   // Sort newest → oldest
   const sortedEvents = [...events].sort((a, b) => {
-    const aTime = new Date(a.timestamp).getTime();
-    const bTime = new Date(b.timestamp).getTime();
-    return bTime - aTime;
+    const at = new Date(a.timestamp).getTime();
+    const bt = new Date(b.timestamp).getTime();
+    return bt - at;
   });
 
-  // Apply filters
-  const filteredEvents = sortedEvents.filter((event) => {
-    if (typeFilter !== "ALL" && event.kind !== typeFilter) {
-      return false;
-    }
-
+  // Filters
+  const filteredEvents = sortedEvents.filter((ev) => {
+    if (typeFilter !== "ALL" && ev.kind !== typeFilter) return false;
     if (!searchQuery) return true;
 
     const q = searchQuery.toLowerCase();
-    const inTitle = event.title.toLowerCase().includes(q);
-    const inDetail = (event.detail ?? "").toLowerCase().includes(q);
-
-    return inTitle || inDetail;
+    return (
+      ev.title.toLowerCase().includes(q) ||
+      (ev.detail ?? "").toLowerCase().includes(q)
+    );
   });
 
   const hasFilters = !!searchQuery || typeFilter !== "ALL";
@@ -403,30 +408,27 @@ export default async function EstateTimelinePage({
   const dayGroups: TimelineDayGroup[] = [];
   let currentGroup: TimelineDayGroup | null = null;
 
-  for (const event of filteredEvents) {
-    const eventDate = new Date(event.timestamp);
-    if (Number.isNaN(eventDate.getTime())) {
-      continue;
-    }
-    const dateKey = toDateKey(eventDate);
+  for (const ev of filteredEvents) {
+    const d = new Date(ev.timestamp);
+    if (Number.isNaN(d.getTime())) continue;
+
+    const dateKey = toDateKey(d);
 
     if (!currentGroup || currentGroup.dateKey !== dateKey) {
-      // Start a new group
-      const label = getDayLabelFromKey(dateKey, todayKey, yesterdayKey);
       currentGroup = {
         dateKey,
-        label,
+        label: getDayLabelFromKey(dateKey, todayKey, yesterdayKey),
         events: [],
       };
       dayGroups.push(currentGroup);
     }
 
-    currentGroup.events.push(event);
+    currentGroup.events.push(ev);
   }
 
   return (
     <div className="space-y-6 p-6">
-      {/* Header / breadcrumb */}
+      {/* Header */}
       <div className="flex flex-col gap-3 border-b border-gray-100 pb-4 md:flex-row md:items-start md:justify-between">
         <div className="space-y-2">
           <nav className="text-xs text-gray-500">
@@ -434,23 +436,20 @@ export default async function EstateTimelinePage({
               Estates
             </Link>
             <span className="mx-1 text-gray-400">/</span>
-            <Link
-              href={`/app/estates/${estateId}`}
-              className="hover:underline"
-            >
+            <Link href={`/app/estates/${estateId}`} className="hover:underline">
               Overview
             </Link>
             <span className="mx-1 text-gray-400">/</span>
             <span className="text-gray-900">Timeline</span>
           </nav>
+
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-gray-900">
               Activity timeline
             </h1>
             <p className="mt-1 max-w-2xl text-sm text-gray-600">
-              See the story of this estate—when invoices were created, documents
-              uploaded, tasks added, and notes captured—all in one chronological
-              view.
+              A day-grouped view of what happened in this estate—now including
+              explicit activity events like invoice status changes.
             </p>
           </div>
         </div>
@@ -461,22 +460,16 @@ export default async function EstateTimelinePage({
             {events.length === 1 ? "" : "s"}
           </span>
           <span className="text-[11px] text-gray-400">
-            Grouped by day so you can see what happened when.
+            Includes invoices, documents, tasks, notes, and activity logs.
           </span>
         </div>
       </div>
 
       {/* Filters */}
       <section className="space-y-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
-        <form
-          method="GET"
-          className="flex flex-col gap-2 text-xs md:flex-row md:items-center md:justify-between"
-        >
+        <form method="GET" className="flex flex-col gap-2 text-xs md:flex-row md:items-center md:justify-between">
           <div className="flex flex-1 items-center gap-2">
-            <label
-              htmlFor="q"
-              className="whitespace-nowrap text-[11px] text-gray-500"
-            >
+            <label htmlFor="q" className="whitespace-nowrap text-[11px] text-gray-500">
               Search
             </label>
             <input
@@ -489,10 +482,7 @@ export default async function EstateTimelinePage({
           </div>
 
           <div className="flex items-center gap-2 md:w-auto">
-            <label
-              htmlFor="type"
-              className="whitespace-nowrap text-[11px] text-gray-500"
-            >
+            <label htmlFor="type" className="whitespace-nowrap text-[11px] text-gray-500">
               Type
             </label>
             <select
@@ -502,6 +492,8 @@ export default async function EstateTimelinePage({
               className="h-7 rounded-md border border-gray-300 bg-white px-2 text-xs text-gray-900"
             >
               <option value="ALL">All</option>
+              <option value="activity">Activity</option>
+              <option value="event">Events</option>
               <option value="invoice">Invoices</option>
               <option value="document">Documents</option>
               <option value="task">Tasks</option>
@@ -520,12 +512,11 @@ export default async function EstateTimelinePage({
         </form>
       </section>
 
-      {/* Timeline list with day groups */}
+      {/* Timeline */}
       <section className="space-y-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
         {events.length === 0 ? (
           <p className="text-sm text-gray-500">
-            No activity yet. As you create invoices, upload documents, add
-            tasks, and write notes, they&apos;ll appear here in order.
+            No activity yet. As you work, entries will appear here.
           </p>
         ) : filteredEvents.length === 0 ? (
           <p className="text-sm text-gray-500">
@@ -538,42 +529,41 @@ export default async function EstateTimelinePage({
                 <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
                   {group.label}
                 </h3>
+
                 <ol className="relative border-l border-gray-200 pl-4 text-sm">
-                  {group.events.map((event) => {
-                    const isLatest = event.id === latestEventId;
+                  {group.events.map((ev) => {
+                    const isLatest = ev.id === latestEventId;
 
-                    let badgeLabel = "";
-                    let badgeClass =
-                      "bg-gray-100 text-gray-800 border border-gray-200";
+                    let badgeLabel = "Event";
+                    let badgeClass = "bg-gray-100 text-gray-800 border border-gray-200";
 
-                    if (event.kind === "invoice") {
+                    if (ev.kind === "activity") {
+                      badgeLabel = "Activity";
+                      badgeClass = "bg-slate-100 text-slate-800 border border-slate-200";
+                    } else if (ev.kind === "invoice") {
                       badgeLabel = "Invoice";
-                      badgeClass =
-                        "bg-blue-100 text-blue-800 border border-blue-200";
-                    } else if (event.kind === "document") {
+                      badgeClass = "bg-blue-100 text-blue-800 border border-blue-200";
+                    } else if (ev.kind === "document") {
                       badgeLabel = "Document";
-                      badgeClass =
-                        "bg-purple-100 text-purple-800 border border-purple-200";
-                    } else if (event.kind === "task") {
+                      badgeClass = "bg-purple-100 text-purple-800 border border-purple-200";
+                    } else if (ev.kind === "task") {
                       badgeLabel = "Task";
-                      badgeClass =
-                        "bg-emerald-100 text-emerald-800 border border-emerald-200";
-                    } else if (event.kind === "note") {
+                      badgeClass = "bg-emerald-100 text-emerald-800 border border-emerald-200";
+                    } else if (ev.kind === "note") {
                       badgeLabel = "Note";
-                      badgeClass =
-                        "bg-yellow-100 text-yellow-800 border border-yellow-200";
+                      badgeClass = "bg-yellow-100 text-yellow-800 border border-yellow-200";
+                    } else if (ev.kind === "event") {
+                      badgeLabel = "Event";
+                      badgeClass = "bg-gray-100 text-gray-800 border border-gray-200";
                     }
 
                     return (
-                      <li key={event.id} className="mb-6 ml-1 last:mb-0">
-                        {/* Dot */}
+                      <li key={ev.id} className="mb-6 ml-1 last:mb-0">
                         <span className="absolute -left-[7px] mt-1.5 h-3.5 w-3.5 rounded-full border border-white bg-gray-300 shadow-sm" />
 
                         <div className="flex flex-col gap-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span
-                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${badgeClass}`}
-                            >
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${badgeClass}`}>
                               {badgeLabel}
                               {isLatest && (
                                 <span className="ml-1 text-[10px] font-normal text-gray-600">
@@ -582,28 +572,23 @@ export default async function EstateTimelinePage({
                               )}
                             </span>
                             <span className="text-[11px] text-gray-500">
-                              {formatDateTime(event.timestamp)}
+                              {formatDateTime(ev.timestamp)}
                             </span>
                           </div>
 
                           <div className="text-sm font-medium text-gray-900">
-                            {event.href ? (
-                              <Link
-                                href={event.href}
-                                className="text-blue-700 hover:underline"
-                              >
-                                {event.title}
+                            {ev.href ? (
+                              <Link href={ev.href} className="text-blue-700 hover:underline">
+                                {ev.title}
                               </Link>
                             ) : (
-                              event.title
+                              ev.title
                             )}
                           </div>
 
-                          {event.detail && (
+                          {ev.detail && (
                             <p className="text-sm text-gray-600">
-                              {event.kind === "note"
-                                ? event.detail
-                                : truncate(event.detail, 200)}
+                              {truncate(ev.detail, 220)}
                             </p>
                           )}
                         </div>
