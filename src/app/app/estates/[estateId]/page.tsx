@@ -481,6 +481,38 @@ export default async function EstateOverviewPage({ params }: PageProps) {
             >
               {access.role === "OWNER" ? "Manage collaborators" : "View collaborators"}
             </Link>
+
+            {/* Quick-create shortcuts (hidden for VIEWER) */}
+            {canEdit && (
+              <>
+                <span className="hidden h-6 w-px bg-gray-200 md:inline-block" />
+
+                <Link
+                  href={`/app/estates/${estateId}/invoices/new`}
+                  className="rounded-md bg-gray-900 px-3 py-1 text-xs font-semibold text-white shadow-sm hover:bg-black"
+                >
+                  New invoice
+                </Link>
+                <Link
+                  href={`/app/estates/${estateId}/documents#add-document`}
+                  className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                >
+                  Add document
+                </Link>
+                <Link
+                  href={`/app/estates/${estateId}/tasks#add-task`}
+                  className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                >
+                  Add task
+                </Link>
+                <Link
+                  href={`/app/estates/${estateId}/notes#add-note`}
+                  className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                >
+                  Add note
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -510,6 +542,11 @@ export default async function EstateOverviewPage({ params }: PageProps) {
             >
               Open full notes
             </Link>
+            {access.role === "VIEWER" && (
+              <span className="text-[11px] text-gray-400">
+                Create/edit disabled
+              </span>
+            )}
           </div>
         </div>
 
@@ -724,6 +761,11 @@ export default async function EstateOverviewPage({ params }: PageProps) {
               >
                 Open full task list
               </Link>
+              {access.role === "VIEWER" && (
+                <span className="text-[11px] text-gray-400">
+                  Create/edit disabled
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -866,6 +908,11 @@ export default async function EstateOverviewPage({ params }: PageProps) {
               >
                 Create sensitive doc
               </Link>
+            )}
+            {access.role === "VIEWER" && (
+              <span className="text-[11px] text-gray-400">
+                Create/edit disabled
+              </span>
             )}
           </div>
         </div>

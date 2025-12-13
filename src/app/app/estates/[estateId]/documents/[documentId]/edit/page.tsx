@@ -12,6 +12,34 @@ interface PageProps {
   }>;
 }
 
+// Shape returned from Mongoose `.lean()`
+interface EstateDocumentLean {
+  _id: { toString(): string };
+  estateId: string;
+  ownerId: string;
+  subject: string;
+  label: string;
+  location?: string;
+  url?: string;
+  tags?: string[];
+  notes?: string;
+  isSensitive?: boolean;
+}
+
+const SUBJECT_LABELS: Record<string, string> = {
+  BANKING: "Banking",
+  AUTO: "Auto",
+  MEDICAL: "Medical",
+  INCOME_TAX: "Income tax",
+  PROPERTY: "Property",
+  INSURANCE: "Insurance",
+  IDENTITY: "Identity / ID",
+  LEGAL: "Legal",
+  ESTATE_ACCOUNTING: "Estate accounting",
+  RECEIPTS: "Receipts",
+  OTHER: "Other",
+};
+
 async function updateDocument(formData: FormData): Promise<void> {
   "use server";
 
@@ -86,7 +114,7 @@ export default async function EditDocumentPage({ params }: PageProps) {
     _id: documentId,
     estateId,
     ownerId: session!.user!.id,
-  }).lean();
+  }).lean<EstateDocumentLean>();
 
   if (!doc) {
     notFound();
@@ -154,13 +182,11 @@ export default async function EditDocumentPage({ params }: PageProps) {
               required
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 ring-emerald-500/0 transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
             >
-              <option value="LEGAL">Legal</option>
-              <option value="BANKING">Banking</option>
-              <option value="PROPERTY">Property</option>
-              <option value="TAX">Tax</option>
-              <option value="INSURANCE">Insurance</option>
-              <option value="COMMUNICATION">Communication</option>
-              <option value="OTHER">Other</option>
+              {Object.entries(SUBJECT_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -188,6 +214,8 @@ export default async function EditDocumentPage({ params }: PageProps) {
             <input
               id="url"
               name="url"
+              type="url"
+              placeholder="https://drive.google.com/..."
               defaultValue={doc.url || ""}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 ring-emerald-500/0 transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
             />

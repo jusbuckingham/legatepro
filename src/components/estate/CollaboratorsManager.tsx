@@ -46,6 +46,13 @@ export default function CollaboratorsManager({
   const [invitesError, setInvitesError] = useState<string | null>(null);
   const [createdInviteUrl, setCreatedInviteUrl] = useState<string | null>(null);
 
+  const isValidEmail = useMemo(() => {
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email) return false;
+    // Simple pragmatic check (avoid heavy regex)
+    return email.includes("@") && email.includes(".") && !email.includes(" ");
+  }, [inviteEmail]);
+
   const canUseClipboard = useMemo(() => {
     return typeof navigator !== "undefined" && !!navigator.clipboard?.writeText;
   }, []);
@@ -112,6 +119,7 @@ export default function CollaboratorsManager({
     const email = inviteEmail.trim().toLowerCase();
     if (!email) return;
 
+    setError(null);
     setInvitesLoading(true);
     setInvitesError(null);
     setCreatedInviteUrl(null);
@@ -148,6 +156,7 @@ export default function CollaboratorsManager({
 
     setInvitesLoading(true);
     setInvitesError(null);
+    setError(null);
     setInfo(null);
 
     const res = await fetch(`/api/estates/${estateId}/invites`, {
@@ -258,6 +267,14 @@ export default function CollaboratorsManager({
 
   return (
     <div className="space-y-4">
+      {!isOwner && (
+        <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+          <div className="text-sm font-medium text-gray-900">Collaborators</div>
+          <p className="mt-1 text-xs text-gray-600">
+            You can view collaborators, but only the estate owner can add/remove people or change roles.
+          </p>
+        </div>
+      )}
       {isOwner && (
         <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
           <div className="text-sm font-medium">Add collaborator</div>
@@ -323,11 +340,14 @@ export default function CollaboratorsManager({
 
             <button
               onClick={createInvite}
-              disabled={invitesLoading || !inviteEmail.trim()}
+              disabled={invitesLoading || !isValidEmail}
               className="rounded-md bg-black px-3 py-1 text-sm text-white hover:bg-gray-900 disabled:opacity-50"
             >
               Create link
             </button>
+          </div>
+          <div className="mt-2 text-[11px] text-gray-500">
+            Tip: This does not send email — it generates a link you can copy and share.
           </div>
 
           {createdInviteUrl && (
@@ -384,7 +404,10 @@ export default function CollaboratorsManager({
                           ? "bg-gray-200 text-gray-700"
                           : "bg-gray-200 text-gray-700";
 
-                  const inviteLink = `/app/invites/${inv.token}`;
+                  const invitePath = `/app/invites/${inv.token}`;
+                  const origin =
+                    typeof window !== "undefined" ? window.location.origin : "";
+                  const inviteUrl = origin ? `${origin}${invitePath}` : invitePath;
 
                   return (
                     <div
@@ -409,11 +432,17 @@ export default function CollaboratorsManager({
                         </div>
 
                         <div className="flex items-center gap-2">
+                          <a
+                            href={inviteUrl}
+                            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs hover:bg-gray-50"
+                          >
+                            Open
+                          </a>
+
                           <button
                             type="button"
                             onClick={() => {
-                              const origin = typeof window !== "undefined" ? window.location.origin : "";
-                              void copyToClipboard(origin ? `${origin}${inviteLink}` : inviteLink);
+                              void copyToClipboard(inviteUrl);
                             }}
                             className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs hover:bg-gray-50"
                           >

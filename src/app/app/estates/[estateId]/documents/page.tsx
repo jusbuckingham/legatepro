@@ -2,8 +2,36 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
-import { connectToDatabase } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import * as estateAccess from "@/lib/estateAccess";
+
+type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
+
+type RequireEstateAccessArgs = {
+  estateId: string;
+  userId: string;
+  minRole: EstateRole;
+};
+
+type RequireEstateAccessFn = (
+  args: RequireEstateAccessArgs
+) => Promise<{ role: EstateRole }>;
+
+const requireEstateAccess: RequireEstateAccessFn = (() => {
+  const mod = estateAccess as Record<string, unknown>;
+  const named = mod.requireEstateAccess;
+  if (typeof named === "function") return named as RequireEstateAccessFn;
+
+  const def = mod.default;
+  if (typeof def === "function") return def as RequireEstateAccessFn;
+
+  // Fail fast during development if the helper isn't exported as expected.
+  return (async () => {
+    throw new Error(
+      "requireEstateAccess export not found in '@/lib/estateAccess' (expected named or default export)."
+    );
+  }) as RequireEstateAccessFn;
+})();
 import { EstateDocument } from "@/models/EstateDocument";
 
 interface EstateDocumentsPageProps {
@@ -73,12 +101,17 @@ async function createDocumentEntry(formData: FormData): Promise<void> {
     redirect("/login?callbackUrl=/app");
   }
 
+  // Role enforcement: must be able to edit documents
+  await requireEstateAccess({
+    estateId,
+    userId: session.user.id,
+    minRole: "EDITOR",
+  });
+
   const tags = tagsRaw
     .split(",")
     .map((t) => t.trim())
     .filter(Boolean);
-
-  await connectToDatabase();
 
   await EstateDocument.create({
     estateId,
@@ -106,12 +139,16 @@ async function deleteDocument(formData: FormData): Promise<void> {
   const session = await auth();
   if (!session?.user?.id) return;
 
-  await connectToDatabase();
+  // Role enforcement: must be able to edit documents
+  await requireEstateAccess({
+    estateId,
+    userId: session.user.id,
+    minRole: "EDITOR",
+  });
 
   await EstateDocument.findOneAndDelete({
     _id: documentId,
     estateId,
-    ownerId: session.user.id,
   });
 
   revalidatePath(`/app/estates/${estateId}/documents`);
@@ -181,11 +218,16 @@ export default async function EstateDocumentsPage({
     redirect(`/login?callbackUrl=/app/estates/${estateId}/documents`);
   }
 
-  await connectToDatabase();
+  const access = await requireEstateAccess({
+    estateId,
+    userId: session.user.id,
+    minRole: "VIEWER",
+  });
+
+  const canEdit = access.role === "OWNER" || access.role === "EDITOR";
 
   const docs = await EstateDocument.find({
     estateId,
-    ownerId: session.user.id,
   })
     .sort({ subject: 1, label: 1 })
     .lean<EstateDocumentLean[]>();
@@ -264,146 +306,158 @@ export default async function EstateDocumentsPage({
           <span className="text-[11px] text-slate-500">
             Use this index when assembling your final inventory or accounting.
           </span>
-          <a
-            href="#add-document"
-            className="inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20"
-          >
-            Add document
-          </a>
+          {canEdit ? (
+            <a
+              href="#add-document"
+              className="inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20"
+            >
+              Add document
+            </a>
+          ) : null}
         </div>
       </div>
 
-      {/* New document entry form */}
-      <section
-        id="add-document"
-        className="space-y-3 rounded-xl border border-rose-900/40 bg-slate-950/70 p-4 shadow-sm shadow-rose-950/40"
-      >
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-rose-200">
-              Add a document to the index
-            </h2>
-            <p className="mt-1 text-xs text-slate-400">
-              You’re not uploading files here—just keeping a precise record of where each
-              document lives.
+      {canEdit ? (
+        <section
+          id="add-document"
+          className="space-y-3 rounded-xl border border-rose-900/40 bg-slate-950/70 p-4 shadow-sm shadow-rose-950/40"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-rose-200">
+                Add a document to the index
+              </h2>
+              <p className="mt-1 text-xs text-slate-400">
+                You’re not uploading files here—just keeping a precise record of where each
+                document lives.
+              </p>
+            </div>
+            <p className="hidden text-[11px] text-slate-500 md:block">
+              Tip: group by subject to keep things scannable.
             </p>
           </div>
-          <p className="hidden text-[11px] text-slate-500 md:block">
-            Tip: group by subject to keep things scannable.
-          </p>
-        </div>
 
-        <form action={createDocumentEntry} className="space-y-3 pt-1">
-          <input type="hidden" name="estateId" value={estateId} />
+          <form action={createDocumentEntry} className="space-y-3 pt-1">
+            <input type="hidden" name="estateId" value={estateId} />
 
-          {/* Subject + Location */}
-          <div className="grid gap-3 md:grid-cols-[1.1fr,1.1fr]">
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-200">
-                Subject
-              </label>
-              <select
-                name="subject"
-                required
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50"
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  Select a subject
-                </option>
-                {Object.entries(SUBJECT_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
+            {/* Subject + Location */}
+            <div className="grid gap-3 md:grid-cols-[1.1fr,1.1fr]">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-200">
+                  Subject
+                </label>
+                <select
+                  name="subject"
+                  required
+                  className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50"
+                  defaultValue=""
+                >
+                  <option value="" disabled>
+                    Select a subject
                   </option>
-                ))}
-              </select>
+                  {Object.entries(SUBJECT_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-200">
+                  Location
+                </label>
+                <input
+                  name="location"
+                  placeholder="Google Drive, Dropbox, file cabinet…"
+                  className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50"
+                />
+              </div>
             </div>
 
+            {/* Label */}
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-200">
-                Location
+                Document label
               </label>
               <input
-                name="location"
-                placeholder="Google Drive, Dropbox, file cabinet…"
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50"
-              />
-            </div>
-          </div>
-
-          {/* Label */}
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-200">
-              Document label
-            </label>
-            <input
-              name="label"
-              required
-              placeholder="e.g. Chase checking statements 2022–2023"
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50"
-            />
-          </div>
-
-          {/* URL + Tags */}
-          <div className="grid gap-3 md:grid-cols-[1.4fr,1fr]">
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-200">
-                Link / URL (optional)
-              </label>
-              <input
-                name="url"
-                type="url"
-                placeholder="https://drive.google.com/..."
+                name="label"
+                required
+                placeholder="e.g. Chase checking statements 2022–2023"
                 className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50"
               />
             </div>
 
+            {/* URL + Tags */}
+            <div className="grid gap-3 md:grid-cols-[1.4fr,1fr]">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-200">
+                  Link / URL (optional)
+                </label>
+                <input
+                  name="url"
+                  type="url"
+                  placeholder="https://drive.google.com/..."
+                  className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-200">
+                  Tags (comma-separated)
+                </label>
+                <input
+                  name="tags"
+                  placeholder="e.g. Chase, statements"
+                  className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50"
+                />
+              </div>
+            </div>
+
+            {/* Notes */}
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-200">
-                Tags (comma-separated)
+                Notes
               </label>
-              <input
-                name="tags"
-                placeholder="e.g. Chase, statements"
+              <textarea
+                name="notes"
+                rows={2}
+                placeholder="Any additional notes…"
                 className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50"
               />
             </div>
-          </div>
 
-          {/* Notes */}
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-200">
-              Notes
-            </label>
-            <textarea
-              name="notes"
-              rows={2}
-              placeholder="Any additional notes…"
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50"
-            />
-          </div>
+            {/* Sensitive + Submit */}
+            <div className="flex flex-col gap-3 border-t border-slate-800 pt-3 text-xs md:flex-row md:items-center md:justify-between">
+              <label className="flex items-center gap-2 text-slate-300">
+                <input
+                  type="checkbox"
+                  name="isSensitive"
+                  className="h-3 w-3"
+                  defaultChecked={presetSensitive}
+                />
+                Mark as sensitive
+              </label>
 
-          {/* Sensitive + Submit */}
-          <div className="flex flex-col gap-3 border-t border-slate-800 pt-3 text-xs md:flex-row md:items-center md:justify-between">
-            <label className="flex items-center gap-2 text-slate-300">
-              <input
-                type="checkbox"
-                name="isSensitive"
-                className="h-3 w-3"
-                defaultChecked={presetSensitive}
-              />
-              Mark as sensitive
-            </label>
-
-            <button
-              type="submit"
-              className="rounded-md bg-rose-500 px-3 py-1.5 text-sm font-medium text-slate-950 hover:bg-rose-400"
-            >
-              Add to index
-            </button>
+              <button
+                type="submit"
+                className="rounded-md bg-rose-500 px-3 py-1.5 text-sm font-medium text-slate-950 hover:bg-rose-400"
+              >
+                Add to index
+              </button>
+            </div>
+          </form>
+        </section>
+      ) : (
+        <section className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-200">
+            Read-only access
           </div>
-        </form>
-      </section>
+          <p className="mt-1 text-sm text-slate-400">
+            You can view and search the document index, but creating, editing, and removing documents is disabled for your role.
+          </p>
+        </section>
+      )}
 
       {/* Document index */}
       <section className="space-y-3">
@@ -577,18 +631,20 @@ export default async function EstateDocumentsPage({
                             href={`/app/estates/${estateId}/documents/${doc._id}`}
                             className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
                           >
-                            Edit
+                            {canEdit ? "Edit" : "View"}
                           </Link>
-                          <form action={deleteDocument}>
-                            <input type="hidden" name="estateId" value={estateId} />
-                            <input type="hidden" name="documentId" value={doc._id} />
-                            <button
-                              type="submit"
-                              className="text-rose-400 hover:text-rose-300 underline-offset-2 hover:underline"
-                            >
-                              Remove
-                            </button>
-                          </form>
+                          {canEdit ? (
+                            <form action={deleteDocument}>
+                              <input type="hidden" name="estateId" value={estateId} />
+                              <input type="hidden" name="documentId" value={doc._id} />
+                              <button
+                                type="submit"
+                                className="text-rose-400 hover:text-rose-300 underline-offset-2 hover:underline"
+                              >
+                                Remove
+                              </button>
+                            </form>
+                          ) : null}
                         </div>
                       </td>
                     </tr>

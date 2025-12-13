@@ -2,8 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { FilterQuery } from "mongoose";
 
-import { auth } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { requireViewer } from "@/lib/estateAccess";
 
 import { Invoice } from "@/models/Invoice";
 import { EstateDocument } from "@/models/EstateDocument";
@@ -132,7 +131,6 @@ function formatCurrencyFromCents(cents: number | null | undefined): string | nul
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-
 function friendlyInvoiceStatus(status: string | null | undefined): string {
   switch ((status ?? "").toUpperCase()) {
     case "PAID":
@@ -146,6 +144,29 @@ function friendlyInvoiceStatus(status: string | null | undefined): string {
     default:
       return status ? status : "Unknown";
   }
+}
+
+function kindIcon(kind: TimelineKind): string {
+  switch (kind) {
+    case "invoice":
+      return "💵";
+    case "document":
+      return "📄";
+    case "task":
+      return "✅";
+    case "note":
+      return "📝";
+    case "activity":
+      return "📌";
+    case "event":
+    default:
+      return "•";
+  }
+}
+
+function titleCaseWord(s: string): string {
+  if (!s) return s;
+  return s.slice(0, 1).toUpperCase() + s.slice(1);
 }
 
 function safeString(value: unknown): string | null {
@@ -201,7 +222,6 @@ function formatDocumentChangeDetail(
     return bits.length ? bits.join(" · ") : "Document deleted";
   }
 
-  // updated
   const prev = (snapshot?.previous as Record<string, unknown> | undefined) ?? null;
   const cur = (snapshot?.current as Record<string, unknown> | undefined) ?? null;
 
@@ -228,7 +248,6 @@ function formatDocumentChangeDetail(
   if (prevSensitive !== null && curSensitive !== null && prevSensitive !== curSensitive) {
     parts.push(curSensitive ? "Marked sensitive" : "Unmarked sensitive");
   } else if (curSensitive === true) {
-    // If we can't compute a diff, still surface that it is sensitive
     parts.push("Sensitive");
   }
 
@@ -260,7 +279,6 @@ function formatNoteChangeDetail(
   if (action === "pinned") return "Pinned";
   if (action === "unpinned") return "Unpinned";
 
-  // updated
   const prevPinned = typeof snapshot?.previousPinned === "boolean" ? snapshot.previousPinned : null;
   const nextPinned = typeof snapshot?.newPinned === "boolean" ? snapshot.newPinned : null;
 
@@ -320,11 +338,7 @@ function formatCollaboratorEvent(
     return {
       title,
       detail:
-        [
-          email ? email : null,
-          userId ? `User: ${userId}` : null,
-          !email && role ? `Role: ${role}` : null,
-        ]
+        [email ? email : null, userId ? `User: ${userId}` : null, !email && role ? `Role: ${role}` : null]
           .filter(Boolean)
           .join(" · ") ||
         fallbackDetail ||
@@ -338,11 +352,7 @@ function formatCollaboratorEvent(
     return {
       title,
       detail:
-        [
-          email ? email : null,
-          userId ? `User: ${userId}` : null,
-          roleChange ? `Role: ${roleChange}` : null,
-        ]
+        [email ? email : null, userId ? `User: ${userId}` : null, roleChange ? `Role: ${roleChange}` : null]
           .filter(Boolean)
           .join(" · ") ||
         fallbackDetail ||
@@ -355,9 +365,7 @@ function formatCollaboratorEvent(
     return {
       title,
       detail:
-        [email ? email : null, role ? `Role: ${role}` : null]
-          .filter(Boolean)
-          .join(" · ") ||
+        [email ? email : null, role ? `Role: ${role}` : null].filter(Boolean).join(" · ") ||
         fallbackDetail ||
         "Invite link created",
     };
@@ -368,9 +376,7 @@ function formatCollaboratorEvent(
     return {
       title,
       detail:
-        [email ? email : null, role ? `Role: ${role}` : null]
-          .filter(Boolean)
-          .join(" · ") ||
+        [email ? email : null, role ? `Role: ${role}` : null].filter(Boolean).join(" · ") ||
         fallbackDetail ||
         "Invite revoked",
     };
@@ -381,21 +387,16 @@ function formatCollaboratorEvent(
     return {
       title,
       detail:
-        [email ? email : null, userId ? `User: ${userId}` : null]
-          .filter(Boolean)
-          .join(" · ") ||
+        [email ? email : null, userId ? `User: ${userId}` : null].filter(Boolean).join(" · ") ||
         fallbackDetail ||
         title,
     };
   }
 
-  // COLLABORATOR_REMOVED
   return {
     title: "Collaborator removed",
     detail:
-      [userId ? `User: ${userId}` : null, prevRole ? `Role: ${prevRole}` : null]
-        .filter(Boolean)
-        .join(" · ") ||
+      [userId ? `User: ${userId}` : null, prevRole ? `Role: ${prevRole}` : null].filter(Boolean).join(" · ") ||
       fallbackDetail ||
       "Collaborator removed",
   };
@@ -415,16 +416,11 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
       typeof qRaw === "string"
         ? qRaw.trim()
         : Array.isArray(qRaw)
-        ? (qRaw[0] ?? "").trim()
-        : "";
+          ? (qRaw[0] ?? "").trim()
+          : "";
 
     const typeRaw = sp.type;
-    const typeValue =
-      typeof typeRaw === "string"
-        ? typeRaw
-        : Array.isArray(typeRaw)
-        ? typeRaw[0]
-        : "";
+    const typeValue = typeof typeRaw === "string" ? typeRaw : Array.isArray(typeRaw) ? typeRaw[0] : "";
 
     const normalized = typeValue.toLowerCase();
     if (
@@ -441,7 +437,6 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     }
   }
 
-  // Pagination params
   const beforeRaw = Array.isArray(sp.before) ? sp.before[0] : sp.before;
   const limitRaw = Array.isArray(sp.limit) ? sp.limit[0] : sp.limit;
 
@@ -454,15 +449,12 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   const pageSize = limit;
   const fetchSize = pageSize + 1;
 
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect(`/login?callbackUrl=/app/estates/${estateId}/timeline`);
+  const access = await requireViewer(estateId);
+  if (!access.ok) {
+    return redirect(`/login?callbackUrl=/app/estates/${estateId}/timeline`);
   }
 
-  await connectToDatabase();
-
-  // Base entities
-  const invoiceWhere: FilterQuery<Record<string, unknown>> = { estateId, ownerId: session.user.id };
+  const invoiceWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (isValidBefore) invoiceWhere.createdAt = { $lt: beforeDate };
 
   const invoiceDocs = (await Invoice.find(
@@ -473,41 +465,31 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     .limit(fetchSize)
     .lean()) as InvoiceLean[];
 
-  const documentWhere: FilterQuery<Record<string, unknown>> = { estateId, ownerId: session.user.id };
+  const documentWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (isValidBefore) documentWhere.createdAt = { $lt: beforeDate };
 
-  const documentDocs = (await EstateDocument.find(
-    documentWhere,
-    { label: 1, subject: 1, createdAt: 1 },
-  )
+  const documentDocs = (await EstateDocument.find(documentWhere, { label: 1, subject: 1, createdAt: 1 })
     .sort({ createdAt: -1 })
     .limit(fetchSize)
     .lean()) as EstateDocumentLean[];
 
-  const taskWhere: FilterQuery<Record<string, unknown>> = { estateId, ownerId: session.user.id };
+  const taskWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (isValidBefore) taskWhere.createdAt = { $lt: beforeDate };
 
-  const taskDocs = (await EstateTask.find(
-    taskWhere,
-    { title: 1, status: 1, createdAt: 1, dueDate: 1 },
-  )
+  const taskDocs = (await EstateTask.find(taskWhere, { title: 1, status: 1, createdAt: 1, dueDate: 1 })
     .sort({ createdAt: -1 })
     .limit(fetchSize)
     .lean()) as EstateTaskLean[];
 
-  const noteWhere: FilterQuery<Record<string, unknown>> = { estateId, ownerId: session.user.id };
+  const noteWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (isValidBefore) noteWhere.createdAt = { $lt: beforeDate };
 
-  const noteDocs = (await EstateNote.find(
-    noteWhere,
-    { body: 1, pinned: 1, createdAt: 1 },
-  )
+  const noteDocs = (await EstateNote.find(noteWhere, { body: 1, pinned: 1, createdAt: 1 })
     .sort({ createdAt: -1 })
     .limit(fetchSize)
     .lean()) as EstateNoteLean[];
 
-  // Legacy estate events (what logEstateEvent writes)
-  const estateEventWhere: FilterQuery<Record<string, unknown>> = { estateId, ownerId: session.user.id };
+  const estateEventWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (isValidBefore) estateEventWhere.createdAt = { $lt: beforeDate };
 
   const estateEventDocs = (await EstateEvent.find(
@@ -518,8 +500,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     .limit(fetchSize)
     .lean()) as EstateEventLean[];
 
-  // New activity events (what logActivity writes)
-  const estateActivityWhere: FilterQuery<Record<string, unknown>> = { estateId, ownerId: session.user.id };
+  const estateActivityWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (isValidBefore) estateActivityWhere.createdAt = { $lt: beforeDate };
 
   const estateActivityDocs = (await EstateActivity.find(
@@ -532,18 +513,20 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
 
   const events: TimelineEvent[] = [];
 
-  // De-dupe: if we have a new Activity entry for an invoice status change, hide the legacy EstateEvent equivalent
   const invoiceStatusActivityIds = new Set<string>();
   for (const a of estateActivityDocs) {
-    const kind = typeof a.kind === "string" ? a.kind : "";
-    const action = typeof a.action === "string" ? a.action : "";
+    const kindRaw = typeof a.kind === "string" ? a.kind : "";
+    const actionRaw = typeof a.action === "string" ? a.action : "";
+
+    const kind = kindRaw.toLowerCase();
+    const action = actionRaw.toLowerCase();
+
     const entityId = typeof a.entityId === "string" ? a.entityId : null;
     if (kind === "invoice" && action === "status_changed" && entityId) {
       invoiceStatusActivityIds.add(entityId);
     }
   }
 
-  // Invoices → timeline
   for (const inv of invoiceDocs) {
     const ts = toISO(inv.createdAt) ?? toISO(inv.issueDate);
     if (!ts) continue;
@@ -567,15 +550,12 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     });
   }
 
-  // Documents → timeline
   for (const doc of documentDocs) {
     const ts = toISO(doc.createdAt);
     if (!ts) continue;
 
-    const label =
-      typeof doc.label === "string" && doc.label.trim() ? doc.label.trim() : "Document";
-    const subject =
-      typeof doc.subject === "string" && doc.subject.trim() ? doc.subject.trim() : "";
+    const label = typeof doc.label === "string" && doc.label.trim() ? doc.label.trim() : "Document";
+    const subject = typeof doc.subject === "string" && doc.subject.trim() ? doc.subject.trim() : "";
 
     events.push({
       id: `doc-${String(doc._id)}`,
@@ -588,7 +568,6 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     });
   }
 
-  // Tasks → timeline
   for (const t of taskDocs) {
     const ts = toISO(t.createdAt);
     if (!ts) continue;
@@ -609,7 +588,6 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     });
   }
 
-  // Notes → timeline
   for (const n of noteDocs) {
     const ts = toISO(n.createdAt);
     if (!ts) continue;
@@ -628,7 +606,6 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     });
   }
 
-  // Legacy EstateEvent → timeline
   for (const ev of estateEventDocs) {
     const ts = toISO(ev.createdAt);
     if (!ts) continue;
@@ -636,19 +613,14 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     const summary = typeof ev.summary === "string" && ev.summary.trim() ? ev.summary.trim() : "Event";
     const detailRaw = typeof ev.detail === "string" ? ev.detail.trim() : "";
 
-    // If it’s invoice-related, try to link to invoice detail via meta.invoiceId
     const metaInvoiceId = ev.meta && typeof ev.meta.invoiceId === "string" ? ev.meta.invoiceId : null;
 
-    // Collaborator events should link to collaborators page and show structured detail.
     const collaboratorFmt = formatCollaboratorEvent(ev.type, ev.meta, detailRaw);
     const collaboratorIsInvite =
       ev.type === "COLLABORATOR_INVITE_SENT" ||
       ev.type === "COLLABORATOR_INVITE_REVOKED" ||
       ev.type === "COLLABORATOR_INVITE_ACCEPTED" ||
-      !!(
-        ev.meta &&
-        (typeof ev.meta.email === "string" || typeof ev.meta.collaboratorEmail === "string")
-      );
+      !!(ev.meta && (typeof ev.meta.email === "string" || typeof ev.meta.collaboratorEmail === "string"));
 
     const href = collaboratorFmt
       ? `/app/estates/${estateId}/collaborators`
@@ -659,7 +631,6 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     const title = collaboratorFmt ? collaboratorFmt.title : summary;
     const detail = collaboratorFmt ? (collaboratorFmt.detail ?? "") : detailRaw;
 
-    // Skip legacy invoice status change events if Activity already recorded it
     if ((ev.type === "INVOICE_STATUS_CHANGED" || ev.type === "invoice.status_changed") && metaInvoiceId) {
       if (invoiceStatusActivityIds.has(metaInvoiceId)) {
         continue;
@@ -680,18 +651,22 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     });
   }
 
-  // EstateActivity → timeline (this is the “enriched” path)
   for (const a of estateActivityDocs) {
     const ts = toISO(a.createdAt);
     if (!ts) continue;
 
     const message = typeof a.message === "string" && a.message.trim() ? a.message.trim() : "Activity";
 
-    const kind = typeof a.kind === "string" ? a.kind : "";
-    const action = typeof a.action === "string" ? a.action : "";
+    const kindRaw = typeof a.kind === "string" ? a.kind : "";
+    const actionRaw = typeof a.action === "string" ? a.action : "";
+    const kind = kindRaw.toLowerCase();
+    const action = actionRaw.toLowerCase();
+
     const entityId = typeof a.entityId === "string" ? a.entityId : null;
 
-    // Prefer meaningful detail derived from snapshot
+    const defaultTitle = kind && action ? `${titleCaseWord(kind)} ${action.replaceAll("_", " ")}` : "Activity";
+    const title = message === "Activity" ? defaultTitle : message;
+
     let detail: string | undefined;
     if (kind === "invoice" && action === "status_changed") {
       detail = formatStatusChangeDetail(a.snapshot) ?? "Invoice status changed";
@@ -713,7 +688,6 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
       detail = kind;
     }
 
-    // Link to relevant page
     let href: string | undefined;
     if (kind === "invoice" && entityId) {
       href = `/app/estates/${estateId}/invoices/${entityId}`;
@@ -729,35 +703,29 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
       id: `activity-${String(a._id)}`,
       kind: "activity",
       estateId,
-      title: message,
+      title,
       detail,
       timestamp: ts,
       href,
     });
   }
 
-  // Sort newest → oldest
   const sortedEvents = [...events].sort((a, b) => {
     const at = new Date(a.timestamp).getTime();
     const bt = new Date(b.timestamp).getTime();
     return bt - at;
   });
 
-  // Filters
   const filteredEvents = sortedEvents.filter((ev) => {
     if (typeFilter !== "ALL" && ev.kind !== typeFilter) return false;
     if (!searchQuery) return true;
 
     const q = searchQuery.toLowerCase();
-    return (
-      ev.title.toLowerCase().includes(q) ||
-      (ev.detail ?? "").toLowerCase().includes(q)
-    );
+    return ev.title.toLowerCase().includes(q) || (ev.detail ?? "").toLowerCase().includes(q);
   });
 
   const hasFilters = !!searchQuery || typeFilter !== "ALL";
 
-  // Build href for filter chips, preserving current q param, before, and limit
   const buildHref = (nextType: string, nextBefore?: string | null) => {
     const base = `/app/estates/${estateId}/timeline`;
     const params = new URLSearchParams();
@@ -769,10 +737,10 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
       nextBefore === null
         ? null
         : typeof nextBefore === "string"
-        ? nextBefore
-        : isValidBefore && beforeDate
-        ? beforeDate.toISOString()
-        : null;
+          ? nextBefore
+          : isValidBefore && beforeDate
+            ? beforeDate.toISOString()
+            : null;
 
     if (useBefore) params.set("before", useBefore);
     if (pageSize !== 75) params.set("limit", String(pageSize));
@@ -781,7 +749,6 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     return qs ? `${base}?${qs}` : base;
   };
 
-  // Pagination: after filters, only show `pageSize` events
   const sortedForPaging = [...filteredEvents].sort((a, b) => {
     const at = new Date(a.timestamp).getTime();
     const bt = new Date(b.timestamp).getTime();
@@ -793,10 +760,8 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   const nextBefore = hasMore ? pageEvents[pageEvents.length - 1]?.timestamp : null;
 
   const filteredCount = pageEvents.length;
-  const modeFilter: "ALL" | "activity" | "event" =
-    typeFilter === "activity" || typeFilter === "event" ? typeFilter : "ALL";
+  const modeFilter: "ALL" | "activity" | "event" = typeFilter === "activity" || typeFilter === "event" ? typeFilter : "ALL";
 
-  // Day grouping
   const today = new Date();
   const todayKey = toDateKey(today);
 
@@ -829,7 +794,6 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
 
   return (
     <div className="space-y-6 p-6">
-      {/* Header */}
       <div className="flex flex-col gap-3 border-b border-gray-100 pb-4 md:flex-row md:items-start md:justify-between">
         <div className="space-y-2">
           <nav className="text-xs text-gray-500">
@@ -845,12 +809,9 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
           </nav>
 
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-gray-900">
-              Activity timeline
-            </h1>
+            <h1 className="text-xl font-semibold tracking-tight text-gray-900">Activity timeline</h1>
             <p className="mt-1 max-w-2xl text-sm text-gray-600">
-              A day-grouped view of what happened in this estate—now including
-              explicit activity events like invoice status changes.
+              A day-grouped view of what happened in this estate—now including explicit activity events like invoice status changes.
             </p>
           </div>
         </div>
@@ -860,18 +821,13 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
             <span className="font-medium">{hasFilters ? filteredCount : events.length}</span> event
             {(hasFilters ? filteredCount : events.length) === 1 ? "" : "s"}
             {hasFilters && !isValidBefore && (
-              <span className="ml-1 text-[11px] text-gray-400">
-                (of {events.length})
-              </span>
+              <span className="ml-1 text-[11px] text-gray-400">(of {events.length})</span>
             )}
           </span>
-          <span className="text-[11px] text-gray-400">
-            Includes invoices, documents, tasks, notes, and activity logs.
-          </span>
+          <span className="text-[11px] text-gray-400">Includes invoices, documents, tasks, notes, and activity logs.</span>
         </div>
       </div>
 
-      {/* Filters */}
       <section className="space-y-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
           {[
@@ -888,27 +844,21 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
                 href={buildHref(opt.key)}
                 className={
                   "inline-flex items-center rounded-full border px-3 py-1 text-xs " +
-                  (isActive
-                    ? "border-gray-900 bg-gray-900 text-white"
-                    : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50")
+                  (isActive ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50")
                 }
               >
                 {opt.label}
               </Link>
             );
           })}
-          <span className="ml-1 text-xs text-gray-500">
-            {filteredCount} shown
-          </span>
+          <span className="ml-1 text-xs text-gray-500">{filteredCount} shown</span>
           {(typeFilter === "invoice" || typeFilter === "task" || typeFilter === "document" || typeFilter === "note") && (
-            <Link
-              href={buildHref("ALL")}
-              className="ml-1 text-xs text-gray-500 hover:text-gray-800"
-            >
+            <Link href={buildHref("ALL")} className="ml-1 text-xs text-gray-500 hover:text-gray-800">
               Clear type
             </Link>
           )}
         </div>
+
         <div className="flex flex-wrap items-center gap-2">
           {[
             { key: "ALL", label: "Everything" },
@@ -922,23 +872,16 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
                 href={buildHref(opt.key)}
                 className={
                   "inline-flex items-center rounded-full border px-3 py-1 text-xs " +
-                  (isActive
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50")
+                  (isActive ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50")
                 }
               >
                 {opt.label}
               </Link>
             );
           })}
-          <span className="ml-1 text-xs text-gray-500">
-            Quick view
-          </span>
+          <span className="ml-1 text-xs text-gray-500">Quick view</span>
           {modeFilter !== "ALL" && (
-            <Link
-              href={buildHref("ALL")}
-              className="ml-1 text-xs text-gray-500 hover:text-gray-800"
-            >
+            <Link href={buildHref("ALL")} className="ml-1 text-xs text-gray-500 hover:text-gray-800">
               Clear view
             </Link>
           )}
@@ -962,12 +905,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
             <label htmlFor="type" className="whitespace-nowrap text-[11px] text-gray-500">
               Type
             </label>
-            <select
-              id="type"
-              name="type"
-              defaultValue={typeFilter}
-              className="h-7 rounded-md border border-gray-300 bg-white px-2 text-xs text-gray-900"
-            >
+            <select id="type" name="type" defaultValue={typeFilter} className="h-7 rounded-md border border-gray-300 bg-white px-2 text-xs text-gray-900">
               <option value="ALL">All</option>
               <option value="activity">Activity</option>
               <option value="event">Events</option>
@@ -978,10 +916,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
             </select>
 
             {hasFilters && (
-              <a
-                href={`/app/estates/${estateId}/timeline`}
-                className="whitespace-nowrap text-[11px] text-gray-500 hover:text-gray-800"
-              >
+              <a href={`/app/estates/${estateId}/timeline`} className="whitespace-nowrap text-[11px] text-gray-500 hover:text-gray-800">
                 Clear filters
               </a>
             )}
@@ -989,16 +924,11 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
         </form>
       </section>
 
-      {/* Timeline */}
       <section className="space-y-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
         {events.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            No activity yet. As you work, entries will appear here.
-          </p>
+          <p className="text-sm text-gray-500">No activity yet. As you work, entries will appear here.</p>
         ) : filteredEvents.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            No events match this search or type filter.
-          </p>
+          <p className="text-sm text-gray-500">No events match this search or type filter.</p>
         ) : (
           <div className="space-y-6">
             <div className="flex flex-col gap-2 rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between">
@@ -1023,33 +953,32 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
 
               {isValidBefore && (
                 <div className="flex items-center gap-3">
-                  <Link
-                    href={buildHref(typeFilter, null)}
-                    className="text-xs font-medium text-blue-700 hover:underline"
-                  >
+                  <Link href={buildHref(typeFilter, null)} className="text-xs font-medium text-blue-700 hover:underline">
                     Back to newest
                   </Link>
                 </div>
               )}
             </div>
+
             {dayGroups.map((group) => (
               <div key={group.dateKey}>
                 <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
                   {group.label}{" "}
-                  <span className="text-[11px] font-normal text-gray-400">
-                    ({group.events.length})
-                  </span>
+                  <span className="text-[11px] font-normal text-gray-400">({group.events.length})</span>
                 </h3>
 
                 <ol className="relative border-l border-gray-200 pl-4 text-sm">
-                  {group.events.map((ev) => {
+                  {group.events.map((ev, idx) => {
+                    const prev = idx > 0 ? group.events[idx - 1] : null;
+                    const isGrouped = !!prev && prev.kind === ev.kind && !!prev.href && !!ev.href && prev.href === ev.href;
+
                     const isLatest = ev.id === latestEventId;
 
                     let badgeLabel = "Event";
                     let badgeClass = "bg-gray-100 text-gray-800 border border-gray-200";
 
                     if (ev.kind === "activity") {
-                      badgeLabel = "Activity";
+                      badgeLabel = "Log";
                       badgeClass = "bg-slate-100 text-slate-800 border border-slate-200";
                     } else if (ev.kind === "invoice") {
                       badgeLabel = "Invoice";
@@ -1064,22 +993,28 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
                       badgeLabel = "Note";
                       badgeClass = "bg-yellow-100 text-yellow-800 border border-yellow-200";
                     } else if (ev.kind === "event") {
-                      badgeLabel = "Event";
+                      badgeLabel = "Legacy";
                       badgeClass = "bg-gray-100 text-gray-800 border border-gray-200";
                     }
 
                     return (
-                      <li key={ev.id} className="mb-6 ml-1 last:mb-0">
-                        <span className="absolute -left-[7px] mt-1.5 h-3.5 w-3.5 rounded-full border border-white bg-gray-300 shadow-sm" />
+                      <li key={ev.id} className={(isGrouped ? "mb-3" : "mb-6") + " ml-1 last:mb-0"}>
+                        <span
+                          className={
+                            "absolute -left-[7px] mt-1.5 h-3.5 w-3.5 rounded-full border border-white shadow-sm " +
+                            (isGrouped ? "bg-gray-200 opacity-60" : "bg-gray-300")
+                          }
+                        />
 
                         <div className="flex flex-col gap-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${badgeClass}`}>
-                              {badgeLabel}
+                            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${badgeClass}`}>
+                              <span aria-hidden className="text-[12px]">
+                                {kindIcon(ev.kind)}
+                              </span>
+                              <span>{badgeLabel}</span>
                               {isLatest && (
-                                <span className="ml-1 text-[10px] font-normal text-gray-600">
-                                  Latest
-                                </span>
+                                <span className="ml-1 text-[10px] font-normal text-gray-600">Latest</span>
                               )}
                             </span>
 
@@ -1089,9 +1024,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
                               </span>
                             ) : null}
 
-                            <span className="text-[11px] text-gray-500">
-                              {formatDateTime(ev.timestamp)}
-                            </span>
+                            <span className="text-[11px] text-gray-500">{formatDateTime(ev.timestamp)}</span>
                           </div>
 
                           <div className="text-sm font-medium text-gray-900">
@@ -1105,10 +1038,9 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
                           </div>
 
                           {ev.detail && (
-                            <p className="text-sm text-gray-600">
-                              {truncate(ev.detail, 220)}
-                            </p>
+                            <p className="text-sm text-gray-600">{truncate(ev.detail, 220)}</p>
                           )}
+
                           {ev.kind === "event" &&
                           (ev.subtype ?? "").toUpperCase() === "COLLABORATOR_INVITE_SENT" &&
                           ev.meta &&
@@ -1132,6 +1064,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
                 </ol>
               </div>
             ))}
+
             {hasMore && nextBefore && (
               <div className="mt-6 flex flex-col items-center justify-center gap-2 sm:flex-row">
                 <Link
@@ -1142,10 +1075,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
                 </Link>
 
                 {isValidBefore ? (
-                  <Link
-                    href={buildHref(typeFilter, null)}
-                    className="text-sm font-medium text-blue-700 hover:underline"
-                  >
+                  <Link href={buildHref(typeFilter, null)} className="text-sm font-medium text-blue-700 hover:underline">
                     Back to newest
                   </Link>
                 ) : (
