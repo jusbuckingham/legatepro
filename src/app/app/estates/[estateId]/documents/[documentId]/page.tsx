@@ -45,10 +45,8 @@ async function requireEstateAccess(
 }
 
 type PageProps = {
-  params: Promise<{
-    estateId: string;
-    documentId: string;
-  }>;
+  params: Promise<{ estateId: string; documentId: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 interface EstateDocumentLean {
@@ -149,8 +147,19 @@ async function deleteDocument(formData: FormData): Promise<void> {
   redirect(`/app/estates/${estateId}/documents`);
 }
 
-export default async function EstateDocumentDetailPage({ params }: PageProps) {
+export default async function EstateDocumentDetailPage({ params, searchParams }: PageProps) {
   const { estateId, documentId } = await params;
+
+  // Optional banner trigger when we redirect viewers away from edit actions
+  let forbidden = false;
+  if (searchParams) {
+    const sp = await searchParams;
+    const raw = sp.forbidden;
+    const val = typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : "";
+    forbidden = val === "1" || val?.toLowerCase() === "true";
+  }
+
+  const requestAccessHref = `/app/estates/${estateId}/collaborators?request=EDITOR&from=document&documentId=${documentId}`;
 
   const access = await requireEstateAccess({ estateId, minRole: "VIEWER" });
   const canEdit = access.role === "OWNER" || access.role === "EDITOR";
@@ -177,20 +186,25 @@ export default async function EstateDocumentDetailPage({ params }: PageProps) {
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="space-y-2">
           <nav className="text-xs text-slate-500">
-            <Link href="/app/estates" className="hover:underline text-slate-500">
+            <Link href="/app/estates" className="text-slate-500 hover:underline">
               Estates
             </Link>
             <span className="mx-1 text-slate-600">/</span>
             <Link
+              href={`/app/estates/${estateId}`}
+              className="text-slate-300 hover:underline"
+            >
+              Overview
+            </Link>
+            <span className="mx-1 text-slate-600">/</span>
+            <Link
               href={`/app/estates/${estateId}/documents`}
-              className="hover:underline text-slate-300"
+              className="text-slate-300 hover:underline"
             >
               Document index
             </Link>
             <span className="mx-1 text-slate-600">/</span>
-            <span className="text-rose-300 truncate">
-              {doc.label || "Document"}
-            </span>
+            <span className="truncate text-rose-300">{doc.label || "Document"}</span>
           </nav>
 
           <div>
@@ -206,6 +220,35 @@ export default async function EstateDocumentDetailPage({ params }: PageProps) {
         </div>
 
         <div className="mt-1 flex flex-col items-end gap-2 text-xs text-slate-400">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-200">
+              {access.role}
+            </span>
+            {(!canEdit || forbidden) && (
+              <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-950/50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-100">
+                View-only
+              </span>
+            )}
+            {doc.isSensitive && (
+              <span className="inline-flex items-center rounded-full border border-rose-500/30 bg-rose-950/50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-100">
+                Sensitive
+              </span>
+            )}
+          </div>
+          <Link
+            href={`/app/estates/${estateId}/documents`}
+            className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60 md:hidden"
+          >
+            Back
+          </Link>
+          {(!canEdit || forbidden) && (
+            <Link
+              href={requestAccessHref}
+              className="inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-100 hover:bg-amber-500/20"
+            >
+              Request access
+            </Link>
+          )}
           {doc.url && (
             <a
               href={doc.url}
@@ -220,6 +263,42 @@ export default async function EstateDocumentDetailPage({ params }: PageProps) {
             Make sure this index always reflects where the real document lives.
           </span>
         </div>
+      </div>
+
+      {/* Notices */}
+      <div className="space-y-3">
+        {doc.isSensitive && (
+          <div className="rounded-xl border border-rose-500/30 bg-rose-950/40 p-3 text-sm text-rose-100">
+            <p className="font-semibold">Sensitive document</p>
+            <p className="mt-0.5 text-xs text-rose-200/90">
+              Treat this entry as confidential. Avoid sharing the location or link unless necessary.
+            </p>
+          </div>
+        )}
+
+        {(!canEdit || forbidden) && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-950/40 p-3 text-sm text-amber-100">
+            <p className="font-semibold">
+              {forbidden ? "You don’t have permission to do that" : "You can view, but not edit"}
+            </p>
+            <p className="mt-0.5 text-xs text-amber-200/90">
+              {forbidden
+                ? "This action requires EDITOR access."
+                : `Your role is ${access.role}. Ask an OWNER to grant EDITOR access if you need to make changes.`}
+            </p>
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <Link
+                href={requestAccessHref}
+                className="inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-100 hover:bg-amber-500/20"
+              >
+                Request editor access
+              </Link>
+              <p className="text-[11px] text-amber-200/80">
+                Tip: If you’re the OWNER, invite yourself from Collaborators.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Edit form */}
@@ -348,12 +427,22 @@ export default async function EstateDocumentDetailPage({ params }: PageProps) {
                 href={`/app/estates/${estateId}/documents`}
                 className="text-slate-400 hover:text-slate-200 underline-offset-2 hover:underline"
               >
-                Cancel
+                Back to index
               </Link>
-              {canEdit && (
+
+              {canEdit ? (
                 <button
                   type="submit"
                   className="rounded-md bg-rose-500 px-3 py-1.5 text-sm font-medium text-slate-950 hover:bg-rose-400"
+                >
+                  Save changes
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="cursor-not-allowed rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-400"
+                  title="You don’t have permission to edit this entry"
                 >
                   Save changes
                 </button>

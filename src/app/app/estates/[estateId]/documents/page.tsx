@@ -627,12 +627,29 @@ export default async function EstateDocumentsPage({
 
                       <td className="px-3 py-2 text-right">
                         <div className="flex items-center justify-end gap-3 text-xs">
+                          {/* View is always allowed */}
                           <Link
                             href={`/app/estates/${estateId}/documents/${doc._id}`}
                             className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
                           >
-                            {canEdit ? "Edit" : "View"}
+                            View
                           </Link>
+
+                          {/* Edit is disabled for VIEWER */}
+                          {canEdit ? (
+                            <Link
+                              href={`/app/estates/${estateId}/documents/${doc._id}/edit`}
+                              className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+                            >
+                              Edit
+                            </Link>
+                          ) : (
+                            <span className="cursor-not-allowed text-slate-600" title="View-only access">
+                              Edit
+                            </span>
+                          )}
+
+                          {/* Remove disabled for VIEWER */}
                           {canEdit ? (
                             <form action={deleteDocument}>
                               <input type="hidden" name="estateId" value={estateId} />
@@ -644,7 +661,11 @@ export default async function EstateDocumentsPage({
                                 Remove
                               </button>
                             </form>
-                          ) : null}
+                          ) : (
+                            <span className="cursor-not-allowed text-slate-600" title="View-only access">
+                              Remove
+                            </span>
+                          )}
                         </div>
                       </td>
                     </tr>

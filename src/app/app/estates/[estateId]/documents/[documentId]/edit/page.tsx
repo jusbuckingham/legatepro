@@ -3,6 +3,7 @@ import { redirect, notFound } from "next/navigation";
 
 import { connectToDatabase } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { Estate } from "@/models/Estate";
 import { EstateDocument } from "@/models/EstateDocument";
 
 interface PageProps {
@@ -24,6 +25,68 @@ interface EstateDocumentLean {
   tags?: string[];
   notes?: string;
   isSensitive?: boolean;
+}
+
+type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
+
+interface EstateCollaboratorLean {
+  userId?: string;
+  email?: string;
+  role?: EstateRole;
+  invitedEmail?: string;
+  status?: string;
+}
+
+interface EstateLean {
+  _id: { toString(): string };
+  ownerId: string;
+  collaborators?: EstateCollaboratorLean[];
+}
+
+async function getEstateRoleForUser(params: {
+  estateId: string;
+  userId: string;
+  userEmail?: string | null;
+}): Promise<EstateRole | null> {
+  const { estateId, userId, userEmail } = params;
+
+  await connectToDatabase();
+
+  const estate = await Estate.findById(estateId)
+    .select({ ownerId: 1, collaborators: 1 })
+    .lean<EstateLean>();
+
+  if (!estate) return null;
+
+  if (estate.ownerId?.toString?.() ? estate.ownerId.toString() === userId : estate.ownerId === userId) {
+    return "OWNER";
+  }
+
+  const collaborators = Array.isArray(estate.collaborators)
+    ? estate.collaborators
+    : [];
+
+  // Match by userId first (preferred)
+  const byUserId = collaborators.find((c) =>
+    typeof c.userId === "string" ? c.userId === userId : false,
+  );
+  if (byUserId?.role) return byUserId.role;
+
+  // Fallback: match by email (lowercased)
+  const email = (userEmail ?? "").toLowerCase();
+  if (email) {
+    const byEmail = collaborators.find((c) => {
+      const cEmail = (c.email ?? c.invitedEmail ?? "").toLowerCase();
+      return Boolean(cEmail) && cEmail === email;
+    });
+    if (byEmail?.role) return byEmail.role;
+  }
+
+  return null;
+}
+
+function canEdit(role: EstateRole | null): boolean {
+  return role === "OWNER" || role === "EDITOR";
 }
 
 const SUBJECT_LABELS: Record<string, string> = {
@@ -70,18 +133,28 @@ async function updateDocument(formData: FormData): Promise<void> {
     );
   }
 
+  // Check role on the estate (collaborators supported)
+  const role = await getEstateRoleForUser({
+    estateId,
+    userId: session.user.id,
+    userEmail: (session.user.email ?? null) as string | null,
+  });
+
+  if (!canEdit(role)) {
+    redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
+  }
+
+  await connectToDatabase();
+
   const tags = tagsRaw
     .split(",")
     .map((t) => t.trim())
     .filter(Boolean);
 
-  await connectToDatabase();
-
   await EstateDocument.findOneAndUpdate(
     {
       _id: documentId,
       estateId,
-      ownerId: session!.user!.id,
     },
     {
       label,
@@ -108,12 +181,24 @@ export default async function EditDocumentPage({ params }: PageProps) {
     );
   }
 
+  const role = await getEstateRoleForUser({
+    estateId,
+    userId: session.user.id,
+    userEmail: (session.user.email ?? null) as string | null,
+  });
+
+  if (!role) {
+    // No access to this estate
+    notFound();
+  }
+
+  const isReadOnly = !canEdit(role);
+
   await connectToDatabase();
 
   const doc = await EstateDocument.findOne({
     _id: documentId,
     estateId,
-    ownerId: session!.user!.id,
   }).lean<EstateDocumentLean>();
 
   if (!doc) {
@@ -126,8 +211,16 @@ export default async function EditDocumentPage({ params }: PageProps) {
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 border-b border-slate-800 pb-4 sm:flex-row sm:items-center">
         <div className="space-y-1">
-          <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
-            Edit Document
+          <p className="flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+            <span>Edit Document</span>
+            <span className="rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5 text-[10px] tracking-normal text-slate-300">
+              Role: {role}
+            </span>
+            {isReadOnly ? (
+              <span className="rounded-full border border-rose-500/40 bg-rose-950/60 px-2 py-0.5 text-[10px] tracking-normal text-rose-200">
+                View-only
+              </span>
+            ) : null}
           </p>
           <h1 className="text-2xl font-semibold text-slate-50 sm:text-3xl">
             {doc.label}
@@ -139,10 +232,25 @@ export default async function EditDocumentPage({ params }: PageProps) {
             href={`/app/estates/${estateId}/documents/${documentId}`}
             className="inline-flex items-center rounded-lg border border-slate-800 px-3 py-1.5 font-medium text-slate-300 hover:border-slate-500/70 hover:text-slate-100"
           >
-            Cancel
+            View
+          </Link>
+          <Link
+            href={`/app/estates/${estateId}/documents`}
+            className="inline-flex items-center rounded-lg border border-slate-800 px-3 py-1.5 font-medium text-slate-300 hover:border-slate-500/70 hover:text-slate-100"
+          >
+            Back to index
           </Link>
         </div>
       </div>
+
+      {isReadOnly ? (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-950/30 px-4 py-3 text-sm text-rose-100">
+          <p className="font-medium">You have view-only access for this estate.</p>
+          <p className="mt-1 text-xs text-rose-200/80">
+            You can view document details, but editing is disabled. Ask the estate owner to upgrade your role to EDITOR if you need to make changes.
+          </p>
+        </div>
+      ) : null}
 
       <form
         action={updateDocument}
@@ -164,6 +272,7 @@ export default async function EditDocumentPage({ params }: PageProps) {
               name="label"
               defaultValue={doc.label}
               required
+              disabled={isReadOnly}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 ring-emerald-500/0 transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
             />
           </div>
@@ -180,6 +289,7 @@ export default async function EditDocumentPage({ params }: PageProps) {
               name="subject"
               defaultValue={doc.subject}
               required
+              disabled={isReadOnly}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 ring-emerald-500/0 transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
             >
               {Object.entries(SUBJECT_LABELS).map(([value, label]) => (
@@ -203,6 +313,7 @@ export default async function EditDocumentPage({ params }: PageProps) {
               id="location"
               name="location"
               defaultValue={doc.location || ""}
+              disabled={isReadOnly}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 ring-emerald-500/0 transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
             />
           </div>
@@ -217,6 +328,7 @@ export default async function EditDocumentPage({ params }: PageProps) {
               type="url"
               placeholder="https://drive.google.com/..."
               defaultValue={doc.url || ""}
+              disabled={isReadOnly}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 ring-emerald-500/0 transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
             />
           </div>
@@ -233,6 +345,7 @@ export default async function EditDocumentPage({ params }: PageProps) {
             id="tags"
             name="tags"
             defaultValue={tagsValue}
+            disabled={isReadOnly}
             className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 ring-emerald-500/0 transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
           />
         </div>
@@ -246,9 +359,14 @@ export default async function EditDocumentPage({ params }: PageProps) {
             name="notes"
             rows={4}
             defaultValue={doc.notes || ""}
+            disabled={isReadOnly}
             className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 ring-emerald-500/0 transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
           />
         </div>
+
+        <p className="text-xs text-slate-500">
+          Tip: Use clear labels (e.g., “Bank statements 2023 Q1–Q4”) so your final inventory/accounting is painless.
+        </p>
 
         <div className="flex items-center justify-between gap-3 border-t border-slate-800 pt-4">
           <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-200">
@@ -256,6 +374,7 @@ export default async function EditDocumentPage({ params }: PageProps) {
               type="checkbox"
               name="isSensitive"
               defaultChecked={Boolean(doc.isSensitive)}
+              disabled={isReadOnly}
               className="h-3.5 w-3.5 rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-emerald-500/40"
             />
             Mark as sensitive
@@ -263,9 +382,14 @@ export default async function EditDocumentPage({ params }: PageProps) {
 
           <button
             type="submit"
-            className="inline-flex items-center rounded-lg border border-emerald-500/60 bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-emerald-50 shadow-sm shadow-black/40 hover:bg-emerald-500"
+            disabled={isReadOnly}
+            className={
+              isReadOnly
+                ? "inline-flex cursor-not-allowed items-center rounded-lg border border-slate-700 bg-slate-900 px-4 py-1.5 text-xs font-semibold text-slate-400"
+                : "inline-flex items-center rounded-lg border border-emerald-500/60 bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-emerald-50 shadow-sm shadow-black/40 hover:bg-emerald-500"
+            }
           >
-            Save changes
+            {isReadOnly ? "View-only" : "Save changes"}
           </button>
         </div>
       </form>
