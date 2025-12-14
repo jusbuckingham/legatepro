@@ -24,7 +24,9 @@ type ContactDoc = {
   phone?: string;
   role?: string;
   notes?: string;
-  estates?: EstateRef[];
+  // This may be either populated estate refs (if your schema supports populate)
+  // or raw ObjectId strings (if you store ids only).
+  estates?: Array<EstateRef | string>;
 };
 
 function formatRole(role?: string): string {
@@ -63,9 +65,7 @@ export default async function ContactDetailPage({ params }: PageProps) {
   const contact = (await Contact.findOne({
     _id: contactId,
     ownerId: session.user.id,
-  })
-    .populate("estates", "displayName caseName")
-    .lean()) as ContactDoc | null;
+  }).lean()) as ContactDoc | null;
 
   if (!contact) {
     notFound();
@@ -75,12 +75,21 @@ export default async function ContactDetailPage({ params }: PageProps) {
   const name = contact.name?.trim() || "Unnamed contact";
 
   const estates = (contact.estates ?? []).map((est, index) => {
-    const estId =
-      typeof est._id === "string" ? est._id : est._id.toString();
+    // If not populated, `est` may be a string id.
+    if (typeof est === "string") {
+      const estId = est;
+      return {
+        _id: estId,
+        label: `Estate …${estId.slice(-6) || index + 1}`,
+      };
+    }
+
+    const estId = typeof est._id === "string" ? est._id : est._id.toString();
     const label =
       est.displayName ||
       est.caseName ||
       `Estate …${estId.slice(-6) || index + 1}`;
+
     return {
       _id: estId,
       label,

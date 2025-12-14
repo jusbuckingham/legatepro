@@ -517,6 +517,118 @@ export default async function EstateOverviewPage({ params }: PageProps) {
         </div>
       </header>
 
+      {/* At-a-glance */}
+      <section className="grid gap-4 md:grid-cols-4">
+        <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">
+            Documents
+          </p>
+          <p className="mt-1 text-xl font-semibold text-gray-900">
+            {documents.length}
+          </p>
+          <p className="mt-1 text-xs text-gray-500">
+            {canViewSensitive
+              ? "Includes sensitive (if allowed)"
+              : "Sensitive hidden"}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href={`/app/estates/${estateId}/documents`}
+              className="text-xs font-medium text-blue-600 hover:underline"
+            >
+              View index
+            </Link>
+            {canEdit && (
+              <Link
+                href={`/app/estates/${estateId}/documents#add-document`}
+                className="text-xs font-medium text-gray-700 hover:underline"
+              >
+                Add
+              </Link>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">
+            Tasks
+          </p>
+          <p className="mt-1 text-xl font-semibold text-gray-900">
+            {openTasks.length}
+            <span className="ml-2 text-sm font-medium text-gray-500">
+              open
+            </span>
+          </p>
+          <p className="mt-1 text-xs text-gray-500">
+            {overdueTasksCount > 0
+              ? `${overdueTasksCount} overdue`
+              : "No overdue tasks"}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href={`/app/estates/${estateId}/tasks`}
+              className="text-xs font-medium text-blue-600 hover:underline"
+            >
+              View list
+            </Link>
+            {canEdit && (
+              <Link
+                href={`/app/estates/${estateId}/tasks#add-task`}
+                className="text-xs font-medium text-gray-700 hover:underline"
+              >
+                Add
+              </Link>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">
+            Notes
+          </p>
+          <p className="mt-1 text-xl font-semibold text-gray-900">
+            {notes.length}
+          </p>
+          <p className="mt-1 text-xs text-gray-500">
+            {pinnedNote ? "Pinned note set" : "No pinned note"}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href={`/app/estates/${estateId}/notes`}
+              className="text-xs font-medium text-blue-600 hover:underline"
+            >
+              View notes
+            </Link>
+            {canEdit && (
+              <Link
+                href={`/app/estates/${estateId}/notes#add-note`}
+                className="text-xs font-medium text-gray-700 hover:underline"
+              >
+                Add
+              </Link>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">
+            Timeline
+          </p>
+          <p className="mt-1 text-xl font-semibold text-gray-900">Activity</p>
+          <p className="mt-1 text-xs text-gray-500">
+            Status changes, invoices, tasks, notes, collaborators.
+          </p>
+          <div className="mt-3">
+            <Link
+              href={`/app/estates/${estateId}/timeline`}
+              className="text-xs font-medium text-blue-600 hover:underline"
+            >
+              Open timeline
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* Notes preview (private) */}
       <section className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
         <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -540,7 +652,7 @@ export default async function EstateOverviewPage({ params }: PageProps) {
               href={`/app/estates/${estateId}/notes`}
               className="text-[11px] font-medium text-blue-600 hover:underline"
             >
-              Open full notes
+              View all notes
             </Link>
             {access.role === "VIEWER" && (
               <span className="text-[11px] text-gray-400">
@@ -615,7 +727,7 @@ export default async function EstateOverviewPage({ params }: PageProps) {
         )}
       </section>
 
-      {/* Financial summary */}
+      {/* Financial summary (invoices) */}
       <section className="grid gap-4 md:grid-cols-4">
         <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-medium uppercase text-gray-500">
@@ -759,7 +871,7 @@ export default async function EstateOverviewPage({ params }: PageProps) {
                 href={`/app/estates/${estateId}/tasks`}
                 className="text-[11px] font-medium text-blue-600 hover:underline"
               >
-                Open full task list
+                View all tasks
               </Link>
               {access.role === "VIEWER" && (
                 <span className="text-[11px] text-gray-400">
@@ -899,7 +1011,7 @@ export default async function EstateOverviewPage({ params }: PageProps) {
               href={`/app/estates/${estateId}/documents`}
               className="text-xs font-medium text-blue-600 hover:underline"
             >
-              Open full index
+              View all documents
             </Link>
             {canEdit && canViewSensitive && (
               <Link

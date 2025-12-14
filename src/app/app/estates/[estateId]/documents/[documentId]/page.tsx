@@ -2,47 +2,14 @@ import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
+import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
+import { requireEstateAccess } from "@/lib/estateAccess";
 import { EstateDocument } from "@/models/EstateDocument";
 
 export const dynamic = "force-dynamic";
 
 type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
-
-type RequireEstateAccessArgs = {
-  estateId: string;
-  minRole: EstateRole;
-};
-
-type EstateAccessResult = {
-  role: EstateRole;
-};
-
-async function requireEstateAccess(
-  args: RequireEstateAccessArgs,
-): Promise<EstateAccessResult> {
-  const mod = (await import("@/lib/estateAccess")) as unknown;
-
-  // Support either:
-  //  - export async function requireEstateAccess(...) {}
-  //  - export default async function requireEstateAccess(...) {}
-  const fn =
-    (typeof (mod as { requireEstateAccess?: unknown }).requireEstateAccess ===
-    "function"
-      ? (mod as { requireEstateAccess: (a: RequireEstateAccessArgs) => Promise<EstateAccessResult> })
-          .requireEstateAccess
-      : typeof (mod as { default?: unknown }).default === "function"
-      ? (mod as { default: (a: RequireEstateAccessArgs) => Promise<EstateAccessResult> }).default
-      : null);
-
-  if (!fn) {
-    throw new Error(
-      "Estate access helper not found. Export requireEstateAccess (named or default) from src/lib/estateAccess.ts",
-    );
-  }
-
-  return fn(args);
-}
 
 type PageProps = {
   params: Promise<{ estateId: string; documentId: string }>;
@@ -82,8 +49,20 @@ async function updateDocument(formData: FormData): Promise<void> {
   const documentId = formData.get("documentId")?.toString();
 
   if (!estateId || !documentId) return;
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect("/login?callbackUrl=/app");
+  }
 
-  await requireEstateAccess({ estateId, minRole: "EDITOR" });
+  try {
+    await requireEstateAccess({
+      estateId,
+      userId: session.user.id,
+      minRole: "EDITOR" as EstateRole,
+    });
+  } catch {
+    redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
+  }
 
   const subject = formData.get("subject")?.toString().trim();
   const label = formData.get("label")?.toString().trim();
@@ -133,8 +112,20 @@ async function deleteDocument(formData: FormData): Promise<void> {
   const documentId = formData.get("documentId")?.toString();
 
   if (!estateId || !documentId) return;
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect("/login?callbackUrl=/app");
+  }
 
-  await requireEstateAccess({ estateId, minRole: "EDITOR" });
+  try {
+    await requireEstateAccess({
+      estateId,
+      userId: session.user.id,
+      minRole: "EDITOR" as EstateRole,
+    });
+  } catch {
+    redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
+  }
 
   await connectToDatabase();
 
@@ -161,7 +152,16 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
 
   const requestAccessHref = `/app/estates/${estateId}/collaborators?request=EDITOR&from=document&documentId=${documentId}`;
 
-  const access = await requireEstateAccess({ estateId, minRole: "VIEWER" });
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect(`/login?callbackUrl=/app/estates/${estateId}/documents/${documentId}`);
+  }
+
+  const access = await requireEstateAccess({
+    estateId,
+    userId: session.user.id,
+    minRole: "VIEWER" as EstateRole,
+  });
   const canEdit = access.role === "OWNER" || access.role === "EDITOR";
 
   await connectToDatabase();

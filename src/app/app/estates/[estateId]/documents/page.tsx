@@ -3,36 +3,11 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { auth } from "@/lib/auth";
-import * as estateAccess from "@/lib/estateAccess";
+import { connectToDatabase } from "@/lib/db";
+import { requireEstateAccess } from "@/lib/estateAccess";
+import { EstateDocument } from "@/models/EstateDocument";
 
 type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
-
-type RequireEstateAccessArgs = {
-  estateId: string;
-  userId: string;
-  minRole: EstateRole;
-};
-
-type RequireEstateAccessFn = (
-  args: RequireEstateAccessArgs
-) => Promise<{ role: EstateRole }>;
-
-const requireEstateAccess: RequireEstateAccessFn = (() => {
-  const mod = estateAccess as Record<string, unknown>;
-  const named = mod.requireEstateAccess;
-  if (typeof named === "function") return named as RequireEstateAccessFn;
-
-  const def = mod.default;
-  if (typeof def === "function") return def as RequireEstateAccessFn;
-
-  // Fail fast during development if the helper isn't exported as expected.
-  return (async () => {
-    throw new Error(
-      "requireEstateAccess export not found in '@/lib/estateAccess' (expected named or default export)."
-    );
-  }) as RequireEstateAccessFn;
-})();
-import { EstateDocument } from "@/models/EstateDocument";
 
 interface EstateDocumentsPageProps {
   params: Promise<{
@@ -105,13 +80,15 @@ async function createDocumentEntry(formData: FormData): Promise<void> {
   await requireEstateAccess({
     estateId,
     userId: session.user.id,
-    minRole: "EDITOR",
+    minRole: "EDITOR" as EstateRole,
   });
 
   const tags = tagsRaw
     .split(",")
     .map((t) => t.trim())
     .filter(Boolean);
+
+  await connectToDatabase();
 
   await EstateDocument.create({
     estateId,
@@ -143,8 +120,10 @@ async function deleteDocument(formData: FormData): Promise<void> {
   await requireEstateAccess({
     estateId,
     userId: session.user.id,
-    minRole: "EDITOR",
+    minRole: "EDITOR" as EstateRole,
   });
+
+  await connectToDatabase();
 
   await EstateDocument.findOneAndDelete({
     _id: documentId,
@@ -178,22 +157,22 @@ export default async function EstateDocumentsPage({
       typeof qRaw === "string"
         ? qRaw.trim()
         : Array.isArray(qRaw)
-        ? (qRaw[0] ?? "").trim()
-        : "";
+          ? (qRaw[0] ?? "").trim()
+          : "";
 
     subjectFilter =
       typeof subjectRaw === "string"
         ? subjectRaw.trim()
         : Array.isArray(subjectRaw)
-        ? (subjectRaw[0] ?? "").trim()
-        : "";
+          ? (subjectRaw[0] ?? "").trim()
+          : "";
 
     const sensitiveVal =
       typeof sensitiveRaw === "string"
         ? sensitiveRaw
         : Array.isArray(sensitiveRaw)
-        ? sensitiveRaw[0]
-        : "";
+          ? sensitiveRaw[0]
+          : "";
 
     sensitiveOnly =
       sensitiveVal === "1" ||
@@ -204,8 +183,8 @@ export default async function EstateDocumentsPage({
       typeof presetRaw === "string"
         ? presetRaw
         : Array.isArray(presetRaw)
-        ? presetRaw[0]
-        : "";
+          ? presetRaw[0]
+          : "";
 
     presetSensitive =
       presetVal === "1" ||
@@ -221,10 +200,12 @@ export default async function EstateDocumentsPage({
   const access = await requireEstateAccess({
     estateId,
     userId: session.user.id,
-    minRole: "VIEWER",
+    minRole: "VIEWER" as EstateRole,
   });
 
   const canEdit = access.role === "OWNER" || access.role === "EDITOR";
+
+  await connectToDatabase();
 
   const docs = await EstateDocument.find({
     estateId,
@@ -290,9 +271,9 @@ export default async function EstateDocumentsPage({
               Document index
             </h1>
             <p className="mt-1 max-w-2xl text-sm text-slate-400">
-              Keep a clean, court-ready index of every important document for this
-              estate—where it lives, what it covers, and how to find it again in
-              seconds.
+              Keep a clean, court-ready index of every important document for
+              this estate—where it lives, what it covers, and how to find it
+              again in seconds.
             </p>
           </div>
         </div>
@@ -306,6 +287,7 @@ export default async function EstateDocumentsPage({
           <span className="text-[11px] text-slate-500">
             Use this index when assembling your final inventory or accounting.
           </span>
+
           {canEdit ? (
             <a
               href="#add-document"
@@ -328,8 +310,8 @@ export default async function EstateDocumentsPage({
                 Add a document to the index
               </h2>
               <p className="mt-1 text-xs text-slate-400">
-                You’re not uploading files here—just keeping a precise record of where each
-                document lives.
+                You’re not uploading files here—just keeping a precise record of
+                where each document lives.
               </p>
             </div>
             <p className="hidden text-[11px] text-slate-500 md:block">
@@ -416,9 +398,7 @@ export default async function EstateDocumentsPage({
 
             {/* Notes */}
             <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-200">
-                Notes
-              </label>
+              <label className="text-xs font-medium text-slate-200">Notes</label>
               <textarea
                 name="notes"
                 rows={2}
@@ -454,7 +434,8 @@ export default async function EstateDocumentsPage({
             Read-only access
           </div>
           <p className="mt-1 text-sm text-slate-400">
-            You can view and search the document index, but creating, editing, and removing documents is disabled for your role.
+            You can view and search the document index, but creating, editing,
+            and removing documents is disabled for your role.
           </p>
         </section>
       )}
@@ -644,7 +625,10 @@ export default async function EstateDocumentsPage({
                               Edit
                             </Link>
                           ) : (
-                            <span className="cursor-not-allowed text-slate-600" title="View-only access">
+                            <span
+                              className="cursor-not-allowed text-slate-600"
+                              title="View-only access"
+                            >
                               Edit
                             </span>
                           )}
@@ -652,8 +636,16 @@ export default async function EstateDocumentsPage({
                           {/* Remove disabled for VIEWER */}
                           {canEdit ? (
                             <form action={deleteDocument}>
-                              <input type="hidden" name="estateId" value={estateId} />
-                              <input type="hidden" name="documentId" value={doc._id} />
+                              <input
+                                type="hidden"
+                                name="estateId"
+                                value={estateId}
+                              />
+                              <input
+                                type="hidden"
+                                name="documentId"
+                                value={doc._id}
+                              />
                               <button
                                 type="submit"
                                 className="text-rose-400 hover:text-rose-300 underline-offset-2 hover:underline"
@@ -662,7 +654,10 @@ export default async function EstateDocumentsPage({
                               </button>
                             </form>
                           ) : (
-                            <span className="cursor-not-allowed text-slate-600" title="View-only access">
+                            <span
+                              className="cursor-not-allowed text-slate-600"
+                              title="View-only access"
+                            >
                               Remove
                             </span>
                           )}

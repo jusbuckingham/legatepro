@@ -5,7 +5,7 @@ export default function Home() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-slate-950 via-slate-950 to-slate-900 px-4 py-12 text-slate-50">
       <main className="w-full max-w-3xl rounded-2xl border border-slate-800 bg-slate-950/80 p-8 shadow-xl shadow-black/40">
         {/* Header / brand */}
-        <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3">
             <div className="mt-1 flex h-9 w-9 items-center justify-center rounded-lg border border-red-500/60 bg-red-500/10 text-xs font-semibold tracking-[0.18em]">
               LP
@@ -17,14 +17,28 @@ export default function Home() {
               <p className="mt-1 text-sm text-slate-400">
                 Probate, simplified—like TurboTax, but for estates.
               </p>
+
+              {/* Trust / highlights */}
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                <span className="inline-flex items-center rounded-full border border-emerald-500/50 bg-emerald-500/10 px-3 py-1 font-medium uppercase tracking-wide text-emerald-300">
+                  Private beta
+                </span>
+                <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900/50 px-3 py-1 font-medium uppercase tracking-wide text-slate-300">
+                  No file uploads required
+                </span>
+                <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900/50 px-3 py-1 font-medium uppercase tracking-wide text-slate-300">
+                  Timeline & audit trail
+                </span>
+              </div>
             </div>
           </div>
+
           <div className="flex flex-col items-start gap-1 text-right text-xs sm:items-end">
-            <span className="inline-flex items-center rounded-full border border-emerald-500/50 bg-emerald-500/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-emerald-300">
-              Private beta
-            </span>
             <span className="text-[11px] text-slate-500">
               Built for personal representatives and heirs.
+            </span>
+            <span className="text-[11px] text-slate-600">
+              Calm workflows. Court-ready records.
             </span>
           </div>
         </header>
@@ -76,6 +90,27 @@ export default function Home() {
               </p>
             </li>
           </ul>
+
+          {/* Outcome */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-200">
+              What you&apos;ll have when probate closes
+            </h2>
+            <div className="mt-3 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
+              <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+                <div className="font-medium text-slate-100">A clean paper trail</div>
+                <p className="mt-1 text-slate-400">
+                  Actions, changes, and collaboration tracked in one timeline.
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+                <div className="font-medium text-slate-100">A court-ready packet</div>
+                <p className="mt-1 text-slate-400">
+                  Documents indexed, notes organized, and costs easy to summarize.
+                </p>
+              </div>
+            </div>
+          </div>
         </section>
 
         {/* Primary actions */}
@@ -155,15 +190,24 @@ export default function Home() {
               court or attorney.
             </p>
             <div className="flex gap-3">
-              <button className="text-[11px] text-slate-500 hover:text-slate-300">
+              <a
+                href="#"
+                className="text-[11px] text-slate-500 hover:text-slate-300"
+              >
                 Privacy
-              </button>
-              <button className="text-[11px] text-slate-500 hover:text-slate-300">
+              </a>
+              <a
+                href="#"
+                className="text-[11px] text-slate-500 hover:text-slate-300"
+              >
                 Terms
-              </button>
-              <button className="text-[11px] text-slate-500 hover:text-slate-300">
+              </a>
+              <a
+                href="#"
+                className="text-[11px] text-slate-500 hover:text-slate-300"
+              >
                 Support
-              </button>
+              </a>
             </div>
           </div>
         </footer>
