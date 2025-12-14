@@ -3,8 +3,8 @@ import { redirect, notFound } from "next/navigation";
 
 import { connectToDatabase } from "@/lib/db";
 import { auth } from "@/lib/auth";
-import { Estate } from "@/models/Estate";
 import { EstateDocument } from "@/models/EstateDocument";
+import { requireEstateAccess } from "@/lib/estateAccess";
 
 interface PageProps {
   params: Promise<{
@@ -29,64 +29,9 @@ interface EstateDocumentLean {
 
 type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
 
-interface EstateCollaboratorLean {
-  userId?: string;
-  email?: string;
-  role?: EstateRole;
-  invitedEmail?: string;
-  status?: string;
-}
-
-interface EstateLean {
-  _id: { toString(): string };
-  ownerId: string;
-  collaborators?: EstateCollaboratorLean[];
-}
-
-async function getEstateRoleForUser(params: {
-  estateId: string;
-  userId: string;
-  userEmail?: string | null;
-}): Promise<EstateRole | null> {
-  const { estateId, userId, userEmail } = params;
-
-  await connectToDatabase();
-
-  const estate = await Estate.findById(estateId)
-    .select({ ownerId: 1, collaborators: 1 })
-    .lean<EstateLean>();
-
-  if (!estate) return null;
-
-  if (estate.ownerId?.toString?.() ? estate.ownerId.toString() === userId : estate.ownerId === userId) {
-    return "OWNER";
-  }
-
-  const collaborators = Array.isArray(estate.collaborators)
-    ? estate.collaborators
-    : [];
-
-  // Match by userId first (preferred)
-  const byUserId = collaborators.find((c) =>
-    typeof c.userId === "string" ? c.userId === userId : false,
-  );
-  if (byUserId?.role) return byUserId.role;
-
-  // Fallback: match by email (lowercased)
-  const email = (userEmail ?? "").toLowerCase();
-  if (email) {
-    const byEmail = collaborators.find((c) => {
-      const cEmail = (c.email ?? c.invitedEmail ?? "").toLowerCase();
-      return Boolean(cEmail) && cEmail === email;
-    });
-    if (byEmail?.role) return byEmail.role;
-  }
-
-  return null;
-}
-
-function canEdit(role: EstateRole | null): boolean {
-  return role === "OWNER" || role === "EDITOR";
+function roleAtLeast(role: EstateRole, min: EstateRole): boolean {
+  const order: Record<EstateRole, number> = { VIEWER: 0, EDITOR: 1, OWNER: 2 };
+  return order[role] >= order[min];
 }
 
 const SUBJECT_LABELS: Record<string, string> = {
@@ -133,14 +78,11 @@ async function updateDocument(formData: FormData): Promise<void> {
     );
   }
 
-  // Check role on the estate (collaborators supported)
-  const role = await getEstateRoleForUser({
-    estateId,
-    userId: session.user.id,
-    userEmail: (session.user.email ?? null) as string | null,
-  });
+  // Permission check (OWNER/EDITOR can edit)
+  const access = await requireEstateAccess({ estateId });
+  const role = (access as { role: EstateRole }).role;
 
-  if (!canEdit(role)) {
+  if (!roleAtLeast(role, "EDITOR")) {
     redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
   }
 
@@ -181,18 +123,15 @@ export default async function EditDocumentPage({ params }: PageProps) {
     );
   }
 
-  const role = await getEstateRoleForUser({
-    estateId,
-    userId: session.user.id,
-    userEmail: (session.user.email ?? null) as string | null,
-  });
+  const access = await requireEstateAccess({ estateId });
+  const role = (access as { role: EstateRole }).role;
 
   if (!role) {
     // No access to this estate
     notFound();
   }
 
-  const isReadOnly = !canEdit(role);
+  const isReadOnly = !roleAtLeast(role, "EDITOR");
 
   await connectToDatabase();
 

@@ -1,97 +1,133 @@
 // src/lib/estateAccess.ts
+import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 
 export type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
 
-const ROLE_RANK: Record<EstateRole, number> = {
-  OWNER: 3,
-  EDITOR: 2,
-  VIEWER: 1,
+export type RequireEstateAccessInput = {
+  estateId: string;
+  /**
+   * Optional override for server actions / routes that already resolved auth.
+   * If omitted, this helper will call `auth()`.
+   */
+  userId?: string;
+  /**
+   * When true, unauthenticated users will be treated as having no access.
+   * When false (default), unauthenticated users return VIEWER/canEdit=false so
+   * UI can show read-only messaging while upstream handles redirects.
+   */
+  requireAuth?: boolean;
 };
 
-export interface EstateAccess {
+export type RequireEstateAccessResult = {
   estateId: string;
-  userId: string;
+  /** True if the user is authenticated (or userId override provided). */
+  isAuthenticated: boolean;
+  /** True if the user is allowed to view this estate (owner/collaborator). */
+  hasAccess: boolean;
   role: EstateRole;
-  isOwner: boolean;
   canEdit: boolean;
-  canViewSensitive: boolean;
-}
+};
 
-export function isRole(access: EstateAccess, role: EstateRole): boolean {
-  return ROLE_RANK[access.role] >= ROLE_RANK[role];
-}
+type EstateLean = {
+  ownerId: unknown;
+  collaborators?: { userId: unknown; role: EstateRole }[];
+};
 
-function normalizeRole(input: unknown): EstateRole {
-  if (input === "OWNER" || input === "EDITOR" || input === "VIEWER") return input;
-  return "VIEWER";
-}
+export async function requireEstateAccess(
+  input: RequireEstateAccessInput
+): Promise<RequireEstateAccessResult> {
+  const estateId = input.estateId;
 
-export async function requireEstateAccess(args: {
-  estateId: string;
-  userId: string;
-  minRole?: EstateRole;
-  requireSensitive?: boolean;
-}): Promise<EstateAccess> {
-  const { estateId, userId, minRole = "VIEWER", requireSensitive = false } = args;
+  const resolvedUserId = input.userId ?? (await auth())?.user?.id;
+  const isAuthenticated = !!resolvedUserId;
+
+  if (!resolvedUserId) {
+    if (input.requireAuth) {
+      return {
+        estateId,
+        isAuthenticated: false,
+        hasAccess: false,
+        role: "VIEWER",
+        canEdit: false,
+      };
+    }
+
+    // Caller pages typically redirect to login already; keep it predictable.
+    return {
+      estateId,
+      isAuthenticated: false,
+      hasAccess: false,
+      role: "VIEWER",
+      canEdit: false,
+    };
+  }
 
   await connectToDatabase();
 
-  const estate = await Estate.findOne({ _id: estateId, ownerId: userId }).lean();
-  if (estate) {
-    const access: EstateAccess = {
+  const estate = await Estate.findOne({
+    _id: estateId,
+    $or: [
+      { ownerId: resolvedUserId },
+      { "collaborators.userId": resolvedUserId },
+    ],
+  }).lean<EstateLean>();
+
+  if (!estate) {
+    return {
       estateId,
-      userId,
-      role: "OWNER",
-      isOwner: true,
-      canEdit: true,
-      canViewSensitive: true,
+      isAuthenticated,
+      hasAccess: false,
+      role: "VIEWER",
+      canEdit: false,
     };
-    return access;
   }
 
-  // Not owner: check collaborators
-  const estateWithCollabs = await Estate.findOne({ _id: estateId }).lean<{
-    _id: unknown;
-    ownerId?: unknown;
-    collaborators?: Array<{
-      userId?: unknown;
-      role?: unknown;
-      canViewSensitive?: unknown;
-    }>;
-  }>();
-
-  if (!estateWithCollabs) {
-    throw new Error("NOT_FOUND");
+  // Owner
+  if (String(estate.ownerId) === resolvedUserId) {
+    return {
+      estateId,
+      isAuthenticated,
+      hasAccess: true,
+      role: "OWNER",
+      canEdit: true,
+    };
   }
 
-  const collaborator = (estateWithCollabs.collaborators ?? []).find((c) => {
-    return typeof c?.userId === "string" && c.userId === userId;
-  });
+  const collab = (estate.collaborators ?? []).find(
+    (c) => String(c.userId) === resolvedUserId
+  );
 
-  if (!collaborator) {
-    throw new Error("FORBIDDEN");
-  }
+  const role: EstateRole = collab?.role ?? "VIEWER";
+  const hasAccess = !!collab;
+  const canEdit = role === "OWNER" || role === "EDITOR";
 
-  const role = normalizeRole(collaborator.role);
-  const access: EstateAccess = {
+  return {
     estateId,
-    userId,
+    isAuthenticated,
+    hasAccess,
     role,
-    isOwner: false,
-    canEdit: ROLE_RANK[role] >= ROLE_RANK.EDITOR,
-    canViewSensitive:
-      collaborator.canViewSensitive === true || ROLE_RANK[role] >= ROLE_RANK.EDITOR,
+    canEdit,
   };
+}
 
-  if (!isRole(access, minRole)) {
-    throw new Error("FORBIDDEN");
+/** Convenience helper for routes/actions that must enforce edit privileges. */
+export async function requireEstateEditAccess(
+  input: RequireEstateAccessInput
+): Promise<RequireEstateAccessResult> {
+  const access = await requireEstateAccess(input);
+  if (!access.hasAccess || !access.canEdit) {
+    return {
+      ...access,
+      role: access.hasAccess ? access.role : "VIEWER",
+      canEdit: false,
+    };
   }
-
-  if (requireSensitive && !access.canViewSensitive) {
-    throw new Error("FORBIDDEN_SENSITIVE");
-  }
-
   return access;
+}
+
+/** Small role helper for UI (no runtime dependency). */
+export function isEstateEditorRole(role: EstateRole): boolean {
+  return role === "OWNER" || role === "EDITOR";
 }

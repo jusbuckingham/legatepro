@@ -7,7 +7,6 @@ import { connectToDatabase } from "@/lib/db";
 import { requireEstateAccess } from "@/lib/estateAccess";
 import { EstateDocument } from "@/models/EstateDocument";
 
-type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
 
 interface EstateDocumentsPageProps {
   params: Promise<{
@@ -77,11 +76,11 @@ async function createDocumentEntry(formData: FormData): Promise<void> {
   }
 
   // Role enforcement: must be able to edit documents
-  await requireEstateAccess({
-    estateId,
-    userId: session.user.id,
-    minRole: "EDITOR" as EstateRole,
-  });
+  const access = await requireEstateAccess({ estateId });
+  const canEdit = access.role === "OWNER" || access.role === "EDITOR";
+  if (!canEdit) {
+    redirect(`/app/estates/${estateId}/documents?forbidden=1`);
+  }
 
   const tags = tagsRaw
     .split(",")
@@ -117,11 +116,11 @@ async function deleteDocument(formData: FormData): Promise<void> {
   if (!session?.user?.id) return;
 
   // Role enforcement: must be able to edit documents
-  await requireEstateAccess({
-    estateId,
-    userId: session.user.id,
-    minRole: "EDITOR" as EstateRole,
-  });
+  const access = await requireEstateAccess({ estateId });
+  const canEdit = access.role === "OWNER" || access.role === "EDITOR";
+  if (!canEdit) {
+    redirect(`/app/estates/${estateId}/documents?forbidden=1`);
+  }
 
   await connectToDatabase();
 
@@ -197,13 +196,16 @@ export default async function EstateDocumentsPage({
     redirect(`/login?callbackUrl=/app/estates/${estateId}/documents`);
   }
 
-  const access = await requireEstateAccess({
-    estateId,
-    userId: session.user.id,
-    minRole: "VIEWER" as EstateRole,
-  });
+  const access = await requireEstateAccess({ estateId });
 
   const canEdit = access.role === "OWNER" || access.role === "EDITOR";
+  const canViewSensitive = access.role === "OWNER" || access.role === "EDITOR";
+
+  // VIEWER cannot view or filter to sensitive documents
+  if (!canViewSensitive) {
+    sensitiveOnly = false;
+    presetSensitive = false;
+  }
 
   await connectToDatabase();
 
@@ -227,6 +229,11 @@ export default async function EstateDocumentsPage({
   // Apply filters in-memory on the mapped data
   const filteredDocuments: EstateDocumentItem[] = documents.filter((doc) => {
     if (subjectFilter && doc.subject !== subjectFilter) {
+      return false;
+    }
+
+    // Hide sensitive documents entirely for VIEWER
+    if (!canViewSensitive && doc.isSensitive) {
       return false;
     }
 
@@ -437,6 +444,14 @@ export default async function EstateDocumentsPage({
             You can view and search the document index, but creating, editing,
             and removing documents is disabled for your role.
           </p>
+          <div className="mt-3">
+            <Link
+              href={`/app/estates/${estateId}`}
+              className="inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-950 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900"
+            >
+              Request edit access
+            </Link>
+          </div>
         </section>
       )}
 
@@ -502,17 +517,19 @@ export default async function EstateDocumentsPage({
                 </select>
               </div>
 
-              {/* Sensitive only toggle */}
-              <label className="flex items-center gap-2 text-[11px] text-slate-400">
-                <input
-                  type="checkbox"
-                  name="sensitive"
-                  value="1"
-                  defaultChecked={sensitiveOnly}
-                  className="h-3 w-3"
-                />
-                Sensitive only
-              </label>
+              {/* Sensitive only toggle (OWNER/EDITOR only) */}
+              {canViewSensitive ? (
+                <label className="flex items-center gap-2 text-[11px] text-slate-400">
+                  <input
+                    type="checkbox"
+                    name="sensitive"
+                    value="1"
+                    defaultChecked={sensitiveOnly}
+                    className="h-3 w-3"
+                  />
+                  Sensitive only
+                </label>
+              ) : null}
 
               {hasActiveFilters && (
                 <a

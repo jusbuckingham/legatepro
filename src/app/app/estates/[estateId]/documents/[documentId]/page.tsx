@@ -11,6 +11,11 @@ export const dynamic = "force-dynamic";
 
 type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
 
+function roleAtLeast(role: EstateRole, minRole: EstateRole): boolean {
+  const order: Record<EstateRole, number> = { OWNER: 3, EDITOR: 2, VIEWER: 1 };
+  return order[role] >= order[minRole];
+}
+
 type PageProps = {
   params: Promise<{ estateId: string; documentId: string }>;
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -54,13 +59,15 @@ async function updateDocument(formData: FormData): Promise<void> {
     redirect("/login?callbackUrl=/app");
   }
 
+  let access: { role: EstateRole };
   try {
-    await requireEstateAccess({
-      estateId,
-      userId: session.user.id,
-      minRole: "EDITOR" as EstateRole,
-    });
+    // `requireEstateAccess` derives the user from the current session and returns the resolved role.
+    access = (await requireEstateAccess({ estateId })) as { role: EstateRole };
   } catch {
+    redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
+  }
+
+  if (!roleAtLeast(access.role, "EDITOR")) {
     redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
   }
 
@@ -117,13 +124,14 @@ async function deleteDocument(formData: FormData): Promise<void> {
     redirect("/login?callbackUrl=/app");
   }
 
+  let access: { role: EstateRole };
   try {
-    await requireEstateAccess({
-      estateId,
-      userId: session.user.id,
-      minRole: "EDITOR" as EstateRole,
-    });
+    access = (await requireEstateAccess({ estateId })) as { role: EstateRole };
   } catch {
+    redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
+  }
+
+  if (!roleAtLeast(access.role, "EDITOR")) {
     redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
   }
 
@@ -157,12 +165,8 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
     redirect(`/login?callbackUrl=/app/estates/${estateId}/documents/${documentId}`);
   }
 
-  const access = await requireEstateAccess({
-    estateId,
-    userId: session.user.id,
-    minRole: "VIEWER" as EstateRole,
-  });
-  const canEdit = access.role === "OWNER" || access.role === "EDITOR";
+  const access = (await requireEstateAccess({ estateId })) as { role: EstateRole };
+  const canEdit = roleAtLeast(access.role, "EDITOR");
 
   await connectToDatabase();
 
