@@ -235,6 +235,121 @@ export default async function AppDashboardPage() {
   const netThisMonth = monthlyRentTotal - monthlyExpenseTotal;
   const netAllTime = totalRentAllTime - totalExpensesAllTime;
 
+  // ---- Global Activity Feed (lightweight) ----
+  type ActivityItem = {
+    id: string;
+    at: Date;
+    label: string;
+    sublabel?: string;
+    href?: string;
+    tone?: "rose" | "emerald" | "amber" | "slate";
+    badge?: string;
+  };
+
+  function safeDate(value: Date | string | null | undefined): Date | null {
+    if (!value) return null;
+    const d = typeof value === "string" ? new Date(value) : value;
+    if (Number.isNaN(d.getTime())) return null;
+    return d;
+  }
+
+  const activityItems: ActivityItem[] = [];
+
+  // Estates created recently
+  for (const e of estates) {
+    const created = safeDate(e.createdAt as unknown as Date | string | null | undefined);
+    if (!created) continue;
+    const estateName = getEstateDisplayName(e);
+    activityItems.push({
+      id: `estate:${String(e._id)}`,
+      at: created,
+      label: `Estate created: ${estateName}`,
+      sublabel: e.courtCaseNumber ? `Case ${e.courtCaseNumber}` : undefined,
+      href: `/app/estates/${String(e._id)}`,
+      tone: "slate",
+      badge: "ESTATE",
+    });
+  }
+
+  // Upcoming tasks (use task.date)
+  for (const t of upcomingTasks) {
+    const d = safeDate(t.date as unknown as Date | string | null | undefined);
+    if (!d) continue;
+
+    const estateObj = t.estateId && typeof t.estateId === "object" ? (t.estateId as LeanEstate) : undefined;
+    const estateLabel = estateObj ? getEstateDisplayName(estateObj) : "Unassigned estate";
+
+    activityItems.push({
+      id: `task:${String(t._id)}`,
+      at: d,
+      label: `Task: ${t.subject}`,
+      sublabel: estateLabel,
+      href: `/app/tasks`,
+      tone: "rose",
+      badge: "TASK",
+    });
+  }
+
+  // Recent expenses (use exp.date)
+  for (const exp of recentExpenses) {
+    const d = safeDate(exp.date as unknown as Date | string | null | undefined);
+    if (!d) continue;
+
+    const estateObj = exp.estateId && typeof exp.estateId === "object" ? (exp.estateId as LeanEstate) : undefined;
+    const estateLabel = estateObj ? getEstateDisplayName(estateObj) : "Unassigned";
+
+    activityItems.push({
+      id: `expense:${String(exp._id)}`,
+      at: d,
+      label: `Expense: ${exp.label || "Expense"}`,
+      sublabel: `${estateLabel} • ${formatCurrency(exp.amount || 0)}`,
+      href: `/app/expenses`,
+      tone: "amber",
+      badge: "EXPENSE",
+    });
+  }
+
+  // Invoice health snapshot (use today)
+  if (unpaidInvoiceTotal > 0 || overdueInvoiceTotal > 0) {
+    activityItems.push({
+      id: `invoices:summary:${startOfToday.toISOString()}`,
+      at: startOfToday,
+      label: `Invoices outstanding: ${formatCurrency(unpaidInvoiceTotal)}`,
+      sublabel: overdueInvoiceTotal > 0 ? `Overdue: ${formatCurrency(overdueInvoiceTotal)}` : "No overdue invoices",
+      href: `/app/invoices`,
+      tone: overdueInvoiceTotal > 0 ? "amber" : "emerald",
+      badge: "INVOICE",
+    });
+  }
+
+  activityItems.sort((a, b) => b.at.getTime() - a.at.getTime());
+  const globalFeed = activityItems.slice(0, 10);
+
+  function toneClasses(tone: ActivityItem["tone"]) {
+    switch (tone) {
+      case "rose":
+        return {
+          dot: "bg-rose-400",
+          badge: "border-rose-500/50 bg-rose-500/10 text-rose-200",
+        };
+      case "emerald":
+        return {
+          dot: "bg-emerald-400",
+          badge: "border-emerald-500/50 bg-emerald-500/10 text-emerald-200",
+        };
+      case "amber":
+        return {
+          dot: "bg-amber-300",
+          badge: "border-amber-500/50 bg-amber-500/10 text-amber-200",
+        };
+      default:
+        return {
+          dot: "bg-slate-400",
+          badge: "border-slate-700 bg-slate-950 text-slate-300",
+        };
+    }
+  }
+
   let userName = "there";
   try {
     const session = await auth();
@@ -429,7 +544,7 @@ export default async function AppDashboardPage() {
         </div>
       </section>
 
-      {/* Main content: estates + activity */}
+      {/* Main content: estates + global activity */}
       <section className="grid gap-6 lg:grid-cols-3">
         {/* Left: latest estates */}
         <div className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-4 lg:col-span-1">
@@ -500,6 +615,95 @@ export default async function AppDashboardPage() {
 
         {/* Right: upcoming tasks + recent expenses */}
         <div className="space-y-6 lg:col-span-2">
+          {/* Global activity feed */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-slate-100">
+                Global activity
+              </h2>
+              <div className="flex items-center gap-3">
+                <p className="hidden text-[11px] text-slate-500 md:block">
+                  A quick feed across all estates.
+                </p>
+                <Link
+                  href="/app/activity"
+                  className="text-xs text-slate-400 hover:text-slate-200"
+                >
+                  View all →
+                </Link>
+              </div>
+            </div>
+
+            {globalFeed.length === 0 ? (
+              <p className="mt-2 text-xs text-slate-400">
+                No activity yet. Create an estate, add tasks, log expenses, and
+                you&apos;ll see them appear here.
+              </p>
+            ) : (
+              <ul className="mt-3 divide-y divide-slate-800">
+                {globalFeed.map((item) => {
+                  const cls = toneClasses(item.tone);
+
+                  return (
+                    <li
+                      key={item.id}
+                      className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0"
+                    >
+                      <div
+                        className={`mt-[6px] h-2 w-2 flex-shrink-0 rounded-full ${cls.dot}`}
+                        aria-hidden
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-slate-50">
+                              {item.href ? (
+                                <Link
+                                  href={item.href}
+                                  className="hover:text-rose-200"
+                                >
+                                  {item.label}
+                                </Link>
+                              ) : (
+                                item.label
+                              )}
+                            </p>
+                            {item.sublabel && (
+                              <p className="truncate text-[11px] text-slate-400">
+                                {item.sublabel}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex flex-shrink-0 items-center gap-2">
+                            {item.badge && (
+                              <span
+                                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${cls.badge}`}
+                              >
+                                {item.badge}
+                              </span>
+                            )}
+                            <span className="whitespace-nowrap text-[10px] text-slate-500">
+                              {formatShortDate(item.at)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500">
+              <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5">
+                Tip: this is a lightweight dashboard preview.
+              </span>
+              <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5">
+                We&apos;ll wire the full feed to your Activity model next.
+              </span>
+            </div>
+          </div>
           {/* Upcoming tasks */}
           <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
             <div className="flex items-center justify-between">
