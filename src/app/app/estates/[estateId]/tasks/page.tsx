@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
+import { requireEstateAccess } from "@/lib/estateAccess";
 import { EstateTask } from "@/models/EstateTask";
 
 export const dynamic = "force-dynamic";
@@ -70,6 +71,12 @@ async function createTask(formData: FormData): Promise<void> {
     redirect("/login");
   }
 
+  // Permission check: viewers can't create tasks
+  const access = await requireEstateAccess({ estateId });
+  if (access.role === "VIEWER") {
+    redirect(`/app/estates/${estateId}/tasks?forbidden=1`);
+  }
+
   await connectToDatabase();
 
   const status = parseStatus(statusRaw);
@@ -110,6 +117,12 @@ async function updateTaskStatus(formData: FormData): Promise<void> {
     redirect("/login");
   }
 
+  const access = await requireEstateAccess({ estateId });
+  if (access.role === "VIEWER") {
+    revalidatePath(`/app/estates/${estateId}/tasks`);
+    return;
+  }
+
   await connectToDatabase();
 
   const status = parseStatus(statusRaw);
@@ -125,7 +138,7 @@ async function updateTaskStatus(formData: FormData): Promise<void> {
   }
 
   await EstateTask.findOneAndUpdate(
-    { _id: taskId, estateId, ownerId: session.user.id },
+    { _id: taskId, estateId },
     update,
   );
 
@@ -148,12 +161,17 @@ async function deleteTask(formData: FormData): Promise<void> {
     redirect("/login");
   }
 
+  const access = await requireEstateAccess({ estateId });
+  if (access.role === "VIEWER") {
+    revalidatePath(`/app/estates/${estateId}/tasks`);
+    return;
+  }
+
   await connectToDatabase();
 
   await EstateTask.findOneAndDelete({
     _id: taskId,
     estateId,
-    ownerId: session.user.id,
   });
 
   revalidatePath(`/app/estates/${estateId}/tasks`);
@@ -206,9 +224,11 @@ export default async function EstateTasksPage({
   }
 
   await connectToDatabase();
+  const access = await requireEstateAccess({ estateId });
+  const isViewer = access.role === "VIEWER";
 
   const docs = (await EstateTask.find(
-    { estateId, ownerId: session.user.id },
+    { estateId },
     { title: 1, description: 1, status: 1, dueDate: 1, completedAt: 1 },
   )
     .sort({ dueDate: 1, createdAt: 1 })
@@ -296,9 +316,11 @@ export default async function EstateTasksPage({
             </p>
           </div>
         </div>
-
         <div className="mt-1 flex flex-col items-end gap-1 text-xs text-gray-500">
           <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-700">
+              Role: {access.role}
+            </span>
             <span>
               <span className="font-medium">{openCount}</span> open
             </span>
@@ -318,13 +340,37 @@ export default async function EstateTasksPage({
             </span>
           </div>
           <span className="text-[11px] text-gray-400">
-            This checklist is private to you and not shared with the court.
+            This checklist is private to your team and not shared with the court.
           </span>
         </div>
       </div>
 
+      {isViewer && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="font-semibold">Viewer access</div>
+              <div className="text-xs text-amber-800">
+                You can view tasks, but you can’t create, update, or delete them.
+              </div>
+            </div>
+            <Link
+              href={`/app/estates/${estateId}?requestAccess=1`}
+              className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+            >
+              Request edit access
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* New task form */}
-      <section className="space-y-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+      <section
+        className={
+          "space-y-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm" +
+          (isViewer ? " opacity-60 pointer-events-none" : "")
+        }
+      >
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-700">
@@ -529,7 +575,7 @@ export default async function EstateTasksPage({
                       )}
                     </td>
                     <td className="px-3 py-2 align-top">
-                      <div className="flex justify-end gap-2 text-xs">
+                      <div className={`flex justify-end gap-2 text-xs ${isViewer ? "opacity-60" : ""}`}>
                         {task.status !== "DONE" && (
                           <form action={updateTaskStatus}>
                             <input
@@ -549,7 +595,12 @@ export default async function EstateTasksPage({
                             />
                             <button
                               type="submit"
-                              className="text-green-700 hover:underline"
+                              disabled={isViewer}
+                              className={
+                                isViewer
+                                  ? "cursor-not-allowed text-gray-400"
+                                  : "text-green-700 hover:underline"
+                              }
                             >
                               Mark done
                             </button>
@@ -574,7 +625,12 @@ export default async function EstateTasksPage({
                             />
                             <button
                               type="submit"
-                              className="text-blue-700 hover:underline"
+                              disabled={isViewer}
+                              className={
+                                isViewer
+                                  ? "cursor-not-allowed text-gray-400"
+                                  : "text-blue-700 hover:underline"
+                              }
                             >
                               Reopen
                             </button>
@@ -593,7 +649,12 @@ export default async function EstateTasksPage({
                           />
                           <button
                             type="submit"
-                            className="text-red-600 hover:underline"
+                            disabled={isViewer}
+                            className={
+                              isViewer
+                                ? "cursor-not-allowed text-gray-400"
+                                : "text-red-600 hover:underline"
+                            }
                           >
                             Delete
                           </button>

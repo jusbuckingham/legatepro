@@ -4,9 +4,22 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
+import { requireEstateAccess } from "@/lib/estateAccess";
 import { EstateNote } from "@/models/EstateNote";
 
 export const dynamic = "force-dynamic";
+
+type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
+
+function canWrite(role: EstateRole): boolean {
+  return role === "OWNER" || role === "EDITOR";
+}
+
+function roleLabel(role: EstateRole): string {
+  if (role === "OWNER") return "Owner";
+  if (role === "EDITOR") return "Editor";
+  return "Viewer";
+}
 
 type PageProps = {
   params: Promise<{
@@ -60,6 +73,13 @@ async function createNote(formData: FormData): Promise<void> {
     redirect("/login");
   }
 
+  const access = await requireEstateAccess({ estateId });
+  const role: EstateRole = (access?.role as EstateRole) ?? "VIEWER";
+  if (!canWrite(role)) {
+    // Viewers can read, but cannot create.
+    return;
+  }
+
   await connectToDatabase();
 
   const pinned =
@@ -94,13 +114,20 @@ async function togglePinned(formData: FormData): Promise<void> {
     redirect("/login");
   }
 
+  const access = await requireEstateAccess({ estateId });
+  const role: EstateRole = (access?.role as EstateRole) ?? "VIEWER";
+  if (!canWrite(role)) {
+    // Viewers can read, but cannot modify.
+    return;
+  }
+
   await connectToDatabase();
 
   const nextPinned =
     nextPinnedRaw === "true" || nextPinnedRaw === "1" || nextPinnedRaw === "on";
 
   await EstateNote.findOneAndUpdate(
-    { _id: noteId, estateId, ownerId: session.user.id },
+    { _id: noteId, estateId },
     { pinned: nextPinned },
   );
 
@@ -125,12 +152,18 @@ async function deleteNote(formData: FormData): Promise<void> {
     redirect("/login");
   }
 
+  const access = await requireEstateAccess({ estateId });
+  const role: EstateRole = (access?.role as EstateRole) ?? "VIEWER";
+  if (!canWrite(role)) {
+    // Viewers can read, but cannot delete.
+    return;
+  }
+
   await connectToDatabase();
 
   await EstateNote.findOneAndDelete({
     _id: noteId,
     estateId,
-    ownerId: session.user.id,
   });
 
   revalidatePath(`/app/estates/${estateId}/notes`);
@@ -175,10 +208,14 @@ export default async function EstateNotesPage({
     redirect(`/login?callbackUrl=/app/estates/${estateId}/notes`);
   }
 
+  const access = await requireEstateAccess({ estateId });
+  const role: EstateRole = (access?.role as EstateRole) ?? "VIEWER";
+  const writeEnabled = canWrite(role);
+
   await connectToDatabase();
 
   const docs = (await EstateNote.find(
-    { estateId, ownerId: session.user.id },
+    { estateId },
     { body: 1, pinned: 1, createdAt: 1 },
   )
     .sort({ pinned: -1, createdAt: -1 })
@@ -247,6 +284,9 @@ export default async function EstateNotesPage({
         </div>
 
         <div className="mt-1 flex flex-col items-end gap-1 text-xs text-gray-500">
+          <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-700">
+            Role: {roleLabel(role)}
+          </span>
           <div className="flex flex-wrap items-center gap-2">
             <span>
               <span className="font-medium">{notes.length}</span> note
@@ -266,6 +306,25 @@ export default async function EstateNotesPage({
           </span>
         </div>
       </div>
+
+      {!writeEnabled && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-medium">Viewer access</p>
+              <p className="text-xs text-amber-800">
+                You can read notes, but you can’t create, pin, or delete them.
+              </p>
+            </div>
+            <Link
+              href={`/app/estates/${estateId}/collaborators`}
+              className="mt-2 inline-flex items-center justify-center rounded-md bg-amber-900 px-3 py-1.5 text-xs font-medium text-amber-50 hover:bg-amber-800 md:mt-0"
+            >
+              Request edit access
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* New note form */}
       <section className="space-y-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -294,6 +353,7 @@ export default async function EstateNotesPage({
               rows={4}
               placeholder="Example: 4/15 – Spoke with court clerk about upcoming hearing. Need to bring last 6 months of bank statements and a list of creditors."
               className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900 placeholder:text-gray-400"
+              disabled={!writeEnabled}
             />
           </div>
 
@@ -303,13 +363,19 @@ export default async function EstateNotesPage({
                 type="checkbox"
                 name="pinned"
                 className="h-3 w-3 rounded border-gray-300"
+                disabled={!writeEnabled}
               />
               <span>Pin this note to the top</span>
             </label>
 
             <button
               type="submit"
-              className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800"
+              disabled={!writeEnabled}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium text-white ${
+                writeEnabled
+                  ? "bg-gray-900 hover:bg-gray-800"
+                  : "cursor-not-allowed bg-gray-300"
+              }`}
             >
               Save note
             </button>
@@ -410,7 +476,11 @@ export default async function EstateNotesPage({
                       />
                       <button
                         type="submit"
-                        className="text-gray-700 hover:underline"
+                        disabled={!writeEnabled}
+                        className={`hover:underline ${
+                          writeEnabled ? "text-gray-700" : "cursor-not-allowed text-gray-400"
+                        }`}
+                        title={writeEnabled ? undefined : "Viewer role cannot modify notes"}
                       >
                         {note.pinned ? "Unpin" : "Pin"}
                       </button>
@@ -420,7 +490,11 @@ export default async function EstateNotesPage({
                       <input type="hidden" name="noteId" value={note._id} />
                       <button
                         type="submit"
-                        className="text-red-600 hover:underline"
+                        disabled={!writeEnabled}
+                        className={`hover:underline ${
+                          writeEnabled ? "text-red-600" : "cursor-not-allowed text-gray-400"
+                        }`}
+                        title={writeEnabled ? undefined : "Viewer role cannot delete notes"}
                       >
                         Delete
                       </button>
