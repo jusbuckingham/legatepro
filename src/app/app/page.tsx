@@ -187,13 +187,46 @@ export default async function AppDashboardPage() {
 
       {/* Global Activity */}
       <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-100">Global activity</h2>
-          <span className="text-xs text-slate-500">Preview</span>
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-100">Global activity</h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              A running log of changes across your estates.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-slate-500">Preview</span>
+            <Link
+              href="/app/estates"
+              className="text-xs font-medium text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+            >
+              View estates
+            </Link>
+          </div>
         </div>
 
         {globalFeed.length === 0 ? (
-          <p className="mt-2 text-xs text-slate-400">No activity yet.</p>
+          <div className="mt-3 rounded-xl border border-dashed border-slate-800 bg-slate-950/60 p-4">
+            <p className="text-sm font-medium text-slate-100">No activity yet</p>
+            <p className="mt-1 text-xs text-slate-400">
+              As you add tasks, invoices, notes, and documents, they’ll show up here.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link
+                href="/app/estates"
+                className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/70"
+              >
+                Go to estates
+              </Link>
+              <Link
+                href="/app/tasks"
+                className="inline-flex items-center rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/20"
+              >
+                Add a task
+              </Link>
+            </div>
+          </div>
         ) : (
           <div className="mt-3 space-y-5">
             {globalFeedSections.map((section) => (
@@ -203,23 +236,48 @@ export default async function AppDashboardPage() {
                 </p>
 
                 {/* Desktop table */}
-                <div className="hidden md:block rounded-xl border border-slate-800/80 bg-slate-900/40 overflow-hidden">
+                <div className="hidden overflow-hidden rounded-xl border border-slate-800/80 bg-slate-900/40 md:block">
                   <table className="min-w-full text-sm">
                     <tbody>
                       {section.items.map((item) => {
                         const cls = toneClasses(item.tone);
                         return (
-                          <tr key={item.id} className="border-t border-slate-800">
-                            <td className="px-3 py-2 text-xs text-slate-400">
+                          <tr
+                            key={item.id}
+                            className="border-t border-slate-800/80 hover:bg-slate-900/60"
+                          >
+                            <td className="w-20 px-3 py-2 align-top text-xs text-slate-400">
                               {formatTime(item.at)}
                             </td>
-                            <td className="px-3 py-2 text-slate-50">
-                              {item.href ? <Link href={item.href}>{item.label}</Link> : item.label}
+
+                            <td className="px-3 py-2 align-top">
+                              <div className="space-y-0.5">
+                                {item.href ? (
+                                  <Link
+                                    href={item.href}
+                                    className="font-medium text-slate-50 hover:text-emerald-300 underline-offset-2 hover:underline"
+                                  >
+                                    {item.label}
+                                  </Link>
+                                ) : (
+                                  <p className="font-medium text-slate-50">{item.label}</p>
+                                )}
+                                {item.sublabel ? (
+                                  <p className="text-xs text-slate-400">{item.sublabel}</p>
+                                ) : null}
+                              </div>
                             </td>
-                            <td className="px-3 py-2 text-right">
-                              <span className={`rounded-full border px-2 py-0.5 text-[10px] ${cls.badge}`}>
-                                {item.badge}
-                              </span>
+
+                            <td className="w-28 px-3 py-2 align-top text-right">
+                              {item.badge ? (
+                                <span
+                                  className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] ${cls.badge}`}
+                                >
+                                  {item.badge}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-500">—</span>
+                              )}
                             </td>
                           </tr>
                         );
@@ -229,18 +287,45 @@ export default async function AppDashboardPage() {
                 </div>
 
                 {/* Mobile cards */}
-                <div className="md:hidden space-y-2">
-                  {section.items.map((item) => (
-                    <div key={item.id} className="rounded-xl border border-slate-800 bg-slate-900/40 p-3">
-                      <p className="text-xs text-slate-400">{formatTime(item.at)}</p>
-                      <p className="text-sm font-medium text-slate-50">{item.label}</p>
-                      {item.badge && (
-                        <span className="mt-1 inline-block rounded-full border px-2 py-0.5 text-[10px] text-slate-300">
-                          {item.badge}
-                        </span>
-                      )}
-                    </div>
-                  ))}
+                <div className="space-y-2 md:hidden">
+                  {section.items.map((item) => {
+                    const cls = toneClasses(item.tone);
+                    return (
+                      <div
+                        key={item.id}
+                        className="rounded-xl border border-slate-800 bg-slate-900/40 p-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-xs text-slate-400">{formatTime(item.at)}</p>
+                            {item.href ? (
+                              <Link
+                                href={item.href}
+                                className="mt-0.5 block truncate text-sm font-medium text-slate-50 hover:text-emerald-300 underline-offset-2 hover:underline"
+                              >
+                                {item.label}
+                              </Link>
+                            ) : (
+                              <p className="mt-0.5 truncate text-sm font-medium text-slate-50">
+                                {item.label}
+                              </p>
+                            )}
+                            {item.sublabel ? (
+                              <p className="mt-0.5 text-xs text-slate-400">{item.sublabel}</p>
+                            ) : null}
+                          </div>
+
+                          {item.badge ? (
+                            <span
+                              className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] ${cls.badge}`}
+                            >
+                              {item.badge}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))}
