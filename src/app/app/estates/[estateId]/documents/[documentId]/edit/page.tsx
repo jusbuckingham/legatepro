@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
+import { revalidatePath } from "next/cache";
 
 import { connectToDatabase } from "@/lib/db";
 import { auth } from "@/lib/auth";
@@ -78,15 +79,15 @@ async function updateDocument(formData: FormData): Promise<void> {
     );
   }
 
+  await connectToDatabase();
+
   // Permission check (OWNER/EDITOR can edit)
   const access = await requireEstateAccess({ estateId });
-  const role = (access as { role: EstateRole }).role;
+  const role = (access as { role: EstateRole | undefined }).role;
 
-  if (!roleAtLeast(role, "EDITOR")) {
+  if (!role || !roleAtLeast(role, "EDITOR")) {
     redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
   }
-
-  await connectToDatabase();
 
   const tags = tagsRaw
     .split(",")
@@ -109,6 +110,9 @@ async function updateDocument(formData: FormData): Promise<void> {
     },
   );
 
+  revalidatePath(`/app/estates/${estateId}/documents`);
+  revalidatePath(`/app/estates/${estateId}/documents/${documentId}`);
+
   redirect(`/app/estates/${estateId}/documents/${documentId}`);
 }
 
@@ -123,8 +127,10 @@ export default async function EditDocumentPage({ params }: PageProps) {
     );
   }
 
+  await connectToDatabase();
+
   const access = await requireEstateAccess({ estateId });
-  const role = (access as { role: EstateRole }).role;
+  const role = (access as { role: EstateRole | undefined }).role;
 
   if (!role) {
     // No access to this estate
@@ -132,8 +138,6 @@ export default async function EditDocumentPage({ params }: PageProps) {
   }
 
   const isReadOnly = !roleAtLeast(role, "EDITOR");
-
-  await connectToDatabase();
 
   const doc = await EstateDocument.findOne({
     _id: documentId,

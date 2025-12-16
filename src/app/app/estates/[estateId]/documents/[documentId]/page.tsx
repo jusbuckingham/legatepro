@@ -108,6 +108,7 @@ async function updateDocument(formData: FormData): Promise<void> {
   );
 
   revalidatePath(`/app/estates/${estateId}/documents`);
+  revalidatePath(`/app/estates/${estateId}/documents/${documentId}`);
   redirect(`/app/estates/${estateId}/documents`);
 }
 
@@ -122,6 +123,10 @@ async function deleteDocument(formData: FormData): Promise<void> {
   const session = await auth();
   if (!session?.user?.id) {
     redirect("/login?callbackUrl=/app");
+  }
+  const confirmDelete = formData.get("confirmDelete")?.toString();
+  if (confirmDelete !== "on") {
+    redirect(`/app/estates/${estateId}/documents/${documentId}?confirm=1`);
   }
 
   let access: { role: EstateRole };
@@ -143,6 +148,7 @@ async function deleteDocument(formData: FormData): Promise<void> {
   });
 
   revalidatePath(`/app/estates/${estateId}/documents`);
+  revalidatePath(`/app/estates/${estateId}/documents/${documentId}`);
   redirect(`/app/estates/${estateId}/documents`);
 }
 
@@ -151,14 +157,36 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
 
   // Optional banner trigger when we redirect viewers away from edit actions
   let forbidden = false;
+  let confirmNeeded = false;
   if (searchParams) {
     const sp = await searchParams;
-    const raw = sp.forbidden;
-    const val = typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : "";
-    forbidden = val === "1" || val?.toLowerCase() === "true";
+
+    const rawForbidden = sp.forbidden;
+    const forbiddenVal =
+      typeof rawForbidden === "string"
+        ? rawForbidden
+        : Array.isArray(rawForbidden)
+          ? rawForbidden[0]
+          : "";
+    forbidden = forbiddenVal === "1" || forbiddenVal?.toLowerCase() === "true";
+
+    const rawConfirm = sp.confirm;
+    const confirmVal =
+      typeof rawConfirm === "string"
+        ? rawConfirm
+        : Array.isArray(rawConfirm)
+          ? rawConfirm[0]
+          : "";
+    confirmNeeded = confirmVal === "1" || confirmVal?.toLowerCase() === "true";
   }
 
-  const requestAccessHref = `/app/estates/${estateId}/collaborators?request=EDITOR&from=document&documentId=${documentId}`;
+  const requestAccessHref = `/app/estates/${estateId}/collaborators?${
+    new URLSearchParams({
+      request: "EDITOR",
+      from: "document",
+      documentId: encodeURIComponent(documentId),
+    }).toString()
+  }`;
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -276,6 +304,15 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
             <p className="font-semibold">Sensitive document</p>
             <p className="mt-0.5 text-xs text-rose-200/90">
               Treat this entry as confidential. Avoid sharing the location or link unless necessary.
+            </p>
+          </div>
+        )}
+
+        {confirmNeeded && canEdit && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-950/40 p-3 text-sm text-amber-100">
+            <p className="font-semibold">Confirm delete to continue</p>
+            <p className="mt-0.5 text-xs text-amber-200/90">
+              Please check the confirmation box in the Danger zone before deleting this index entry.
             </p>
           </div>
         )}
@@ -470,12 +507,23 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
               </p>
             </div>
 
-            <form action={deleteDocument}>
+            <form action={deleteDocument} className="mt-2 flex flex-col gap-2 md:mt-0 md:items-end">
               <input type="hidden" name="estateId" value={estateId} />
               <input type="hidden" name="documentId" value={documentId} />
+
+              <label className="flex items-center gap-2 text-[11px] text-rose-200/80">
+                <input
+                  type="checkbox"
+                  name="confirmDelete"
+                  className="h-3 w-3"
+                  required
+                />
+                I understand this deletes only the index entry.
+              </label>
+
               <button
                 type="submit"
-                className="mt-2 inline-flex items-center justify-center rounded-md border border-rose-500/70 bg-rose-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20 md:mt-0"
+                className="inline-flex items-center justify-center rounded-md border border-rose-500/70 bg-rose-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20"
               >
                 Delete index entry
               </button>
