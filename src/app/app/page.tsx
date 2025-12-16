@@ -8,6 +8,8 @@ export const metadata = {
   title: "Dashboard | LegatePro",
 };
 
+export const dynamic = "force-dynamic";
+
 type GlobalActivityArgs = { ownerId: string; limit?: number };
 
 type ActivityRawItem = {
@@ -29,12 +31,21 @@ type ActivityModule = {
 
 /* -------------------- Activity helpers -------------------- */
 
+type ActivityKind =
+  | "TASK"
+  | "EXPENSE"
+  | "INVOICE"
+  | "DOCUMENT"
+  | "NOTE"
+  | "ESTATE";
+
 type ActivityItem = {
   id: string;
   at: Date;
   label: string;
   sublabel?: string;
   href?: string;
+  kind?: ActivityKind;
   tone?: "rose" | "emerald" | "amber" | "slate";
   badge?: string;
 };
@@ -69,23 +80,6 @@ function startOfDay(value: Date) {
   return d.getTime();
 }
 
-function dayLabel(value: Date) {
-  const now = new Date();
-  const today = startOfDay(now);
-  const that = startOfDay(value);
-  const diffDays = Math.round((today - that) / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-
-  return value.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: now.getFullYear() === value.getFullYear() ? undefined : "numeric",
-  });
-}
-
 function formatTime(value: Date) {
   return value.toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -93,23 +87,164 @@ function formatTime(value: Date) {
   });
 }
 
-function groupFeedByDay(items: ActivityItem[]) {
-  const buckets = new Map<number, ActivityItem[]>();
+function normalizeKind(value: unknown): ActivityKind | undefined {
+  if (typeof value !== "string") return undefined;
+  const k = value.toUpperCase();
+  if (
+    k === "TASK" ||
+    k === "EXPENSE" ||
+    k === "INVOICE" ||
+    k === "DOCUMENT" ||
+    k === "NOTE" ||
+    k === "ESTATE"
+  ) {
+    return k;
+  }
+  return undefined;
+}
 
-  for (const item of items) {
-    const key = startOfDay(item.at);
-    const arr = buckets.get(key) ?? [];
-    arr.push(item);
-    buckets.set(key, arr);
+function kindLabel(kind: ActivityKind | undefined): string | undefined {
+  switch (kind) {
+    case "TASK":
+      return "Task";
+    case "EXPENSE":
+      return "Expense";
+    case "INVOICE":
+      return "Invoice";
+    case "DOCUMENT":
+      return "Document";
+    case "NOTE":
+      return "Note";
+    case "ESTATE":
+      return "Estate";
+    default:
+      return undefined;
+  }
+}
+
+function kindTone(kind: ActivityKind | undefined): ActivityItem["tone"] {
+  switch (kind) {
+    case "TASK":
+      return "rose";
+    case "EXPENSE":
+      return "amber";
+    case "INVOICE":
+      return "emerald";
+    default:
+      return "slate";
+  }
+}
+
+function resolveActivityHref(raw: ActivityRawItem, kind: ActivityKind | undefined): string | undefined {
+  // Prefer explicit internal hrefs.
+  if (typeof raw.href === "string") {
+    const h = raw.href.trim();
+    if (h.startsWith("/")) return h;
   }
 
-  return Array.from(buckets.entries())
-    .sort((a, b) => b[0] - a[0])
-    .map(([dayKey, dayItems]) => ({
-      dayKey,
-      label: dayLabel(new Date(dayKey)),
-      items: dayItems.sort((a, b) => b.at.getTime() - a.at.getTime()),
-    }));
+  // Fallback destinations by kind.
+  switch (kind) {
+    case "TASK":
+      return "/app/tasks";
+    case "INVOICE":
+      return "/app/invoices";
+    case "EXPENSE":
+      return "/app/expenses";
+    case "DOCUMENT":
+      return "/app/documents";
+    case "NOTE":
+      return "/app/notes";
+    case "ESTATE":
+      return "/app/estates";
+    default:
+      return undefined;
+  }
+}
+
+function sectionEmptyCopy(label: FeedSectionLabel): {
+  title: string;
+  body: string;
+  ctas: Array<{ href: string; label: string; tone: "slate" | "rose" | "emerald" }>;
+} {
+  switch (label) {
+    case "Today":
+      return {
+        title: "Nothing yet today",
+        body: "When you add or update items, they’ll show up here in real time.",
+        ctas: [
+          { href: "/app/tasks", label: "Add a task", tone: "rose" },
+          { href: "/app/invoices", label: "Create an invoice", tone: "emerald" },
+        ],
+      };
+    case "This Week":
+      return {
+        title: "Quiet week so far",
+        body: "New activity across your estates will collect here automatically.",
+        ctas: [
+          { href: "/app/estates", label: "View estates", tone: "slate" },
+          { href: "/app/tasks", label: "Review tasks", tone: "rose" },
+        ],
+      };
+    default:
+      return {
+        title: "No older activity",
+        body: "As your history builds, older actions will roll into this section.",
+        ctas: [{ href: "/app/estates", label: "Go to estates", tone: "slate" }],
+      };
+  }
+}
+
+function startOfWeekMonday(value: Date) {
+  const d = new Date(value);
+  d.setHours(0, 0, 0, 0);
+
+  // JS: 0=Sun..6=Sat. We want Monday as start.
+  const day = d.getDay();
+  const diff = (day + 6) % 7; // Mon->0 ... Sun->6
+  d.setDate(d.getDate() - diff);
+  return d.getTime();
+}
+
+type FeedSectionLabel = "Today" | "This Week" | "Earlier";
+
+type FeedSection = {
+  key: FeedSectionLabel;
+  label: FeedSectionLabel;
+  items: ActivityItem[];
+};
+
+function groupFeedBySmartRange(items: ActivityItem[]): FeedSection[] {
+  const now = new Date();
+  const todayKey = startOfDay(now);
+  const weekKey = startOfWeekMonday(now);
+
+  const today: ActivityItem[] = [];
+  const thisWeek: ActivityItem[] = [];
+  const earlier: ActivityItem[] = [];
+
+  for (const item of items) {
+    const itemDay = startOfDay(item.at);
+
+    if (itemDay >= todayKey) {
+      today.push(item);
+    } else if (itemDay >= weekKey) {
+      thisWeek.push(item);
+    } else {
+      earlier.push(item);
+    }
+  }
+
+  const sortDesc = (a: ActivityItem, b: ActivityItem) => b.at.getTime() - a.at.getTime();
+
+  today.sort(sortDesc);
+  thisWeek.sort(sortDesc);
+  earlier.sort(sortDesc);
+
+  return [
+    { key: "Today", label: "Today", items: today },
+    { key: "This Week", label: "This Week", items: thisWeek },
+    { key: "Earlier", label: "Earlier", items: earlier },
+  ];
 }
 
 function toneClasses(tone: ActivityItem["tone"]) {
@@ -127,11 +262,49 @@ function toneClasses(tone: ActivityItem["tone"]) {
 
 /* -------------------- Page -------------------- */
 
-export default async function AppDashboardPage() {
+type PageProps = {
+  // Next 16+ exposes searchParams as a Promise in server components
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function AppDashboardPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login?callbackUrl=/app");
 
   const ownerId = session.user.id;
+
+  // Activity feed UI state (URL-driven)
+  let activityKindFilter: ActivityKind | "" = "";
+  let activityPage = 1;
+
+  if (searchParams) {
+    const sp = await searchParams;
+
+    const kindRaw = sp.kind;
+    const pageRaw = sp.activityPage;
+
+    const kindStr =
+      typeof kindRaw === "string"
+        ? kindRaw.trim()
+        : Array.isArray(kindRaw)
+        ? (kindRaw[0] ?? "").trim()
+        : "";
+
+    activityKindFilter = normalizeKind(kindStr) ?? "";
+
+    const pageStr =
+      typeof pageRaw === "string"
+        ? pageRaw
+        : Array.isArray(pageRaw)
+        ? pageRaw[0]
+        : "";
+
+    const parsed = Number.parseInt(pageStr || "1", 10);
+    activityPage = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+  }
+
+  const ACTIVITY_PAGE_SIZE = 12;
+  const activityLimit = ACTIVITY_PAGE_SIZE * activityPage;
 
   let globalFeed: ActivityItem[] = [];
 
@@ -146,38 +319,36 @@ export default async function AppDashboardPage() {
     const listFn = mod.listGlobalActivity || mod.getGlobalActivity || mod.fetchGlobalActivity;
 
     if (listFn) {
-      const raw: unknown = await listFn({ ownerId, limit: 12 });
+      const raw: unknown = await listFn({ ownerId, limit: activityLimit });
       const rawList = Array.isArray(raw) ? (raw as ActivityRawItem[]) : [];
       globalFeed = rawList
         .map((item: ActivityRawItem) => {
           const at = safeDate(item.createdAt);
           if (!at) return null;
-          const kind = typeof item.kind === "string" ? item.kind : undefined;
+          const kind = normalizeKind(item.kind);
 
           return {
             id: String(item.id || item._id),
             at,
             label: String(item.message || item.action || "Activity"),
             sublabel: typeof item.sublabel === "string" ? item.sublabel : undefined,
-            href: typeof item.href === "string" ? item.href : undefined,
-            badge: kind,
-            tone:
-              kind === "TASK"
-                ? "rose"
-                : kind === "EXPENSE"
-                ? "amber"
-                : kind === "INVOICE"
-                ? "emerald"
-                : "slate",
+            kind,
+            href: resolveActivityHref(item, kind),
+            badge: kindLabel(kind),
+            tone: kindTone(kind),
           } satisfies ActivityItem;
         })
         .filter(Boolean) as ActivityItem[];
+
+      if (activityKindFilter) {
+        globalFeed = globalFeed.filter((it) => it.kind === activityKindFilter);
+      }
     }
   } catch (err) {
     console.error("Dashboard load failed", err);
   }
 
-  const globalFeedSections = groupFeedByDay(globalFeed);
+  const globalFeedSections = groupFeedBySmartRange(globalFeed);
 
   /* -------------------- JSX -------------------- */
 
@@ -194,9 +365,36 @@ export default async function AppDashboardPage() {
               A running log of changes across your estates.
             </p>
           </div>
+          <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
+            <span className="text-xs text-slate-500">Filter</span>
 
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-500">Preview</span>
+            <Link
+              href="/app?activityPage=1"
+              className={
+                activityKindFilter
+                  ? "rounded-full border border-slate-800 bg-slate-900/30 px-2 py-0.5 text-[11px] font-medium text-slate-300 hover:bg-slate-900/60"
+                  : "rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-200"
+              }
+            >
+              All
+            </Link>
+
+            {(["TASK", "INVOICE", "EXPENSE", "NOTE", "DOCUMENT"] as const).map((k) => (
+              <Link
+                key={k}
+                href={`/app?kind=${encodeURIComponent(k)}&activityPage=1`}
+                className={
+                  activityKindFilter === k
+                    ? "rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-200"
+                    : "rounded-full border border-slate-800 bg-slate-900/30 px-2 py-0.5 text-[11px] font-medium text-slate-300 hover:bg-slate-900/60"
+                }
+              >
+                {kindLabel(k) ?? k}
+              </Link>
+            ))}
+
+            <span className="mx-1 hidden h-4 w-px bg-slate-800 md:block" />
+
             <Link
               href="/app/estates"
               className="text-xs font-medium text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
@@ -228,108 +426,169 @@ export default async function AppDashboardPage() {
             </div>
           </div>
         ) : (
-          <div className="mt-3 space-y-5">
-            {globalFeedSections.map((section) => (
-              <div key={section.dayKey} className="space-y-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                  {section.label}
-                </p>
+          <>
+            <div className="mt-3 space-y-5">
+              {globalFeedSections.map((section) => (
+                <div key={section.key} className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                      {section.label}
+                    </p>
+                    <span className="text-[11px] text-slate-500">{section.items.length || "—"}</span>
+                  </div>
 
-                {/* Desktop table */}
-                <div className="hidden overflow-hidden rounded-xl border border-slate-800/80 bg-slate-900/40 md:block">
-                  <table className="min-w-full text-sm">
-                    <tbody>
-                      {section.items.map((item) => {
-                        const cls = toneClasses(item.tone);
+                  {section.items.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-slate-800 bg-slate-950/60 p-4">
+                      {(() => {
+                        const copy = sectionEmptyCopy(section.label);
                         return (
-                          <tr
-                            key={item.id}
-                            className="border-t border-slate-800/80 hover:bg-slate-900/60"
-                          >
-                            <td className="w-20 px-3 py-2 align-top text-xs text-slate-400">
-                              {formatTime(item.at)}
-                            </td>
+                          <>
+                            <p className="text-sm font-medium text-slate-100">{copy.title}</p>
+                            <p className="mt-1 text-xs text-slate-400">{copy.body}</p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {copy.ctas.map((cta) => (
+                                <Link
+                                  key={cta.href}
+                                  href={cta.href}
+                                  className={
+                                    cta.tone === "rose"
+                                      ? "inline-flex items-center rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/20"
+                                      : cta.tone === "emerald"
+                                      ? "inline-flex items-center rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-500/20"
+                                      : "inline-flex items-center rounded-md border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/70"
+                                  }
+                                >
+                                  {cta.label}
+                                </Link>
+                              ))}
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  ) : (
+                    <>
+                      {/* Desktop table */}
+                      <div className="hidden overflow-hidden rounded-xl border border-slate-800/80 bg-slate-900/40 md:block">
+                        <table className="min-w-full text-sm">
+                          <tbody>
+                            {section.items.map((item) => {
+                              const cls = toneClasses(item.tone);
+                              return (
+                                <tr
+                                  key={item.id}
+                                  className="border-t border-slate-800/80 hover:bg-slate-900/60"
+                                >
+                                  <td className="w-24 px-3 py-2 align-top text-xs text-slate-400">
+                                    <div className="flex items-center gap-2">
+                                      <span className={`h-1.5 w-1.5 rounded-full ${cls.dot}`} />
+                                      <span>{formatTime(item.at)}</span>
+                                    </div>
+                                  </td>
 
-                            <td className="px-3 py-2 align-top">
-                              <div className="space-y-0.5">
-                                {item.href ? (
-                                  <Link
-                                    href={item.href}
-                                    className="font-medium text-slate-50 hover:text-emerald-300 underline-offset-2 hover:underline"
+                                  <td className="px-3 py-2 align-top">
+                                    <div className="space-y-0.5">
+                                      {item.href ? (
+                                        <Link
+                                          href={item.href}
+                                          className="font-medium text-slate-50 hover:text-emerald-300 underline-offset-2 hover:underline"
+                                        >
+                                          {item.label}
+                                        </Link>
+                                      ) : (
+                                        <p className="font-medium text-slate-50">{item.label}</p>
+                                      )}
+                                      {item.sublabel ? (
+                                        <p className="text-xs text-slate-400">{item.sublabel}</p>
+                                      ) : null}
+                                    </div>
+                                  </td>
+
+                                  <td className="w-28 px-3 py-2 align-top text-right">
+                                    {item.badge ? (
+                                      <span
+                                        className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] ${cls.badge}`}
+                                      >
+                                        {item.badge}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] text-slate-500">—</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Mobile cards */}
+                      <div className="space-y-2 md:hidden">
+                        {section.items.map((item) => {
+                          const cls = toneClasses(item.tone);
+                          return (
+                            <div
+                              key={item.id}
+                              className="rounded-xl border border-slate-800 bg-slate-900/40 p-3"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="flex items-center gap-2 text-xs text-slate-400">
+                                    <span className={`h-1.5 w-1.5 rounded-full ${cls.dot}`} />
+                                    <span>{formatTime(item.at)}</span>
+                                  </p>
+                                  {item.href ? (
+                                    <Link
+                                      href={item.href}
+                                      className="mt-0.5 block truncate text-sm font-medium text-slate-50 hover:text-emerald-300 underline-offset-2 hover:underline"
+                                    >
+                                      {item.label}
+                                    </Link>
+                                  ) : (
+                                    <p className="mt-0.5 truncate text-sm font-medium text-slate-50">
+                                      {item.label}
+                                    </p>
+                                  )}
+                                  {item.sublabel ? (
+                                    <p className="mt-0.5 text-xs text-slate-400">{item.sublabel}</p>
+                                  ) : null}
+                                </div>
+
+                                {item.badge ? (
+                                  <span
+                                    className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] ${cls.badge}`}
                                   >
-                                    {item.label}
-                                  </Link>
-                                ) : (
-                                  <p className="font-medium text-slate-50">{item.label}</p>
-                                )}
-                                {item.sublabel ? (
-                                  <p className="text-xs text-slate-400">{item.sublabel}</p>
+                                    {item.badge}
+                                  </span>
                                 ) : null}
                               </div>
-                            </td>
-
-                            <td className="w-28 px-3 py-2 align-top text-right">
-                              {item.badge ? (
-                                <span
-                                  className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] ${cls.badge}`}
-                                >
-                                  {item.badge}
-                                </span>
-                              ) : (
-                                <span className="text-[10px] text-slate-500">—</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Mobile cards */}
-                <div className="space-y-2 md:hidden">
-                  {section.items.map((item) => {
-                    const cls = toneClasses(item.tone);
-                    return (
-                      <div
-                        key={item.id}
-                        className="rounded-xl border border-slate-800 bg-slate-900/40 p-3"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-xs text-slate-400">{formatTime(item.at)}</p>
-                            {item.href ? (
-                              <Link
-                                href={item.href}
-                                className="mt-0.5 block truncate text-sm font-medium text-slate-50 hover:text-emerald-300 underline-offset-2 hover:underline"
-                              >
-                                {item.label}
-                              </Link>
-                            ) : (
-                              <p className="mt-0.5 truncate text-sm font-medium text-slate-50">
-                                {item.label}
-                              </p>
-                            )}
-                            {item.sublabel ? (
-                              <p className="mt-0.5 text-xs text-slate-400">{item.sublabel}</p>
-                            ) : null}
-                          </div>
-
-                          {item.badge ? (
-                            <span
-                              className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] ${cls.badge}`}
-                            >
-                              {item.badge}
-                            </span>
-                          ) : null}
-                        </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
+                    </>
+                  )}
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+
+            {/* Load more row */}
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <p className="text-[11px] text-slate-500">
+                Showing {Math.min(globalFeed.length, activityLimit)} item(s)
+                {activityKindFilter ? ` for ${kindLabel(activityKindFilter) ?? activityKindFilter}` : ""}.
+              </p>
+
+              <Link
+                href={`/app?${
+                  activityKindFilter ? `kind=${encodeURIComponent(activityKindFilter)}&` : ""
+                }activityPage=${activityPage + 1}`}
+                className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/70"
+              >
+                Load more
+              </Link>
+            </div>
+          </>
         )}
       </section>
     </div>

@@ -23,6 +23,47 @@ function getActivityModel(): Model<unknown> {
 
 export type ActivityTone = "rose" | "emerald" | "amber" | "slate";
 
+export type ActivityKind =
+  | "TASK"
+  | "INVOICE"
+  | "EXPENSE"
+  | "RENT"
+  | "NOTE"
+  | "DOCUMENT"
+  | "CONTACT"
+  | "COLLAB"
+  | "ESTATE"
+  | "OTHER";
+
+function normalizeKind(kind: string, action: string, entityType?: string): ActivityKind {
+  const k = (kind ?? "").toLowerCase();
+  const a = (action ?? "").toLowerCase();
+  const e = (entityType ?? "").toLowerCase();
+
+  // Prefer explicit entityType when present
+  if (e.includes("task")) return "TASK";
+  if (e.includes("invoice")) return "INVOICE";
+  if (e.includes("expense")) return "EXPENSE";
+  if (e.includes("rent")) return "RENT";
+  if (e.includes("note")) return "NOTE";
+  if (e.includes("document") || e.includes("doc")) return "DOCUMENT";
+  if (e.includes("contact")) return "CONTACT";
+  if (e.includes("collab") || e.includes("invite") || e.includes("collaborator")) return "COLLAB";
+
+  // Otherwise infer from kind/action
+  if (k.includes("task") || a.includes("task")) return "TASK";
+  if (k.includes("invoice") || a.includes("invoice")) return "INVOICE";
+  if (k.includes("expense") || a.includes("expense")) return "EXPENSE";
+  if (k.includes("rent") || a.includes("rent")) return "RENT";
+  if (k.includes("note") || a.includes("note")) return "NOTE";
+  if (k.includes("document") || a.includes("document") || k.includes("doc") || a.includes("doc")) return "DOCUMENT";
+  if (k.includes("contact") || a.includes("contact")) return "CONTACT";
+  if (k.includes("collab") || a.includes("invite") || a.includes("collaborator")) return "COLLAB";
+  if (k.includes("estate") || a.includes("estate")) return "ESTATE";
+
+  return "OTHER";
+}
+
 export interface ActivityItem {
   id: string;
   at: Date;
@@ -90,36 +131,47 @@ function asIdString(id: Types.ObjectId | string | undefined): string | undefined
   return typeof id === "string" ? id : id.toString();
 }
 
-function mapTone(kind: string, action: string): ActivityTone {
-  const k = kind.toLowerCase();
-  const a = action.toLowerCase();
+function mapTone(kind: string, action: string, entityType?: string): ActivityTone {
+  const normalized = normalizeKind(kind, action, entityType);
 
-  if (k.includes("invoice") || a.includes("invoice")) return "amber";
-  if (k.includes("document") || a.includes("document")) return "emerald";
-  if (k.includes("note") || a.includes("note")) return "slate";
-  if (k.includes("collab") || a.includes("invite") || a.includes("collaborator"))
-    return "rose";
-
-  return "slate";
+  switch (normalized) {
+    case "INVOICE":
+    case "EXPENSE":
+    case "RENT":
+      return "amber";
+    case "DOCUMENT":
+      return "emerald";
+    case "TASK":
+    case "COLLAB":
+      return "rose";
+    case "NOTE":
+    case "CONTACT":
+    case "ESTATE":
+    case "OTHER":
+    default:
+      return "slate";
+  }
 }
 
 function buildHref(estateId: string, doc: ActivityLean): string | undefined {
-  const action = doc.action.toUpperCase();
-  const kind = doc.kind.toUpperCase();
   const entityId = asIdString(doc.entityId);
+  const kind = normalizeKind(doc.kind, doc.action, doc.entityType);
 
   // Adjust these to match your app routes.
-  if ((kind.includes("DOCUMENT") || action.includes("DOCUMENT")) && entityId) {
+  if (kind === "DOCUMENT" && entityId) {
     return `/app/estates/${estateId}/documents/${entityId}`;
   }
-  if ((kind.includes("NOTE") || action.includes("NOTE")) && entityId) {
+  if (kind === "NOTE" && entityId) {
     return `/app/estates/${estateId}/notes?focus=${entityId}`;
   }
-  if ((kind.includes("TASK") || action.includes("TASK")) && entityId) {
+  if (kind === "TASK" && entityId) {
     return `/app/estates/${estateId}/tasks?focus=${entityId}`;
   }
-  if ((kind.includes("INVOICE") || action.includes("INVOICE")) && entityId) {
+  if (kind === "INVOICE" && entityId) {
     return `/app/estates/${estateId}/invoices?focus=${entityId}`;
+  }
+  if (kind === "CONTACT" && entityId) {
+    return `/app/contacts/${entityId}`;
   }
 
   // Default: estate overview
@@ -134,8 +186,10 @@ function toActivityItem(doc: ActivityLean): ActivityItem {
     ? doc.message.trim()
     : `${doc.kind}: ${doc.action}`;
 
-  // Optional: badge by action/kind
-  const badge = doc.action ? doc.action.replace(/_/g, " ") : undefined;
+  const kind = normalizeKind(doc.kind, doc.action, doc.entityType);
+
+  // Badge: prefer the normalized kind, otherwise fall back to action.
+  const badge = kind !== "OTHER" ? kind : doc.action ? doc.action.replace(/_/g, " ") : undefined;
 
   return {
     id: doc._id.toString(),
@@ -143,7 +197,7 @@ function toActivityItem(doc: ActivityLean): ActivityItem {
     label,
     sublabel: doc.entityType ? doc.entityType : undefined,
     href: buildHref(estateIdStr, doc),
-    tone: mapTone(doc.kind, doc.action),
+    tone: mapTone(doc.kind, doc.action, doc.entityType),
     badge,
   };
 }
@@ -230,4 +284,28 @@ export async function fetchActivityFeed(
       : undefined;
 
   return { items, nextCursor };
+}
+
+export type { FetchActivityInput as ListActivityInput };
+
+export async function listGlobalActivity(args: { ownerId: string; limit?: number; cursor?: string }) {
+  return fetchActivityFeed({
+    userId: args.ownerId,
+    limit: args.limit,
+    cursor: args.cursor,
+  });
+}
+
+export async function listEstateActivity(args: {
+  ownerId: string;
+  estateId: string;
+  limit?: number;
+  cursor?: string;
+}) {
+  return fetchActivityFeed({
+    userId: args.ownerId,
+    estateId: args.estateId,
+    limit: args.limit,
+    cursor: args.cursor,
+  });
 }
