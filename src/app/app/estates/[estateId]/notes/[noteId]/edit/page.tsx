@@ -2,7 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { EstateNote, NoteCategory } from "@/models/EstateNote";
+import { EstateNote } from "@/models/EstateNote";
 import type { Types } from "mongoose";
 
 export const metadata = {
@@ -22,7 +22,7 @@ type RawNote = {
   estateId: Types.ObjectId | string;
   subject: string;
   body: string;
-  category?: NoteCategory;
+  category?: string;
   isPinned: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -69,7 +69,7 @@ export default async function EditNotePage({ params }: PageProps) {
 
     const subject = formData.get("subject");
     const body = formData.get("body");
-    const category = formData.get("category") as NoteCategory | null;
+    const category = formData.get("category") as string | null;
     const isPinned = formData.get("isPinned") === "on";
 
     if (!subject || !body) {

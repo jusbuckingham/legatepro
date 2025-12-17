@@ -255,27 +255,27 @@ export default async function EstateNotesPage({
   return (
     <div className="space-y-6 p-6">
       {/* Header / breadcrumb */}
-      <div className="flex flex-col gap-3 border-b border-gray-100 pb-4 md:flex-row md:items-start md:justify-between">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="space-y-2">
-          <nav className="text-xs text-gray-500">
+          <nav className="text-xs text-slate-500">
             <Link href="/app/estates" className="hover:underline">
               Estates
             </Link>
-            <span className="mx-1 text-gray-400">/</span>
+            <span className="mx-1 text-slate-600">/</span>
             <Link
               href={`/app/estates/${estateId}`}
               className="hover:underline"
             >
               Overview
             </Link>
-            <span className="mx-1 text-gray-400">/</span>
-            <span className="text-gray-900">Notes</span>
+            <span className="mx-1 text-slate-600">/</span>
+            <span className="text-slate-50">Notes</span>
           </nav>
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-gray-900">
+            <h1 className="text-xl font-semibold tracking-tight text-slate-50">
               Notes for this estate
             </h1>
-            <p className="mt-1 max-w-2xl text-sm text-gray-600">
+            <p className="mt-1 max-w-2xl text-sm text-slate-400">
               Use notes as your running log—calls, advice, ideas, and things you
               don&apos;t want to forget. This space is private and not shared
               with the court or other parties.
@@ -283,9 +283,9 @@ export default async function EstateNotesPage({
           </div>
         </div>
 
-        <div className="mt-1 flex flex-col items-end gap-1 text-xs text-gray-500">
-          <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-700">
-            Role: {roleLabel(role)}
+        <div className="mt-1 flex flex-col items-end gap-2 text-xs text-slate-400">
+          <span className="inline-flex items-center rounded-full border border-rose-500/40 bg-rose-950/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-rose-100 shadow-sm">
+            {roleLabel(role)} access
           </span>
           <div className="flex flex-wrap items-center gap-2">
             <span>
@@ -301,24 +301,30 @@ export default async function EstateNotesPage({
               </>
             )}
           </div>
-          <span className="text-[11px] text-gray-400">
+          <span className="text-[11px] text-slate-500">
             Think of this as your private journal for this estate.
           </span>
+          <a
+            href="#add-note"
+            className="inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20"
+          >
+            Add note
+          </a>
         </div>
       </div>
 
       {!writeEnabled && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
           <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="font-medium">Viewer access</p>
-              <p className="text-xs text-amber-800">
+              <p className="text-xs text-amber-200">
                 You can read notes, but you can’t create, pin, or delete them.
               </p>
             </div>
             <Link
               href={`/app/estates/${estateId}/collaborators`}
-              className="mt-2 inline-flex items-center justify-center rounded-md bg-amber-900 px-3 py-1.5 text-xs font-medium text-amber-50 hover:bg-amber-800 md:mt-0"
+              className="mt-2 inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-xs font-medium text-amber-100 hover:bg-amber-500/25 md:mt-0"
             >
               Request edit access
             </Link>
@@ -327,13 +333,13 @@ export default async function EstateNotesPage({
       )}
 
       {/* New note form */}
-      <section className="space-y-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+      <section id="add-note" className="space-y-3 rounded-xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-700">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-rose-200">
               Add a note
             </h2>
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-slate-400">
               Write in full sentences if it helps future you. Capture who you
               spoke with, what they said, and any deadlines you heard.
             </p>
@@ -344,7 +350,7 @@ export default async function EstateNotesPage({
           <input type="hidden" name="estateId" value={estateId} />
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-gray-800">
+            <label className="text-xs font-medium text-slate-200">
               Note text
             </label>
             <textarea
@@ -352,17 +358,17 @@ export default async function EstateNotesPage({
               required
               rows={4}
               placeholder="Example: 4/15 – Spoke with court clerk about upcoming hearing. Need to bring last 6 months of bank statements and a list of creditors."
-              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900 placeholder:text-gray-400"
+              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50 placeholder:text-slate-500"
               disabled={!writeEnabled}
             />
           </div>
 
           <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 text-xs text-gray-700">
+            <label className="flex items-center gap-2 text-xs text-slate-300">
               <input
                 type="checkbox"
                 name="pinned"
-                className="h-3 w-3 rounded border-gray-300"
+                className="h-3 w-3 rounded border-slate-700"
                 disabled={!writeEnabled}
               />
               <span>Pin this note to the top</span>
@@ -371,10 +377,10 @@ export default async function EstateNotesPage({
             <button
               type="submit"
               disabled={!writeEnabled}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium text-white ${
+              className={`rounded-md px-3 py-1.5 text-sm font-medium ${
                 writeEnabled
-                  ? "bg-gray-900 hover:bg-gray-800"
-                  : "cursor-not-allowed bg-gray-300"
+                  ? "bg-rose-500 text-slate-950 hover:bg-rose-400"
+                  : "cursor-not-allowed bg-slate-800 text-slate-400"
               }`}
             >
               Save note
@@ -384,7 +390,7 @@ export default async function EstateNotesPage({
       </section>
 
       {/* Filters */}
-      <section className="space-y-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+      <section className="space-y-3 rounded-xl border border-slate-800 bg-slate-950/70 p-3 shadow-sm">
         <form
           method="GET"
           className="flex flex-col gap-2 text-xs md:flex-row md:items-center md:justify-between"
@@ -392,7 +398,7 @@ export default async function EstateNotesPage({
           <div className="flex flex-1 items-center gap-2">
             <label
               htmlFor="q"
-              className="whitespace-nowrap text-[11px] text-gray-500"
+              className="whitespace-nowrap text-[11px] text-slate-400"
             >
               Search
             </label>
@@ -401,12 +407,12 @@ export default async function EstateNotesPage({
               name="q"
               defaultValue={searchQuery}
               placeholder="Search within your notes…"
-              className="h-7 w-full rounded-md border border-gray-300 px-2 text-xs text-gray-900 placeholder:text-gray-400"
+              className="h-7 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-50 placeholder:text-slate-500"
             />
           </div>
 
           <div className="flex items-center gap-3 md:w-auto">
-            <label className="flex items-center gap-1 text-[11px] text-gray-500">
+            <label className="flex items-center gap-1 text-[11px] text-slate-400">
               <input
                 type="checkbox"
                 name="pinned"
@@ -420,7 +426,7 @@ export default async function EstateNotesPage({
             {hasFilters && (
               <a
                 href={`/app/estates/${estateId}/notes`}
-                className="whitespace-nowrap text-[11px] text-gray-500 hover:text-gray-800"
+                className="whitespace-nowrap text-[11px] text-slate-400 hover:text-slate-200"
               >
                 Clear filters
               </a>
@@ -430,15 +436,15 @@ export default async function EstateNotesPage({
       </section>
 
       {/* Notes list */}
-      <section className="space-y-2 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+      <section className="space-y-2 rounded-xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm">
         {notes.length === 0 ? (
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-slate-400">
             You haven&apos;t added any notes yet. Start with what&apos;s on
             your mind—what feels confusing, what you&apos;re worried about, or
             what you need to remember for your next call or court date.
           </p>
         ) : filteredNotes.length === 0 ? (
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-slate-400">
             No notes match this search or filter.
           </p>
         ) : (
@@ -448,19 +454,19 @@ export default async function EstateNotesPage({
                 key={note._id}
                 className={`rounded-md border p-3 text-sm ${
                   note.pinned
-                    ? "border-yellow-200 bg-yellow-50"
-                    : "border-gray-200 bg-gray-50"
+                    ? "border-amber-500/30 bg-amber-500/10"
+                    : "border-slate-800 bg-slate-950/40 hover:bg-slate-900/40"
                 }`}
               >
                 <div className="mb-1 flex items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                     {note.pinned && (
-                      <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-[11px] font-medium text-yellow-800">
+                      <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold uppercase text-amber-200">
                         Pinned
                       </span>
                     )}
                     {note.createdAt && (
-                      <span className="text-[11px] text-gray-500">
+                      <span className="text-[11px] text-slate-500">
                         {formatDate(note.createdAt)}
                       </span>
                     )}
@@ -478,7 +484,7 @@ export default async function EstateNotesPage({
                         type="submit"
                         disabled={!writeEnabled}
                         className={`hover:underline ${
-                          writeEnabled ? "text-gray-700" : "cursor-not-allowed text-gray-400"
+                          writeEnabled ? "text-slate-300 hover:text-emerald-300" : "cursor-not-allowed text-slate-600"
                         }`}
                         title={writeEnabled ? undefined : "Viewer role cannot modify notes"}
                       >
@@ -492,7 +498,7 @@ export default async function EstateNotesPage({
                         type="submit"
                         disabled={!writeEnabled}
                         className={`hover:underline ${
-                          writeEnabled ? "text-red-600" : "cursor-not-allowed text-gray-400"
+                          writeEnabled ? "text-rose-400 hover:text-rose-300" : "cursor-not-allowed text-slate-600"
                         }`}
                         title={writeEnabled ? undefined : "Viewer role cannot delete notes"}
                       >
@@ -501,7 +507,7 @@ export default async function EstateNotesPage({
                     </form>
                   </div>
                 </div>
-                <p className="whitespace-pre-wrap text-sm text-gray-900">
+                <p className="whitespace-pre-wrap text-sm text-slate-100">
                   {truncate(note.body, 1000)}
                 </p>
               </li>

@@ -2,12 +2,14 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { EstateNote, NoteCategory } from "@/models/EstateNote";
+import { EstateNote } from "@/models/EstateNote";
 import type { Types } from "mongoose";
 
 export const metadata = {
   title: "Note | LegatePro",
 };
+
+export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: Promise<{
@@ -22,11 +24,40 @@ type RawNote = {
   estateId: Types.ObjectId | string;
   subject: string;
   body: string;
-  category?: NoteCategory;
+  category?: string;
   isPinned: boolean;
   createdAt: Date;
   updatedAt: Date;
 };
+
+function coerceDate(value: unknown): Date | null {
+  if (value == null) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === "string" || typeof value === "number") {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof value === "object") {
+    const maybe = (value as { toString?: () => string }).toString?.();
+    if (typeof maybe === "string") {
+      const d = new Date(maybe);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+  }
+  return null;
+}
+
+function formatDateTime(value: unknown): string {
+  const d = coerceDate(value);
+  if (!d) return "—";
+  return d.toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 async function loadNote(
   estateId: string,
@@ -77,11 +108,25 @@ export default async function NoteDetailPage({ params }: PageProps) {
     redirect(`/app/estates/${estateId}/notes`);
   }
 
-  const createdAt = note.createdAt.toLocaleString();
-  const updatedAt = note.updatedAt.toLocaleString();
+  const createdAt = formatDateTime(note.createdAt);
+  const updatedAt = formatDateTime(note.updatedAt);
 
   return (
     <div className="space-y-6 p-6">
+      <nav className="text-xs text-slate-500">
+        <span className="text-slate-500">Estates</span>
+        <span className="mx-1 text-slate-600">/</span>
+        <span className="text-slate-300">Current estate</span>
+        <span className="mx-1 text-slate-600">/</span>
+        <Link
+          href={`/app/estates/${estateId}/notes`}
+          className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+        >
+          Notes
+        </Link>
+        <span className="mx-1 text-slate-600">/</span>
+        <span className="text-rose-300">View</span>
+      </nav>
       <div className="flex flex-col gap-3 border-b border-slate-800 pb-4 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="flex items-center gap-2">
@@ -135,9 +180,15 @@ export default async function NoteDetailPage({ params }: PageProps) {
       </div>
 
       <article className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-100 shadow-sm shadow-rose-950/40">
-        <pre className="whitespace-pre-wrap text-sm leading-relaxed text-slate-100">
-          {note.body}
-        </pre>
+        {note.body?.trim() ? (
+          <pre className="whitespace-pre-wrap text-sm leading-relaxed text-slate-100">
+            {note.body}
+          </pre>
+        ) : (
+          <p className="text-sm text-slate-400">
+            This note doesn’t have any content yet.
+          </p>
+        )}
       </article>
     </div>
   );
