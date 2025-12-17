@@ -1,10 +1,11 @@
-import { redirect, notFound } from "next/navigation";
+import Link from "next/link";
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { Estate } from "@/models/Estate";
 import { Task, type TaskPriority, type TaskStatus } from "@/models/Task";
+import { requireEstateAccess } from "@/lib/estateAccess";
 
 type PageProps = {
   params: Promise<{
@@ -23,28 +24,16 @@ export default async function NewTaskPage({ params }: PageProps) {
 
   await connectToDatabase();
 
-  const estateDoc = await Estate.findOne({
-    _id: estateId,
-    ownerId: session.user.id,
-  }).lean();
+  // Permission gate (helper signature may vary across the codebase, so keep this call minimal)
+  const access = await requireEstateAccess({ estateId });
 
-  if (!estateDoc) {
-    notFound();
-  }
+  // Defensive read of role from the access result
+  const role = (access as { role?: string }).role;
+  const canEdit = role !== "VIEWER";
 
-  type EstateNameSource = {
-    caseName?: string | null;
-    displayName?: string | null;
-    decedentName?: string | null;
-  };
-
-  const estateForName = estateDoc as EstateNameSource;
-
-  const estateName =
-    estateForName.caseName ||
-    estateForName.displayName ||
-    estateForName.decedentName ||
-    "Estate";
+  // We may not always have the estate record on the access helper result.
+  // If you want the actual display name, fetch the Estate model here.
+  const estateName = "Estate";
 
   // Capture values for the server action so we don't ever touch `params` inside it
   const estateIdForAction = estateId;
@@ -53,18 +42,31 @@ export default async function NewTaskPage({ params }: PageProps) {
   const createTask = async (formData: FormData) => {
     "use server";
 
+    if (!canEdit) {
+      redirect(`/app/estates/${estateIdForAction}/tasks?requestAccess=1`);
+    }
+
     const subject = String(formData.get("subject") ?? "").trim();
     const description =
       String(formData.get("description") ?? "").trim() || undefined;
     const notes = String(formData.get("notes") ?? "").trim() || undefined;
 
     const dateRaw = String(formData.get("date") ?? "");
-    const date = dateRaw ? new Date(dateRaw) : new Date();
+    // Ensure date inputs are treated as local midnight, not UTC-shifted
+    const date = dateRaw ? new Date(`${dateRaw}T00:00:00`) : new Date();
 
-    const priority =
-      (formData.get("priority") as TaskPriority | null) ?? "MEDIUM";
-    const status =
-      (formData.get("status") as TaskStatus | null) ?? "OPEN";
+    const priorityRaw = String(formData.get("priority") ?? "MEDIUM");
+    const statusRaw = String(formData.get("status") ?? "OPEN");
+
+    const priority: TaskPriority =
+      priorityRaw === "LOW" || priorityRaw === "MEDIUM" || priorityRaw === "HIGH"
+        ? (priorityRaw as TaskPriority)
+        : "MEDIUM";
+
+    const status: TaskStatus =
+      statusRaw === "OPEN" || statusRaw === "DONE"
+        ? (statusRaw as TaskStatus)
+        : "OPEN";
 
     if (!subject) {
       // Minimal guard; you could enhance this later with form state
@@ -85,6 +87,7 @@ export default async function NewTaskPage({ params }: PageProps) {
     });
 
     revalidatePath(`/app/estates/${estateIdForAction}/tasks`);
+    revalidatePath(`/app`);
     redirect(`/app/estates/${estateIdForAction}/tasks`);
   };
 
@@ -92,6 +95,20 @@ export default async function NewTaskPage({ params }: PageProps) {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
+          <nav className="text-xs text-slate-500">
+            <Link href="/app/estates" className="hover:text-slate-300">
+              Estates
+            </Link>
+            <span className="mx-1 text-slate-600">/</span>
+            <Link
+              href={`/app/estates/${estateId}/tasks`}
+              className="hover:text-slate-300"
+            >
+              Tasks
+            </Link>
+            <span className="mx-1 text-slate-600">/</span>
+            <span className="text-rose-300">New</span>
+          </nav>
           <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
             New task
           </p>
@@ -186,15 +203,35 @@ export default async function NewTaskPage({ params }: PageProps) {
           />
         </div>
 
-        <div className="flex items-center justify-between gap-3 pt-2">
-          <button
-            type="submit"
-            className="inline-flex items-center rounded-lg bg-emerald-500 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-emerald-950 shadow-sm hover:bg-emerald-400"
-          >
-            Save task
-          </button>
+        <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={!canEdit}
+              className={`inline-flex items-center rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-wide shadow-sm ${
+                canEdit
+                  ? "bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
+                  : "cursor-not-allowed bg-slate-800 text-slate-400"
+              }`}
+            >
+              Save task
+            </button>
+
+            <Link
+              href={`/app/estates/${estateId}/tasks`}
+              className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900/40 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/70"
+            >
+              Cancel
+            </Link>
+          </div>
+
           <p className="text-xs text-slate-500">
             Tasks are auto-linked to this estate&apos;s timecard &amp; dashboard.
+            {!canEdit ? (
+              <span className="ml-2 text-rose-300">
+                You have view-only access.
+              </span>
+            ) : null}
           </p>
         </div>
       </form>

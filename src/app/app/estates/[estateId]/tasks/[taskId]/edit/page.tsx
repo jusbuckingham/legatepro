@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { Estate } from "@/models/Estate";
+import { requireEstateAccess } from "@/lib/estateAccess";
 import { Task, TaskPriority, TaskStatus, type TaskDocument } from "@/models/Task";
 
 type PageProps = {
@@ -12,12 +12,6 @@ type PageProps = {
     estateId: string;
     taskId: string;
   };
-};
-
-type EstateLean = {
-  _id: string;
-  caseName?: string;
-  displayName?: string;
 };
 
 type TaskLean = {
@@ -38,23 +32,19 @@ export default async function EditTaskPage({ params }: PageProps) {
 
   await connectToDatabase();
 
-  // Load estate
-  const estateDoc = await Estate.findOne({
-    _id: params.estateId,
-    ownerId: session.user.id,
-  }).lean();
+  // Permission gate (shared estates supported)
+  const access = await requireEstateAccess({ estateId: params.estateId });
 
-  if (!estateDoc) {
-    notFound();
+  // VIEWERs can view tasks, but cannot edit them.
+  const isViewer = access.role === "VIEWER";
+  if (isViewer) {
+    redirect(`/app/estates/${params.estateId}/tasks/${params.taskId}?requestAccess=1`);
   }
 
-  const estate = estateDoc as unknown as EstateLean;
-
-  // Load task
+  // Load task (scoped by estateId; access check above prevents cross-tenant leakage)
   const taskDoc = await Task.findOne({
     _id: params.taskId,
     estateId: params.estateId,
-    ownerId: session.user.id,
   }).lean();
 
   if (!taskDoc) {
@@ -63,8 +53,7 @@ export default async function EditTaskPage({ params }: PageProps) {
 
   const task = taskDoc as unknown as TaskLean;
 
-  const displayTitle =
-    estate.caseName || estate.displayName || "Estate Tasks";
+  // Removed displayTitle
 
   const dateInputValue =
     task.date instanceof Date
@@ -85,6 +74,11 @@ export default async function EditTaskPage({ params }: PageProps) {
 
     const estateId = params.estateId;
     const taskId = params.taskId;
+
+    const access = await requireEstateAccess({ estateId });
+    if (access.role === "VIEWER") {
+      redirect(`/app/estates/${estateId}/tasks/${taskId}?requestAccess=1`);
+    }
 
     const subject = String(formData.get("subject") || "").trim();
     const description = String(formData.get("description") || "").trim();
@@ -115,7 +109,6 @@ export default async function EditTaskPage({ params }: PageProps) {
     const existing = (await Task.findOne({
       _id: taskId,
       estateId,
-      ownerId: sessionInner.user.id,
     })) as (TaskDocument & {
       date?: Date;
       completedAt?: Date | null;
@@ -161,7 +154,7 @@ export default async function EditTaskPage({ params }: PageProps) {
             Edit Task
           </h1>
           <p className="text-sm text-slate-400">
-            {displayTitle} · Task #{String(task._id).slice(-6)}
+            Estate · Task #{String(task._id).slice(-6)}
           </p>
         </div>
         <div className="rounded-full bg-slate-900/60 px-3 py-1 text-xs text-slate-400">

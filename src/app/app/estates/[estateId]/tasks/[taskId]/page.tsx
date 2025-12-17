@@ -1,10 +1,15 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+
+import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
+import { requireEstateAccess } from "@/lib/estateAccess";
 import { Task } from "@/models/Task";
 
 interface TaskDoc {
   _id: string | { toString(): string };
+  ownerId?: string;
   subject: string;
   description?: string;
   notes?: string;
@@ -20,6 +25,7 @@ interface PageProps {
     estateId: string;
     taskId: string;
   }>;
+  searchParams?: Promise<{ requestAccess?: string }>;
 }
 
 function isValidObjectId(value: string): boolean {
@@ -28,7 +34,8 @@ function isValidObjectId(value: string): boolean {
 
 async function loadTask(
   estateId: string,
-  taskId: string
+  taskId: string,
+  ownerId: string
 ): Promise<TaskDoc | null> {
   await connectToDatabase();
 
@@ -41,6 +48,7 @@ async function loadTask(
   const doc = await Task.findOne({
     _id: taskId,
     estateId,
+    ownerId,
   }).lean<TaskDoc | null>();
 
   return doc ?? null;
@@ -105,44 +113,117 @@ function priorityBadgeClass(priority: "LOW" | "MEDIUM" | "HIGH"): string {
   }
 }
 
+async function toggleTaskStatusAction(formData: FormData): Promise<void> {
+  "use server";
+
+  const estateId = formData.get("estateId");
+  const taskId = formData.get("taskId");
+
+  if (typeof estateId !== "string" || typeof taskId !== "string") return;
+
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect(`/login?callbackUrl=/app/estates/${estateId}/tasks/${taskId}`);
+  }
+
+  const access = await requireEstateAccess({ estateId });
+  if (access.role === "VIEWER") {
+    redirect(`/app/estates/${estateId}/tasks/${taskId}?requestAccess=1`);
+  }
+
+  await connectToDatabase();
+
+  // Defensive: ensure id format
+  if (!isValidObjectId(taskId)) {
+    notFound();
+  }
+
+  const current = await Task.findOne({
+    _id: taskId,
+    estateId,
+    ownerId: session.user.id,
+  }).lean<{ status?: "OPEN" | "DONE" } | null>();
+
+  if (!current?.status) {
+    notFound();
+  }
+
+  const nextStatus: "OPEN" | "DONE" = current.status === "DONE" ? "OPEN" : "DONE";
+
+  await Task.findOneAndUpdate(
+    { _id: taskId, estateId, ownerId: session.user.id },
+    { $set: { status: nextStatus } },
+    { new: false }
+  );
+
+  revalidatePath(`/app/estates/${estateId}/tasks/${taskId}`);
+  revalidatePath(`/app/estates/${estateId}/tasks`);
+
+  redirect(`/app/estates/${estateId}/tasks/${taskId}`);
+}
+
 async function deleteTaskAction(formData: FormData): Promise<void> {
   "use server";
 
   const estateId = formData.get("estateId");
   const taskId = formData.get("taskId");
 
-  if (
-    !estateId ||
-    !taskId ||
-    typeof estateId !== "string" ||
-    typeof taskId !== "string"
-  ) {
-    return;
+  if (typeof estateId !== "string" || typeof taskId !== "string") return;
+
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect(`/login?callbackUrl=/app/estates/${estateId}/tasks/${taskId}`);
+  }
+
+  const access = await requireEstateAccess({ estateId });
+  if (access.role === "VIEWER") {
+    redirect(`/app/estates/${estateId}/tasks/${taskId}?requestAccess=1`);
   }
 
   await connectToDatabase();
 
-  await Task.findOneAndDelete({ _id: taskId, estateId });
+  if (!isValidObjectId(taskId)) {
+    notFound();
+  }
+
+  await Task.findOneAndDelete({ _id: taskId, estateId, ownerId: session.user.id });
+
+  revalidatePath(`/app/estates/${estateId}/tasks`);
 
   redirect(`/app/estates/${estateId}/tasks`);
 }
 
-export default async function TaskDetailPage({ params }: PageProps) {
+export default async function TaskDetailPage({ params, searchParams }: PageProps) {
   const { estateId, taskId } = await params;
+  const sp = (await searchParams) ?? {};
+  const showRequestAccess = sp.requestAccess === "1";
 
-  const task = await loadTask(estateId, taskId);
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect(`/login?callbackUrl=/app/estates/${estateId}/tasks/${taskId}`);
+  }
+
+  const access = await requireEstateAccess({ estateId });
+  const canEdit = access.role !== "VIEWER";
+
+  const task = await loadTask(estateId, taskId, session.user.id);
 
   if (!task) {
     notFound();
   }
 
-  const id =
-    typeof task._id === "string" ? task._id : task._id.toString();
+  const id = typeof task._id === "string" ? task._id : task._id.toString();
 
   const isDone = task.status === "DONE";
 
   return (
     <div className="space-y-8">
+      {!canEdit && showRequestAccess ? (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+          You have <span className="font-semibold">view-only</span> access for this estate. To edit tasks, request elevated access.
+        </div>
+      ) : null}
+
       {/* Header */}
       <div className="flex flex-col justify-between gap-3 border-b border-slate-800 pb-4 sm:flex-row sm:items-center">
         <div>
@@ -182,17 +263,39 @@ export default async function TaskDetailPage({ params }: PageProps) {
             Back to tasks
           </Link>
 
-          {/* Status toggle form posts to the API route which redirects back here */}
-          <form
-            method="POST"
-            action={`/api/estates/${estateId}/tasks/${id}`}
-            className="inline-flex"
+          <Link
+            href={`/app/estates/${estateId}/tasks/${id}/edit`}
+            className={`inline-flex items-center rounded-lg border px-3 py-1.5 font-medium shadow-sm shadow-black/40 ${
+              canEdit
+                ? "border-slate-800 text-slate-300 hover:border-slate-500/70 hover:text-slate-100"
+                : "cursor-not-allowed border-slate-800/60 text-slate-600"
+            }`}
+            aria-disabled={!canEdit}
+            tabIndex={canEdit ? 0 : -1}
           >
-            <input type="hidden" name="intent" value="toggleStatus" />
+            Edit
+          </Link>
+
+          {showRequestAccess ? (
+            <Link
+              href={`/app/estates/${estateId}?requestAccess=1`}
+              className="inline-flex items-center rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200 shadow-sm shadow-black/40 hover:bg-amber-500/15"
+            >
+              Request access
+            </Link>
+          ) : null}
+
+          {/* Status toggle (server action) */}
+          <form action={toggleTaskStatusAction} className="inline-flex">
+            <input type="hidden" name="estateId" value={estateId} />
+            <input type="hidden" name="taskId" value={id} />
             <button
               type="submit"
+              disabled={!canEdit}
               className={`inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm shadow-black/40 ${
-                isDone
+                !canEdit
+                  ? "cursor-not-allowed border border-slate-800/60 bg-slate-950 text-slate-600"
+                  : isDone
                   ? "border border-emerald-500/40 bg-slate-950 text-emerald-300 hover:border-emerald-400 hover:bg-slate-900"
                   : "bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
               }`}
@@ -201,13 +304,18 @@ export default async function TaskDetailPage({ params }: PageProps) {
             </button>
           </form>
 
-          {/* Delete task button */}
+          {/* Delete task button (server action) */}
           <form action={deleteTaskAction} className="inline-flex">
             <input type="hidden" name="estateId" value={estateId} />
             <input type="hidden" name="taskId" value={id} />
             <button
               type="submit"
-              className="inline-flex items-center rounded-lg border border-rose-600/60 bg-rose-900/20 px-3 py-1.5 text-xs font-semibold text-rose-200 shadow-sm shadow-black/40 hover:border-rose-500 hover:bg-rose-900/40"
+              disabled={!canEdit}
+              className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-semibold shadow-sm shadow-black/40 ${
+                canEdit
+                  ? "border-rose-600/60 bg-rose-900/20 text-rose-200 hover:border-rose-500 hover:bg-rose-900/40"
+                  : "cursor-not-allowed border-slate-800/60 bg-slate-950 text-slate-600"
+              }`}
             >
               Delete task
             </button>

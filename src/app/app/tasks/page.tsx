@@ -1,4 +1,3 @@
-import React from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getServerSession } from "next-auth";
@@ -14,7 +13,7 @@ export const metadata: Metadata = {
 };
 
 type PageProps = {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
+  searchParams: Record<string, string | string[] | undefined>;
 };
 
 type TaskRow = {
@@ -105,7 +104,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
     notFound();
   }
 
-  const queryParams = await searchParams;
+  const queryParams = searchParams;
   const rawStatus = typeof queryParams.status === "string" ? queryParams.status : undefined;
   const rawEstateId =
     typeof queryParams.estateId === "string" ? queryParams.estateId : undefined;
@@ -143,6 +142,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
   );
 
   let estatesById: Record<string, string> = {};
+  let estateOptions: { id: string; name: string }[] = [];
   if (estateIds.length > 0) {
     const estateDocs = (await Estate.find({
       _id: { $in: estateIds },
@@ -165,6 +165,22 @@ export default async function TasksPage({ searchParams }: PageProps) {
       acc[id] = displayName;
       return acc;
     }, {});
+
+    estateOptions = estateDocs
+      .map((est) => {
+        const id = String(est._id);
+        const name =
+          (typeof est.displayName === "string" && est.displayName.trim().length > 0
+            ? est.displayName.trim()
+            : null) ??
+          (typeof est.caseName === "string" && est.caseName.trim().length > 0
+            ? est.caseName.trim()
+            : null) ??
+          "Estate";
+
+        return { id, name };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   const tasks: TaskRow[] = rawTasks.map((doc) => {
@@ -272,32 +288,64 @@ export default async function TasksPage({ searchParams }: PageProps) {
 
       {/* Filters + actions */}
       <section className="flex flex-wrap items-center justify-between gap-3 pt-2">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-          <span className="text-slate-500">Filter by status:</span>
-          <div className="flex flex-wrap gap-1">
-            {ALL_STATUSES.map((status) => {
-              const isActive = status === statusFilter;
-              const href =
-                status === "ALL"
-                  ? "/app/tasks"
-                  : `/app/tasks?status=${encodeURIComponent(status)}`;
+        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-slate-500">Status:</span>
+            <div className="flex flex-wrap gap-1">
+              {ALL_STATUSES.map((status) => {
+                const isActive = status === statusFilter;
 
-              return (
-                <Link
-                  key={status}
-                  href={href}
-                  className={[
-                    "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px]",
-                    isActive
-                      ? "border-sky-500 bg-sky-500/10 text-sky-200"
-                      : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500",
-                  ].join(" ")}
-                >
-                  {status === "ALL" ? "All" : humanizeStatus(status)}
-                </Link>
-              );
-            })}
+                const params = new URLSearchParams();
+                if (status !== "ALL") params.set("status", status);
+                if (rawEstateId) params.set("estateId", rawEstateId);
+
+                const href = params.toString() ? `/app/tasks?${params.toString()}` : "/app/tasks";
+
+                return (
+                  <Link
+                    key={status}
+                    href={href}
+                    className={[
+                      "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px]",
+                      isActive
+                        ? "border-sky-500 bg-sky-500/10 text-sky-200"
+                        : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500",
+                    ].join(" ")}
+                  >
+                    {status === "ALL" ? "All" : humanizeStatus(status)}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
+
+          {estateOptions.length > 0 ? (
+            <form action="/app/tasks" method="GET" className="flex items-center gap-2">
+              {statusFilter !== "ALL" ? (
+                <input type="hidden" name="status" value={statusFilter} />
+              ) : null}
+              <label className="text-slate-500" htmlFor="estateId">
+                Estate:
+              </label>
+              <select
+                id="estateId"
+                name="estateId"
+                defaultValue={rawEstateId ?? ""}
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200"
+                onChange={(e) => {
+                  // Progressive enhancement: submit on change
+                  (e.currentTarget.form as HTMLFormElement | null)?.requestSubmit();
+                }}
+              >
+                <option value="">All estates</option>
+                {estateOptions.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.name}
+                  </option>
+                ))}
+              </select>
+            </form>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
@@ -313,8 +361,12 @@ export default async function TasksPage({ searchParams }: PageProps) {
       <section className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/70">
         {tasks.length === 0 ? (
           <div className="px-4 py-10 text-center text-sm text-slate-400">
-            No tasks found. Adjust your filters or create a new task to get
-            started.
+            <p>No tasks found.</p>
+            <p className="mt-1 text-xs text-slate-500">
+              {statusFilter !== "ALL" || rawEstateId
+                ? "Try clearing filters, or create a new task to get started."
+                : "Create a new task to get started."}
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">

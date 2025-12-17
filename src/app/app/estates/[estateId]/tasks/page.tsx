@@ -284,8 +284,7 @@ export default async function EstateTasksPage({
   const doneCount = tasks.filter((t) => t.status === "DONE").length;
   const overdueCount = tasks.filter((t) => t.isOverdue).length;
 
-  const hasFilters =
-    !!searchQuery || (statusFilter !== "ALL" && statusFilter !== undefined);
+  const hasFilters = !!searchQuery || statusFilter !== "ALL";
 
   return (
     <div className="space-y-6 p-6">
@@ -503,68 +502,248 @@ export default async function EstateTasksPage({
       </section>
 
       {/* Task list */}
-      <section className="space-y-2 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+      <section className="space-y-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-700">
+              Tasks
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">
+              Track to-dos, due dates, and progress for this estate.
+            </p>
+          </div>
+
+          {filteredTasks.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+              <span>
+                Showing <span className="font-semibold text-gray-800">{filteredTasks.length}</span>
+                {filteredTasks.length === 1 ? " task" : " tasks"}
+              </span>
+              {hasFilters ? <span className="text-gray-300">·</span> : null}
+              {hasFilters ? (
+                <a
+                  href={`/app/estates/${estateId}/tasks`}
+                  className="font-semibold text-gray-700 hover:text-gray-900 hover:underline"
+                >
+                  Clear filters
+                </a>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
         {tasks.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            You don&apos;t have any tasks yet. Start with the next 3–5 things
-            you know you need to do—no need to be perfect, you can always
-            adjust later.
-          </p>
+          <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-4">
+            <p className="text-sm font-medium text-gray-900">No tasks yet</p>
+            <p className="mt-1 text-sm text-gray-600">
+              Start with the next 3–5 things you know you need to do—then refine as you go.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link
+                href={`/app/estates/${estateId}`}
+                className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100"
+              >
+                Back to overview
+              </Link>
+              {isViewer ? (
+                <Link
+                  href={`/app/estates/${estateId}?requestAccess=1`}
+                  className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+                >
+                  Request edit access
+                </Link>
+              ) : null}
+            </div>
+          </div>
         ) : filteredTasks.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            No tasks match this search or status filter.
-          </p>
+          <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-4">
+            <p className="text-sm font-medium text-gray-900">No matching tasks</p>
+            <p className="mt-1 text-sm text-gray-600">
+              Try changing your search or status filter.
+            </p>
+            <div className="mt-3">
+              <a
+                href={`/app/estates/${estateId}/tasks`}
+                className="text-sm font-semibold text-gray-800 hover:underline"
+              >
+                Clear filters
+              </a>
+            </div>
+          </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead>
-                <tr className="border-b text-xs uppercase text-gray-500">
-                  <th className="px-3 py-2">Task</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Due</th>
-                  <th className="px-3 py-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredTasks.map((task) => (
-                  <tr key={task._id} className="border-b last:border-0">
-                    <td className="px-3 py-2 align-top">
-                      <div className="space-y-0.5">
-                        <div className="font-medium text-gray-900">
-                          {task.title}
+          <>
+            {/* Desktop table */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="min-w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b text-xs uppercase text-gray-500">
+                    <th className="px-3 py-2">Task</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Due</th>
+                    <th className="px-3 py-2 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredTasks.map((task) => (
+                    <tr key={task._id} className="border-b last:border-0">
+                      <td className="px-3 py-2 align-top">
+                        <div className="space-y-0.5">
+                          <div className="font-medium text-gray-900">{task.title}</div>
+                          {task.description ? (
+                            <div className="text-xs text-gray-500">{task.description}</div>
+                          ) : null}
                         </div>
-                        {task.description && (
-                          <div className="text-xs text-gray-500">
-                            {task.description}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                          task.status === "DONE"
-                            ? "bg-green-100 text-green-800"
-                            : task.isOverdue
-                            ? "bg-red-100 text-red-800"
+                      </td>
+
+                      <td className="px-3 py-2 align-top">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
+                            task.status === "DONE"
+                              ? "bg-green-100 text-green-800"
+                              : task.isOverdue
+                              ? "bg-red-100 text-red-800"
+                              : task.status === "IN_PROGRESS"
+                              ? "bg-blue-100 text-blue-800"
+                              : "bg-gray-100 text-gray-800"
+                          }`}
+                        >
+                          {task.status === "NOT_STARTED"
+                            ? "Not started"
                             : task.status === "IN_PROGRESS"
-                            ? "bg-blue-100 text-blue-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                      >
-                        {task.status === "NOT_STARTED"
-                          ? "Not started"
+                            ? "In progress"
+                            : "Done"}
+                        </span>
+                      </td>
+
+                      <td className="px-3 py-2 align-top">
+                        {task.dueDate ? (
+                          <span
+                            className={
+                              task.isOverdue && task.status !== "DONE"
+                                ? "font-medium text-red-600"
+                                : "text-gray-700"
+                            }
+                          >
+                            {formatDate(task.dueDate)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">No due date</span>
+                        )}
+                      </td>
+
+                      <td className="px-3 py-2 align-top">
+                        <div
+                          className={`flex justify-end gap-3 text-xs ${
+                            isViewer ? "opacity-60" : ""
+                          }`}
+                        >
+                          {task.status !== "DONE" ? (
+                            <form action={updateTaskStatus}>
+                              <input type="hidden" name="estateId" value={estateId} />
+                              <input type="hidden" name="taskId" value={task._id} />
+                              <input type="hidden" name="status" value="DONE" />
+                              <button
+                                type="submit"
+                                disabled={isViewer}
+                                className={
+                                  isViewer
+                                    ? "cursor-not-allowed text-gray-400"
+                                    : "font-medium text-green-700 hover:underline"
+                                }
+                              >
+                                Mark done
+                              </button>
+                            </form>
+                          ) : (
+                            <form action={updateTaskStatus}>
+                              <input type="hidden" name="estateId" value={estateId} />
+                              <input type="hidden" name="taskId" value={task._id} />
+                              <input type="hidden" name="status" value="IN_PROGRESS" />
+                              <button
+                                type="submit"
+                                disabled={isViewer}
+                                className={
+                                  isViewer
+                                    ? "cursor-not-allowed text-gray-400"
+                                    : "font-medium text-blue-700 hover:underline"
+                                }
+                              >
+                                Reopen
+                              </button>
+                            </form>
+                          )}
+
+                          <form action={deleteTask}>
+                            <input type="hidden" name="estateId" value={estateId} />
+                            <input type="hidden" name="taskId" value={task._id} />
+                            <button
+                              type="submit"
+                              disabled={isViewer}
+                              className={
+                                isViewer
+                                  ? "cursor-not-allowed text-gray-400"
+                                  : "font-medium text-red-600 hover:underline"
+                              }
+                            >
+                              Delete
+                            </button>
+                          </form>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile cards */}
+            <div className="space-y-2 md:hidden">
+              {filteredTasks.map((task) => (
+                <div
+                  key={task._id}
+                  className={`rounded-lg border border-gray-200 bg-white p-3 ${
+                    task.isOverdue && task.status !== "DONE" ? "ring-1 ring-red-200" : ""
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-gray-900">
+                        {task.title}
+                      </div>
+                      {task.description ? (
+                        <div className="mt-1 line-clamp-2 text-xs text-gray-600">
+                          {task.description}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <span
+                      className={`shrink-0 inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
+                        task.status === "DONE"
+                          ? "bg-green-100 text-green-800"
+                          : task.isOverdue
+                          ? "bg-red-100 text-red-800"
                           : task.status === "IN_PROGRESS"
-                          ? "In progress"
-                          : "Done"}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 align-top">
+                          ? "bg-blue-100 text-blue-800"
+                          : "bg-gray-100 text-gray-800"
+                      }`}
+                    >
+                      {task.status === "NOT_STARTED"
+                        ? "Not started"
+                        : task.status === "IN_PROGRESS"
+                        ? "In progress"
+                        : "Done"}
+                    </span>
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                    <div className="text-gray-500">
+                      Due:{" "}
                       {task.dueDate ? (
                         <span
                           className={
                             task.isOverdue && task.status !== "DONE"
-                              ? "text-red-600"
+                              ? "font-semibold text-red-600"
                               : "text-gray-700"
                           }
                         >
@@ -573,99 +752,72 @@ export default async function EstateTasksPage({
                       ) : (
                         <span className="text-gray-400">No due date</span>
                       )}
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      <div className={`flex justify-end gap-2 text-xs ${isViewer ? "opacity-60" : ""}`}>
-                        {task.status !== "DONE" && (
-                          <form action={updateTaskStatus}>
-                            <input
-                              type="hidden"
-                              name="estateId"
-                              value={estateId}
-                            />
-                            <input
-                              type="hidden"
-                              name="taskId"
-                              value={task._id}
-                            />
-                            <input
-                              type="hidden"
-                              name="status"
-                              value="DONE"
-                            />
-                            <button
-                              type="submit"
-                              disabled={isViewer}
-                              className={
-                                isViewer
-                                  ? "cursor-not-allowed text-gray-400"
-                                  : "text-green-700 hover:underline"
-                              }
-                            >
-                              Mark done
-                            </button>
-                          </form>
-                        )}
-                        {task.status === "DONE" && (
-                          <form action={updateTaskStatus}>
-                            <input
-                              type="hidden"
-                              name="estateId"
-                              value={estateId}
-                            />
-                            <input
-                              type="hidden"
-                              name="taskId"
-                              value={task._id}
-                            />
-                            <input
-                              type="hidden"
-                              name="status"
-                              value="IN_PROGRESS"
-                            />
-                            <button
-                              type="submit"
-                              disabled={isViewer}
-                              className={
-                                isViewer
-                                  ? "cursor-not-allowed text-gray-400"
-                                  : "text-blue-700 hover:underline"
-                              }
-                            >
-                              Reopen
-                            </button>
-                          </form>
-                        )}
-                        <form action={deleteTask}>
-                          <input
-                            type="hidden"
-                            name="estateId"
-                            value={estateId}
-                          />
-                          <input
-                            type="hidden"
-                            name="taskId"
-                            value={task._id}
-                          />
+                    </div>
+
+                    <div className={`flex items-center gap-3 ${isViewer ? "opacity-60" : ""}`}>
+                      {task.status !== "DONE" ? (
+                        <form action={updateTaskStatus}>
+                          <input type="hidden" name="estateId" value={estateId} />
+                          <input type="hidden" name="taskId" value={task._id} />
+                          <input type="hidden" name="status" value="DONE" />
                           <button
                             type="submit"
                             disabled={isViewer}
                             className={
                               isViewer
                                 ? "cursor-not-allowed text-gray-400"
-                                : "text-red-600 hover:underline"
+                                : "font-semibold text-green-700"
                             }
                           >
-                            Delete
+                            Done
                           </button>
                         </form>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      ) : (
+                        <form action={updateTaskStatus}>
+                          <input type="hidden" name="estateId" value={estateId} />
+                          <input type="hidden" name="taskId" value={task._id} />
+                          <input type="hidden" name="status" value="IN_PROGRESS" />
+                          <button
+                            type="submit"
+                            disabled={isViewer}
+                            className={
+                              isViewer
+                                ? "cursor-not-allowed text-gray-400"
+                                : "font-semibold text-blue-700"
+                            }
+                          >
+                            Reopen
+                          </button>
+                        </form>
+                      )}
+
+                      <form action={deleteTask}>
+                        <input type="hidden" name="estateId" value={estateId} />
+                        <input type="hidden" name="taskId" value={task._id} />
+                        <button
+                          type="submit"
+                          disabled={isViewer}
+                          className={
+                            isViewer
+                              ? "cursor-not-allowed text-gray-400"
+                              : "font-semibold text-red-600"
+                          }
+                        >
+                          Delete
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+
+                  {isViewer ? (
+                    <div className="mt-2 text-[11px] text-gray-400">
+                      Viewer role: actions are disabled.
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </section>
     </div>
