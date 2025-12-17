@@ -119,6 +119,10 @@ async function updateDocument(formData: FormData): Promise<void> {
 export default async function EditDocumentPage({ params }: PageProps) {
   const { estateId, documentId } = await params;
 
+  const requestAccessHref = `/app/estates/${encodeURIComponent(
+    estateId,
+  )}/documents/${encodeURIComponent(documentId)}?requestAccess=1`;
+
   const session = await auth();
 
   if (!session?.user?.id) {
@@ -177,6 +181,14 @@ export default async function EditDocumentPage({ params }: PageProps) {
           >
             View
           </Link>
+          {isReadOnly ? (
+            <Link
+              href={requestAccessHref}
+              className="inline-flex items-center rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 font-medium text-emerald-100 hover:bg-emerald-500/20"
+            >
+              Request access
+            </Link>
+          ) : null}
           <Link
             href={`/app/estates/${estateId}/documents`}
             className="inline-flex items-center rounded-lg border border-slate-800 px-3 py-1.5 font-medium text-slate-300 hover:border-slate-500/70 hover:text-slate-100"
@@ -191,6 +203,16 @@ export default async function EditDocumentPage({ params }: PageProps) {
           <p className="font-medium">You have view-only access for this estate.</p>
           <p className="mt-1 text-xs text-rose-200/80">
             You can view document details, but editing is disabled. Ask the estate owner to upgrade your role to EDITOR if you need to make changes.
+            <span className="ml-1">
+              Or{" "}
+              <Link
+                href={requestAccessHref}
+                className="font-medium text-rose-100 underline-offset-2 hover:underline"
+              >
+                request access
+              </Link>
+              .
+            </span>
           </p>
         </div>
       ) : null}
@@ -235,6 +257,9 @@ export default async function EditDocumentPage({ params }: PageProps) {
               disabled={isReadOnly}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 ring-emerald-500/0 transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
             >
+              {!Object.prototype.hasOwnProperty.call(SUBJECT_LABELS, doc.subject) ? (
+                <option value={doc.subject}>{doc.subject}</option>
+              ) : null}
               {Object.entries(SUBJECT_LABELS).map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}

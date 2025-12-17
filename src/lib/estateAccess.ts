@@ -22,6 +22,18 @@ export type RequireEstateAccessInput = {
   estateId: string;
   /** Optional override for server actions / routes that already resolved auth. */
   userId?: string;
+
+  /**
+   * Back-compat: some pages mistakenly pass `session` to this helper.
+   * This value is intentionally ignored for auth decisions.
+   */
+  session?: unknown;
+
+  /**
+   * Back-compat: some pages pass `ownerId` / other identity props.
+   * These are intentionally ignored for auth decisions.
+   */
+  ownerId?: unknown;
   /**
    * Optional role hints used by some pages. These are currently **UI hints only**;
    * enforcement should be done via `requireEstateEditAccess` (or a future stricter helper).
@@ -36,9 +48,8 @@ export type RequireEstateAccessInput = {
   /** @deprecated Use `atLeastRole` */
   requiredRole?: EstateRole;
   /**
-   * When true, unauthenticated users will be treated as having no access.
-   * When false (default), unauthenticated users return VIEWER/canEdit=false so
-   * UI can show read-only messaging while upstream handles redirects.
+   * When true, unauthenticated users return `hasAccess=false`.
+   * (Default behavior is also `hasAccess=false`; this flag is kept for back-compat.)
    */
   requireAuth?: boolean;
 };
@@ -68,6 +79,10 @@ export type EstateAccess = {
 export type RequireEstateAccessResult = Omit<EstateAccess, "userId"> & {
   /** Older code expects this field. */
   canEdit: boolean;
+  /** Optional: whether the caller's requested role requirement is met. */
+  meetsRoleRequirement?: boolean;
+  /** Optional: the role the caller asked for (resolved from atLeastRole/minRole/requiredRole). */
+  requiredRole?: EstateRole;
 };
 
 type EstateLean = {
@@ -88,6 +103,10 @@ function toIdString(value: unknown): string {
     if (typeof maybe === "string") return maybe;
   }
   return "";
+}
+
+function resolveRequiredRole(input: RequireEstateAccessInput): EstateRole | undefined {
+  return input.atLeastRole ?? input.minRole ?? input.requiredRole;
 }
 
 /**
@@ -148,7 +167,7 @@ export async function getEstateAccess(
     role,
     isOwner: false,
     canEdit: hasRole({ actual: role, atLeast: "EDITOR" }),
-    canViewSensitive: role === "OWNER", // safe default
+    canViewSensitive: role === "OWNER", // safe default (OWNER only)
   };
 }
 
@@ -162,6 +181,7 @@ export async function requireEstateAccess(
   const estateId = input.estateId;
   const resolvedUserId = input.userId ?? (await auth())?.user?.id;
   const isAuthenticated = !!resolvedUserId;
+  const requiredRole = resolveRequiredRole(input);
 
   if (!resolvedUserId) {
     // Caller pages typically redirect to login already; keep it predictable.
@@ -173,6 +193,8 @@ export async function requireEstateAccess(
       isOwner: false,
       canEdit: false,
       canViewSensitive: false,
+      meetsRoleRequirement: false,
+      requiredRole,
     };
   }
 
@@ -191,6 +213,8 @@ export async function requireEstateAccess(
       isOwner: false,
       canEdit: false,
       canViewSensitive: false,
+      meetsRoleRequirement: false,
+      requiredRole,
     };
   }
 
@@ -198,20 +222,43 @@ export async function requireEstateAccess(
   // (Use `void` so TypeScript understands we intentionally ignore it.)
   const { userId, ...rest } = access;
   void userId;
-  return rest;
+
+  const meetsRoleRequirement = requiredRole
+    ? hasRole({ actual: rest.role, atLeast: requiredRole })
+    : true;
+
+  return {
+    ...rest,
+    // If the caller requested a higher role than the user has, treat as read-only.
+    // Pages can still render a helpful “insufficient permissions” state via meetsRoleRequirement.
+    canEdit: rest.canEdit && meetsRoleRequirement,
+    meetsRoleRequirement,
+    requiredRole,
+  };
 }
 
 /** Convenience helper for routes/actions that must enforce edit privileges. */
 export async function requireEstateEditAccess(
   input: RequireEstateAccessInput
 ): Promise<RequireEstateAccessResult> {
-  const access = await requireEstateAccess(input);
-  if (!access.hasAccess || !access.canEdit) {
+  // Ensure edit access is enforced even if callers forget to pass a role.
+  const access = await requireEstateAccess({
+    ...input,
+    atLeastRole: input.atLeastRole ?? input.minRole ?? input.requiredRole ?? "EDITOR",
+  });
+
+  if (!access.hasAccess) return access;
+
+  // If they don't meet the requirement or can't edit, force canEdit false.
+  if (!access.canEdit || access.meetsRoleRequirement === false) {
     return {
       ...access,
       canEdit: false,
+      meetsRoleRequirement: false,
+      requiredRole: access.requiredRole ?? "EDITOR",
     };
   }
+
   return access;
 }
 

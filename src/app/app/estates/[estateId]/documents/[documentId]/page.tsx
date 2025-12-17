@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
-import { revalidatePath } from "next/cache";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
@@ -46,111 +45,6 @@ const SUBJECT_LABELS: Record<string, string> = {
   OTHER: "Other",
 };
 
-// SERVER ACTION: update a document
-async function updateDocument(formData: FormData): Promise<void> {
-  "use server";
-
-  const estateId = formData.get("estateId")?.toString();
-  const documentId = formData.get("documentId")?.toString();
-
-  if (!estateId || !documentId) return;
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect("/login?callbackUrl=/app");
-  }
-
-  let access: { role: EstateRole };
-  try {
-    // `requireEstateAccess` derives the user from the current session and returns the resolved role.
-    access = (await requireEstateAccess({ estateId })) as { role: EstateRole };
-  } catch {
-    redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
-  }
-
-  if (!roleAtLeast(access.role, "EDITOR")) {
-    redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
-  }
-
-  const subject = formData.get("subject")?.toString().trim();
-  const label = formData.get("label")?.toString().trim();
-  const location = formData.get("location")?.toString().trim() || "";
-  const url = formData.get("url")?.toString().trim() || "";
-  const tagsRaw = formData.get("tags")?.toString().trim() || "";
-  const notes = formData.get("notes")?.toString().trim() || "";
-  const isSensitive = formData.get("isSensitive") === "on";
-
-  if (!subject || !label) {
-    redirect(`/app/estates/${estateId}/documents/${documentId}`);
-  }
-
-  const tags = tagsRaw
-    .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean);
-
-  await connectToDatabase();
-
-  await EstateDocument.findOneAndUpdate(
-    {
-      _id: documentId,
-      estateId,
-    },
-    {
-      subject,
-      label,
-      location,
-      url,
-      tags,
-      notes,
-      isSensitive,
-    },
-    { new: true },
-  );
-
-  revalidatePath(`/app/estates/${estateId}/documents`);
-  revalidatePath(`/app/estates/${estateId}/documents/${documentId}`);
-  redirect(`/app/estates/${estateId}/documents`);
-}
-
-// SERVER ACTION: delete from detail page
-async function deleteDocument(formData: FormData): Promise<void> {
-  "use server";
-
-  const estateId = formData.get("estateId")?.toString();
-  const documentId = formData.get("documentId")?.toString();
-
-  if (!estateId || !documentId) return;
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect("/login?callbackUrl=/app");
-  }
-  const confirmDelete = formData.get("confirmDelete")?.toString();
-  if (confirmDelete !== "on") {
-    redirect(`/app/estates/${estateId}/documents/${documentId}?confirm=1`);
-  }
-
-  let access: { role: EstateRole };
-  try {
-    access = (await requireEstateAccess({ estateId })) as { role: EstateRole };
-  } catch {
-    redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
-  }
-
-  if (!roleAtLeast(access.role, "EDITOR")) {
-    redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
-  }
-
-  await connectToDatabase();
-
-  await EstateDocument.findOneAndDelete({
-    _id: documentId,
-    estateId,
-  });
-
-  revalidatePath(`/app/estates/${estateId}/documents`);
-  revalidatePath(`/app/estates/${estateId}/documents/${documentId}`);
-  redirect(`/app/estates/${estateId}/documents`);
-}
 
 export default async function EstateDocumentDetailPage({ params, searchParams }: PageProps) {
   const { estateId, documentId } = await params;
@@ -184,7 +78,7 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
     new URLSearchParams({
       request: "EDITOR",
       from: "document",
-      documentId: encodeURIComponent(documentId),
+      documentId,
     }).toString()
   }`;
 
@@ -210,7 +104,6 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
   }
 
   const tagsArray = Array.isArray(doc.tags) ? doc.tags : [];
-  const tagsDefault = tagsArray.join(", ");
 
   return (
     <div className="space-y-6 p-6">
@@ -241,12 +134,10 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
 
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-slate-50">
-              {canEdit ? "Edit document" : "Document details"}
+              {"Document details"}
             </h1>
             <p className="mt-1 max-w-2xl text-sm text-slate-400">
-              {canEdit
-                ? "Update how this document is indexed for the estate. You can refine the subject, label, location, tags, and notes without touching the underlying file."
-                : "View how this document is indexed for the estate. You don’t have permission to edit this entry."}
+              View how this document is indexed for the estate (subject, label, location, tags, notes, and sensitivity).
             </p>
           </div>
         </div>
@@ -273,6 +164,14 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
           >
             Back
           </Link>
+          {canEdit && (
+            <Link
+              href={`/app/estates/${estateId}/documents/${documentId}/edit`}
+              className="inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20"
+            >
+              Edit
+            </Link>
+          )}
           {(!canEdit || forbidden) && (
             <Link
               href={requestAccessHref}
@@ -342,195 +241,101 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
         )}
       </div>
 
-      {/* Edit form */}
-      <section
-        className={`space-y-3 rounded-xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm ${
-          canEdit ? "" : "opacity-90"
-        }`}
-      >
-        <form action={updateDocument} className="space-y-4">
-          <input type="hidden" name="estateId" value={estateId} />
-          <input type="hidden" name="documentId" value={documentId} />
+      {/* Details */}
+      <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm">
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Subject</p>
+            <p className="mt-1 text-sm font-medium text-slate-50">
+              {SUBJECT_LABELS[doc.subject] ?? doc.subject ?? "—"}
+            </p>
+          </div>
 
-          {/* Subject + Location */}
-          <div className="grid gap-3 md:grid-cols-[1.1fr,1.1fr]">
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-200">
-                Subject
-              </label>
-              <select
-                name="subject"
-                required
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50"
-                defaultValue={doc.subject}
-                disabled={!canEdit}
+          <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Location</p>
+            <p className="mt-1 text-sm font-medium text-slate-50">{doc.location || "—"}</p>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Document label</p>
+          <p className="mt-1 text-sm font-medium text-slate-50">{doc.label || "—"}</p>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Link / URL</p>
+            {doc.url ? (
+              <a
+                href={doc.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 inline-flex items-center text-sm font-medium text-emerald-200 hover:text-emerald-300 underline-offset-2 hover:underline"
               >
-                <option value="" disabled>
-                  Select a subject
-                </option>
-                {Object.entries(SUBJECT_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
+                {doc.url}
+              </a>
+            ) : (
+              <p className="mt-1 text-sm font-medium text-slate-50">—</p>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Tags</p>
+            {tagsArray.length ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {tagsArray.map((t) => (
+                  <span
+                    key={t}
+                    className="inline-flex rounded-full border border-slate-700 bg-slate-900/40 px-2 py-0.5 text-[11px] font-medium text-slate-200"
+                  >
+                    {t}
+                  </span>
                 ))}
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-200">
-                Location
-              </label>
-              <input
-                name="location"
-                defaultValue={doc.location || ""}
-                placeholder="Google Drive, Dropbox, file cabinet…"
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50"
-                disabled={!canEdit}
-              />
-            </div>
+              </div>
+            ) : (
+              <p className="mt-1 text-sm font-medium text-slate-50">—</p>
+            )}
           </div>
+        </div>
 
-          {/* Label */}
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-200">
-              Document label
-            </label>
-            <input
-              name="label"
-              required
-              defaultValue={doc.label}
-              placeholder="e.g. Chase checking statements 2022–2023"
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50"
-              disabled={!canEdit}
-            />
-          </div>
+        <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Notes</p>
+          {doc.notes ? (
+            <p className="mt-1 whitespace-pre-wrap text-sm text-slate-200">{doc.notes}</p>
+          ) : (
+            <p className="mt-1 text-sm font-medium text-slate-50">—</p>
+          )}
+        </div>
 
-          {/* URL + Tags */}
-          <div className="grid gap-3 md:grid-cols-[1.4fr,1fr]">
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-200">
-                Link / URL (optional)
-              </label>
-              <input
-                name="url"
-                type="url"
-                defaultValue={doc.url || ""}
-                placeholder="https://drive.google.com/..."
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50"
-                disabled={!canEdit}
-              />
-            </div>
+        <div className="flex flex-col gap-3 border-t border-slate-800 pt-3 text-xs sm:flex-row sm:items-center sm:justify-between">
+          <Link
+            href={`/app/estates/${estateId}/documents`}
+            className="text-slate-400 hover:text-slate-200 underline-offset-2 hover:underline"
+          >
+            Back to index
+          </Link>
 
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-200">
-                Tags (comma-separated)
-              </label>
-              <input
-                name="tags"
-                defaultValue={tagsDefault}
-                placeholder="e.g. Chase, statements"
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50"
-                disabled={!canEdit}
-              />
-            </div>
-          </div>
-
-          {/* Notes */}
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-200">
-              Notes
-            </label>
-            <textarea
-              name="notes"
-              rows={3}
-              defaultValue={doc.notes || ""}
-              placeholder="Any additional notes…"
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50"
-              disabled={!canEdit}
-            />
-          </div>
-
-          {/* Sensitive + Actions */}
-          <div className="flex flex-col gap-3 border-t border-slate-800 pt-3 text-xs md:flex-row md:items-center md:justify-between">
-            <label className="flex items-center gap-2 text-slate-300">
-              <input
-                type="checkbox"
-                name="isSensitive"
-                defaultChecked={!!doc.isSensitive}
-                className="h-3 w-3"
-                disabled={!canEdit}
-              />
-              Mark as sensitive
-            </label>
-
-            <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            {(!canEdit || forbidden) && (
               <Link
-                href={`/app/estates/${estateId}/documents`}
-                className="text-slate-400 hover:text-slate-200 underline-offset-2 hover:underline"
+                href={requestAccessHref}
+                className="inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-100 hover:bg-amber-500/20"
               >
-                Back to index
+                Request access
               </Link>
-
-              {canEdit ? (
-                <button
-                  type="submit"
-                  className="rounded-md bg-rose-500 px-3 py-1.5 text-sm font-medium text-slate-950 hover:bg-rose-400"
-                >
-                  Save changes
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  disabled
-                  className="cursor-not-allowed rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-400"
-                  title="You don’t have permission to edit this entry"
-                >
-                  Save changes
-                </button>
-              )}
-            </div>
+            )}
+            {canEdit && (
+              <Link
+                href={`/app/estates/${estateId}/documents/${documentId}/edit`}
+                className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-950 hover:bg-rose-400"
+              >
+                Edit
+              </Link>
+            )}
           </div>
-        </form>
+        </div>
       </section>
 
-      {/* Danger zone: delete */}
-      {canEdit && (
-        <section className="rounded-xl border border-rose-900/60 bg-slate-950/80 p-4 text-xs text-rose-100">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-[11px] font-semibold uppercase tracking-wide text-rose-300">
-                Danger zone
-              </h2>
-              <p className="mt-1 text-[11px] text-rose-200/80">
-                Removing this entry only deletes the index record in LegatePro. It does not
-                delete the underlying file in Google Drive, Dropbox, or your physical files.
-              </p>
-            </div>
-
-            <form action={deleteDocument} className="mt-2 flex flex-col gap-2 md:mt-0 md:items-end">
-              <input type="hidden" name="estateId" value={estateId} />
-              <input type="hidden" name="documentId" value={documentId} />
-
-              <label className="flex items-center gap-2 text-[11px] text-rose-200/80">
-                <input
-                  type="checkbox"
-                  name="confirmDelete"
-                  className="h-3 w-3"
-                  required
-                />
-                I understand this deletes only the index entry.
-              </label>
-
-              <button
-                type="submit"
-                className="inline-flex items-center justify-center rounded-md border border-rose-500/70 bg-rose-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20"
-              >
-                Delete index entry
-              </button>
-            </form>
-          </div>
-        </section>
-      )}
     </div>
   );
 }
