@@ -31,6 +31,10 @@ export default async function NewTaskPage({ params }: PageProps) {
   const role = (access as { role?: string }).role;
   const canEdit = role !== "VIEWER";
 
+  if (!canEdit) {
+    redirect(`/app/estates/${estateId}/tasks?requestAccess=1`);
+  }
+
   // We may not always have the estate record on the access helper result.
   // If you want the actual display name, fetch the Estate model here.
   const estateName = "Estate";
@@ -41,10 +45,6 @@ export default async function NewTaskPage({ params }: PageProps) {
 
   const createTask = async (formData: FormData) => {
     "use server";
-
-    if (!canEdit) {
-      redirect(`/app/estates/${estateIdForAction}/tasks?requestAccess=1`);
-    }
 
     const subject = String(formData.get("subject") ?? "").trim();
     const description =

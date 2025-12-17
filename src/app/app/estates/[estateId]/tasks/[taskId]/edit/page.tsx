@@ -27,7 +27,9 @@ type TaskLean = {
 export default async function EditTaskPage({ params }: PageProps) {
   const session = await auth();
   if (!session?.user?.id) {
-    redirect("/login");
+    redirect(
+      `/login?callbackUrl=/app/estates/${params.estateId}/tasks/${params.taskId}/edit`,
+    );
   }
 
   await connectToDatabase();
@@ -38,7 +40,8 @@ export default async function EditTaskPage({ params }: PageProps) {
   // VIEWERs can view tasks, but cannot edit them.
   const isViewer = access.role === "VIEWER";
   if (isViewer) {
-    redirect(`/app/estates/${params.estateId}/tasks/${params.taskId}?requestAccess=1`);
+    // Send them to the read-only detail page; that page should surface Request Access.
+    redirect(`/app/estates/${params.estateId}/tasks/${params.taskId}`);
   }
 
   // Load task (scoped by estateId; access check above prevents cross-tenant leakage)
@@ -67,7 +70,9 @@ export default async function EditTaskPage({ params }: PageProps) {
 
     const sessionInner = await auth();
     if (!sessionInner?.user?.id) {
-      redirect("/login");
+      redirect(
+        `/login?callbackUrl=/app/estates/${params.estateId}/tasks/${params.taskId}/edit`,
+      );
     }
 
     await connectToDatabase();
@@ -77,7 +82,7 @@ export default async function EditTaskPage({ params }: PageProps) {
 
     const access = await requireEstateAccess({ estateId });
     if (access.role === "VIEWER") {
-      redirect(`/app/estates/${estateId}/tasks/${taskId}?requestAccess=1`);
+      redirect(`/app/estates/${estateId}/tasks/${taskId}`);
     }
 
     const subject = String(formData.get("subject") || "").trim();

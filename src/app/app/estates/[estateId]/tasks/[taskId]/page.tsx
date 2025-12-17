@@ -197,6 +197,7 @@ export default async function TaskDetailPage({ params, searchParams }: PageProps
   const { estateId, taskId } = await params;
   const sp = (await searchParams) ?? {};
   const showRequestAccess = sp.requestAccess === "1";
+  const requestAccessHref = `/app/estates/${estateId}?requestAccess=1`;
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -218,9 +219,25 @@ export default async function TaskDetailPage({ params, searchParams }: PageProps
 
   return (
     <div className="space-y-8">
-      {!canEdit && showRequestAccess ? (
+      {!canEdit ? (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
-          You have <span className="font-semibold">view-only</span> access for this estate. To edit tasks, request elevated access.
+          {showRequestAccess ? (
+            <>
+              You have <span className="font-semibold">view-only</span> access for this estate. To edit tasks, request elevated access.
+            </>
+          ) : (
+            <>
+              You’re viewing this estate with <span className="font-semibold">view-only</span> access. Editing actions are disabled.
+            </>
+          )}
+          <div className="mt-2">
+            <Link
+              href={requestAccessHref}
+              className="inline-flex items-center rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200 shadow-sm shadow-black/40 hover:bg-amber-500/15"
+            >
+              Request access
+            </Link>
+          </div>
         </div>
       ) : null}
 
@@ -263,27 +280,21 @@ export default async function TaskDetailPage({ params, searchParams }: PageProps
             Back to tasks
           </Link>
 
-          <Link
-            href={`/app/estates/${estateId}/tasks/${id}/edit`}
-            className={`inline-flex items-center rounded-lg border px-3 py-1.5 font-medium shadow-sm shadow-black/40 ${
-              canEdit
-                ? "border-slate-800 text-slate-300 hover:border-slate-500/70 hover:text-slate-100"
-                : "cursor-not-allowed border-slate-800/60 text-slate-600"
-            }`}
-            aria-disabled={!canEdit}
-            tabIndex={canEdit ? 0 : -1}
-          >
-            Edit
-          </Link>
-
-          {showRequestAccess ? (
+          {canEdit ? (
             <Link
-              href={`/app/estates/${estateId}?requestAccess=1`}
-              className="inline-flex items-center rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200 shadow-sm shadow-black/40 hover:bg-amber-500/15"
+              href={`/app/estates/${estateId}/tasks/${id}/edit`}
+              className="inline-flex items-center rounded-lg border border-slate-800 px-3 py-1.5 font-medium shadow-sm shadow-black/40 text-slate-300 hover:border-slate-500/70 hover:text-slate-100"
             >
-              Request access
+              Edit
             </Link>
-          ) : null}
+          ) : (
+            <span
+              className="inline-flex items-center rounded-lg border border-slate-800/60 px-3 py-1.5 font-medium text-slate-600 shadow-sm shadow-black/40"
+              title="View-only access"
+            >
+              Edit
+            </span>
+          )}
 
           {/* Status toggle (server action) */}
           <form action={toggleTaskStatusAction} className="inline-flex">
@@ -292,6 +303,8 @@ export default async function TaskDetailPage({ params, searchParams }: PageProps
             <button
               type="submit"
               disabled={!canEdit}
+              aria-disabled={!canEdit}
+              title={!canEdit ? "View-only access" : undefined}
               className={`inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm shadow-black/40 ${
                 !canEdit
                   ? "cursor-not-allowed border border-slate-800/60 bg-slate-950 text-slate-600"
@@ -311,6 +324,8 @@ export default async function TaskDetailPage({ params, searchParams }: PageProps
             <button
               type="submit"
               disabled={!canEdit}
+              aria-disabled={!canEdit}
+              title={!canEdit ? "View-only access" : undefined}
               className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-semibold shadow-sm shadow-black/40 ${
                 canEdit
                   ? "border-rose-600/60 bg-rose-900/20 text-rose-200 hover:border-rose-500 hover:bg-rose-900/40"

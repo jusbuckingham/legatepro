@@ -304,12 +304,21 @@ export default async function EstateNotesPage({
           <span className="text-[11px] text-slate-500">
             Think of this as your private journal for this estate.
           </span>
-          <a
-            href="#add-note"
-            className="inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20"
-          >
-            Add note
-          </a>
+          {writeEnabled ? (
+            <a
+              href="#add-note"
+              className="inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20"
+            >
+              Add note
+            </a>
+          ) : (
+            <Link
+              href={`/app/estates/${estateId}/collaborators`}
+              className="inline-flex items-center justify-center rounded-md border border-amber-500/50 bg-amber-500/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-100 hover:bg-amber-500/25"
+            >
+              Request edit access
+            </Link>
+          )}
         </div>
       </div>
 
@@ -333,7 +342,10 @@ export default async function EstateNotesPage({
       )}
 
       {/* New note form */}
-      <section id="add-note" className="space-y-3 rounded-xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm">
+      <section
+        id="add-note"
+        className="space-y-3 rounded-xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm"
+      >
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-xs font-semibold uppercase tracking-wide text-rose-200">
@@ -345,6 +357,20 @@ export default async function EstateNotesPage({
             </p>
           </div>
         </div>
+
+        {!writeEnabled && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <p className="font-medium">Read-only mode</p>
+              <Link
+                href={`/app/estates/${estateId}/collaborators`}
+                className="inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-100 hover:bg-amber-500/25"
+              >
+                Request edit access
+              </Link>
+            </div>
+          </div>
+        )}
 
         <form action={createNote} className="space-y-3 pt-1">
           <input type="hidden" name="estateId" value={estateId} />
@@ -438,40 +464,253 @@ export default async function EstateNotesPage({
       {/* Notes list */}
       <section className="space-y-2 rounded-xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm">
         {notes.length === 0 ? (
-          <p className="text-sm text-slate-400">
-            You haven&apos;t added any notes yet. Start with what&apos;s on
-            your mind—what feels confusing, what you&apos;re worried about, or
-            what you need to remember for your next call or court date.
-          </p>
-        ) : filteredNotes.length === 0 ? (
-          <p className="text-sm text-slate-400">
-            No notes match this search or filter.
-          </p>
-        ) : (
-          <ul className="space-y-3">
-            {filteredNotes.map((note) => (
-              <li
-                key={note._id}
-                className={`rounded-md border p-3 text-sm ${
-                  note.pinned
-                    ? "border-amber-500/30 bg-amber-500/10"
-                    : "border-slate-800 bg-slate-950/40 hover:bg-slate-900/40"
-                }`}
+          <div className="space-y-3">
+            <p className="text-sm text-slate-400">
+              You haven&apos;t added any notes yet. Start with what&apos;s on your mind—what feels confusing,
+              what you&apos;re worried about, or what you need to remember for your next call or court date.
+            </p>
+
+            <div className="flex flex-wrap gap-2">
+              {writeEnabled ? (
+                <a
+                  href="#add-note"
+                  className="inline-flex items-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/20"
+                >
+                  Add your first note
+                </a>
+              ) : (
+                <Link
+                  href={`/app/estates/${estateId}/collaborators`}
+                  className="inline-flex items-center rounded-md border border-amber-500/50 bg-amber-500/15 px-3 py-1.5 text-xs font-medium text-amber-100 hover:bg-amber-500/25"
+                >
+                  Request edit access
+                </Link>
+              )}
+              <Link
+                href={`/app/estates/${estateId}`}
+                className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/70"
               >
-                <div className="mb-1 flex items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                    {note.pinned && (
-                      <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold uppercase text-amber-200">
-                        Pinned
-                      </span>
-                    )}
-                    {note.createdAt && (
-                      <span className="text-[11px] text-slate-500">
-                        {formatDate(note.createdAt)}
-                      </span>
-                    )}
+                Back to overview
+              </Link>
+            </div>
+          </div>
+        ) : filteredNotes.length === 0 ? (
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-slate-100">No matches</p>
+            <p className="text-sm text-slate-400">No notes match this search or filter.</p>
+            {hasFilters ? (
+              <a
+                href={`/app/estates/${estateId}/notes`}
+                className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/70"
+              >
+                Clear filters
+              </a>
+            ) : null}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {!writeEnabled ? (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="font-medium">Viewer access</p>
+                    <p className="text-[11px] text-amber-200">
+                      You can view notes, but Edit/Pin/Remove are disabled.
+                    </p>
                   </div>
-                  <div className="flex items-center gap-3 text-xs">
+                  <Link
+                    href={`/app/estates/${estateId}/collaborators`}
+                    className="mt-2 inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-100 hover:bg-amber-500/25 md:mt-0"
+                  >
+                    Request edit access
+                  </Link>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Desktop table */}
+            <div className="hidden overflow-hidden rounded-xl border border-slate-800/80 bg-slate-900/40 md:block">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-800/80">
+                    <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                      Note
+                    </th>
+                    <th className="w-48 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                      Created
+                    </th>
+                    <th className="w-56 px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredNotes.map((note) => (
+                    <tr key={note._id} className="border-t border-slate-800/80 hover:bg-slate-900/60">
+                      <td className="px-3 py-2 align-top">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {note.pinned ? (
+                              <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+                                Pinned
+                              </span>
+                            ) : null}
+                            <Link
+                              href={`/app/estates/${estateId}/notes/${note._id}`}
+                              className="text-sm font-medium text-slate-50 hover:text-emerald-300 underline-offset-2 hover:underline"
+                            >
+                              {truncate(note.body, 120)}
+                            </Link>
+                          </div>
+                          <p className="text-xs text-slate-400">{truncate(note.body, 240)}</p>
+                        </div>
+                      </td>
+
+                      <td className="px-3 py-2 align-top text-xs text-slate-400">
+                        {note.createdAt ? formatDate(note.createdAt) : ""}
+                      </td>
+
+                      <td className="px-3 py-2 align-top">
+                        <div className="flex items-center justify-end gap-3 text-xs">
+                          <Link
+                            href={`/app/estates/${estateId}/notes/${note._id}`}
+                            className="text-slate-300 hover:text-emerald-300 hover:underline"
+                          >
+                            View
+                          </Link>
+
+                          {writeEnabled ? (
+                            <Link
+                              href={`/app/estates/${estateId}/notes/${note._id}/edit`}
+                              className="text-slate-300 hover:text-emerald-300 hover:underline"
+                            >
+                              Edit
+                            </Link>
+                          ) : (
+                            <span
+                              className="cursor-not-allowed text-slate-600"
+                              title="Viewer role cannot edit notes"
+                            >
+                              Edit
+                            </span>
+                          )}
+
+                          <form action={togglePinned}>
+                            <input type="hidden" name="estateId" value={estateId} />
+                            <input type="hidden" name="noteId" value={note._id} />
+                            <input
+                              type="hidden"
+                              name="nextPinned"
+                              value={note.pinned ? "false" : "true"}
+                            />
+                            <button
+                              type="submit"
+                              disabled={!writeEnabled}
+                              className={`hover:underline ${
+                                writeEnabled
+                                  ? "text-slate-300 hover:text-emerald-300"
+                                  : "cursor-not-allowed text-slate-600"
+                              }`}
+                              title={
+                                writeEnabled
+                                  ? undefined
+                                  : "Viewer role cannot pin/unpin notes"
+                              }
+                            >
+                              {note.pinned ? "Unpin" : "Pin"}
+                            </button>
+                          </form>
+
+                          <form action={deleteNote}>
+                            <input type="hidden" name="estateId" value={estateId} />
+                            <input type="hidden" name="noteId" value={note._id} />
+                            <button
+                              type="submit"
+                              disabled={!writeEnabled}
+                              className={`hover:underline ${
+                                writeEnabled
+                                  ? "text-rose-400 hover:text-rose-300"
+                                  : "cursor-not-allowed text-slate-600"
+                              }`}
+                              title={
+                                writeEnabled
+                                  ? undefined
+                                  : "Viewer role cannot remove notes"
+                              }
+                            >
+                              Remove
+                            </button>
+                          </form>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile cards */}
+            <div className="space-y-3 md:hidden">
+              {filteredNotes.map((note) => (
+                <div
+                  key={note._id}
+                  className={`rounded-xl border p-3 ${
+                    note.pinned
+                      ? "border-amber-500/30 bg-amber-500/10"
+                      : "border-slate-800 bg-slate-900/40"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {note.pinned ? (
+                          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-200">
+                            Pinned
+                          </span>
+                        ) : null}
+                        {note.createdAt ? (
+                          <span className="text-[11px] text-slate-500">
+                            {formatDate(note.createdAt)}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <Link
+                        href={`/app/estates/${estateId}/notes/${note._id}`}
+                        className="mt-1 block text-sm font-medium text-slate-50 hover:text-emerald-300 underline-offset-2 hover:underline"
+                      >
+                        {truncate(note.body, 140)}
+                      </Link>
+                      <p className="mt-1 whitespace-pre-wrap text-xs text-slate-400">
+                        {truncate(note.body, 320)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+                    <Link
+                      href={`/app/estates/${estateId}/notes/${note._id}`}
+                      className="text-slate-300 hover:text-emerald-300 hover:underline"
+                    >
+                      View
+                    </Link>
+
+                    {writeEnabled ? (
+                      <Link
+                        href={`/app/estates/${estateId}/notes/${note._id}/edit`}
+                        className="text-slate-300 hover:text-emerald-300 hover:underline"
+                      >
+                        Edit
+                      </Link>
+                    ) : (
+                      <span
+                        className="cursor-not-allowed text-slate-600"
+                        title="Viewer role cannot edit notes"
+                      >
+                        Edit
+                      </span>
+                    )}
+
                     <form action={togglePinned}>
                       <input type="hidden" name="estateId" value={estateId} />
                       <input type="hidden" name="noteId" value={note._id} />
@@ -484,13 +723,20 @@ export default async function EstateNotesPage({
                         type="submit"
                         disabled={!writeEnabled}
                         className={`hover:underline ${
-                          writeEnabled ? "text-slate-300 hover:text-emerald-300" : "cursor-not-allowed text-slate-600"
+                          writeEnabled
+                            ? "text-slate-300 hover:text-emerald-300"
+                            : "cursor-not-allowed text-slate-600"
                         }`}
-                        title={writeEnabled ? undefined : "Viewer role cannot modify notes"}
+                        title={
+                          writeEnabled
+                            ? undefined
+                            : "Viewer role cannot pin/unpin notes"
+                        }
                       >
                         {note.pinned ? "Unpin" : "Pin"}
                       </button>
                     </form>
+
                     <form action={deleteNote}>
                       <input type="hidden" name="estateId" value={estateId} />
                       <input type="hidden" name="noteId" value={note._id} />
@@ -498,21 +744,24 @@ export default async function EstateNotesPage({
                         type="submit"
                         disabled={!writeEnabled}
                         className={`hover:underline ${
-                          writeEnabled ? "text-rose-400 hover:text-rose-300" : "cursor-not-allowed text-slate-600"
+                          writeEnabled
+                            ? "text-rose-400 hover:text-rose-300"
+                            : "cursor-not-allowed text-slate-600"
                         }`}
-                        title={writeEnabled ? undefined : "Viewer role cannot delete notes"}
+                        title={
+                          writeEnabled
+                            ? undefined
+                            : "Viewer role cannot remove notes"
+                        }
                       >
-                        Delete
+                        Remove
                       </button>
                     </form>
                   </div>
                 </div>
-                <p className="whitespace-pre-wrap text-sm text-slate-100">
-                  {truncate(note.body, 1000)}
-                </p>
-              </li>
-            ))}
-          </ul>
+              ))}
+            </div>
+          </div>
         )}
       </section>
     </div>
