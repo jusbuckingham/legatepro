@@ -89,6 +89,45 @@ function statusBadgeClass(status: string): string {
   }
 }
 
+function isOverdue(due: Date | null): boolean {
+  if (!due || Number.isNaN(due.getTime())) return false;
+  const now = new Date();
+  return due.getTime() < now.getTime();
+}
+
+function isDueSoon(due: Date | null, days: number): boolean {
+  if (!due || Number.isNaN(due.getTime())) return false;
+  const now = new Date();
+  const ms = days * 24 * 60 * 60 * 1000;
+  return due.getTime() >= now.getTime() && due.getTime() <= now.getTime() + ms;
+}
+
+function dueBadge(
+  due: Date | null,
+  status: string,
+): { label: string; className: string } | null {
+  if (!due || Number.isNaN(due.getTime())) return null;
+
+  // Don’t nag on completed/cancelled
+  if (status === "DONE" || status === "CANCELLED") return null;
+
+  if (isOverdue(due)) {
+    return {
+      label: "Overdue",
+      className: "border-rose-500/40 bg-rose-500/10 text-rose-200",
+    };
+  }
+
+  if (isDueSoon(due, 2)) {
+    return {
+      label: "Due soon",
+      className: "border-amber-500/40 bg-amber-500/10 text-amber-200",
+    };
+  }
+
+  return null;
+}
+
 const ALL_STATUSES: string[] = [
   "ALL",
   "OPEN",
@@ -113,6 +152,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
     rawStatus && ALL_STATUSES.includes(rawStatus.toUpperCase())
       ? rawStatus.toUpperCase()
       : "ALL";
+
+  const hasActiveFilters = statusFilter !== "ALL" || Boolean(rawEstateId);
 
   await connectToDatabase();
 
@@ -354,116 +395,222 @@ export default async function TasksPage({ searchParams }: PageProps) {
           >
             + New task
           </Link>
+
+          {hasActiveFilters ? (
+            <Link
+              href="/app/tasks"
+              className="inline-flex items-center rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+            >
+              Clear filters
+            </Link>
+          ) : null}
         </div>
       </section>
 
-      {/* Tasks table */}
+      {/* Tasks */}
       <section className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/70">
         {tasks.length === 0 ? (
           <div className="px-4 py-10 text-center text-sm text-slate-400">
             <p>No tasks found.</p>
             <p className="mt-1 text-xs text-slate-500">
-              {statusFilter !== "ALL" || rawEstateId
+              {hasActiveFilters
                 ? "Try clearing filters, or create a new task to get started."
                 : "Create a new task to get started."}
             </p>
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              <Link
+                href="/app/tasks/new"
+                className="inline-flex items-center rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500"
+              >
+                + New task
+              </Link>
+              {hasActiveFilters ? (
+                <Link
+                  href="/app/tasks"
+                  className="inline-flex items-center rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+                >
+                  Clear filters
+                </Link>
+              ) : null}
+            </div>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full border-separate border-spacing-0 text-sm">
-              <thead>
-                <tr className="bg-slate-900/80">
-                  <th className="sticky left-0 z-10 border-b border-slate-800 bg-slate-900/90 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Task
-                  </th>
-                  <th className="border-b border-slate-800 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Estate
-                  </th>
-                  <th className="border-b border-slate-800 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Status
-                  </th>
-                  <th className="border-b border-slate-800 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Due
-                  </th>
-                  <th className="border-b border-slate-800 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Priority
-                  </th>
-                  <th className="border-b border-slate-800 px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {tasks.map((task, index) => {
-                  const isOdd = index % 2 === 1;
-                  return (
-                    <tr
-                      key={task.id}
-                      className={isOdd ? "bg-slate-900/40" : "bg-slate-950/40"}
-                    >
-                      <td className="sticky left-0 z-10 max-w-md border-b border-slate-800 bg-inherit px-4 py-2 align-top text-sm text-slate-50">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="font-medium">{task.title}</span>
-                          {task.createdAt && (
-                            <span className="text-[11px] text-slate-500">
-                              Created {formatDate(task.createdAt)}
-                            </span>
+          <>
+            {/* Desktop table */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="min-w-full border-separate border-spacing-0 text-sm">
+                <thead>
+                  <tr className="bg-slate-900/80">
+                    <th className="sticky left-0 z-10 border-b border-slate-800 bg-slate-900/90 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      Task
+                    </th>
+                    <th className="border-b border-slate-800 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      Estate
+                    </th>
+                    <th className="border-b border-slate-800 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      Status
+                    </th>
+                    <th className="border-b border-slate-800 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      Due
+                    </th>
+                    <th className="border-b border-slate-800 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      Priority
+                    </th>
+                    <th className="border-b border-slate-800 px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tasks.map((task, index) => {
+                    const isOdd = index % 2 === 1;
+                    const due = dueBadge(task.dueDate, task.status);
+                    return (
+                      <tr
+                        key={task.id}
+                        className={isOdd ? "bg-slate-900/40" : "bg-slate-950/40"}
+                      >
+                        <td className="sticky left-0 z-10 max-w-md border-b border-slate-800 bg-inherit px-4 py-2 align-top text-sm text-slate-50">
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-medium">{task.title}</span>
+                              {due ? (
+                                <span
+                                  className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${due.className}`}
+                                >
+                                  {due.label}
+                                </span>
+                              ) : null}
+                            </div>
+                            {task.createdAt ? (
+                              <span className="text-[11px] text-slate-500">
+                                Created {formatDate(task.createdAt)}
+                              </span>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="border-b border-slate-800 px-4 py-2 align-top text-sm">
+                          {task.estateId ? (
+                            <Link
+                              href={`/app/estates/${task.estateId}`}
+                              className="text-sky-400 hover:text-sky-300"
+                            >
+                              {task.estateName ?? "Estate"}
+                            </Link>
+                          ) : (
+                            <span className="text-xs text-slate-500">—</span>
                           )}
-                        </div>
-                      </td>
-                      <td className="border-b border-slate-800 px-4 py-2 align-top text-sm">
-                        {task.estateId ? (
+                        </td>
+                        <td className="border-b border-slate-800 px-4 py-2 align-top">
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusBadgeClass(
+                              task.status,
+                            )}`}
+                          >
+                            {humanizeStatus(task.status)}
+                          </span>
+                        </td>
+                        <td className="border-b border-slate-800 px-4 py-2 align-top text-sm text-slate-200">
+                          {task.dueDate ? (
+                            <span>{formatDate(task.dueDate)}</span>
+                          ) : (
+                            <span className="text-xs text-slate-500">No due date</span>
+                          )}
+                        </td>
+                        <td className="border-b border-slate-800 px-4 py-2 align-top text-sm text-slate-200">
+                          {task.priority ? (
+                            <span className="text-xs text-slate-200">{task.priority}</span>
+                          ) : (
+                            <span className="text-xs text-slate-500">—</span>
+                          )}
+                        </td>
+                        <td className="border-b border-slate-800 px-4 py-2 align-top text-right text-xs">
                           <Link
-                            href={`/app/estates/${task.estateId}`}
+                            href={`/app/tasks/${task.id}`}
                             className="text-sky-400 hover:text-sky-300"
                           >
-                            {task.estateName ?? "Estate"}
+                            View
                           </Link>
-                        ) : (
-                          <span className="text-xs text-slate-500">—</span>
-                        )}
-                      </td>
-                      <td className="border-b border-slate-800 px-4 py-2 align-top">
-                        <span
-                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusBadgeClass(
-                            task.status,
-                          )}`}
-                        >
-                          {humanizeStatus(task.status)}
-                        </span>
-                      </td>
-                      <td className="border-b border-slate-800 px-4 py-2 align-top text-sm text-slate-200">
-                        {task.dueDate ? (
-                          <span>{formatDate(task.dueDate)}</span>
-                        ) : (
-                          <span className="text-xs text-slate-500">
-                            No due date
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile cards */}
+            <div className="space-y-2 p-3 md:hidden">
+              {tasks.map((task) => {
+                const due = dueBadge(task.dueDate, task.status);
+                return (
+                  <div
+                    key={task.id}
+                    className="rounded-xl border border-slate-800 bg-slate-900/40 p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Link
+                            href={`/app/tasks/${task.id}`}
+                            className="block max-w-full truncate text-sm font-semibold text-slate-50 hover:text-sky-300 underline-offset-2 hover:underline"
+                          >
+                            {task.title}
+                          </Link>
+                          {due ? (
+                            <span
+                              className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${due.className}`}
+                            >
+                              {due.label}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusBadgeClass(
+                              task.status,
+                            )}`}
+                          >
+                            {humanizeStatus(task.status)}
                           </span>
-                        )}
-                      </td>
-                      <td className="border-b border-slate-800 px-4 py-2 align-top text-sm text-slate-200">
-                        {task.priority ? (
-                          <span className="text-xs text-slate-200">
-                            {task.priority}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-500">—</span>
-                        )}
-                      </td>
-                      <td className="border-b border-slate-800 px-4 py-2 align-top text-right text-xs">
-                        <Link
-                          href={`/app/tasks/${task.id}`}
-                          className="text-sky-400 hover:text-sky-300"
-                        >
-                          View
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+
+                          {task.estateId ? (
+                            <Link
+                              href={`/app/estates/${task.estateId}`}
+                              className="text-xs font-medium text-sky-400 hover:text-sky-300"
+                            >
+                              {task.estateName ?? "Estate"}
+                            </Link>
+                          ) : (
+                            <span className="text-xs text-slate-500">No estate</span>
+                          )}
+                        </div>
+
+                        <div className="mt-2 text-xs text-slate-400">
+                          {task.dueDate ? (
+                            <span>Due {formatDate(task.dueDate)}</span>
+                          ) : (
+                            <span>No due date</span>
+                          )}
+                          {task.priority ? (
+                            <span className="text-slate-500"> · Priority {task.priority}</span>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <Link
+                        href={`/app/tasks/${task.id}`}
+                        className="shrink-0 text-xs font-semibold text-sky-400 hover:text-sky-300"
+                      >
+                        View
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </section>
     </div>

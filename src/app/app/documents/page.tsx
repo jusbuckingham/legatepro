@@ -1,12 +1,18 @@
 // src/app/app/documents/page.tsx
 
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
 
 export const metadata = {
   title: "Documents | LegatePro",
 };
 
-export default function DocumentsPage() {
+export default async function DocumentsPage() {
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect("/login?callbackUrl=/app/documents");
+  }
   return (
     <div className="space-y-6 p-4 md:p-6">
       {/* Header */}
@@ -38,16 +44,16 @@ export default function DocumentsPage() {
         </div>
       </div>
 
-      {/* Not wired yet */}
+      {/* Global documents (coming soon) */}
       <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm">
         <div className="space-y-2">
           <p className="text-sm font-medium text-slate-100">
-            This page is coming soon
+            Global documents are coming soon
           </p>
           <p className="text-sm text-slate-400">
-            Global documents will let you upload, tag, and reuse files across multiple
-            estates. For now, use each estate’s <span className="text-slate-200">Document index</span>
-            to track where documents live and how to find them.
+            Soon you’ll be able to upload, tag, and reuse documents across multiple estates.
+            For now, documents live at the estate level so everything stays legally scoped
+            and easy to audit.
           </p>
         </div>
 
@@ -62,7 +68,7 @@ export default function DocumentsPage() {
             href="/app/estates"
             className="inline-flex items-center rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/20"
           >
-            Open a document index
+            Open an estate’s documents
           </Link>
         </div>
 

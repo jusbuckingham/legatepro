@@ -31,13 +31,7 @@ type ActivityModule = {
 
 /* -------------------- Activity helpers -------------------- */
 
-type ActivityKind =
-  | "TASK"
-  | "EXPENSE"
-  | "INVOICE"
-  | "DOCUMENT"
-  | "NOTE"
-  | "ESTATE";
+type ActivityKind = "TASK" | "EXPENSE" | "INVOICE" | "DOCUMENT" | "NOTE" | "ESTATE";
 
 type ActivityItem = {
   id: string;
@@ -161,6 +155,8 @@ function resolveActivityHref(raw: ActivityRawItem, kind: ActivityKind | undefine
   }
 }
 
+type FeedSectionLabel = "Today" | "This Week" | "Earlier";
+
 function sectionEmptyCopy(label: FeedSectionLabel): {
   title: string;
   body: string;
@@ -204,8 +200,6 @@ function startOfWeekMonday(value: Date) {
   d.setDate(d.getDate() - diff);
   return d.getTime();
 }
-
-type FeedSectionLabel = "Today" | "This Week" | "Earlier";
 
 type FeedSection = {
   key: FeedSectionLabel;
@@ -252,12 +246,31 @@ function toneClasses(tone: ActivityItem["tone"]) {
     case "rose":
       return { dot: "bg-rose-400", badge: "border-rose-500/50 bg-rose-500/10 text-rose-200" };
     case "emerald":
-      return { dot: "bg-emerald-400", badge: "border-emerald-500/50 bg-emerald-500/10 text-emerald-200" };
+      return {
+        dot: "bg-emerald-400",
+        badge: "border-emerald-500/50 bg-emerald-500/10 text-emerald-200",
+      };
     case "amber":
       return { dot: "bg-amber-300", badge: "border-amber-500/50 bg-amber-500/10 text-amber-200" };
     default:
       return { dot: "bg-slate-400", badge: "border-slate-700 bg-slate-950 text-slate-300" };
   }
+}
+
+function ctaClasses(tone: "slate" | "rose" | "emerald") {
+  if (tone === "rose") {
+    return "inline-flex items-center rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/20";
+  }
+  if (tone === "emerald") {
+    return "inline-flex items-center rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-500/20";
+  }
+  return "inline-flex items-center rounded-md border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/70";
+}
+
+function pillClasses(active: boolean) {
+  return active
+    ? "rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-200"
+    : "rounded-full border border-slate-800 bg-slate-900/30 px-2 py-0.5 text-[11px] font-medium text-slate-300 hover:bg-slate-900/60";
 }
 
 /* -------------------- Page -------------------- */
@@ -272,6 +285,9 @@ export default async function AppDashboardPage({ searchParams }: PageProps) {
   if (!session?.user?.id) redirect("/login?callbackUrl=/app");
 
   const ownerId = session.user.id;
+
+  // Onboarding gate: if the user has no estates yet, show a first-estate flow.
+  let estateCount = 0;
 
   // Activity feed UI state (URL-driven)
   let activityKindFilter: ActivityKind | "" = "";
@@ -293,11 +309,7 @@ export default async function AppDashboardPage({ searchParams }: PageProps) {
     activityKindFilter = normalizeKind(kindStr) ?? "";
 
     const pageStr =
-      typeof pageRaw === "string"
-        ? pageRaw
-        : Array.isArray(pageRaw)
-        ? pageRaw[0]
-        : "";
+      typeof pageRaw === "string" ? pageRaw : Array.isArray(pageRaw) ? pageRaw[0] : "";
 
     const parsed = Number.parseInt(pageStr || "1", 10);
     activityPage = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
@@ -310,6 +322,24 @@ export default async function AppDashboardPage({ searchParams }: PageProps) {
 
   try {
     await connectToDatabase();
+
+
+    // Determine whether the user has any estates. Use a defensive model import so we don't
+    // hard-crash if the model export shape changes.
+    try {
+      const estateMod = (await import("@/models/Estate")) as unknown as {
+        default?: { countDocuments?: (q: unknown) => Promise<number> };
+        Estate?: { countDocuments?: (q: unknown) => Promise<number> };
+      };
+
+      const EstateModel = estateMod.default ?? estateMod.Estate;
+      if (EstateModel?.countDocuments) {
+        estateCount = await EstateModel.countDocuments({ ownerId });
+      }
+    } catch {
+      // If the model isn't present yet, treat as 0 estates for onboarding.
+      estateCount = 0;
+    }
 
     /* ---------- normal dashboard queries omitted for brevity ---------- */
     /* ---------- your existing queries remain unchanged ---------- */
@@ -348,6 +378,100 @@ export default async function AppDashboardPage({ searchParams }: PageProps) {
     console.error("Dashboard load failed", err);
   }
 
+  if (estateCount === 0) {
+    return (
+      <div className="space-y-8 p-4 md:p-6 lg:p-8">
+        <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-5">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="space-y-1">
+              <h1 className="text-lg font-semibold text-slate-50">Welcome to LegatePro</h1>
+              <p className="text-sm text-slate-400">
+                Create your first estate — then track tasks, invoices, expenses, notes, documents, and contacts in one place.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href="/app/estates/new"
+                className="inline-flex items-center rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/20"
+              >
+                Create your first estate
+              </Link>
+              <Link
+                href="/app/estates"
+                className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900/40 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-900/70"
+              >
+                View estates
+              </Link>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Step 1</p>
+              <p className="mt-1 text-sm font-semibold text-slate-100">Create an estate</p>
+              <p className="mt-1 text-xs text-slate-400">Add a name and basic details so everything else has a home.</p>
+              <div className="mt-3">
+                <Link href="/app/estates/new" className={ctaClasses("emerald")}>
+                  Create estate
+                </Link>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Step 2</p>
+              <p className="mt-1 text-sm font-semibold text-slate-100">Add contacts</p>
+              <p className="mt-1 text-xs text-slate-400">Attorneys, heirs, vendors, tenants — anyone involved.</p>
+              <div className="mt-3">
+                <Link href="/app/contacts" className={ctaClasses("slate")}>
+                  View contacts
+                </Link>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Step 3</p>
+              <p className="mt-1 text-sm font-semibold text-slate-100">Track work + money</p>
+              <p className="mt-1 text-xs text-slate-400">Tasks, invoices, expenses, notes, and documents — all in one place.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Link href="/app/tasks" className={ctaClasses("rose")}>
+                  Add a task
+                </Link>
+                <Link href="/app/invoices" className={ctaClasses("emerald")}>
+                  Create invoice
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-100">Global activity</h2>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Your activity feed will appear here after you create an estate and start adding items.
+              </p>
+            </div>
+            <Link
+              href="/app/estates/new"
+              className="text-xs font-medium text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+            >
+              Create estate
+            </Link>
+          </div>
+
+          <div className="mt-3 rounded-xl border border-dashed border-slate-800 bg-slate-950/60 p-4">
+            <p className="text-sm font-medium text-slate-100">No activity yet</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Create an estate to begin. Then tasks, invoices, notes, and documents will automatically show up here.
+            </p>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   const globalFeedSections = groupFeedBySmartRange(globalFeed);
 
   /* -------------------- JSX -------------------- */
@@ -361,20 +485,14 @@ export default async function AppDashboardPage({ searchParams }: PageProps) {
         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
           <div>
             <h2 className="text-sm font-semibold text-slate-100">Global activity</h2>
-            <p className="mt-0.5 text-xs text-slate-500">
-              A running log of changes across your estates.
-            </p>
+            <p className="mt-0.5 text-xs text-slate-500">A running log of changes across your estates.</p>
           </div>
           <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
             <span className="text-xs text-slate-500">Filter</span>
 
             <Link
               href="/app?activityPage=1"
-              className={
-                activityKindFilter
-                  ? "rounded-full border border-slate-800 bg-slate-900/30 px-2 py-0.5 text-[11px] font-medium text-slate-300 hover:bg-slate-900/60"
-                  : "rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-200"
-              }
+              className={pillClasses(!activityKindFilter)}
             >
               All
             </Link>
@@ -383,11 +501,7 @@ export default async function AppDashboardPage({ searchParams }: PageProps) {
               <Link
                 key={k}
                 href={`/app?kind=${encodeURIComponent(k)}&activityPage=1`}
-                className={
-                  activityKindFilter === k
-                    ? "rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-200"
-                    : "rounded-full border border-slate-800 bg-slate-900/30 px-2 py-0.5 text-[11px] font-medium text-slate-300 hover:bg-slate-900/60"
-                }
+                className={pillClasses(activityKindFilter === k)}
               >
                 {kindLabel(k) ?? k}
               </Link>
@@ -450,13 +564,7 @@ export default async function AppDashboardPage({ searchParams }: PageProps) {
                                 <Link
                                   key={cta.href}
                                   href={cta.href}
-                                  className={
-                                    cta.tone === "rose"
-                                      ? "inline-flex items-center rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/20"
-                                      : cta.tone === "emerald"
-                                      ? "inline-flex items-center rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-500/20"
-                                      : "inline-flex items-center rounded-md border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/70"
-                                  }
+                                  className={ctaClasses(cta.tone)}
                                 >
                                   {cta.label}
                                 </Link>

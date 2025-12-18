@@ -11,14 +11,51 @@ import { Estate } from "@/models/Estate";
  * model having been registered somewhere else (e.g. in a models import).
  */
 
-function getActivityModel(): Model<unknown> {
-  const existing = mongoose.models.Activity as Model<unknown> | undefined;
-  if (!existing) {
-    throw new Error(
-      "Mongoose model 'Activity' is not registered. Ensure your Activity model file is imported at least once (e.g. in a route/page) so it runs and registers the schema."
-    );
+async function ensureActivityModelRegistered(): Promise<void> {
+  // If already registered, nothing to do.
+  if (mongoose.models.Activity) return;
+
+  // Try to load common model module paths. If a module exists, its top-level
+  // code should register the schema with mongoose.model(...).
+  const candidates = [
+    "@/models/Activity",
+    "@/models/EstateActivity",
+    "@/models/activity",
+    "@/models/activities/Activity",
+    "@/models/activities/EstateActivity",
+  ];
+
+  for (const spec of candidates) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const _mod = await import(spec);
+      if (mongoose.models.Activity) return;
+    } catch {
+      // ignore
+    }
   }
-  return existing;
+}
+
+async function getActivityModel(): Promise<Model<unknown>> {
+  // First attempt: direct registration.
+  if (!mongoose.models.Activity) {
+    await ensureActivityModelRegistered();
+  }
+
+  const direct = mongoose.models.Activity as Model<unknown> | undefined;
+  if (direct) return direct;
+
+  // Fallback: some codebases register the collection under a different model name
+  // (e.g. "EstateActivity"). Try any registered model that includes "activity".
+  const modelNames = Object.keys(mongoose.models);
+  const altName = modelNames.find((n) => n.toLowerCase().includes("activity"));
+  if (altName) {
+    return mongoose.models[altName] as Model<unknown>;
+  }
+
+  throw new Error(
+    `Mongoose model 'Activity' is not registered. Ensure your Activity model file is imported at least once so it runs and registers the schema. Registered models: ${modelNames.join(", ") || "(none)"}`
+  );
 }
 
 export type ActivityTone = "rose" | "emerald" | "amber" | "slate";
@@ -258,7 +295,7 @@ export async function fetchActivityFeed(
         }
       : {};
 
-  const Activity = getActivityModel();
+  const Activity = await getActivityModel();
 
   const docs = await Activity.find(
     {
