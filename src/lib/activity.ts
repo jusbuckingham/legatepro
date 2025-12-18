@@ -5,57 +5,65 @@ import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 
 /**
- * NOTE:
- * We intentionally do NOT import a model file here, because projects differ on the
- * exact filename (Activity.ts vs EstateActivity.ts, etc.). Instead, we rely on the
- * model having been registered somewhere else (e.g. in a models import).
+ * Activity model registration
+ *
+ * We register the Activity schema here to eliminate the runtime "model is not registered" crash.
+ * If a model named `Activity` is already registered elsewhere, we reuse it.
  */
 
-async function ensureActivityModelRegistered(): Promise<void> {
-  // If already registered, nothing to do.
-  if (mongoose.models.Activity) return;
-
-  // Try to load common model module paths. If a module exists, its top-level
-  // code should register the schema with mongoose.model(...).
-  const candidates = [
-    "@/models/Activity",
-    "@/models/EstateActivity",
-    "@/models/activity",
-    "@/models/activities/Activity",
-    "@/models/activities/EstateActivity",
-  ];
-
-  for (const spec of candidates) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const _mod = await import(spec);
-      if (mongoose.models.Activity) return;
-    } catch {
-      // ignore
-    }
-  }
+export interface ActivityDocument {
+  estateId: Types.ObjectId;
+  kind: string;
+  action: string;
+  message: string;
+  entityId?: Types.ObjectId;
+  entityType?: string;
+  href?: string;
+  sublabel?: string;
+  snapshot?: Record<string, unknown> | null;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
-async function getActivityModel(): Promise<Model<unknown>> {
-  // First attempt: direct registration.
-  if (!mongoose.models.Activity) {
-    await ensureActivityModelRegistered();
-  }
+function registerActivityModel(): Model<ActivityDocument> {
+  const existing = mongoose.models.Activity as Model<ActivityDocument> | undefined;
+  if (existing) return existing;
 
-  const direct = mongoose.models.Activity as Model<unknown> | undefined;
-  if (direct) return direct;
+  const ActivitySchema = new mongoose.Schema<ActivityDocument>(
+    {
+      estateId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Estate",
+        required: true,
+        index: true,
+      },
+      kind: { type: String, required: true, default: "OTHER", index: true },
+      action: { type: String, required: true, default: "UNKNOWN" },
+      message: { type: String, required: true, default: "" },
 
-  // Fallback: some codebases register the collection under a different model name
-  // (e.g. "EstateActivity"). Try any registered model that includes "activity".
-  const modelNames = Object.keys(mongoose.models);
-  const altName = modelNames.find((n) => n.toLowerCase().includes("activity"));
-  if (altName) {
-    return mongoose.models[altName] as Model<unknown>;
-  }
+      entityId: { type: mongoose.Schema.Types.ObjectId, required: false, index: true },
+      entityType: { type: String, required: false, index: true },
 
-  throw new Error(
-    `Mongoose model 'Activity' is not registered. Ensure your Activity model file is imported at least once so it runs and registers the schema. Registered models: ${modelNames.join(", ") || "(none)"}`
+      // Optional fields that some pages may add for nicer UI
+      href: { type: String, required: false },
+      sublabel: { type: String, required: false },
+
+      snapshot: { type: mongoose.Schema.Types.Mixed, required: false, default: null },
+    },
+    {
+      timestamps: true,
+      minimize: true,
+    }
   );
+
+  ActivitySchema.index({ estateId: 1, createdAt: -1, _id: -1 });
+
+  return mongoose.model<ActivityDocument>("Activity", ActivitySchema);
+}
+
+async function getActivityModel(): Promise<Model<ActivityDocument>> {
+  // Ensure a stable model exists (registered here or elsewhere).
+  return registerActivityModel();
 }
 
 export type ActivityTone = "rose" | "emerald" | "amber" | "slate";
@@ -137,6 +145,8 @@ interface ActivityLean {
   message: string;
   entityId?: Types.ObjectId | string;
   entityType?: string;
+  href?: string;
+  sublabel?: string;
   createdAt: Date;
   snapshot?: Record<string, unknown> | null;
 }
@@ -194,6 +204,10 @@ function buildHref(estateId: string, doc: ActivityLean): string | undefined {
   const entityId = asIdString(doc.entityId);
   const kind = normalizeKind(doc.kind, doc.action, doc.entityType);
 
+  if (typeof doc.href === "string" && doc.href.trim()) {
+    return doc.href;
+  }
+
   // Adjust these to match your app routes.
   if (kind === "DOCUMENT" && entityId) {
     return `/app/estates/${estateId}/documents/${entityId}`;
@@ -232,7 +246,7 @@ function toActivityItem(doc: ActivityLean): ActivityItem {
     id: doc._id.toString(),
     at: doc.createdAt,
     label,
-    sublabel: doc.entityType ? doc.entityType : undefined,
+    sublabel: doc.sublabel ? doc.sublabel : doc.entityType ? doc.entityType : undefined,
     href: buildHref(estateIdStr, doc),
     tone: mapTone(doc.kind, doc.action, doc.entityType),
     badge,
