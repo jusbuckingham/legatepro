@@ -285,15 +285,23 @@ export default async function TasksPage({ searchParams }: PageProps) {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
-      <header className="space-y-1">
-        <p className="text-xs uppercase tracking-wide text-slate-500">Tasks</p>
-        <h1 className="text-2xl font-semibold text-slate-100">
-          All estate tasks
-        </h1>
-        <p className="text-sm text-slate-400">
-          Unified task list across all estates, with quick filters for status and
-          per-estate work.
-        </p>
+      <header className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-500">Tasks</p>
+            <h1 className="mt-1 text-2xl font-semibold text-slate-100">All estate tasks</h1>
+            <p className="mt-1 text-sm text-slate-400">
+              Unified task list across all estates, with quick filters for status and per-estate work.
+            </p>
+          </div>
+
+          <Link
+            href="/app"
+            className="inline-flex items-center rounded-md border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-900/60"
+          >
+            ← Back to dashboard
+          </Link>
+        </div>
       </header>
 
       {/* Summary row */}
@@ -379,10 +387,6 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 name="estateId"
                 defaultValue={rawEstateId ?? ""}
                 className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200"
-                onChange={(e) => {
-                  // Progressive enhancement: submit on change
-                  (e.currentTarget.form as HTMLFormElement | null)?.requestSubmit();
-                }}
               >
                 <option value="">All estates</option>
                 {estateOptions.map((opt) => (
@@ -391,6 +395,12 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   </option>
                 ))}
               </select>
+              <button
+                type="submit"
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+              >
+                Apply
+              </button>
             </form>
           ) : null}
         </div>
@@ -407,7 +417,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
               href="/app/tasks"
               className="inline-flex items-center rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
             >
-              Clear filters
+              Reset
             </Link>
           ) : null}
         </div>
@@ -420,7 +430,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
             <p>No tasks found.</p>
             <p className="mt-1 text-xs text-slate-500">
               {hasActiveFilters
-                ? "Try clearing filters, or create a new task to get started."
+                ? "Try resetting filters, or create a new task to get started."
                 : "Create a new task to get started."}
             </p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
@@ -435,7 +445,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   href="/app/tasks"
                   className="inline-flex items-center rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
                 >
-                  Clear filters
+                  Reset
                 </Link>
               ) : null}
             </div>

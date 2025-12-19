@@ -1,5 +1,7 @@
 // src/app/app/estates/page.tsx
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 
@@ -18,14 +20,18 @@ type EstateListItem = {
 async function getEstates(): Promise<EstateListItem[]> {
   await connectToDatabase();
 
-  // For now, return all estates sorted by newest first.
-  // Later we can scope this to the signed-in user or workspace.
+  // Return estates sorted by newest first.
+  // NOTE: If/when your Estate schema is scoped to the signed-in user (e.g. `ownerId`),
+  // switch this to `Estate.find({ ownerId: session.user.id })`.
   const estates = await Estate.find().sort({ createdAt: -1 }).lean();
 
   return estates as EstateListItem[];
 }
 
 export default async function EstatesPage() {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login?callbackUrl=/app/estates");
+
   const estates = await getEstates();
 
   const hasEstates = Array.isArray(estates) && estates.length > 0;
@@ -36,8 +42,8 @@ export default async function EstatesPage() {
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Estates</h2>
           <p className="text-sm text-slate-400">
-            Matter-centric view of everything tied to each probate estate:
-            properties, tasks, expenses, rent, contacts, and documents.
+            Matter-centric view of everything tied to each probate estate: properties, tasks, notes,
+            invoices, rent, contacts, and documents.
           </p>
         </div>
         <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end">
@@ -45,7 +51,7 @@ export default async function EstatesPage() {
             href="/app"
             className="inline-flex items-center justify-center rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-1.5 text-sm font-medium text-slate-200 hover:bg-slate-900/40"
           >
-            How it works
+            Back to dashboard
           </Link>
           <Link
             href="/app/estates/new"
@@ -62,9 +68,9 @@ export default async function EstatesPage() {
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-800 bg-slate-900/40">
               <span className="text-lg">📁</span>
             </div>
-            <p className="mt-3 text-sm font-semibold text-slate-100">Create your first estate</p>
+            <p className="mt-3 text-sm font-semibold text-slate-100">No estates yet</p>
             <p className="mt-1 text-xs text-slate-400">
-              Estates are the top-level container for everything: tasks, notes, documents, invoices, rent, and contacts.
+              Start by creating an estate. Then track tasks, notes, documents, invoices, rent, and contacts in one place.
             </p>
 
             <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
@@ -78,7 +84,7 @@ export default async function EstatesPage() {
                 href="/app"
                 className="inline-flex items-center justify-center rounded-lg border border-slate-800 bg-slate-950/40 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-900/40"
               >
-                View dashboard
+                Go to dashboard
               </Link>
             </div>
 
@@ -100,6 +106,17 @@ export default async function EstatesPage() {
         </div>
       ) : (
         <div className="space-y-3">
+          <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
+            <p className="text-sm text-slate-200">
+              <span className="font-semibold text-slate-100">{estates.length}</span> estate{estates.length === 1 ? "" : "s"}
+            </p>
+            <Link
+              href="/app/estates/new"
+              className="inline-flex items-center justify-center rounded-lg border border-emerald-500 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20"
+            >
+              + New estate
+            </Link>
+          </div>
           {/* Mobile cards */}
           <div className="grid gap-3 sm:hidden">
             {estates.map((estate: EstateListItem) => {

@@ -112,6 +112,49 @@ export default async function SettingsPage() {
         <WorkspaceSettingsForm initial={initial} />
       </section>
 
+      <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-300">
+          Account
+        </h2>
+        <p className="mt-1 text-xs text-slate-500">
+          Your personal account details.
+        </p>
+        <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2">
+          <div className="text-xs text-slate-400">Email</div>
+          <div className="text-sm text-slate-100">{session.user.email ?? "—"}</div>
+          <div className="text-xs text-slate-400">User ID</div>
+          <div className="text-sm text-slate-100">{session.user.id}</div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link
+            href="/api/auth/signout?callbackUrl=/login"
+            className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/60"
+          >
+            Sign out
+          </Link>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-300">
+          Security
+        </h2>
+        <p className="mt-1 text-xs text-slate-500">
+          Manage sign-in and security-related actions.
+        </p>
+        <div className="mt-4">
+          <Link
+            href="/api/auth/signin"
+            className="inline-block rounded-md border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm font-medium text-rose-100 hover:bg-rose-500/20"
+          >
+            Manage sign-in
+          </Link>
+          <p className="mt-2 text-xs text-slate-400">
+            Use this to review available sign-in options. Password reset behavior depends on your auth provider.
+          </p>
+        </div>
+      </section>
+
       {/* Footer note */}
       <p className="text-[11px] text-slate-500">
         Need to manage your subscription or payment method? Head to {" "}
