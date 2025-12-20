@@ -139,6 +139,23 @@ function truncate(text: string, max = 200): string {
   return text.slice(0, max).trimEnd() + "…";
 }
 
+function formatBytes(bytes: number | null | undefined): string {
+  if (bytes == null || Number.isNaN(bytes) || bytes <= 0) return "—";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  let n = bytes;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i += 1;
+  }
+  const precision = i === 0 ? 0 : i === 1 ? 0 : 1;
+  return `${n.toFixed(precision)} ${units[i]}`;
+}
+
+function cn(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
+
 export default async function EstateOverviewPage({ params }: PageProps) {
   const { estateId } = await params;
 
@@ -516,6 +533,49 @@ export default async function EstateOverviewPage({ params }: PageProps) {
           </div>
         </div>
       </header>
+      {(overdueCount > 0 || overdueTasksCount > 0) && (
+        <section className="rounded-md border border-amber-200 bg-amber-50 p-4 shadow-sm">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-amber-900">
+                Attention needed
+              </div>
+              <div className="mt-1 text-xs text-amber-900/80">
+                {overdueCount > 0 && (
+                  <span className="mr-3">
+                    <span className="font-semibold">{overdueCount}</span> overdue invoice
+                    {overdueCount === 1 ? "" : "s"}
+                  </span>
+                )}
+                {overdueTasksCount > 0 && (
+                  <span>
+                    <span className="font-semibold">{overdueTasksCount}</span> overdue task
+                    {overdueTasksCount === 1 ? "" : "s"}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {overdueCount > 0 && (
+                <Link
+                  href={`/app/estates/${estateId}/invoices`}
+                  className="rounded-md border border-amber-300 bg-white px-3 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100"
+                >
+                  Review invoices
+                </Link>
+              )}
+              {overdueTasksCount > 0 && (
+                <Link
+                  href={`/app/estates/${estateId}/tasks`}
+                  className="rounded-md border border-amber-300 bg-white px-3 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100"
+                >
+                  Review tasks
+                </Link>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* At-a-glance */}
       <section className="grid gap-4 md:grid-cols-4">
@@ -612,19 +672,29 @@ export default async function EstateOverviewPage({ params }: PageProps) {
 
         <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">
-            Timeline
+            Invoices
           </p>
-          <p className="mt-1 text-xl font-semibold text-gray-900">Activity</p>
+          <p className="mt-1 text-xl font-semibold text-gray-900">
+            {invoices.length}
+          </p>
           <p className="mt-1 text-xs text-gray-500">
-            Status changes, invoices, tasks, notes, collaborators.
+            {overdueCount > 0 ? `${overdueCount} overdue` : "No overdue invoices"}
           </p>
-          <div className="mt-3">
+          <div className="mt-3 flex flex-wrap gap-2">
             <Link
-              href={`/app/estates/${estateId}/timeline`}
+              href={`/app/estates/${estateId}/invoices`}
               className="text-xs font-medium text-blue-600 hover:underline"
             >
-              Open timeline
+              View all
             </Link>
+            {canEdit && (
+              <Link
+                href={`/app/estates/${estateId}/invoices/new`}
+                className="text-xs font-medium text-gray-700 hover:underline"
+              >
+                New
+              </Link>
+            )}
           </div>
         </div>
       </section>
@@ -795,6 +865,10 @@ export default async function EstateOverviewPage({ params }: PageProps) {
                   const statusUpper = (inv.status ?? "DRAFT").toUpperCase();
                   const statusLabel =
                     STATUS_LABELS[statusUpper] ?? inv.status ?? "Unknown";
+                  const isOverdue =
+                    statusUpper !== "PAID" &&
+                    Boolean(inv.dueDate) &&
+                    new Date(inv.dueDate as string).getTime() < new Date().getTime();
 
                   return (
                     <tr key={inv._id} className="border-b last:border-0">
@@ -816,8 +890,15 @@ export default async function EstateOverviewPage({ params }: PageProps) {
                         {formatDate(inv.dueDate ?? null)}
                       </td>
                       <td className="px-3 py-2 align-top">
-                        <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium capitalize">
-                          {statusLabel}
+                        <span
+                          className={cn(
+                            "rounded-full px-2.5 py-1 text-xs font-medium",
+                            statusUpper === "PAID" && "bg-green-100 text-green-800",
+                            isOverdue && "bg-red-100 text-red-800",
+                            statusUpper !== "PAID" && !isOverdue && "bg-gray-100 text-gray-800",
+                          )}
+                        >
+                          {isOverdue ? "Overdue" : statusLabel}
                         </span>
                       </td>
                       <td className="px-3 py-2 align-top">
@@ -901,9 +982,12 @@ export default async function EstateOverviewPage({ params }: PageProps) {
                 {recentTasks.map((task) => (
                   <tr key={task._id} className="border-b last:border-0">
                     <td className="px-3 py-2 align-top">
-                      <span className="font-medium text-gray-900">
+                      <Link
+                        href={`/app/estates/${estateId}/tasks/${task._id}`}
+                        className="font-medium text-blue-600 hover:underline"
+                      >
                         {task.title}
-                      </span>
+                      </Link>
                     </td>
                     <td className="px-3 py-2 align-top">
                       <span
@@ -1042,6 +1126,7 @@ export default async function EstateOverviewPage({ params }: PageProps) {
                   <th className="px-3 py-2">Subject</th>
                   <th className="px-3 py-2">Added</th>
                   <th className="px-3 py-2">Location</th>
+                  <th className="px-3 py-2">File</th>
                   <th className="px-3 py-2 text-right">Link</th>
                 </tr>
               </thead>
@@ -1049,7 +1134,12 @@ export default async function EstateOverviewPage({ params }: PageProps) {
                 {recentDocuments.map((doc) => (
                   <tr key={doc._id} className="border-b last:border-0">
                     <td className="px-3 py-2 align-top">
-                      <span className="font-medium">{doc.label}</span>
+                      <Link
+                        href={`/app/estates/${estateId}/documents/${doc._id}`}
+                        className="font-medium text-blue-600 hover:underline"
+                      >
+                        {doc.label}
+                      </Link>
                     </td>
                     <td className="px-3 py-2 align-top">
                       {doc.subject
@@ -1061,6 +1151,14 @@ export default async function EstateOverviewPage({ params }: PageProps) {
                     </td>
                     <td className="px-3 py-2 align-top">
                       {doc.location ?? "—"}
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <div className="text-xs text-gray-700">
+                        {doc.fileName ?? doc.fileType ?? "—"}
+                      </div>
+                      <div className="text-[11px] text-gray-500">
+                        {formatBytes(doc.fileSizeBytes ?? null)}
+                      </div>
                     </td>
                     <td className="px-3 py-2 align-top text-right">
                       {doc.url ? (

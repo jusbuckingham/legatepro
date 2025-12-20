@@ -112,11 +112,21 @@ export default async function NoteDetailPage({ params }: PageProps) {
   const updatedAt = formatDateTime(note.updatedAt);
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="mx-auto w-full max-w-5xl space-y-6 p-6">
       <nav className="text-xs text-slate-500">
-        <span className="text-slate-500">Estates</span>
+        <Link
+          href="/app/estates"
+          className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+        >
+          Estates
+        </Link>
         <span className="mx-1 text-slate-600">/</span>
-        <span className="text-slate-300">Current estate</span>
+        <Link
+          href={`/app/estates/${estateId}`}
+          className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+        >
+          Estate
+        </Link>
         <span className="mx-1 text-slate-600">/</span>
         <Link
           href={`/app/estates/${estateId}/notes`}
@@ -185,9 +195,17 @@ export default async function NoteDetailPage({ params }: PageProps) {
             {note.body}
           </pre>
         ) : (
-          <p className="text-sm text-slate-400">
-            This note doesn’t have any content yet.
-          </p>
+          <div className="space-y-3">
+            <p className="text-sm text-slate-400">This note doesn’t have any content yet.</p>
+            <div>
+              <Link
+                href={`/app/estates/${estateId}/notes/${noteId}/edit`}
+                className="inline-flex items-center rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-50 shadow-sm hover:bg-slate-700"
+              >
+                Add content
+              </Link>
+            </div>
+          </div>
         )}
       </article>
     </div>

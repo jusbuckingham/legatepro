@@ -37,7 +37,7 @@ export default async function EstatesPage() {
   const hasEstates = Array.isArray(estates) && estates.length > 0;
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8">
       <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Estates</h2>
@@ -49,13 +49,13 @@ export default async function EstatesPage() {
         <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end">
           <Link
             href="/app"
-            className="inline-flex items-center justify-center rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-1.5 text-sm font-medium text-slate-200 hover:bg-slate-900/40"
+            className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-950/40 px-4 text-sm font-medium text-slate-200 shadow-sm hover:bg-slate-900/40"
           >
             Back to dashboard
           </Link>
           <Link
             href="/app/estates/new"
-            className="inline-flex items-center justify-center rounded-lg border border-emerald-500 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-200 hover:bg-emerald-500/20"
+            className="inline-flex h-10 items-center justify-center rounded-xl border border-emerald-500 bg-emerald-500/10 px-4 text-sm font-medium text-emerald-200 shadow-sm hover:bg-emerald-500/20"
           >
             + Create estate
           </Link>
@@ -63,9 +63,9 @@ export default async function EstatesPage() {
       </header>
 
       {!hasEstates ? (
-        <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 p-6 sm:p-8">
+        <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 p-6 shadow-sm sm:p-8">
           <div className="mx-auto max-w-2xl text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-800 bg-slate-900/40">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-slate-800 bg-slate-900/40">
               <span className="text-lg">📁</span>
             </div>
             <p className="mt-3 text-sm font-semibold text-slate-100">No estates yet</p>
@@ -76,13 +76,13 @@ export default async function EstatesPage() {
             <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
               <Link
                 href="/app/estates/new"
-                className="inline-flex items-center justify-center rounded-lg border border-emerald-500 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-200 hover:bg-emerald-500/20"
+                className="inline-flex h-10 items-center justify-center rounded-xl border border-emerald-500 bg-emerald-500/10 px-4 text-sm font-medium text-emerald-200 shadow-sm hover:bg-emerald-500/20"
               >
                 + Create your first estate
               </Link>
               <Link
                 href="/app"
-                className="inline-flex items-center justify-center rounded-lg border border-slate-800 bg-slate-950/40 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-900/40"
+                className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-950/40 px-4 text-sm font-medium text-slate-200 shadow-sm hover:bg-slate-900/40"
               >
                 Go to dashboard
               </Link>
@@ -106,13 +106,13 @@ export default async function EstatesPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
+          <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 shadow-sm">
             <p className="text-sm text-slate-200">
               <span className="font-semibold text-slate-100">{estates.length}</span> estate{estates.length === 1 ? "" : "s"}
             </p>
             <Link
               href="/app/estates/new"
-              className="inline-flex items-center justify-center rounded-lg border border-emerald-500 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20"
+              className="inline-flex h-9 items-center justify-center rounded-xl border border-emerald-500 bg-emerald-500/10 px-3 text-xs font-medium text-emerald-200 shadow-sm hover:bg-emerald-500/20"
             >
               + New estate
             </Link>
@@ -142,7 +142,7 @@ export default async function EstatesPage() {
               }
 
               return (
-                <div key={id} className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                <div key={id} className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 shadow-sm transition hover:bg-slate-900/30">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-slate-100">{name}</p>
@@ -165,19 +165,19 @@ export default async function EstatesPage() {
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Link
                       href={`/app/estates/${id}`}
-                      className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-900/70"
+                      className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-900/70"
                     >
                       Open
                     </Link>
                     <Link
                       href={`/app/estates/${id}/tasks`}
-                      className="inline-flex items-center rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/40"
+                      className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/40"
                     >
                       Tasks
                     </Link>
                     <Link
                       href={`/app/estates/${id}/documents`}
-                      className="inline-flex items-center rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/40"
+                      className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/40"
                     >
                       Documents
                     </Link>
@@ -188,7 +188,7 @@ export default async function EstatesPage() {
           </div>
 
           {/* Desktop table */}
-          <div className="hidden overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60 sm:block">
+          <div className="hidden overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 shadow-sm sm:block">
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-slate-800 bg-slate-900/80 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
@@ -243,19 +243,19 @@ export default async function EstatesPage() {
                         <div className="inline-flex items-center gap-2">
                           <Link
                             href={`/app/estates/${id}`}
-                            className="inline-flex items-center rounded-full border border-slate-700 px-3 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-900"
+                            className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/40 px-3 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-900"
                           >
                             Open
                           </Link>
                           <Link
                             href={`/app/estates/${id}/tasks`}
-                            className="inline-flex items-center rounded-full border border-slate-800 px-3 py-1 text-[11px] font-medium text-slate-200 hover:bg-slate-900"
+                            className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950/40 px-3 py-1 text-[11px] font-medium text-slate-200 hover:bg-slate-900"
                           >
                             Tasks
                           </Link>
                           <Link
                             href={`/app/estates/${id}/documents`}
-                            className="inline-flex items-center rounded-full border border-slate-800 px-3 py-1 text-[11px] font-medium text-slate-200 hover:bg-slate-900"
+                            className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950/40 px-3 py-1 text-[11px] font-medium text-slate-200 hover:bg-slate-900"
                           >
                             Documents
                           </Link>

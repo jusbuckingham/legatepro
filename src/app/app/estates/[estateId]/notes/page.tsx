@@ -305,12 +305,12 @@ export default async function EstateNotesPage({
             Think of this as your private journal for this estate.
           </span>
           {writeEnabled ? (
-            <a
+            <Link
               href="#add-note"
               className="inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20"
             >
               Add note
-            </a>
+            </Link>
           ) : (
             <Link
               href={`/app/estates/${estateId}/collaborators`}
@@ -472,12 +472,12 @@ export default async function EstateNotesPage({
 
             <div className="flex flex-wrap gap-2">
               {writeEnabled ? (
-                <a
+                <Link
                   href="#add-note"
                   className="inline-flex items-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/20"
                 >
                   Add your first note
-                </a>
+                </Link>
               ) : (
                 <Link
                   href={`/app/estates/${estateId}/collaborators`}

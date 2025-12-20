@@ -772,7 +772,8 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   const nextBefore = hasMore ? pageEvents[pageEvents.length - 1]?.timestamp : null;
 
   const filteredCount = pageEvents.length;
-  const modeFilter: "ALL" | "activity" | "event" = typeFilter === "activity" || typeFilter === "event" ? typeFilter : "ALL";
+  const modeFilter: "ALL" | "activity" | "event" =
+    typeFilter === "activity" || typeFilter === "event" ? typeFilter : "ALL";
 
   const today = new Date();
   const todayKey = toDateKey(today);
@@ -805,7 +806,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="mx-auto max-w-5xl space-y-6 p-6">
       <div className="flex flex-col gap-3 border-b border-gray-100 pb-4 md:flex-row md:items-start md:justify-between">
         <div className="space-y-2">
           <nav className="text-xs text-gray-500">
@@ -828,15 +829,44 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
           </div>
         </div>
 
-        <div className="mt-1 flex flex-col items-end gap-1 text-xs text-gray-500">
-          <span>
-            <span className="font-medium">{hasFilters ? filteredCount : events.length}</span> event
-            {(hasFilters ? filteredCount : events.length) === 1 ? "" : "s"}
-            {hasFilters && !isValidBefore && (
-              <span className="ml-1 text-[11px] text-gray-400">(of {events.length})</span>
-            )}
-          </span>
-          <span className="text-[11px] text-gray-400">Includes invoices, documents, tasks, notes, and activity logs.</span>
+        <div className="mt-1 flex flex-col items-start gap-2 text-xs text-gray-500 md:items-end">
+          <div className="flex flex-wrap items-center gap-2 md:justify-end">
+            <Link
+              href={`/app/estates/${estateId}/tasks/new`}
+              className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              + New task
+            </Link>
+            <Link
+              href={`/app/estates/${estateId}/invoices/new`}
+              className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              + New invoice
+            </Link>
+            <Link
+              href={`/app/estates/${estateId}/documents`}
+              className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              Documents
+            </Link>
+            <Link
+              href={`/app/estates/${estateId}/notes`}
+              className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              Notes
+            </Link>
+          </div>
+
+          <div className="flex flex-col items-start gap-1 md:items-end">
+            <span>
+              <span className="font-medium">{hasFilters ? filteredCount : events.length}</span> event
+              {(hasFilters ? filteredCount : events.length) === 1 ? "" : "s"}
+              {hasFilters && !isValidBefore && (
+                <span className="ml-1 text-[11px] text-gray-400">(of {events.length})</span>
+              )}
+            </span>
+            <span className="text-[11px] text-gray-400">Includes invoices, documents, tasks, notes, and activity logs.</span>
+          </div>
         </div>
       </div>
 
@@ -848,6 +878,8 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
             { key: "task", label: "Tasks" },
             { key: "document", label: "Documents" },
             { key: "note", label: "Notes" },
+            { key: "activity", label: "Activity" },
+            { key: "event", label: "Legacy events" },
           ].map((opt) => {
             const isActive = typeFilter === opt.key;
             return (
@@ -928,9 +960,12 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
             </select>
 
             {hasFilters && (
-              <a href={`/app/estates/${estateId}/timeline`} className="whitespace-nowrap text-[11px] text-gray-500 hover:text-gray-800">
+              <Link
+                href={`/app/estates/${estateId}/timeline`}
+                className="whitespace-nowrap text-[11px] text-gray-500 hover:text-gray-800"
+              >
                 Clear filters
-              </a>
+              </Link>
             )}
           </div>
         </form>

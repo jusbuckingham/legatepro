@@ -1,5 +1,5 @@
 // src/app/app/dashboard/page.tsx
-import React from "react";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
@@ -97,9 +97,7 @@ export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.id) {
-    // In practice you probably redirect to sign-in,
-    // but for safety we just render nothing.
-    return null;
+    redirect("/login");
   }
 
   await connectToDatabase();
@@ -497,7 +495,7 @@ export default async function DashboardPage() {
   );
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 space-y-8">
+    <div className="max-w-6xl mx-auto px-4 py-6 space-y-8">
       <header className="space-y-2">
         <p className="text-xs uppercase tracking-wide text-slate-500">
           Workspace
@@ -511,9 +509,37 @@ export default async function DashboardPage() {
         </p>
       </header>
 
+      <section className="flex flex-wrap gap-2">
+        <Link
+          href="/app/invoices/new"
+          className="inline-flex h-10 items-center rounded-md border border-slate-800 bg-slate-900/60 px-3 text-xs font-medium text-slate-200 shadow-sm transition hover:bg-slate-900"
+        >
+          New invoice
+        </Link>
+        <Link
+          href="/app/estates/new"
+          className="inline-flex h-10 items-center rounded-md border border-slate-800 bg-slate-900/60 px-3 text-xs font-medium text-slate-200 shadow-sm transition hover:bg-slate-900"
+        >
+          New estate
+        </Link>
+        <Link
+          href="/app/time"
+          className="inline-flex h-10 items-center rounded-md border border-slate-800 bg-slate-900/60 px-3 text-xs font-medium text-slate-200 shadow-sm transition hover:bg-slate-900"
+        >
+          Track time
+        </Link>
+        <Link
+          href="/app/tasks"
+          className="inline-flex h-10 items-center rounded-md border border-slate-800 bg-slate-900/60 px-3 text-xs font-medium text-slate-200 shadow-sm transition hover:bg-slate-900"
+        >
+          View tasks
+        </Link>
+      </section>
+
+
       {/* Top-level metrics */}
       <section className="grid gap-4 md:grid-cols-4">
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-1">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-4 space-y-1">
           <p className="text-xs font-medium text-slate-400">
             Total invoiced
           </p>
@@ -525,7 +551,7 @@ export default async function DashboardPage() {
           </p>
         </div>
 
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-1">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-4 space-y-1">
           <p className="text-xs font-medium text-emerald-400">
             Collected
           </p>
@@ -537,7 +563,7 @@ export default async function DashboardPage() {
           </p>
         </div>
 
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-1">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-4 space-y-1">
           <p className="text-xs font-medium text-amber-400">
             Outstanding
           </p>
@@ -549,7 +575,7 @@ export default async function DashboardPage() {
           </p>
         </div>
 
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-1">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-4 space-y-1">
           <p className="text-xs font-medium text-slate-400">
             Voided / written off
           </p>
@@ -589,7 +615,7 @@ export default async function DashboardPage() {
             collected is already marked as paid or void.
           </p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900/60">
+          <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm">
             <table className="min-w-full text-xs">
               <thead className="bg-slate-900/80">
                 <tr className="text-left text-slate-400">
@@ -670,7 +696,7 @@ export default async function DashboardPage() {
             No invoice activity yet in the last six months.
           </p>
         ) : (
-          <div className="space-y-2 rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+          <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-4">
             {monthBuckets.map((bucket) => {
               const widthPercent =
                 (bucket.invoicedCents / safeMaxInvoicedForTrend) * 100;
@@ -720,7 +746,7 @@ export default async function DashboardPage() {
 
       {/* Unbilled time card + recent invoices */}
       <section className="grid gap-4 md:grid-cols-[minmax(0,2fr),minmax(0,3fr)] items-start">
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-2">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-4 space-y-2">
           <p className="text-xs font-medium text-sky-400">
             Unbilled time value
           </p>
@@ -746,7 +772,7 @@ export default async function DashboardPage() {
         </div>
 
         {/* Recent invoices */}
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-4 space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium text-slate-400">
               Recent invoices
@@ -856,7 +882,7 @@ export default async function DashboardPage() {
             invoices or time entries to see a breakdown here.
           </p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900/60">
+          <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm">
             <table className="min-w-full text-xs">
               <thead className="bg-slate-900/80">
                 <tr className="text-left text-slate-400">
