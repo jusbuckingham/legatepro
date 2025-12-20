@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { auth } from "@/lib/auth";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
+
+export const dynamic = "force-dynamic";
 
 type InvoiceStatus = "DRAFT" | "SENT" | "PAID" | "VOID";
 
@@ -26,11 +28,25 @@ type UpdateInvoiceBody = {
   lineItems?: InvoiceLineItemInput[];
 };
 
+function parseDate(value: unknown): Date | null {
+  if (value == null) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === "string" || typeof value === "number") {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
+function isInvoiceStatus(value: unknown): value is InvoiceStatus {
+  return value === "DRAFT" || value === "SENT" || value === "PAID" || value === "VOID";
+}
+
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ estateId: string; invoiceId: string }> }
 ) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
 
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -38,11 +54,11 @@ export async function GET(
 
   const { estateId, invoiceId } = await params;
   await connectToDatabase();
+  await requireEstateAccess({ estateId });
 
   const invoice = await Invoice.findOne({
     _id: invoiceId,
     estateId,
-    ownerId: session.user.id,
   }).lean();
 
   if (!invoice) {
@@ -56,7 +72,7 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ estateId: string; invoiceId: string }> }
 ) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
 
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -64,6 +80,7 @@ export async function PUT(
 
   const { estateId, invoiceId } = await params;
   await connectToDatabase();
+  await requireEstateEditAccess({ estateId });
 
   let body: UpdateInvoiceBody;
   try {
@@ -72,54 +89,68 @@ export async function PUT(
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const invoice = await Invoice.findOne({
+    _id: invoiceId,
+    estateId,
+  });
+
+  if (!invoice) {
+    return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+  }
+
   const update: Record<string, unknown> = {};
 
-  if (body.status && ["DRAFT", "SENT", "PAID", "VOID"].includes(body.status)) {
+  if (isInvoiceStatus(body.status)) {
     update.status = body.status;
   }
 
-  if (body.issueDate) {
-    update.issueDate = new Date(body.issueDate);
+  if (body.issueDate != null) {
+    const d = parseDate(body.issueDate);
+    if (!d) {
+      return NextResponse.json({ error: "Invalid issueDate" }, { status: 400 });
+    }
+    update.issueDate = d;
   }
 
-  if (body.dueDate) {
-    update.dueDate = new Date(body.dueDate);
+  if (body.dueDate != null) {
+    const d = parseDate(body.dueDate);
+    if (!d) {
+      return NextResponse.json({ error: "Invalid dueDate" }, { status: 400 });
+    }
+    update.dueDate = d;
   }
 
+  // paidAt: allow explicit clearing with null
   if (body.paidAt === null) {
-    update.paidAt = undefined;
-  } else if (body.paidAt) {
-    update.paidAt = new Date(body.paidAt);
+    update.paidAt = null;
+  } else if (body.paidAt != null) {
+    const d = parseDate(body.paidAt);
+    if (!d) {
+      return NextResponse.json({ error: "Invalid paidAt" }, { status: 400 });
+    }
+    update.paidAt = d;
   }
 
   if (typeof body.notes === "string") {
     update.notes = body.notes;
   }
 
-  if (typeof body.taxRate === "number") {
+  if (typeof body.taxRate === "number" && Number.isFinite(body.taxRate)) {
     update.taxRate = body.taxRate;
   }
 
-  if (body.lineItems && Array.isArray(body.lineItems)) {
-    update.lineItems = body.lineItems.map((item) => ({
-      type: item.type,
-      label: item.label,
-      quantity: typeof item.quantity === "number" ? item.quantity : undefined,
-      rate: typeof item.rate === "number" ? item.rate : undefined,
-      amount: typeof item.amount === "number" ? item.amount : undefined,
-      sourceTimeEntryId: item.sourceTimeEntryId,
-      sourceExpenseId: item.sourceExpenseId,
-    }));
-  }
-
-  const invoice = await Invoice.findOne({
-    _id: invoiceId,
-    estateId,
-    ownerId: session.user.id,
-  });
-
-  if (!invoice) {
-    return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+  if (Array.isArray(body.lineItems)) {
+    update.lineItems = body.lineItems
+      .filter((item) => item && typeof item.label === "string" && typeof item.type === "string")
+      .map((item) => ({
+        type: item.type,
+        label: item.label,
+        quantity: typeof item.quantity === "number" && Number.isFinite(item.quantity) ? item.quantity : undefined,
+        rate: typeof item.rate === "number" && Number.isFinite(item.rate) ? item.rate : undefined,
+        amount: typeof item.amount === "number" && Number.isFinite(item.amount) ? item.amount : undefined,
+        sourceTimeEntryId: typeof item.sourceTimeEntryId === "string" ? item.sourceTimeEntryId : undefined,
+        sourceExpenseId: typeof item.sourceExpenseId === "string" ? item.sourceExpenseId : undefined,
+      }));
   }
 
   Object.assign(invoice, update);
@@ -129,10 +160,10 @@ export async function PUT(
 }
 
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ estateId: string; invoiceId: string }> }
 ) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
 
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -140,11 +171,11 @@ export async function DELETE(
 
   const { estateId, invoiceId } = await params;
   await connectToDatabase();
+  await requireEstateEditAccess({ estateId });
 
   const deleted = await Invoice.findOneAndDelete({
     _id: invoiceId,
     estateId,
-    ownerId: session.user.id,
   }).lean();
 
   if (!deleted) {

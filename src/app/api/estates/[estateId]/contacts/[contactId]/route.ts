@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { Contact } from "@/models/Contact";
+import mongoose from "mongoose";
 
 interface RouteParams {
   params: Promise<{
@@ -10,9 +11,27 @@ interface RouteParams {
   }>;
 }
 
+function toObjectId(value: string, label: string): mongoose.Types.ObjectId {
+  if (!mongoose.isValidObjectId(value)) {
+    throw new Error(`Invalid ${label}`);
+  }
+  return new mongoose.Types.ObjectId(value);
+}
+
+function isCastError(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "name" in err &&
+    (err as { name?: unknown }).name === "CastError"
+  );
+}
+
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { estateId, contactId } = await params;
+    const estateObjectId = toObjectId(estateId, "estateId");
+    const contactObjectId = toObjectId(contactId, "contactId");
     const session = await auth();
 
     if (!session?.user?.id) {
@@ -22,9 +41,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     await connectToDatabase();
 
     const contact = await Contact.findOne({
-      _id: contactId,
-      estateId,
+      _id: contactObjectId,
       ownerId: session.user.id,
+      $or: [{ estateId: estateObjectId }, { estates: estateObjectId }],
     }).lean();
 
     if (!contact) {
@@ -33,6 +52,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ contact }, { status: 200 });
   } catch (error) {
+    if (String(error).includes("Invalid estateId") || String(error).includes("Invalid contactId") || isCastError(error)) {
+      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    }
     console.error(
       "[GET /api/estates/[estateId]/contacts/[contactId]] Error:",
       error,
@@ -47,6 +69,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const { estateId, contactId } = await params;
+    const estateObjectId = toObjectId(estateId, "estateId");
+    const contactObjectId = toObjectId(contactId, "contactId");
     const session = await auth();
 
     if (!session?.user?.id) {
@@ -78,13 +102,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    if (Object.keys(filteredUpdates).length === 0) {
+      return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
+    }
+
     await connectToDatabase();
 
     const updated = await Contact.findOneAndUpdate(
       {
-        _id: contactId,
-        estateId,
+        _id: contactObjectId,
         ownerId: session.user.id,
+        $or: [{ estateId: estateObjectId }, { estates: estateObjectId }],
       },
       filteredUpdates,
       { new: true },
@@ -96,6 +124,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ contact: updated }, { status: 200 });
   } catch (error) {
+    if (String(error).includes("Invalid estateId") || String(error).includes("Invalid contactId") || isCastError(error)) {
+      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    }
     console.error(
       "[PATCH /api/estates/[estateId]/contacts/[contactId]] Error:",
       error,
@@ -110,6 +141,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
     const { estateId, contactId } = await params;
+    const estateObjectId = toObjectId(estateId, "estateId");
+    const contactObjectId = toObjectId(contactId, "contactId");
     const session = await auth();
 
     if (!session?.user?.id) {
@@ -119,9 +152,9 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     await connectToDatabase();
 
     const deleted = await Contact.findOneAndDelete({
-      _id: contactId,
-      estateId,
+      _id: contactObjectId,
       ownerId: session.user.id,
+      $or: [{ estateId: estateObjectId }, { estates: estateObjectId }],
     }).lean();
 
     if (!deleted) {
@@ -130,6 +163,9 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
+    if (String(error).includes("Invalid estateId") || String(error).includes("Invalid contactId") || isCastError(error)) {
+      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    }
     console.error(
       "[DELETE /api/estates/[estateId]/contacts/[contactId]] Error:",
       error,

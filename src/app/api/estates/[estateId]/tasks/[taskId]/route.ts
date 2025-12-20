@@ -4,12 +4,47 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { Task } from "@/models/Task";
-import { requireViewer, requireEditor } from "@/lib/estateAccess";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 
 type RouteParams = {
   estateId: string;
   taskId: string;
 };
+
+type RouteContext = { params: Promise<RouteParams> };
+
+type AccessResult = {
+  userId?: string;
+  estateId?: string;
+  role?: string;
+  permission?: string;
+};
+
+function isResponse(value: unknown): value is Response {
+  return typeof Response !== "undefined" && value instanceof Response;
+}
+
+function pickResponse(value: unknown): Response | null {
+  if (!value) return null;
+  if (isResponse(value)) return value;
+  if (typeof value === "object") {
+    const v = value as Record<string, unknown>;
+    const res = (v.res ?? v.response) as unknown;
+    if (isResponse(res)) return res;
+  }
+  return null;
+}
+
+async function requireAccess(opts: { estateId: string; mode: "view" | "edit" }) {
+  const fn = opts.mode === "edit" ? requireEstateEditAccess : requireEstateAccess;
+  const out = await fn({ estateId: opts.estateId });
+
+  const maybeRes = pickResponse(out);
+  if (maybeRes) return { ok: false as const, res: maybeRes };
+
+  // If your helper returns a structured object, we pass it through.
+  return { ok: true as const, data: out as AccessResult };
+}
 
 type UpdateTaskBody = {
   subject?: string;
@@ -31,11 +66,11 @@ function getStr(obj: unknown, key: keyof TaskLite): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
-export async function GET(_req: NextRequest, { params }: { params: RouteParams }) {
-  const { estateId, taskId } = params;
+export async function GET(_req: NextRequest, { params }: RouteContext) {
+  const { estateId, taskId } = await params;
 
   // Viewer access is sufficient to read tasks
-  const access = await requireViewer(estateId);
+  const access = await requireAccess({ estateId, mode: "view" });
   if (!access.ok) return access.res;
 
   await connectToDatabase();
@@ -53,12 +88,17 @@ export async function GET(_req: NextRequest, { params }: { params: RouteParams }
  * Shared update logic used by both PUT and POST so the UI can hit this
  * endpoint with either verb.
  */
-async function updateTask(req: NextRequest, { params }: { params: RouteParams }) {
-  const { estateId, taskId } = params;
+async function updateTask(req: NextRequest, { params }: RouteContext) {
+  const { estateId, taskId } = await params;
 
   // Owner/Editor required to modify tasks
-  const access = await requireEditor(estateId);
+  const access = await requireAccess({ estateId, mode: "edit" });
   if (!access.ok) return access.res;
+
+  const userId = access.data.userId;
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   await connectToDatabase();
 
@@ -115,12 +155,12 @@ async function updateTask(req: NextRequest, { params }: { params: RouteParams })
   const snapshotBase = {
     taskId: String(taskId),
     title,
+    actorId: userId,
   } satisfies Record<string, unknown>;
 
   if (prevStatus !== nextStatus) {
     await logActivity({
       estateId,
-      ownerId: access.userId,
       kind,
       action: "STATUS_CHANGED",
       entityId: String(taskId),
@@ -134,7 +174,6 @@ async function updateTask(req: NextRequest, { params }: { params: RouteParams })
   } else {
     await logActivity({
       estateId,
-      ownerId: access.userId,
       kind,
       action: "UPDATED",
       entityId: String(taskId),
@@ -148,21 +187,26 @@ async function updateTask(req: NextRequest, { params }: { params: RouteParams })
   return NextResponse.json({ task: updated }, { status: 200 });
 }
 
-export async function PUT(req: NextRequest, ctx: { params: RouteParams }) {
+export async function PUT(req: NextRequest, ctx: RouteContext) {
   return updateTask(req, ctx);
 }
 
 // ✅ This supports older UI calls that POST updates
-export async function POST(req: NextRequest, ctx: { params: RouteParams }) {
+export async function POST(req: NextRequest, ctx: RouteContext) {
   return updateTask(req, ctx);
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: RouteParams }) {
-  const { estateId, taskId } = params;
+export async function DELETE(_req: NextRequest, { params }: RouteContext) {
+  const { estateId, taskId } = await params;
 
   // Owner/Editor required to delete tasks
-  const access = await requireEditor(estateId);
+  const access = await requireAccess({ estateId, mode: "edit" });
   if (!access.ok) return access.res;
+
+  const userId = access.data.userId;
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   await connectToDatabase();
 
@@ -178,7 +222,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: RouteParam
 
   await logActivity({
     estateId,
-    ownerId: access.userId,
     kind,
     action: "DELETED",
     entityId: String(taskId),
@@ -186,6 +229,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: RouteParam
     snapshot: {
       taskId: String(taskId),
       title,
+      actorId: userId,
     },
   });
 

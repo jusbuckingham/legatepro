@@ -3,12 +3,44 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { EstateDocument } from "@/models/EstateDocument";
-import { requireViewer, requireEditor } from "@/lib/estateAccess";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 
 interface RouteParams {
   params: Promise<{
     estateId: string;
   }>;
+}
+
+type RequireAccessArgs = { estateId: string; userId?: string };
+
+type RequireAccessFn = (args: RequireAccessArgs) => Promise<unknown>;
+
+function isResponseLike(value: unknown): value is Response {
+  return typeof value === "object" && value !== null && value instanceof Response;
+}
+
+function getRoleFromAccess(access: unknown): string | undefined {
+  if (!access || typeof access !== "object") return undefined;
+  const anyAccess = access as Record<string, unknown>;
+  const role = anyAccess.role;
+  return typeof role === "string" ? role : undefined;
+}
+
+function getFailureResponse(access: unknown): NextResponse | undefined {
+  if (!access || typeof access !== "object") return undefined;
+  const anyAccess = access as Record<string, unknown>;
+
+  // Support older helper shape: { ok: boolean; res: NextResponse }
+  if (anyAccess.ok === false && isResponseLike(anyAccess.res)) {
+    return anyAccess.res as NextResponse;
+  }
+
+  // Support newer helper shape: may directly return a Response/NextResponse on failure
+  if (isResponseLike(access)) {
+    return access as NextResponse;
+  }
+
+  return undefined;
 }
 
 export async function GET(
@@ -24,13 +56,19 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const access = await requireViewer(estateId);
-    if (!access.ok) return access.res;
+    const access = await (requireEstateAccess as unknown as RequireAccessFn)({
+      estateId,
+      userId: session.user.id,
+    });
+    const failure = getFailureResponse(access);
+    if (failure) return failure;
+
+    const role = getRoleFromAccess(access);
 
     const where: Record<string, unknown> = { estateId };
 
     // VIEWER cannot view sensitive docs regardless of query params
-    if (access.role === "VIEWER") {
+    if (role === "VIEWER") {
       where.isSensitive = false;
     }
 
@@ -61,8 +99,14 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const access = await requireEditor(estateId);
-    if (!access.ok) return access.res;
+    const access = await (requireEstateEditAccess as unknown as RequireAccessFn)({
+      estateId,
+      userId: session.user.id,
+    });
+    const failure = getFailureResponse(access);
+    if (failure) return failure;
+
+    const role = getRoleFromAccess(access);
 
     const body = await request.json();
 
@@ -81,7 +125,7 @@ export async function POST(
 
     // Defense in depth: do not allow VIEWER access (should already be blocked by requireEditor)
     // and keep the policy that only non-VIEWER roles may create sensitive docs.
-    if (Boolean(isSensitive) && access.role === "VIEWER") {
+    if (Boolean(isSensitive) && role === "VIEWER") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -117,9 +161,8 @@ export async function POST(
       const safeLabel = typeof label === "string" && label.trim() ? label.trim() : "Untitled";
 
       await logActivity({
-        ownerId: session.user.id,
         estateId: String(estateId),
-        kind: "document",
+        kind: "DOCUMENT",
         action: "created",
         entityId: String(document._id),
         message: `Document created: ${safeLabel}`,

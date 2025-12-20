@@ -1,9 +1,8 @@
-
-
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { EstateDocument } from "@/models/EstateDocument";
+import mongoose from "mongoose";
 
 interface RouteParams {
   params: Promise<{
@@ -12,10 +11,18 @@ interface RouteParams {
   }>;
 }
 
+function isValidObjectId(value: unknown): value is string {
+  return typeof value === "string" && mongoose.Types.ObjectId.isValid(value);
+}
+
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { estateId, documentId } = await params;
     const session = await auth();
+
+    if (!isValidObjectId(estateId) || !isValidObjectId(documentId)) {
+      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    }
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -48,13 +55,18 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const { estateId, documentId } = await params;
     const session = await auth();
 
+    if (!isValidObjectId(estateId) || !isValidObjectId(documentId)) {
+      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    }
+
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     await connectToDatabase();
 
-    const updates = await request.json();
+    const updates: unknown = await request.json();
+    const updateObj = (updates && typeof updates === "object") ? (updates as Record<string, unknown>) : {};
 
     const allowedFields = [
       "label",
@@ -68,9 +80,16 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const filteredUpdates: Record<string, unknown> = {};
     for (const key of allowedFields) {
-      if (key in updates) {
-        filteredUpdates[key] = updates[key];
+      if (key in updateObj) {
+        filteredUpdates[key] = updateObj[key];
       }
+    }
+
+    if (Object.keys(filteredUpdates).length === 0) {
+      return NextResponse.json(
+        { error: "No valid fields provided" },
+        { status: 400 }
+      );
     }
 
     const updated = await EstateDocument.findOneAndUpdate(
@@ -80,7 +99,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         ownerId: session.user.id,
       },
       filteredUpdates,
-      { new: true }
+      { new: true, runValidators: true }
     ).lean();
 
     if (!updated) {
@@ -101,6 +120,10 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
     const { estateId, documentId } = await params;
     const session = await auth();
+
+    if (!isValidObjectId(estateId) || !isValidObjectId(documentId)) {
+      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    }
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

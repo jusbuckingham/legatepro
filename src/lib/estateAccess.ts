@@ -262,6 +262,26 @@ export async function requireEstateEditAccess(
   return access;
 }
 
+// ---------------------------------------------------------------------------
+// Back-compat exports for older route files
+// Some API routes still import `requireViewer` / `requireEditor`.
+// Keep these as thin wrappers so `next build` doesn't fail.
+// ---------------------------------------------------------------------------
+
+/** @deprecated Use `requireEstateAccess` */
+export async function requireViewer(
+  input: RequireEstateAccessInput
+): Promise<RequireEstateAccessResult> {
+  return requireEstateAccess(input);
+}
+
+/** @deprecated Use `requireEstateEditAccess` */
+export async function requireEditor(
+  input: RequireEstateAccessInput
+): Promise<RequireEstateAccessResult> {
+  return requireEstateEditAccess(input);
+}
+
 /** Small role helper for UI (no runtime dependency). */
 export function isEstateEditorRole(role: EstateRole): boolean {
   return role === "OWNER" || role === "EDITOR";

@@ -169,8 +169,21 @@ function encodeCursor(cur: ActivityCursor): string {
   return Buffer.from(JSON.stringify(cur), "utf8").toString("base64");
 }
 
+function isValidObjectId(id: string): boolean {
+  return Types.ObjectId.isValid(id);
+}
+
 function toObjectId(id: string): Types.ObjectId {
+  // Keep strict for required ids, but validate so we fail fast with a clearer error.
+  if (!isValidObjectId(id)) {
+    throw new Error(`Invalid ObjectId: ${id}`);
+  }
   return new Types.ObjectId(id);
+}
+
+function maybeObjectId(id?: string): Types.ObjectId | undefined {
+  if (!id) return undefined;
+  return isValidObjectId(id) ? new Types.ObjectId(id) : undefined;
 }
 
 function asIdString(id: Types.ObjectId | string | undefined): string | undefined {
@@ -272,7 +285,10 @@ export async function fetchActivityFeed(
   let estateIds: Types.ObjectId[] = [];
 
   if (input.estateId) {
-    estateIds = [toObjectId(input.estateId)];
+    // Defensive: if an invalid id is passed, return empty rather than crashing the dashboard.
+    const parsed = maybeObjectId(input.estateId);
+    if (!parsed) return { items: [] };
+    estateIds = [parsed];
   } else {
     // Global feed: estates user owns OR is a collaborator on
     const estates = await Estate.find(
@@ -359,4 +375,73 @@ export async function listEstateActivity(args: {
     limit: args.limit,
     cursor: args.cursor,
   });
+}
+
+// -----------------------------------------------------------------------------
+// Back-compat exports (older routes/pages may import these names)
+// -----------------------------------------------------------------------------
+
+// Some callers historically used `getGlobalActivity` / `fetchGlobalActivity`.
+// Keep these aliases so builds don't break during refactors.
+export const getGlobalActivity = listGlobalActivity;
+export const fetchGlobalActivity = listGlobalActivity;
+
+// -----------------------------------------------------------------------------
+// Activity write helper (used by API routes)
+// -----------------------------------------------------------------------------
+
+export type LogActivityInput = {
+  estateId: string;
+  kind: ActivityKind;
+  action: string;
+  message: string;
+  entityId?: string;
+  entityType?: string;
+  href?: string;
+  sublabel?: string;
+
+  // Back-compat: older routes may pass these actor identifiers.
+  // We persist them into `snapshot` so we don't need schema changes.
+  actorId?: string;
+  userId?: string;
+  ownerId?: string;
+
+  snapshot?: Record<string, unknown> | null;
+};
+
+export async function logActivity(input: LogActivityInput): Promise<{ id: string }> {
+  await connectToDatabase();
+
+  const Activity = await getActivityModel();
+
+  const resolvedActorId =
+    input.actorId ?? (input.userId ? String(input.userId) : undefined) ?? (input.ownerId ? String(input.ownerId) : undefined);
+
+  const mergedSnapshot: Record<string, unknown> | null = (() => {
+    const base = input.snapshot && typeof input.snapshot === "object" ? { ...input.snapshot } : {};
+
+    // Only add if not already present
+    if (resolvedActorId && base.actorId == null) base.actorId = resolvedActorId;
+    if (input.userId && base.userId == null) base.userId = String(input.userId);
+    if (input.ownerId && base.ownerId == null) base.ownerId = String(input.ownerId);
+
+    return Object.keys(base).length ? base : null;
+  })();
+
+  const doc = await Activity.create({
+    estateId: toObjectId(input.estateId),
+    kind: input.kind ?? "OTHER",
+    action: input.action ?? "UNKNOWN",
+    message: input.message ?? "",
+
+    entityId: maybeObjectId(input.entityId),
+    entityType: input.entityType,
+
+    href: input.href,
+    sublabel: input.sublabel,
+
+    snapshot: mergedSnapshot,
+  });
+
+  return { id: doc._id.toString() };
 }

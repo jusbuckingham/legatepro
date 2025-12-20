@@ -28,11 +28,23 @@ type LinkBody = {
   contactId?: string;
 };
 
+function isMongooseCastError(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { name?: unknown }).name === "CastError"
+  );
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<RouteParams> },
 ) {
   const { estateId } = await params;
+
+  if (!estateId || typeof estateId !== "string") {
+    return NextResponse.json({ error: "Missing estateId" }, { status: 400 });
+  }
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -56,36 +68,52 @@ export async function POST(
     );
   }
 
-  const estate = (await Estate.findOne({
-    _id: estateId,
-    ownerId: session.user.id,
-  })
-    .select("_id ownerId displayName caseName decedentName")
-    .lean()) as EstateLean | null;
+  let estate: EstateLean | null = null;
+  try {
+    estate = (await Estate.findOne({
+      _id: estateId,
+      ownerId: session.user.id,
+    })
+      .select("_id ownerId displayName caseName decedentName")
+      .lean()) as EstateLean | null;
+  } catch (err) {
+    if (isMongooseCastError(err)) {
+      return NextResponse.json({ error: "Invalid estateId" }, { status: 400 });
+    }
+    throw err;
+  }
 
   if (!estate) {
     return NextResponse.json({ error: "Estate not found" }, { status: 404 });
   }
 
-  const contact = (await Contact.findOne({
-    _id: contactId,
-    ownerId: session.user.id,
-  })
-    .select("_id name email phone role")
-    .lean()) as ContactLean | null;
+  let contact: ContactLean | null = null;
+  try {
+    contact = (await Contact.findOne({
+      _id: contactId,
+      ownerId: session.user.id,
+    })
+      .select("_id name email phone role")
+      .lean()) as ContactLean | null;
+  } catch (err) {
+    if (isMongooseCastError(err)) {
+      return NextResponse.json({ error: "Invalid contactId" }, { status: 400 });
+    }
+    throw err;
+  }
 
   if (!contact) {
     return NextResponse.json({ error: "Contact not found" }, { status: 404 });
   }
 
-  await Contact.updateOne(
-    { _id: contactId, ownerId: session.user.id },
-    { $addToSet: { estates: estateId } },
-  );
-
   // Log estate event
   const estateIdStr =
     typeof estate._id === "string" ? estate._id : estate._id.toString();
+
+  await Contact.updateOne(
+    { _id: contactId, ownerId: session.user.id },
+    { $addToSet: { estates: estateIdStr } },
+  );
 
   const contactName =
     typeof contact.name === "string" && contact.name.trim().length > 0
@@ -126,6 +154,10 @@ export async function DELETE(
 ) {
   const { estateId } = await params;
 
+  if (!estateId || typeof estateId !== "string") {
+    return NextResponse.json({ error: "Missing estateId" }, { status: 400 });
+  }
+
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -143,36 +175,59 @@ export async function DELETE(
     );
   }
 
-  const estate = (await Estate.findOne({
-    _id: estateId,
-    ownerId: session.user.id,
-  })
-    .select("_id ownerId displayName caseName decedentName")
-    .lean()) as EstateLean | null;
+  if (typeof contactId !== "string") {
+    return NextResponse.json(
+      { error: "Invalid contactId query parameter" },
+      { status: 400 },
+    );
+  }
+
+  let estate: EstateLean | null = null;
+  try {
+    estate = (await Estate.findOne({
+      _id: estateId,
+      ownerId: session.user.id,
+    })
+      .select("_id ownerId displayName caseName decedentName")
+      .lean()) as EstateLean | null;
+  } catch (err) {
+    if (isMongooseCastError(err)) {
+      return NextResponse.json({ error: "Invalid estateId" }, { status: 400 });
+    }
+    throw err;
+  }
 
   if (!estate) {
     return NextResponse.json({ error: "Estate not found" }, { status: 404 });
   }
 
-  const contact = (await Contact.findOne({
-    _id: contactId,
-    ownerId: session.user.id,
-  })
-    .select("_id name email phone role")
-    .lean()) as ContactLean | null;
+  let contact: ContactLean | null = null;
+  try {
+    contact = (await Contact.findOne({
+      _id: contactId,
+      ownerId: session.user.id,
+    })
+      .select("_id name email phone role")
+      .lean()) as ContactLean | null;
+  } catch (err) {
+    if (isMongooseCastError(err)) {
+      return NextResponse.json({ error: "Invalid contactId" }, { status: 400 });
+    }
+    throw err;
+  }
 
   if (!contact) {
     return NextResponse.json({ error: "Contact not found" }, { status: 404 });
   }
 
-  await Contact.updateOne(
-    { _id: contactId, ownerId: session.user.id },
-    { $pull: { estates: estateId } },
-  );
-
   // Log estate event
   const estateIdStr =
     typeof estate._id === "string" ? estate._id : estate._id.toString();
+
+  await Contact.updateOne(
+    { _id: contactId, ownerId: session.user.id },
+    { $pull: { estates: estateIdStr } },
+  );
 
   const contactName =
     typeof contact.name === "string" && contact.name.trim().length > 0

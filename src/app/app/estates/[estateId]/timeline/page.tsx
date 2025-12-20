@@ -449,8 +449,20 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   const pageSize = limit;
   const fetchSize = pageSize + 1;
 
-  const access = await requireViewer(estateId);
-  if (!access.ok) {
+  const accessResult = await requireViewer({ estateId });
+
+  // `requireViewer` returns an access payload on success, and (depending on implementation)
+  // either a `Response`/`NextResponse` or an object containing one on failure.
+  const deniedResponse: Response | null =
+    accessResult instanceof Response
+      ? accessResult
+      : (accessResult as unknown as { response?: unknown; res?: unknown })?.response instanceof Response
+        ? ((accessResult as unknown as { response: Response }).response)
+        : (accessResult as unknown as { res?: unknown })?.res instanceof Response
+          ? ((accessResult as unknown as { res: Response }).res)
+          : null;
+
+  if (deniedResponse) {
     return redirect(`/login?callbackUrl=/app/estates/${estateId}/timeline`);
   }
 

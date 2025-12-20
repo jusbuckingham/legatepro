@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
+import * as EstateAccess from "@/lib/estateAccess";
 import { Estate } from "@/models/Estate";
 import { EstateDocument } from "@/models/EstateDocument";
 
@@ -93,6 +94,70 @@ async function requireEstateRole(
   return { ok: true, estate, role };
 }
 
+// --- Centralized/fallback estate access helpers ---
+type RequireAccessFn = (args: { estateId: string; userId?: string }) => Promise<unknown>;
+
+function pickAccessFns() {
+  const mod = EstateAccess as unknown as {
+    requireEstateAccess?: RequireAccessFn;
+    requireEstateEditAccess?: RequireAccessFn;
+    listAccessibleEstateIds?: (userId: string) => Promise<string[]>;
+  };
+
+  return {
+    requireView: mod.requireEstateAccess,
+    requireEdit: mod.requireEstateEditAccess,
+    listIds: mod.listAccessibleEstateIds,
+  };
+}
+
+async function enforceViewerAccess(estateId: string, userId: string): Promise<NextResponse | null> {
+  const { requireView } = pickAccessFns();
+
+  // Prefer centralized access helpers when present.
+  if (typeof requireView === "function") {
+    try {
+      await requireView({ estateId, userId });
+      return null;
+    } catch {
+      return jsonError(403, "Forbidden");
+    }
+  }
+
+  // Fallback to local role checks.
+  const access = await requireEstateRole(estateId, userId, ["OWNER", "EDITOR", "VIEWER"]);
+  return access.ok ? null : access.res;
+}
+
+async function enforceEditorAccess(estateId: string, userId: string): Promise<NextResponse | null> {
+  const { requireEdit } = pickAccessFns();
+
+  if (typeof requireEdit === "function") {
+    try {
+      await requireEdit({ estateId, userId });
+      return null;
+    } catch {
+      return jsonError(403, "Insufficient role");
+    }
+  }
+
+  const access = await requireEstateRole(estateId, userId, ["OWNER", "EDITOR"]);
+  return access.ok ? null : access.res;
+}
+
+async function listAccessibleIds(userId: string): Promise<string[]> {
+  const { listIds } = pickAccessFns();
+  if (typeof listIds === "function") {
+    try {
+      const ids = await listIds(userId);
+      return Array.isArray(ids) ? ids : [];
+    } catch {
+      // fall through
+    }
+  }
+  return getAccessibleEstateIds(userId);
+}
+
 // GET /api/documents
 // Optional query params:
 //   estateId: string              -> filter documents for a specific estate
@@ -113,12 +178,12 @@ export async function GET(request: NextRequest) {
 
     // If a specific estateId is requested, enforce viewer access on that estate.
     if (estateId) {
-      const access = await requireEstateRole(estateId, userId, ["OWNER", "EDITOR", "VIEWER"]);
-      if (!access.ok) return access.res;
+      const res = await enforceViewerAccess(estateId, userId);
+      if (res) return res;
     }
 
     // Otherwise, only return docs for estates the user can access.
-    const accessibleEstateIds = estateId ? [estateId] : await getAccessibleEstateIds(userId);
+    const accessibleEstateIds = estateId ? [estateId] : await listAccessibleIds(userId);
 
     const filter: DocumentFilter = {
       estateId: { $in: accessibleEstateIds },
@@ -180,8 +245,20 @@ export async function POST(request: NextRequest) {
     if (!label) return jsonError(400, "label is required");
 
     // Creating documents requires Owner/Editor on the estate.
-    const access = await requireEstateRole(estateId, userId, ["OWNER", "EDITOR"]);
-    if (!access.ok) return access.res;
+    const res = await enforceEditorAccess(estateId, userId);
+    if (res) return res;
+
+    // For consistent ownership semantics, align ownerId with the estate owner when possible.
+    // (Fallback: use the current userId.)
+    let ownerId = userId;
+    try {
+      const estate = (await Estate.findById(estateId).select({ ownerId: 1 }).lean().exec()) as unknown as {
+        ownerId?: unknown;
+      } | null;
+      if (estate?.ownerId != null) ownerId = String(estate.ownerId);
+    } catch {
+      // ignore
+    }
 
     const tags = Array.isArray(incomingTags)
       ? incomingTags
@@ -190,9 +267,6 @@ export async function POST(request: NextRequest) {
         : [];
 
     const isSensitive = Boolean(incomingIsSensitive);
-
-    // Keep ownerId aligned with the estate owner for consistent ownership semantics.
-    const ownerId = String(access.estate.ownerId);
 
     const document = await EstateDocument.create({
       ownerId,

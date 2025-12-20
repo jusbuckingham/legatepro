@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
-import { requireEditor } from "@/lib/estateAccess";
+import { requireEstateEditAccess } from "@/lib/estateAccess";
 import {
   EstateTask,
   type EstateTaskDocument,
@@ -10,9 +10,9 @@ import {
 } from "@/models/EstateTask";
 
 type RouteContext = {
-  params: {
+  params: Promise<{
     taskId: string;
-  };
+  }>;
 };
 
 const ALLOWED_STATUSES: TaskStatus[] = [
@@ -45,7 +45,7 @@ function serializeTask(task: EstateTaskDocument) {
 }
 
 export async function PATCH(
-  req: Request,
+  req: NextRequest,
   { params }: RouteContext,
 ): Promise<Response> {
   const session = await auth();
@@ -55,7 +55,7 @@ export async function PATCH(
 
   await connectToDatabase();
 
-  const { taskId } = params;
+  const { taskId } = await params;
   if (!taskId) {
     return NextResponse.json(
       { error: "Missing taskId in route params" },
@@ -157,9 +157,15 @@ export async function PATCH(
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
 
-  // Enforce estate access (collaborators allowed) + edit permission
-  const access = await requireEditor(String(existingTask.estateId));
-  if (!access.ok) return access.res;
+  const access = await requireEstateEditAccess({
+    estateId: String(existingTask.estateId),
+    userId: session.user.id,
+  });
+
+  // `requireEstateEditAccess` returns either a Response (deny) or an ok result.
+  if (access instanceof Response) {
+    return access;
+  }
 
   const previousStatus = existingTask.status ? String(existingTask.status) : null;
   const previousTitle = existingTask.title ? String(existingTask.title) : null;
@@ -179,9 +185,8 @@ export async function PATCH(
   try {
     if (didStatusChange) {
       await logActivity({
-        ownerId: session.user.id,
         estateId: String(existingTask.estateId),
-        kind: "task",
+        kind: "TASK",
         action: "status_changed",
         entityId: String(existingTask._id),
         message: `Task status changed: ${String(existingTask.title ?? "Untitled")}`,
@@ -196,9 +201,8 @@ export async function PATCH(
       });
     } else {
       await logActivity({
-        ownerId: session.user.id,
         estateId: String(existingTask.estateId),
-        kind: "task",
+        kind: "TASK",
         action: "updated",
         entityId: String(existingTask._id),
         message: `Task updated: ${String(existingTask.title ?? "Untitled")}`,
@@ -218,7 +222,7 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: Request,
+  _req: NextRequest,
   { params }: RouteContext,
 ): Promise<Response> {
   const session = await auth();
@@ -228,7 +232,7 @@ export async function DELETE(
 
   await connectToDatabase();
 
-  const { taskId } = params;
+  const { taskId } = await params;
   if (!taskId) {
     return NextResponse.json(
       { error: "Missing taskId in route params" },
@@ -241,8 +245,15 @@ export async function DELETE(
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
 
-  const access = await requireEditor(String(existingTask.estateId));
-  if (!access.ok) return access.res;
+  const access = await requireEstateEditAccess({
+    estateId: String(existingTask.estateId),
+    userId: session.user.id,
+  });
+
+  // `requireEstateEditAccess` returns either a Response (deny) or an ok result.
+  if (access instanceof Response) {
+    return access;
+  }
 
   const deleted = await EstateTask.findByIdAndDelete(taskId);
   if (!deleted) {
@@ -252,9 +263,8 @@ export async function DELETE(
   // Activity log: task deleted
   try {
     await logActivity({
-      ownerId: session.user.id,
       estateId: String(deleted.estateId),
-      kind: "task",
+      kind: "TASK",
       action: "deleted",
       entityId: String(deleted._id),
       message: `Task deleted: ${String(deleted.title ?? "Untitled")}`,

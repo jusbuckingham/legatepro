@@ -7,6 +7,9 @@ import { Estate } from "@/models/Estate";
 import type { EstateInvite, InviteRole } from "@/models/Estate";
 import { logEstateEvent } from "@/lib/estateEvents";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 function isInviteRole(v: unknown): v is InviteRole {
   return v === "EDITOR" || v === "VIEWER";
 }
@@ -48,7 +51,7 @@ async function requireOwner(estateId: string, userId: string) {
   }
 
   // Owner guardrail: only owner can manage invites.
-  if (estate.ownerId !== userId) {
+  if (String(estate.ownerId) !== String(userId)) {
     return { ok: false as const, res: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
   }
 
@@ -85,7 +88,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ estateId: s
       email: inv.email,
       role: inv.role,
       status: expired ? "EXPIRED" : inv.status,
-      createdBy: inv.createdBy,
+      createdBy: String(inv.createdBy),
       createdAt: inv.createdAt,
       expiresAt: inv.expiresAt,
       acceptedBy: inv.acceptedBy,
@@ -133,7 +136,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ estateId: 
 
   const token = makeToken();
   const origin = getOrigin(req);
-  const inviteUrl = `${origin}/app/invites/${token}`;
+  const inviteUrl = `${origin}/app/estates/${estateId}/invites/${token}`;
 
   const now = new Date();
   const defaultExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
@@ -166,7 +169,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ estateId: 
         expiresAt: existing.expiresAt,
         reused: true,
         previousRole,
-        createdBy: session.user.id,
+        createdBy: String(session.user.id),
       },
     });
 
@@ -211,7 +214,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ estateId: 
       inviteUrl,
       expiresAt: defaultExpiresAt,
       reused: false,
-      createdBy: session.user.id,
+      createdBy: String(session.user.id),
     },
   });
 

@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { logActivity } from "@/lib/activity";
-import { requireViewer, requireEditor } from "@/lib/estateAccess";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import {
   EstateTask,
   type EstateTaskDocument,
@@ -8,10 +8,67 @@ import {
 } from "@/models/EstateTask";
 
 type RouteContext = {
-  params: {
+  params: Promise<{
     estateId: string;
-  };
+  }>;
 };
+
+type AccessOk = { userId: string };
+
+function isResponse(value: unknown): value is Response {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    typeof (value as any).headers !== "undefined" &&
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    typeof (value as any).status === "number"
+  );
+}
+
+function extractUserId(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+
+  // Common shapes across our access helpers
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const v = value as any;
+  const direct =
+    (typeof v.userId === "string" && v.userId) ||
+    (typeof v.viewerId === "string" && v.viewerId) ||
+    (typeof v.ownerId === "string" && v.ownerId);
+  if (direct) return direct;
+
+  const nested = v.session?.user?.id ?? v.user?.id;
+  return typeof nested === "string" && nested ? nested : null;
+}
+
+async function requireAccess(
+  estateId: string,
+  mode: "viewer" | "editor",
+): Promise<AccessOk | Response> {
+  const fn = mode === "editor" ? requireEstateEditAccess : requireEstateAccess;
+
+  // We intentionally treat the result as unknown because these helpers have evolved
+  // and we want the route to be resilient.
+  const result = (await fn({ estateId })) as unknown;
+
+  // Some helpers return a Response/NextResponse directly.
+  if (isResponse(result)) return result;
+
+  // Some helpers return an object wrapper that contains a Response.
+  if (result && typeof result === "object") {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = (result as any).res ?? (result as any).response;
+    if (isResponse(r)) return r;
+  }
+
+  const userId = extractUserId(result);
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  return { userId };
+}
 
 const ALLOWED_STATUSES: TaskStatus[] = [
   "NOT_STARTED",
@@ -26,10 +83,10 @@ function parseStatus(raw: unknown): TaskStatus | undefined {
 }
 
 export async function GET(
-  _req: Request,
+  _req: NextRequest,
   { params }: RouteContext,
 ): Promise<Response> {
-  const { estateId } = params;
+  const { estateId } = await params;
 
   if (!estateId) {
     return NextResponse.json(
@@ -39,8 +96,8 @@ export async function GET(
   }
 
   // Enforce estate access (collaborators allowed)
-  const access = await requireViewer(estateId);
-  if (!access.ok) return access.res;
+  const access = await requireAccess(estateId, "viewer");
+  if (isResponse(access)) return access;
 
   const tasks = await EstateTask.find({ estateId })
     .sort({ createdAt: -1 })
@@ -66,10 +123,10 @@ export async function GET(
 }
 
 export async function POST(
-  req: Request,
+  req: NextRequest,
   { params }: RouteContext,
 ): Promise<Response> {
-  const { estateId } = params;
+  const { estateId } = await params;
 
   if (!estateId) {
     return NextResponse.json(
@@ -79,8 +136,8 @@ export async function POST(
   }
 
   // Enforce estate access + edit permission
-  const access = await requireEditor(estateId);
-  if (!access.ok) return access.res;
+  const access = await requireAccess(estateId, "editor");
+  if (isResponse(access)) return access;
 
   let body: unknown;
   try {
@@ -144,9 +201,8 @@ export async function POST(
   // Activity log: task created
   try {
     await logActivity({
-      ownerId: access.userId,
       estateId: String(estateId),
-      kind: "task",
+      kind: "TASK",
       action: "created",
       entityId: String(taskDoc._id),
       message: `Task created: ${String(taskDoc.title ?? "Untitled")}`,

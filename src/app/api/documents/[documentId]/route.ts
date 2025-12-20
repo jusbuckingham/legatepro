@@ -3,7 +3,7 @@ import { connectToDatabase } from "@/lib/db";
 import { EstateDocument } from "@/models/EstateDocument";
 import { auth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
-import { requireViewer, requireEditor } from "@/lib/estateAccess";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 
 type RouteParams = { documentId: string };
 
@@ -29,8 +29,12 @@ export async function GET(
       );
     }
 
-    const access = await requireViewer(String(document.estateId));
-    if (!access.ok) return access.res;
+    let access: { role?: string };
+    try {
+      access = await requireEstateAccess({ estateId: String(document.estateId) });
+    } catch {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     // VIEWER cannot fetch sensitive docs
     if (Boolean(document.isSensitive) && access.role === "VIEWER") {
@@ -66,8 +70,12 @@ export async function PUT(
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
 
-    const access = await requireEditor(String(existing.estateId));
-    if (!access.ok) return access.res;
+    let access: { role?: string };
+    try {
+      access = await requireEstateEditAccess({ estateId: String(existing.estateId) });
+    } catch {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     // Defense in depth: VIEWER should never reach this (requireEditor blocks it)
     if (body?.isSensitive === true && access.role === "VIEWER") {
@@ -91,9 +99,8 @@ export async function PUT(
     // Activity log: document updated
     try {
       await logActivity({
-        ownerId: session.user.id,
         estateId: String(document.estateId),
-        kind: "document",
+        kind: "DOCUMENT",
         action: "updated",
         entityId: String(document._id),
         message: `Document updated: ${String(document.label ?? "Untitled")}`,
@@ -138,8 +145,12 @@ export async function DELETE(
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
 
-    const access = await requireEditor(String(document.estateId));
-    if (!access.ok) return access.res;
+    let access: { role?: string };
+    try {
+      access = await requireEstateEditAccess({ estateId: String(document.estateId) });
+    } catch {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     if (Boolean(document.isSensitive) && access.role === "VIEWER") {
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
@@ -150,9 +161,8 @@ export async function DELETE(
     // Activity log: document deleted
     try {
       await logActivity({
-        ownerId: session.user.id,
         estateId: String(document.estateId),
-        kind: "document",
+        kind: "DOCUMENT",
         action: "deleted",
         entityId: String(document._id),
         message: `Document deleted: ${String(document.label ?? "Untitled")}`,

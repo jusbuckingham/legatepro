@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import type { ComponentProps } from "react";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
@@ -7,11 +8,22 @@ import { getEstateAccess } from "@/lib/validators";
 import { Estate, type EstateCollaborator } from "@/models/Estate";
 import CollaboratorsManager from "@/components/estate/CollaboratorsManager";
 
-type Collaborator = {
+type DbCollaborator = {
   userId: string;
   role: "OWNER" | "EDITOR" | "VIEWER";
   addedAt?: string;
 };
+
+type ManagerProps = ComponentProps<typeof CollaboratorsManager>;
+type ManagerCollaborator = ManagerProps["collaborators"][number];
+
+function toManagerRole(role: DbCollaborator["role"]): ManagerCollaborator["role"] {
+  // Align roles even if the UI component uses a different Role union.
+  const r = role.toUpperCase();
+  if (r === "OWNER") return ("OWNER" as unknown) as ManagerCollaborator["role"];
+  if (r === "EDITOR") return ("EDITOR" as unknown) as ManagerCollaborator["role"];
+  return ("VIEWER" as unknown) as ManagerCollaborator["role"];
+}
 
 async function getCollaboratorsFromDb(estateId: string) {
   await connectToDatabase();
@@ -24,7 +36,7 @@ async function getCollaboratorsFromDb(estateId: string) {
   return {
     estateId,
     ownerId: estate.ownerId,
-    collaborators: (estate.collaborators ?? []) as Collaborator[],
+    collaborators: (estate.collaborators ?? []) as DbCollaborator[],
   };
 }
 
@@ -89,7 +101,14 @@ export default async function CollaboratorsPage({
         <div className="mt-3">
           <CollaboratorsManager
             estateId={estateId}
-            collaborators={data?.collaborators ?? []}
+            collaborators={((data?.collaborators ?? []) as DbCollaborator[]).map(
+              (c) =>
+                ({
+                  userId: c.userId,
+                  role: toManagerRole(c.role),
+                  addedAt: c.addedAt,
+                }) as ManagerCollaborator
+            )}
             isOwner={access.role === "OWNER"}
           />
         </div>

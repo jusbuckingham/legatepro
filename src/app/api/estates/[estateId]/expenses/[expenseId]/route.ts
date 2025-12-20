@@ -1,9 +1,12 @@
-
-
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Expense } from "@/models/Expense";
+import { Types } from "mongoose";
+
+function isValidObjectId(value: string) {
+  return Types.ObjectId.isValid(value);
+}
 
 type RouteParams = {
   params: Promise<{
@@ -12,9 +15,26 @@ type RouteParams = {
   }>;
 };
 
-async function getSessionUserId() {
+type PatchBody = {
+  description?: unknown;
+  amount?: unknown;
+  category?: unknown;
+  incurredAt?: unknown;
+  payee?: unknown;
+  reference?: unknown;
+  notes?: unknown;
+  status?: unknown;
+  propertyId?: unknown;
+};
+
+function asPatchBody(value: unknown): PatchBody {
+  return (value && typeof value === "object") ? (value as PatchBody) : {};
+}
+
+async function getSessionUserId(): Promise<string | null> {
   const session = await auth();
-  return session?.user?.id as string | undefined;
+  const id = session?.user?.id;
+  return typeof id === "string" && id.length > 0 ? id : null;
 }
 
 /**
@@ -38,6 +58,10 @@ export async function GET(
         { error: "Missing estateId or expenseId" },
         { status: 400 }
       );
+    }
+
+    if (!isValidObjectId(estateId) || !isValidObjectId(expenseId)) {
+      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     }
 
     await connectToDatabase();
@@ -88,44 +112,43 @@ export async function PATCH(
       );
     }
 
-    const body = await req.json();
+    if (!isValidObjectId(estateId) || !isValidObjectId(expenseId)) {
+      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    }
 
-    const {
-      description,
-      amount,
-      category,
-      incurredAt,
-      payee,
-      reference,
-      notes,
-      status,
-      propertyId,
-    } = body as {
-      description?: string;
-      amount?: number;
-      category?: string;
-      incurredAt?: string;
-      payee?: string;
-      reference?: string;
-      notes?: string;
-      status?: string;
-      propertyId?: string | null;
-    };
+    const raw = await req.json().catch(() => null);
+    const body = asPatchBody(raw);
 
     const update: Record<string, unknown> = {};
 
-    if (description !== undefined) update.description = description;
-    if (amount !== undefined) update.amount = amount;
-    if (category !== undefined) update.category = category;
-    if (incurredAt !== undefined) {
-      update.incurredAt = incurredAt ? new Date(incurredAt) : null;
+    if (typeof body.description === "string") update.description = body.description;
+    if (typeof body.amount === "number") update.amount = body.amount;
+    if (typeof body.category === "string") update.category = body.category;
+
+    if (body.incurredAt !== undefined) {
+      if (body.incurredAt === null || body.incurredAt === "") {
+        update.incurredAt = null;
+      } else if (typeof body.incurredAt === "string" || typeof body.incurredAt === "number") {
+        const d = new Date(body.incurredAt);
+        if (!Number.isNaN(d.getTime())) update.incurredAt = d;
+      }
     }
-    if (payee !== undefined) update.payee = payee;
-    if (reference !== undefined) update.reference = reference;
-    if (notes !== undefined) update.notes = notes;
-    if (status !== undefined) update.status = status;
-    if (propertyId !== undefined) {
-      update.propertyId = propertyId || null;
+
+    if (typeof body.payee === "string") update.payee = body.payee;
+    if (typeof body.reference === "string") update.reference = body.reference;
+    if (typeof body.notes === "string") update.notes = body.notes;
+    if (typeof body.status === "string") update.status = body.status;
+
+    if (body.propertyId !== undefined) {
+      if (body.propertyId === null || body.propertyId === "") {
+        update.propertyId = null;
+      } else if (typeof body.propertyId === "string") {
+        update.propertyId = body.propertyId;
+      }
+    }
+
+    if (Object.keys(update).length === 0) {
+      return NextResponse.json({ error: "No valid fields provided" }, { status: 400 });
     }
 
     await connectToDatabase();
@@ -139,6 +162,7 @@ export async function PATCH(
       update,
       {
         new: true,
+        runValidators: true,
       }
     ).lean();
 
@@ -180,6 +204,10 @@ export async function DELETE(
         { error: "Missing estateId or expenseId" },
         { status: 400 }
       );
+    }
+
+    if (!isValidObjectId(estateId) || !isValidObjectId(expenseId)) {
+      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     }
 
     await connectToDatabase();

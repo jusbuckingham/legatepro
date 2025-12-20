@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { requireEstateAccess } from "@/lib/validators";
+import { requireEstateAccess } from "@/lib/estateAccess";
 import {
   Estate,
   type EstateCollaborator,
@@ -43,7 +43,7 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  await requireEstateAccess(estateId, session.user.id);
+  await requireEstateAccess({ estateId, userId: session.user.id });
 
   await connectToDatabase();
 
@@ -79,7 +79,7 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const access = await requireEstateAccess(estateId, session.user.id);
+  const access = await requireEstateAccess({ estateId, userId: session.user.id });
   if (access.role !== "OWNER") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -183,7 +183,7 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const access = await requireEstateAccess(estateId, session.user.id);
+  const access = await requireEstateAccess({ estateId, userId: session.user.id });
   if (access.role !== "OWNER") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -252,7 +252,7 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const access = await requireEstateAccess(estateId, session.user.id);
+  const access = await requireEstateAccess({ estateId, userId: session.user.id });
   if (access.role !== "OWNER") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

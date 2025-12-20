@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import { EstateProperty } from "@/models/EstateProperty";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 type RouteParams = {
   params: Promise<{ estateId: string; propertyId: string }>;
 };
@@ -37,7 +40,7 @@ export async function GET(
 
     const property = await EstateProperty.findOne({
       _id: propertyId,
-      estateId
+      estateId,
     }).lean();
 
     if (!property) {
@@ -75,18 +78,67 @@ export async function PATCH(
 
     const body = (await req.json()) as PropertyUpdateBody;
 
-    const update: PropertyUpdateBody & { label?: string } = {
-      ...body,
+    // sanitize + restrict update fields
+    const update: PropertyUpdateBody = {};
+
+    const setField = <K extends keyof PropertyUpdateBody>(
+      key: K,
+      value: PropertyUpdateBody[K]
+    ) => {
+      update[key] = value;
     };
 
-    if (Object.prototype.hasOwnProperty.call(body, "name")) {
-      update.label = body.name ?? body.address ?? "Untitled property";
+    const setIfString = <K extends keyof PropertyUpdateBody>(key: K, v: unknown) => {
+      if (typeof v !== "string") return;
+      const trimmed = v.trim();
+      setField(key, (trimmed.length ? trimmed : "") as PropertyUpdateBody[K]);
+    };
+
+    const setIfNumber = <K extends keyof PropertyUpdateBody>(key: K, v: unknown) => {
+      if (typeof v === "number" && Number.isFinite(v)) {
+        setField(key, v as PropertyUpdateBody[K]);
+        return;
+      }
+      if (typeof v === "string") {
+        const n = Number(v);
+        if (Number.isFinite(n)) setField(key, n as PropertyUpdateBody[K]);
+      }
+    };
+
+    if (Object.prototype.hasOwnProperty.call(body, "name")) setIfString("name", body.name);
+    if (Object.prototype.hasOwnProperty.call(body, "type")) setIfString("type", body.type);
+    if (Object.prototype.hasOwnProperty.call(body, "address")) setIfString("address", body.address);
+    if (Object.prototype.hasOwnProperty.call(body, "city")) setIfString("city", body.city);
+    if (Object.prototype.hasOwnProperty.call(body, "state")) setIfString("state", body.state);
+    if (Object.prototype.hasOwnProperty.call(body, "postalCode")) setIfString("postalCode", body.postalCode);
+    if (Object.prototype.hasOwnProperty.call(body, "country")) setIfString("country", body.country);
+    if (Object.prototype.hasOwnProperty.call(body, "notes")) setIfString("notes", body.notes);
+
+    if (Object.prototype.hasOwnProperty.call(body, "estimatedValue")) {
+      setIfNumber("estimatedValue", body.estimatedValue);
+      if (typeof update.estimatedValue === "number") {
+        update.estimatedValue = Math.max(0, update.estimatedValue);
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "ownershipPercentage")) {
+      setIfNumber("ownershipPercentage", body.ownershipPercentage);
+      if (typeof update.ownershipPercentage === "number") {
+        update.ownershipPercentage = Math.min(100, Math.max(0, update.ownershipPercentage));
+      }
+    }
+
+    if (Object.keys(update).length === 0) {
+      return NextResponse.json(
+        { error: "No valid fields provided" },
+        { status: 400 }
+      );
     }
 
     const updated = await EstateProperty.findOneAndUpdate(
       { _id: propertyId, estateId },
       update,
-      { new: true }
+      { new: true, runValidators: true }
     ).lean();
 
     if (!updated) {
@@ -98,7 +150,10 @@ export async function PATCH(
 
     return NextResponse.json({ property: updated }, { status: 200 });
   } catch (error) {
-    console.error("[PATCH /api/estates/[estateId]/properties/[propertyId]]", error);
+    console.error(
+      "[PATCH /api/estates/[estateId]/properties/[propertyId]]",
+      error
+    );
     return NextResponse.json(
       { error: "Failed to update property" },
       { status: 500 }
@@ -124,7 +179,7 @@ export async function DELETE(
 
     const deleted = await EstateProperty.findOneAndDelete({
       _id: propertyId,
-      estateId
+      estateId,
     }).lean();
 
     if (!deleted) {

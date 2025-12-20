@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { auth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
-import { requireViewer, requireEditor } from "@/lib/estateAccess";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import { EstateNote } from "@/models/EstateNote";
 
 type RouteParams = {
@@ -10,6 +11,31 @@ type RouteParams = {
     noteId: string;
   }>;
 };
+
+function isResponseLike(v: unknown): v is Response {
+  return v instanceof Response;
+}
+
+async function requireView(estateId: string, userId: string): Promise<Response | { estateId: string; userId: string }> {
+  const res = await requireEstateAccess({ estateId, userId });
+  if (isResponseLike(res)) return res;
+  return { estateId, userId };
+}
+
+async function requireEdit(estateId: string, userId: string): Promise<Response | { estateId: string; userId: string }> {
+  const res = await requireEstateEditAccess({ estateId, userId });
+  if (isResponseLike(res)) return res;
+  return { estateId, userId };
+}
+
+async function safeLog(input: Record<string, unknown>) {
+  try {
+    const fn = logActivity as unknown as (args: Record<string, unknown>) => Promise<unknown>;
+    await fn(input);
+  } catch {
+    // never block API responses on activity logging
+  }
+}
 
 function asRecord(v: unknown): Record<string, unknown> {
   if (v && typeof v === "object") return v as Record<string, unknown>;
@@ -31,13 +57,19 @@ function getBoolean(obj: unknown, key: string): boolean {
 export async function GET(
   _req: NextRequest,
   { params }: RouteParams
-): Promise<NextResponse> {
+): Promise<Response> {
   try {
     const { estateId, noteId } = await params;
 
+    const session = await auth();
+    const userId = session?.user?.id;
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     // Enforce estate access (collaborators allowed)
-    const access = await requireViewer(estateId);
-    if (!access.ok) return access.res;
+    const access = await requireView(estateId, userId);
+    if (isResponseLike(access)) return access;
 
     const note = await EstateNote.findOne({
       _id: noteId,
@@ -69,13 +101,19 @@ interface UpdateNotePayload {
 export async function PATCH(
   req: NextRequest,
   { params }: RouteParams
-): Promise<NextResponse> {
+): Promise<Response> {
   try {
     const { estateId, noteId } = await params;
 
+    const session = await auth();
+    const userId = session?.user?.id;
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     // Enforce estate access (collaborators allowed) + edit permission
-    const access = await requireEditor(estateId);
-    if (!access.ok) return access.res;
+    const access = await requireEdit(estateId, userId);
+    if (isResponseLike(access)) return access;
 
     const json = (await req.json()) as UpdateNotePayload;
 
@@ -112,35 +150,28 @@ export async function PATCH(
     const didPinnedChange = previousPinned !== nextPinned;
 
     // Activity log: note updated / pinned / unpinned
-    try {
-      const previousBodyPreview = previousBody ? previousBody.trim().slice(0, 240) : null;
-      const newBodyPreview = nextBody ? nextBody.trim().slice(0, 240) : null;
+    const previousBodyPreview = previousBody ? previousBody.trim().slice(0, 240) : null;
+    const newBodyPreview = nextBody ? nextBody.trim().slice(0, 240) : null;
+    const action = didPinnedChange ? (nextPinned ? "PINNED" : "UNPINNED") : "UPDATED";
 
-      const kind = "NOTE" as unknown as Parameters<typeof logActivity>[0]["kind"];
-      const action = didPinnedChange ? (nextPinned ? "PINNED" : "UNPINNED") : "UPDATED";
-
-      await logActivity({
-        ownerId: access.userId,
-        estateId: String(estateId),
-        kind,
-        action,
-        entityId: String(noteDoc._id),
-        message: didPinnedChange ? (nextPinned ? "Note pinned" : "Note unpinned") : "Note updated",
-        snapshot: {
-          noteId: String(noteDoc._id),
-          previousSubject,
-          newSubject: nextSubject,
-          previousCategory,
-          newCategory: nextCategory,
-          previousPinned,
-          newPinned: nextPinned,
-          previousBodyPreview,
-          newBodyPreview,
-        },
-      });
-    } catch {
-      // Don't block note update if activity logging fails
-    }
+    await safeLog({
+      estateId: String(estateId),
+      kind: "NOTE",
+      action,
+      entityId: String(noteDoc._id),
+      message: didPinnedChange ? (nextPinned ? "Note pinned" : "Note unpinned") : "Note updated",
+      snapshot: {
+        noteId: String(noteDoc._id),
+        previousSubject,
+        newSubject: nextSubject,
+        previousCategory,
+        newCategory: nextCategory,
+        previousPinned,
+        newPinned: nextPinned,
+        previousBodyPreview,
+        newBodyPreview,
+      },
+    });
 
     const note = noteDoc.toObject();
     return NextResponse.json({ note }, { status: 200 });
@@ -160,13 +191,19 @@ export async function PATCH(
 export async function DELETE(
   _req: NextRequest,
   { params }: RouteParams
-): Promise<NextResponse> {
+): Promise<Response> {
   try {
     const { estateId, noteId } = await params;
 
+    const session = await auth();
+    const userId = session?.user?.id;
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     // Enforce estate access (collaborators allowed) + edit permission
-    const access = await requireEditor(estateId);
-    if (!access.ok) return access.res;
+    const access = await requireEdit(estateId, userId);
+    if (isResponseLike(access)) return access;
 
     const deleted = await EstateNote.findOneAndDelete({
       _id: noteId,
@@ -178,31 +215,25 @@ export async function DELETE(
     }
 
     // Activity log: note deleted
-    try {
-      const kind = "NOTE" as unknown as Parameters<typeof logActivity>[0]["kind"];
-      const deletedObj = deleted as unknown;
+    const deletedObj = deleted as unknown;
 
-      const bodyRaw = getString(deletedObj, "body") ?? "";
-      const bodyText = bodyRaw.trim();
+    const bodyRaw = getString(deletedObj, "body") ?? "";
+    const bodyText = bodyRaw.trim();
 
-      await logActivity({
-        ownerId: access.userId,
-        estateId: String(estateId),
-        kind,
-        action: "DELETED",
-        entityId: String(asRecord(deletedObj)._id ?? noteId),
-        message: "Note deleted",
-        snapshot: {
-          noteId: String(asRecord(deletedObj)._id ?? noteId),
-          subject: getString(deletedObj, "subject"),
-          category: getString(deletedObj, "category"),
-          pinned: getBoolean(deletedObj, "pinned"),
-          bodyPreview: bodyText ? bodyText.slice(0, 240) : null,
-        },
-      });
-    } catch {
-      // Don't block note deletion if activity logging fails
-    }
+    await safeLog({
+      estateId: String(estateId),
+      kind: "NOTE",
+      action: "DELETED",
+      entityId: String(asRecord(deletedObj)._id ?? noteId),
+      message: "Note deleted",
+      snapshot: {
+        noteId: String(asRecord(deletedObj)._id ?? noteId),
+        subject: getString(deletedObj, "subject"),
+        category: getString(deletedObj, "category"),
+        pinned: getBoolean(deletedObj, "pinned"),
+        bodyPreview: bodyText ? bodyText.slice(0, 240) : null,
+      },
+    });
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { EstateNote } from "@/models/EstateNote";
-import { requireViewer, requireEditor } from "@/lib/estateAccess";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 
 type RouteParams = {
   params: Promise<{
@@ -9,20 +10,58 @@ type RouteParams = {
   }>;
 };
 
-function asRecord(v: unknown): Record<string, unknown> {
-  if (v && typeof v === "object") return v as Record<string, unknown>;
-  return {};
+async function requireViewerAccess(
+  estateId: string
+): Promise<{ userId: string } | NextResponse> {
+  const session = await auth();
+  const userId = session?.user?.id;
+
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const input = { estateId, userId } as unknown as Parameters<typeof requireEstateAccess>[0];
+    const result = (await requireEstateAccess(input)) as unknown;
+
+    // Some implementations may return a response directly.
+    if (result instanceof NextResponse) return result;
+
+    return { userId };
+  } catch {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 }
 
-function getString(obj: unknown, key: string): string | null {
-  const rec = asRecord(obj);
-  const val = rec[key];
-  return typeof val === "string" ? val : null;
+async function requireEditorAccess(
+  estateId: string
+): Promise<{ userId: string } | NextResponse> {
+  const session = await auth();
+  const userId = session?.user?.id;
+
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const input = { estateId, userId } as unknown as Parameters<typeof requireEstateEditAccess>[0];
+    const result = (await requireEstateEditAccess(input)) as unknown;
+
+    // Some implementations may return a response directly.
+    if (result instanceof NextResponse) return result;
+
+    return { userId };
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 }
 
-function getBoolean(obj: unknown, key: string): boolean {
-  const rec = asRecord(obj);
-  return Boolean(rec[key]);
+async function safeLog(input: unknown) {
+  try {
+    await (logActivity as unknown as (args: unknown) => Promise<unknown>)(input);
+  } catch {
+    // swallow
+  }
 }
 
 // GET /api/estates/[estateId]/notes
@@ -34,8 +73,8 @@ export async function GET(
   try {
     const { estateId } = await params;
 
-    const access = await requireViewer(estateId);
-    if (!access.ok) return access.res;
+    const access = await requireViewerAccess(estateId);
+    if (access instanceof NextResponse) return access;
 
     const notes = await EstateNote.find({
       estateId,
@@ -69,8 +108,8 @@ export async function POST(
   try {
     const { estateId } = await params;
 
-    const access = await requireEditor(estateId);
-    if (!access.ok) return access.res;
+    const access = await requireEditorAccess(estateId);
+    if (access instanceof NextResponse) return access;
 
     const json = (await req.json()) as CreateNotePayload;
 
@@ -91,36 +130,31 @@ export async function POST(
     });
 
     // Activity log: note created
-    try {
-      const noteObj = typeof note.toObject === "function" ? (note.toObject() as unknown) : (note as unknown);
+    const noteObj = typeof note.toObject === "function" ? (note.toObject() as unknown) : (note as unknown);
 
-      const bodyRaw = getString(noteObj, "body") ?? "";
-      const bodyText = bodyRaw.trim();
+    const bodyRaw = getString(noteObj, "body") ?? "";
+    const bodyText = bodyRaw.trim();
 
-      const kind = "NOTE" as unknown as Parameters<typeof logActivity>[0]["kind"];
+    const kind = "NOTE";
 
-      const subject = getString(noteObj, "subject");
-      const category = getString(noteObj, "category");
-      const pinned = getBoolean(noteObj, "pinned");
+    const subject = getString(noteObj, "subject");
+    const category = getString(noteObj, "category");
+    const pinned = getBoolean(noteObj, "pinned");
 
-      await logActivity({
-        ownerId: access.userId,
-        estateId: String(estateId),
-        kind,
-        action: "CREATED",
-        entityId: String(note._id),
-        message: "Note created",
-        snapshot: {
-          noteId: String(note._id),
-          subject,
-          category,
-          pinned,
-          bodyPreview: bodyText ? bodyText.slice(0, 240) : null,
-        },
-      });
-    } catch {
-      // Don't block note creation if activity logging fails
-    }
+    await safeLog({
+      estateId: String(estateId),
+      kind,
+      action: "CREATED",
+      entityId: String(note._id),
+      message: "Note created",
+      snapshot: {
+        noteId: String(note._id),
+        subject,
+        category,
+        pinned,
+        bodyPreview: bodyText ? bodyText.slice(0, 240) : null,
+      },
+    });
 
     return NextResponse.json({ note }, { status: 201 });
   } catch (error) {
@@ -130,4 +164,20 @@ export async function POST(
       { status: 500 }
     );
   }
+}
+
+function asRecord(v: unknown): Record<string, unknown> {
+  if (v && typeof v === "object") return v as Record<string, unknown>;
+  return {};
+}
+
+function getString(obj: unknown, key: string): string | null {
+  const rec = asRecord(obj);
+  const val = rec[key];
+  return typeof val === "string" ? val : null;
+}
+
+function getBoolean(obj: unknown, key: string): boolean {
+  const rec = asRecord(obj);
+  return Boolean(rec[key]);
 }

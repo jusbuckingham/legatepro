@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import { EstateProperty } from "@/models/EstateProperty";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 type RouteParams = {
   params: Promise<{ estateId: string }>;
 };
@@ -27,7 +30,7 @@ export async function GET(
 ): Promise<NextResponse> {
   const { estateId } = await params;
 
-  if (!estateId) {
+  if (!estateId || typeof estateId !== "string") {
     return NextResponse.json({ error: "Missing estateId" }, { status: 400 });
   }
 
@@ -54,7 +57,7 @@ export async function POST(
 ): Promise<NextResponse> {
   const { estateId } = await params;
 
-  if (!estateId) {
+  if (!estateId || typeof estateId !== "string") {
     return NextResponse.json({ error: "Missing estateId" }, { status: 400 });
   }
 
@@ -65,18 +68,21 @@ export async function POST(
 
     const payload = {
       estateId,
-      label: body.name ?? body.address ?? "Untitled property",
-      name: body.name ?? "",
-      type: body.type ?? "Real estate",
-      category: body.category ?? "",
-      address: body.address ?? "",
-      city: body.city ?? "",
-      state: body.state ?? "",
-      postalCode: body.postalCode ?? "",
-      country: body.country ?? "",
-      estimatedValue: body.estimatedValue ?? 0,
-      ownershipPercentage: body.ownershipPercentage ?? 100,
-      notes: body.notes ?? ""
+      label: (body.name ?? body.address ?? "Untitled property").toString().trim(),
+      name: (body.name ?? "").toString().trim(),
+      type: (body.type ?? "Real estate").toString().trim(),
+      category: (body.category ?? "").toString().trim(),
+      address: (body.address ?? "").toString().trim(),
+      city: (body.city ?? "").toString().trim(),
+      state: (body.state ?? "").toString().trim(),
+      postalCode: (body.postalCode ?? "").toString().trim(),
+      country: (body.country ?? "").toString().trim(),
+      estimatedValue: Math.max(0, Number(body.estimatedValue ?? 0) || 0),
+      ownershipPercentage: Math.min(
+        100,
+        Math.max(0, Number(body.ownershipPercentage ?? 100) || 0)
+      ),
+      notes: (body.notes ?? "").toString().trim(),
     };
 
     const created = await EstateProperty.create(payload);

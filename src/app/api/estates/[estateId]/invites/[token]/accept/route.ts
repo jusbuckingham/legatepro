@@ -14,18 +14,19 @@ function isExpired(invite: EstateInvite): boolean {
 
 export async function POST(
   _req: NextRequest,
-  ctx: { params: Promise<{ token: string }> }
+  ctx: { params: Promise<{ estateId: string; token: string }> }
 ) {
   const session = await auth();
   if (!session?.user?.id || !session.user.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { token } = await ctx.params;
+  const { estateId, token } = await ctx.params;
 
   await connectToDatabase();
 
   const estate = await Estate.findOne({
+    _id: estateId,
     invites: { $elemMatch: { token } },
   });
 
@@ -55,8 +56,10 @@ export async function POST(
     return NextResponse.json({ error: "Invite expired" }, { status: 400 });
   }
 
+  const userEmail = session.user.email.toLowerCase();
+
   // Email must match the invited email
-  if (invite.email !== session.user.email.toLowerCase()) {
+  if (invite.email !== userEmail) {
     return NextResponse.json(
       { error: "Invite email does not match your account" },
       { status: 403 }
@@ -79,7 +82,7 @@ export async function POST(
         estateId: estate.id,
         type: "COLLABORATOR_ROLE_CHANGED",
         summary: "Collaborator role updated",
-        detail: `Updated ${session.user.email} from ${previousRole} to ${invite.role}`,
+        detail: `Updated ${userEmail} from ${previousRole} to ${invite.role}`,
         meta: {
           userId: session.user.id,
           previousRole,
@@ -100,7 +103,7 @@ export async function POST(
       estateId: estate.id,
       type: "COLLABORATOR_ADDED",
       summary: "Collaborator added",
-      detail: `Accepted invite: ${session.user.email} as ${invite.role}`,
+      detail: `Accepted invite: ${userEmail} as ${invite.role}`,
       meta: {
         userId: session.user.id,
         role: invite.role,
@@ -120,7 +123,7 @@ export async function POST(
     estateId: estate.id,
     type: "COLLABORATOR_ADDED",
     summary: "Invite accepted",
-    detail: `${session.user.email} accepted an invite (link)`,
+    detail: `${userEmail} accepted an invite (link)`,
     meta: {
       userId: session.user.id,
       email: invite.email,

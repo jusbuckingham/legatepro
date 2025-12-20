@@ -132,7 +132,7 @@ export async function PATCH(req: Request, ctx: RouteContext) {
     await logActivity({
       ownerId: session.user.id,
       estateId: estateIdStr,
-      kind: "invoice",
+      kind: "INVOICE",
       action: "status_changed",
       entityId: String(invoice._id),
       message: `Invoice ${invoiceNumberLabel} marked ${nextFriendly}`,

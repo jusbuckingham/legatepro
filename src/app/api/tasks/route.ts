@@ -37,8 +37,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Viewer access is sufficient to read tasks
-    const access = await requireViewer(estateId);
-    if (!access.ok) return access.res;
+    const access = await requireViewer({ estateId });
+    if (access instanceof Response) return access;
 
     await connectToDatabase();
 
@@ -97,8 +97,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const access = await requireEditor(estateId);
-    if (!access.ok) return access.res;
+    const access = await requireEditor({ estateId });
+    if (access instanceof Response) return access;
 
     await connectToDatabase();
 
