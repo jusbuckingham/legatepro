@@ -1,6 +1,7 @@
 // src/app/app/estates/[estateId]/tasks/[taskId]/edit/page.tsx
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import Link from "next/link";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
@@ -261,12 +262,12 @@ export default async function EditTaskPage({ params }: PageProps) {
 
         {/* Actions */}
         <div className="flex items-center justify-between gap-3 pt-2">
-          <a
+          <Link
             href={`/app/estates/${params.estateId}/tasks`}
             className="text-xs text-slate-400 underline-offset-2 hover:text-slate-200 hover:underline"
           >
             Cancel and go back
-          </a>
+          </Link>
 
           <button
             type="submit"

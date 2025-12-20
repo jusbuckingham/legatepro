@@ -280,6 +280,14 @@ type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
+function dashboardGreeting(name?: string | null) {
+  const base = "Dashboard";
+  const safe = (name ?? "").trim();
+  if (!safe) return base;
+  const first = safe.split(/\s+/)[0];
+  return `Welcome, ${first}`;
+}
+
 export default async function AppDashboardPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login?callbackUrl=/app");
@@ -381,10 +389,31 @@ export default async function AppDashboardPage({ searchParams }: PageProps) {
   if (estateCount === 0) {
     return (
       <div className="space-y-8 p-4 md:p-6 lg:p-8">
+        <header className="space-y-1">
+          <h1 className="text-xl font-semibold text-slate-50">{dashboardGreeting(session.user.name)}</h1>
+          <p className="text-sm text-slate-400">
+            Set up your first estate, then manage tasks, invoices, expenses, notes, documents, and contacts in one place.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link
+              href="/app/estates/new"
+              className="inline-flex items-center rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/20"
+            >
+              Create your first estate
+            </Link>
+            <Link
+              href="/app/estates"
+              className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900/40 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-900/70"
+            >
+              View estates
+            </Link>
+          </div>
+        </header>
+
         <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="space-y-1">
-              <h1 className="text-lg font-semibold text-slate-50">Welcome to LegatePro</h1>
+              <h2 className="text-lg font-semibold text-slate-50">Getting started</h2>
               <p className="text-sm text-slate-400">
                 Create your first estate — then track tasks, invoices, expenses, notes, documents, and contacts in one place.
               </p>
@@ -478,7 +507,33 @@ export default async function AppDashboardPage({ searchParams }: PageProps) {
 
   return (
     <div className="space-y-8 p-4 md:p-6 lg:p-8">
-      {/* Header omitted — unchanged */}
+      <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold text-slate-50">{dashboardGreeting(session.user.name)}</h1>
+          <p className="text-sm text-slate-400">Your work across estates, all in one view.</p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/app/tasks/new"
+            className="inline-flex items-center rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-500/20"
+          >
+            New task
+          </Link>
+          <Link
+            href="/app/invoices/new"
+            className="inline-flex items-center rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/20"
+          >
+            New invoice
+          </Link>
+          <Link
+            href="/app/estates"
+            className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900/40 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-900/70"
+          >
+            Estates
+          </Link>
+        </div>
+      </header>
 
       {/* Global Activity */}
       <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
@@ -682,7 +737,7 @@ export default async function AppDashboardPage({ searchParams }: PageProps) {
 
             {/* Load more row */}
             <div className="mt-4 flex items-center justify-between gap-3">
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[11px] text-slate-500"> 
                 Showing {Math.min(globalFeed.length, activityLimit)} item(s)
                 {activityKindFilter ? ` for ${kindLabel(activityKindFilter) ?? activityKindFilter}` : ""}.
               </p>

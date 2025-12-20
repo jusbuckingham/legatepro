@@ -93,7 +93,7 @@ export default async function NewTaskPage({ params }: PageProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <nav className="text-xs text-slate-500">
             <Link href="/app/estates" className="hover:text-slate-300">
@@ -109,7 +109,8 @@ export default async function NewTaskPage({ params }: PageProps) {
             <span className="mx-1 text-slate-600">/</span>
             <span className="text-rose-300">New</span>
           </nav>
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+
+          <p className="mt-2 text-xs font-medium uppercase tracking-wide text-slate-400">
             New task
           </p>
           <h1 className="text-xl font-semibold text-slate-50">
@@ -117,6 +118,18 @@ export default async function NewTaskPage({ params }: PageProps) {
           </h1>
           <p className="mt-1 text-sm text-slate-400">
             Track follow-ups, filings, and reminders for this estate.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:items-end">
+          <Link
+            href={`/app/estates/${estateId}/tasks`}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-900/40 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/70"
+          >
+            Back to tasks
+          </Link>
+          <p className="text-xs text-slate-500">
+            Tip: keep the subject action-based (&quot;File&quot;, &quot;Call&quot;, &quot;Submit&quot;).
           </p>
         </div>
       </div>
@@ -133,9 +146,15 @@ export default async function NewTaskPage({ params }: PageProps) {
             <input
               name="subject"
               required
+              autoFocus
+              maxLength={120}
               className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-indigo-400"
               placeholder="e.g. File inventory with the court"
+              aria-describedby="subject-help"
             />
+            <p id="subject-help" className="mt-1 text-xs text-slate-500">
+              Keep it short and specific. (Max 120 characters)
+            </p>
           </div>
 
           <div>
@@ -146,7 +165,11 @@ export default async function NewTaskPage({ params }: PageProps) {
               type="date"
               name="date"
               className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none ring-0 focus:border-indigo-400"
+              aria-describedby="due-date-help"
             />
+            <p id="due-date-help" className="mt-1 text-xs text-slate-500">
+              Leave blank to default to today.
+            </p>
           </div>
 
           <div>
@@ -186,9 +209,13 @@ export default async function NewTaskPage({ params }: PageProps) {
           <textarea
             name="description"
             rows={3}
+            maxLength={800}
             className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-indigo-400"
             placeholder="Optional details about this task…"
           />
+          <p className="mt-1 text-xs text-slate-500">
+            Helpful context, links, or who owns the next step. (Max 800 characters)
+          </p>
         </div>
 
         <div>
@@ -198,9 +225,13 @@ export default async function NewTaskPage({ params }: PageProps) {
           <textarea
             name="notes"
             rows={2}
+            maxLength={800}
             className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-indigo-400"
             placeholder="Private notes that won't appear on exported summaries…"
           />
+          <p className="mt-1 text-xs text-slate-500">
+            For internal details only (phone numbers, access notes, etc.). (Max 800 characters)
+          </p>
         </div>
 
         <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
@@ -226,7 +257,8 @@ export default async function NewTaskPage({ params }: PageProps) {
           </div>
 
           <p className="text-xs text-slate-500">
-            Tasks are auto-linked to this estate&apos;s timecard &amp; dashboard.
+            Tasks show up in this estate&apos;s timeline and dashboard.
+            <span className="ml-2 text-slate-600">Autosaved on submit.</span>
             {!canEdit ? (
               <span className="ml-2 text-rose-300">
                 You have view-only access.

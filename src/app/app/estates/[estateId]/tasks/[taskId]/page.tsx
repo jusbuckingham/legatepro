@@ -1,3 +1,4 @@
+import React from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -113,6 +114,21 @@ function priorityBadgeClass(priority: "LOW" | "MEDIUM" | "HIGH"): string {
   }
 }
 
+function isOverdue(status: "OPEN" | "DONE", value?: Date | string | null): boolean {
+  if (status === "DONE") return false;
+  if (!value) return false;
+  const date = typeof value === "string" ? new Date(value) : (value as Date);
+  if (Number.isNaN(date.getTime())) return false;
+  return date.getTime() < Date.now();
+}
+
+function dueBadgeClass(isLate: boolean): string {
+  if (isLate) {
+    return "bg-rose-500/10 text-rose-200 ring-1 ring-rose-500/40";
+  }
+  return "bg-slate-900/80 text-slate-300 ring-1 ring-slate-700/80";
+}
+
 async function toggleTaskStatusAction(formData: FormData): Promise<void> {
   "use server";
 
@@ -193,6 +209,49 @@ async function deleteTaskAction(formData: FormData): Promise<void> {
   redirect(`/app/estates/${estateId}/tasks`);
 }
 
+function cx(...parts: Array<string | false | null | undefined>): string {
+  return parts.filter(Boolean).join(" ");
+}
+
+type ConfirmedDeleteFormProps = {
+  estateId: string;
+  taskId: string;
+  disabled: boolean;
+  action: (formData: FormData) => Promise<void>;
+};
+
+function ConfirmedDeleteForm({ estateId, taskId, disabled, action }: ConfirmedDeleteFormProps) {
+  "use client";
+
+  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    if (disabled) return;
+    const ok = window.confirm(
+      "Delete this task? This cannot be undone."
+    );
+    if (!ok) e.preventDefault();
+  };
+
+  return (
+    <form action={action} onSubmit={onSubmit} className="inline-flex">
+      <input type="hidden" name="estateId" value={estateId} />
+      <input type="hidden" name="taskId" value={taskId} />
+      <button
+        type="submit"
+        disabled={disabled}
+        title={disabled ? "View-only access" : "Delete task"}
+        className={cx(
+          "inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-semibold shadow-sm shadow-black/40",
+          disabled
+            ? "cursor-not-allowed border-slate-800/60 bg-slate-950 text-slate-600"
+            : "border-rose-600/60 bg-rose-900/20 text-rose-200 hover:border-rose-500 hover:bg-rose-900/40"
+        )}
+      >
+        Delete
+      </button>
+    </form>
+  );
+}
+
 export default async function TaskDetailPage({ params, searchParams }: PageProps) {
   const { estateId, taskId } = await params;
   const sp = (await searchParams) ?? {};
@@ -216,9 +275,35 @@ export default async function TaskDetailPage({ params, searchParams }: PageProps
   const id = typeof task._id === "string" ? task._id : task._id.toString();
 
   const isDone = task.status === "DONE";
+  const overdue = isOverdue(task.status, task.date);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
+      <nav className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+        <Link
+          href="/app"
+          className="hover:text-slate-200"
+        >
+          App
+        </Link>
+        <span className="text-slate-600">/</span>
+        <Link
+          href={`/app/estates/${estateId}`}
+          className="hover:text-slate-200"
+        >
+          Estate
+        </Link>
+        <span className="text-slate-600">/</span>
+        <Link
+          href={`/app/estates/${estateId}/tasks`}
+          className="hover:text-slate-200"
+        >
+          Tasks
+        </Link>
+        <span className="text-slate-600">/</span>
+        <span className="text-slate-200">Task</span>
+      </nav>
+
       {!canEdit ? (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
           {showRequestAccess ? (
@@ -266,8 +351,14 @@ export default async function TaskDetailPage({ params, searchParams }: PageProps
             >
               Priority: {priorityLabel(task.priority)}
             </span>
-            <span className="inline-flex items-center rounded-full bg-slate-900/80 px-2.5 py-1 text-[11px] font-medium text-slate-300 ring-1 ring-slate-700/80">
+            <span
+              className={cx(
+                "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium",
+                dueBadgeClass(overdue)
+              )}
+            >
               Due: {formatDate(task.date)}
+              {overdue ? <span className="ml-2 text-[10px] font-semibold">Overdue</span> : null}
             </span>
           </div>
         </div>
@@ -275,7 +366,7 @@ export default async function TaskDetailPage({ params, searchParams }: PageProps
         <div className="flex flex-wrap items-center justify-start gap-2 text-xs sm:justify-end">
           <Link
             href={`/app/estates/${estateId}/tasks`}
-            className="inline-flex items-center rounded-lg border border-slate-800 px-3 py-1.5 font-medium text-slate-300 hover:border-slate-500/70 hover:text-slate-100"
+            className="inline-flex items-center rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-1.5 font-medium text-slate-300 hover:border-slate-500/70 hover:text-slate-100"
           >
             Back to tasks
           </Link>
@@ -283,13 +374,13 @@ export default async function TaskDetailPage({ params, searchParams }: PageProps
           {canEdit ? (
             <Link
               href={`/app/estates/${estateId}/tasks/${id}/edit`}
-              className="inline-flex items-center rounded-lg border border-slate-800 px-3 py-1.5 font-medium shadow-sm shadow-black/40 text-slate-300 hover:border-slate-500/70 hover:text-slate-100"
+              className="inline-flex items-center rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-1.5 font-semibold text-slate-200 shadow-sm shadow-black/40 hover:border-slate-500/70 hover:bg-slate-900"
             >
               Edit
             </Link>
           ) : (
             <span
-              className="inline-flex items-center rounded-lg border border-slate-800/60 px-3 py-1.5 font-medium text-slate-600 shadow-sm shadow-black/40"
+              className="inline-flex items-center rounded-lg border border-slate-800/60 bg-slate-950/30 px-3 py-1.5 font-semibold text-slate-600 shadow-sm shadow-black/40"
               title="View-only access"
             >
               Edit
@@ -303,38 +394,27 @@ export default async function TaskDetailPage({ params, searchParams }: PageProps
             <button
               type="submit"
               disabled={!canEdit}
-              aria-disabled={!canEdit}
               title={!canEdit ? "View-only access" : undefined}
-              className={`inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm shadow-black/40 ${
+              className={cx(
+                "inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm shadow-black/40",
                 !canEdit
                   ? "cursor-not-allowed border border-slate-800/60 bg-slate-950 text-slate-600"
                   : isDone
                   ? "border border-emerald-500/40 bg-slate-950 text-emerald-300 hover:border-emerald-400 hover:bg-slate-900"
                   : "bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
-              }`}
+              )}
             >
-              {isDone ? "Mark as open" : "Mark as done"}
+              {isDone ? "Reopen" : "Complete"}
             </button>
           </form>
 
-          {/* Delete task button (server action) */}
-          <form action={deleteTaskAction} className="inline-flex">
-            <input type="hidden" name="estateId" value={estateId} />
-            <input type="hidden" name="taskId" value={id} />
-            <button
-              type="submit"
-              disabled={!canEdit}
-              aria-disabled={!canEdit}
-              title={!canEdit ? "View-only access" : undefined}
-              className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-semibold shadow-sm shadow-black/40 ${
-                canEdit
-                  ? "border-rose-600/60 bg-rose-900/20 text-rose-200 hover:border-rose-500 hover:bg-rose-900/40"
-                  : "cursor-not-allowed border-slate-800/60 bg-slate-950 text-slate-600"
-              }`}
-            >
-              Delete task
-            </button>
-          </form>
+          {/* Delete task (confirmed) */}
+          <ConfirmedDeleteForm
+            estateId={estateId}
+            taskId={id}
+            disabled={!canEdit}
+            action={deleteTaskAction}
+          />
         </div>
       </div>
 
@@ -346,10 +426,13 @@ export default async function TaskDetailPage({ params, searchParams }: PageProps
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
               Description
             </h2>
-            <p className="text-sm leading-relaxed text-slate-100">
+            <p className={cx(
+              "text-sm leading-relaxed",
+              task.description?.trim() ? "text-slate-100" : "text-slate-400"
+            )}>
               {task.description?.trim()
                 ? task.description
-                : "No description added yet."}
+                : "No description yet. Add context so collaborators know what success looks like."}
             </p>
           </section>
 
@@ -357,16 +440,19 @@ export default async function TaskDetailPage({ params, searchParams }: PageProps
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
               Internal notes
             </h2>
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-100">
+            <p className={cx(
+              "whitespace-pre-wrap text-sm leading-relaxed",
+              task.notes?.trim() ? "text-slate-100" : "text-slate-400"
+            )}>
               {task.notes?.trim()
                 ? task.notes
-                : "No notes recorded yet."}
+                : "No internal notes yet. Use this for private context, decisions, or next steps."}
             </p>
           </section>
         </div>
 
         {/* Right: metadata */}
-        <aside className="space-y-4">
+        <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
           <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-xs text-slate-200 shadow-sm shadow-black/40">
             <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
               Task details
@@ -386,8 +472,9 @@ export default async function TaskDetailPage({ params, searchParams }: PageProps
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-slate-500">Due date</dt>
-                <dd className="text-slate-100">
+                <dd className={cx("text-slate-100", overdue && "text-rose-200")}>
                   {formatDate(task.date)}
+                  {overdue ? <span className="ml-2 text-[10px] font-semibold">Overdue</span> : null}
                 </dd>
               </div>
               <div className="flex justify-between gap-4">

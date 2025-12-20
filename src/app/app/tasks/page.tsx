@@ -230,6 +230,10 @@ export default async function TasksPage({ searchParams }: PageProps) {
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  const activeEstateName = rawEstateId
+    ? estateOptions.find((opt) => opt.id === rawEstateId)?.name ?? "Selected estate"
+    : null;
+
   const tasks: TaskRow[] = rawTasks.map((doc) => {
     const due =
       doc.dueDate instanceof Date
@@ -343,66 +347,93 @@ export default async function TasksPage({ searchParams }: PageProps) {
 
       {/* Filters + actions */}
       <section className="flex flex-wrap items-center justify-between gap-3 pt-2">
-        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-slate-500">Status:</span>
-            <div className="flex flex-wrap gap-1">
-              {ALL_STATUSES.map((status) => {
-                const isActive = status === statusFilter;
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+            <span className="text-slate-500">Showing</span>
+            <span className="font-semibold text-slate-200">{totalTasks}</span>
+            <span className="text-slate-500">task{totalTasks === 1 ? "" : "s"}</span>
 
-                const params = new URLSearchParams();
-                if (status !== "ALL") params.set("status", status);
-                if (rawEstateId) params.set("estateId", rawEstateId);
-
-                const href = params.toString() ? `/app/tasks?${params.toString()}` : "/app/tasks";
-
-                return (
-                  <Link
-                    key={status}
-                    href={href}
-                    className={[
-                      "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px]",
-                      isActive
-                        ? "border-sky-500 bg-sky-500/10 text-sky-200"
-                        : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500",
-                    ].join(" ")}
-                  >
-                    {status === "ALL" ? "All" : humanizeStatus(status)}
-                  </Link>
-                );
-              })}
-            </div>
+            {hasActiveFilters ? (
+              <span className="text-slate-500">
+                · Filtered by
+                {statusFilter !== "ALL" ? (
+                  <span className="ml-1 text-slate-300">
+                    status <span className="font-semibold text-slate-200">{humanizeStatus(statusFilter)}</span>
+                  </span>
+                ) : null}
+                {activeEstateName ? (
+                  <span className="ml-1 text-slate-300">
+                    {statusFilter !== "ALL" ? "and" : ""} estate <span className="font-semibold text-slate-200">{activeEstateName}</span>
+                  </span>
+                ) : null}
+              </span>
+            ) : (
+              <span className="text-slate-500">· No filters applied</span>
+            )}
           </div>
 
-          {estateOptions.length > 0 ? (
-            <form action="/app/tasks" method="GET" className="flex items-center gap-2">
-              {statusFilter !== "ALL" ? (
-                <input type="hidden" name="status" value={statusFilter} />
-              ) : null}
-              <label className="text-slate-500" htmlFor="estateId">
-                Estate:
-              </label>
-              <select
-                id="estateId"
-                name="estateId"
-                defaultValue={rawEstateId ?? ""}
-                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200"
-              >
-                <option value="">All estates</option>
-                {estateOptions.map((opt) => (
-                  <option key={opt.id} value={opt.id}>
-                    {opt.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
-              >
-                Apply
-              </button>
-            </form>
-          ) : null}
+          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-slate-500">Status:</span>
+              <div className="flex flex-wrap gap-1">
+                {ALL_STATUSES.map((status) => {
+                  const isActive = status === statusFilter;
+
+                  const params = new URLSearchParams();
+                  if (status !== "ALL") params.set("status", status);
+                  if (rawEstateId) params.set("estateId", rawEstateId);
+
+                  const href = params.toString() ? `/app/tasks?${params.toString()}` : "/app/tasks";
+
+                  return (
+                    <Link
+                      key={status}
+                      href={href}
+                      title={status === "ALL" ? "Show all tasks" : `Filter by ${humanizeStatus(status)}`}
+                      className={[
+                        "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px]",
+                        isActive
+                          ? "border-sky-500 bg-sky-500/10 text-sky-200"
+                          : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500",
+                      ].join(" ")}
+                    >
+                      {status === "ALL" ? "All" : humanizeStatus(status)}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+
+            {estateOptions.length > 0 ? (
+              <form action="/app/tasks" method="GET" className="flex items-center gap-2">
+                {statusFilter !== "ALL" ? (
+                  <input type="hidden" name="status" value={statusFilter} />
+                ) : null}
+                <label className="text-slate-500" htmlFor="estateId">
+                  Estate:
+                </label>
+                <select
+                  id="estateId"
+                  name="estateId"
+                  defaultValue={rawEstateId ?? ""}
+                  className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-200"
+                >
+                  <option value="">All estates</option>
+                  {estateOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="submit"
+                  className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+                >
+                  Apply
+                </button>
+              </form>
+            ) : null}
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
@@ -484,12 +515,20 @@ export default async function TasksPage({ searchParams }: PageProps) {
                     return (
                       <tr
                         key={task.id}
-                        className={isOdd ? "bg-slate-900/40" : "bg-slate-950/40"}
+                        className={[
+                          isOdd ? "bg-slate-900/40" : "bg-slate-950/40",
+                          "transition-colors hover:bg-slate-800/30",
+                        ].join(" ")}
                       >
                         <td className="sticky left-0 z-10 max-w-md border-b border-slate-800 bg-inherit px-4 py-2 align-top text-sm text-slate-50">
                           <div className="flex flex-col gap-0.5">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-medium">{task.title}</span>
+                              <Link
+                                href={`/app/tasks/${task.id}`}
+                                className="font-medium text-slate-50 hover:text-sky-300 hover:underline underline-offset-2"
+                              >
+                                {task.title}
+                              </Link>
                               {due ? (
                                 <span
                                   className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${due.className}`}
@@ -543,7 +582,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
                         <td className="border-b border-slate-800 px-4 py-2 align-top text-right text-xs">
                           <Link
                             href={`/app/tasks/${task.id}`}
-                            className="text-sky-400 hover:text-sky-300"
+                            className="inline-flex items-center rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
                           >
                             View
                           </Link>

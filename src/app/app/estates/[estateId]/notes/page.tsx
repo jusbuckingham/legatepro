@@ -450,12 +450,12 @@ export default async function EstateNotesPage({
             </label>
 
             {hasFilters && (
-              <a
+              <Link
                 href={`/app/estates/${estateId}/notes`}
                 className="whitespace-nowrap text-[11px] text-slate-400 hover:text-slate-200"
               >
                 Clear filters
-              </a>
+              </Link>
             )}
           </div>
         </form>
@@ -499,12 +499,12 @@ export default async function EstateNotesPage({
             <p className="text-sm font-medium text-slate-100">No matches</p>
             <p className="text-sm text-slate-400">No notes match this search or filter.</p>
             {hasFilters ? (
-              <a
+              <Link
                 href={`/app/estates/${estateId}/notes`}
                 className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/70"
               >
                 Clear filters
-              </a>
+              </Link>
             ) : null}
           </div>
         ) : (

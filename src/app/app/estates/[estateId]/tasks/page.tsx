@@ -478,9 +478,12 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
             </select>
 
             {hasFilters && (
-              <a href={`/app/estates/${estateId}/tasks`} className="whitespace-nowrap text-[11px] text-gray-500 hover:text-gray-800">
+              <Link
+                href={`/app/estates/${estateId}/tasks`}
+                className="whitespace-nowrap text-[11px] text-gray-500 hover:text-gray-800"
+              >
                 Clear
-              </a>
+              </Link>
             )}
           </div>
         </form>
@@ -502,12 +505,12 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
               </span>
               {hasFilters ? <span className="text-gray-300">·</span> : null}
               {hasFilters ? (
-                <a
+                <Link
                   href={`/app/estates/${estateId}/tasks`}
                   className="font-semibold text-gray-700 hover:text-gray-900 hover:underline"
                 >
                   Clear filters
-                </a>
+                </Link>
               ) : null}
             </div>
           ) : null}
@@ -548,9 +551,12 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
             <p className="text-sm font-medium text-gray-900">No matching tasks</p>
             <p className="mt-1 text-sm text-gray-600">Try changing your search or status filter.</p>
             <div className="mt-3">
-              <a href={`/app/estates/${estateId}/tasks`} className="text-sm font-semibold text-gray-800 hover:underline">
+              <Link
+                href={`/app/estates/${estateId}/tasks`}
+                className="text-sm font-semibold text-gray-800 hover:underline"
+              >
                 Clear filters
-              </a>
+              </Link>
             </div>
           </div>
         ) : (
