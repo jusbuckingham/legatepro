@@ -3,8 +3,8 @@
 // In production, replace this with a real auth solution (NextAuth, Clerk, custom JWT, etc.).
 
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "../../../lib/db";
-import { User } from "../../../models/User";
+import { connectToDatabase } from "@/lib/db";
+import { User } from "@/models/User";
 
 // GET /api/auth
 // Returns a mock "current user" for development.
@@ -14,8 +14,18 @@ export async function GET() {
 
     const demoEmail = process.env.LEGATEPRO_DEMO_EMAIL || "demo@legatepro.test";
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let user: any = await User.findOne({ email: demoEmail }).lean();
+    const asRecord = (v: unknown): Record<string, unknown> | null => {
+      if (v && typeof v === "object") return v as Record<string, unknown>;
+      return null;
+    };
+
+    const asString = (v: unknown): string | null => (typeof v === "string" ? v : null);
+
+    const asBool = (v: unknown, fallback = false): boolean =>
+      typeof v === "boolean" ? v : fallback;
+
+    // Try to load a demo user
+    let user = asRecord(await User.findOne({ email: demoEmail }).lean());
 
     // If the demo user doesn't exist yet, create it.
     if (!user) {
@@ -26,25 +36,22 @@ export async function GET() {
         authProvider: "password",
         onboardingCompleted: false,
       });
-      user = created.toObject();
+      user = asRecord(created.toObject());
     }
 
     // Only send safe fields to the client
     const safeUser = {
-      id: String(user._id),
-      email: user.email,
-      firstName: user.firstName ?? null,
-      lastName: user.lastName ?? null,
-      onboardingCompleted: user.onboardingCompleted ?? false,
-      subscriptionStatus: user.subscriptionStatus ?? null,
+      id: user?._id != null ? String(user._id) : "",
+      email: asString(user?.email) ?? demoEmail,
+      firstName: asString(user?.firstName),
+      lastName: asString(user?.lastName),
+      onboardingCompleted: asBool(user?.onboardingCompleted, false),
+      subscriptionStatus: asString(user?.subscriptionStatus),
     };
 
     return NextResponse.json({ user: safeUser }, { status: 200 });
   } catch (error) {
     console.error("GET /api/auth error", error);
-    return NextResponse.json(
-      { error: "Unable to load current user" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Unable to load current user" }, { status: 500 });
   }
 }
