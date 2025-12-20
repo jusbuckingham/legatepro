@@ -771,9 +771,8 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   const pageEvents = hasMore ? sortedForPaging.slice(0, pageSize) : sortedForPaging;
   const nextBefore = hasMore ? pageEvents[pageEvents.length - 1]?.timestamp : null;
 
-  const filteredCount = pageEvents.length;
-  const modeFilter: "ALL" | "activity" | "event" =
-    typeFilter === "activity" || typeFilter === "event" ? typeFilter : "ALL";
+  const totalFilteredCount = filteredEvents.length;
+  const pageCount = pageEvents.length;
 
   const today = new Date();
   const todayKey = toDateKey(today);
@@ -859,8 +858,8 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
 
           <div className="flex flex-col items-start gap-1 md:items-end">
             <span>
-              <span className="font-medium">{hasFilters ? filteredCount : events.length}</span> event
-              {(hasFilters ? filteredCount : events.length) === 1 ? "" : "s"}
+              <span className="font-medium">{hasFilters ? totalFilteredCount : events.length}</span> event
+              {(hasFilters ? totalFilteredCount : events.length) === 1 ? "" : "s"}
               {hasFilters && !isValidBefore && (
                 <span className="ml-1 text-[11px] text-gray-400">(of {events.length})</span>
               )}
@@ -895,38 +894,12 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
               </Link>
             );
           })}
-          <span className="ml-1 text-xs text-gray-500">{filteredCount} shown</span>
+          <span className="ml-1 text-xs text-gray-500">
+            {pageCount} shown{hasMore ? ` of ${totalFilteredCount}` : ""}
+          </span>
           {(typeFilter === "invoice" || typeFilter === "task" || typeFilter === "document" || typeFilter === "note") && (
             <Link href={buildHref("ALL")} className="ml-1 text-xs text-gray-500 hover:text-gray-800">
               Clear type
-            </Link>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {[
-            { key: "ALL", label: "Everything" },
-            { key: "activity", label: "Activity log" },
-            { key: "event", label: "Legacy events" },
-          ].map((opt) => {
-            const isActive = modeFilter === opt.key;
-            return (
-              <Link
-                key={opt.key}
-                href={buildHref(opt.key)}
-                className={
-                  "inline-flex items-center rounded-full border px-3 py-1 text-xs " +
-                  (isActive ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50")
-                }
-              >
-                {opt.label}
-              </Link>
-            );
-          })}
-          <span className="ml-1 text-xs text-gray-500">Quick view</span>
-          {modeFilter !== "ALL" && (
-            <Link href={buildHref("ALL")} className="ml-1 text-xs text-gray-500 hover:text-gray-800">
-              Clear view
             </Link>
           )}
         </div>
@@ -981,8 +954,11 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
             <div className="flex flex-col gap-2 rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span>
-                  Showing <span className="font-medium text-gray-900">{filteredCount}</span>
-                  {filteredCount === 1 ? " event" : " events"}
+                  Showing <span className="font-medium text-gray-900">{pageCount}</span>
+                  {pageCount === 1 ? " event" : " events"}
+                  {hasMore ? (
+                    <span className="ml-1 text-gray-400">(of {totalFilteredCount})</span>
+                  ) : null}
                 </span>
                 <span className="text-gray-400">•</span>
                 <span>

@@ -119,13 +119,11 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
   let searchQuery = "";
   let statusFilter = "";
   let overdueOnly = false;
-  let mineOnly = false;
   if (searchParams) {
     const sp = await searchParams;
     if (sp?.q && typeof sp.q === "string") searchQuery = sp.q.trim();
-    if (sp?.status && typeof sp.status === "string") statusFilter = sp.status;
+    if (sp?.status && typeof sp.status === "string") statusFilter = sp.status.toLowerCase();
     if (sp?.overdue && (sp.overdue === "1" || sp.overdue === "true")) overdueOnly = true;
-    if (sp?.mine && (sp.mine === "1" || sp.mine === "true")) mineOnly = true;
   }
 
   const invoices = await getInvoices(estateId);
@@ -137,6 +135,16 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
       ...inv,
       status: overdue ? "overdue" : inv.status,
     };
+  });
+  computedInvoices.sort((a, b) => {
+    const aKey = a.issueDate || a.createdAt || "";
+    const bKey = b.issueDate || b.createdAt || "";
+    const aTime = new Date(aKey).getTime();
+    const bTime = new Date(bKey).getTime();
+    if (Number.isNaN(aTime) && Number.isNaN(bTime)) return 0;
+    if (Number.isNaN(aTime)) return 1;
+    if (Number.isNaN(bTime)) return -1;
+    return bTime - aTime;
   });
 
   // Filtering
@@ -155,7 +163,6 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
       inv.description.toLowerCase().includes(q)
     );
   }
-  // mineOnly toggle UI, not enforced unless ownerId present
 
   // Summary stats
   const totalAmount = computedInvoices.reduce((sum, inv) => sum + inv.amount, 0);
@@ -169,8 +176,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
   const anyFilters = !!(
     searchQuery ||
     (statusFilter && statusFilter !== "all") ||
-    overdueOnly ||
-    mineOnly
+    overdueOnly
   );
 
   // Filter form action URL
@@ -234,7 +240,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
         <section className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
           <p className="text-sm text-slate-400">
             You have <span className="font-semibold text-slate-200">view-only</span> access. You can review invoices, but creating or editing invoices
-            requires edit permissions.
+            requires edit permissions from the estate owner.
           </p>
         </section>
       )}
@@ -242,7 +248,14 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
       {/* Invoices list section */}
       <section className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
         <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-          <h2 className="text-lg font-semibold text-slate-50">Existing Invoices</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-slate-50">Existing Invoices</h2>
+            {computedInvoices.length > 0 && (
+              <span className="rounded-full border border-slate-800 bg-slate-950/60 px-2 py-0.5 text-xs text-slate-400">
+                {filteredInvoices.length} / {computedInvoices.length}
+              </span>
+            )}
+          </div>
           {computedInvoices.length > 0 && (
             <form
               action={filterAction}
@@ -280,26 +293,20 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
                 />
                 Overdue only
               </label>
-              <label className="inline-flex items-center gap-1 text-xs text-slate-400">
-                <input
-                  type="checkbox"
-                  name="mine"
-                  value="1"
-                  defaultChecked={mineOnly}
-                  className="accent-slate-500"
-                  disabled
-                />
-                Mine only
-              </label>
               {anyFilters && (
                 <Link
                   href={filterAction}
-                  className="text-xs text-blue-400 hover:underline whitespace-nowrap"
+                  className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-transparent px-3 py-1.5 text-sm font-medium text-slate-300 hover:bg-slate-900/40 whitespace-nowrap"
                 >
                   Clear
                 </Link>
               )}
-              <button type="submit" className="hidden" aria-hidden="true" />
+              <button
+                type="submit"
+                className="inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-900"
+              >
+                Apply
+              </button>
             </form>
           )}
         </div>
