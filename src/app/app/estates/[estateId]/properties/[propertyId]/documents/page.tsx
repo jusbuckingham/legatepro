@@ -1,6 +1,7 @@
 import { connectToDatabase } from "../../../../../../../lib/db";
 import { EstateDocument } from "../../../../../../../models/EstateDocument";
 import { EstateProperty } from "../../../../../../../models/EstateProperty";
+import Link from "next/link";
 
 interface PropertyDocumentsPageProps {
   params: {
@@ -75,17 +76,28 @@ export default async function PropertyDocumentsPage({
     <div className="space-y-6">
       {/* Breadcrumb */}
       <nav className="text-xs text-slate-500">
-        <span className="text-slate-500">Estates</span>
+        <Link
+          href="/app/estates"
+          className="text-slate-400 hover:text-slate-200"
+        >
+          Estates
+        </Link>
         <span className="mx-1 text-slate-600">/</span>
-        {property ? (
-          <>
-            <span className="text-slate-400">Property</span>
-            <span className="mx-1 text-slate-600">/</span>
-            <span className="text-rose-300">Documents</span>
-          </>
-        ) : (
-          <span className="text-rose-300">Property documents</span>
-        )}
+        <Link
+          href={`/app/estates/${estateId}/properties`}
+          className="text-slate-400 hover:text-slate-200"
+        >
+          Properties
+        </Link>
+        <span className="mx-1 text-slate-600">/</span>
+        <Link
+          href={`/app/estates/${estateId}/properties/${propertyId}`}
+          className="text-slate-400 hover:text-slate-200"
+        >
+          {property ? property.label : "Property"}
+        </Link>
+        <span className="mx-1 text-slate-600">/</span>
+        <span className="text-rose-300">Documents</span>
       </nav>
 
       {/* Header */}
@@ -120,12 +132,25 @@ export default async function PropertyDocumentsPage({
             )}
           </div>
 
-          <div className="flex flex-wrap gap-2 text-xs">
-            <span className="inline-flex items-center rounded-full border border-rose-500/40 bg-rose-950/70 px-3 py-1 font-medium uppercase tracking-wide text-rose-100">
+          <div className="flex flex-wrap items-center justify-start gap-2 text-xs md:justify-end">
+            <Link
+              href={`/app/estates/${estateId}/properties/${propertyId}`}
+              className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-1.5 font-medium text-slate-200 hover:bg-slate-900"
+            >
+              View property
+            </Link>
+            <Link
+              href={`/app/estates/${estateId}/documents`}
+              className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-1.5 font-medium text-slate-200 hover:bg-slate-900"
+            >
+              Estate documents
+            </Link>
+
+            <span className="ml-1 inline-flex items-center rounded-full border border-rose-500/40 bg-rose-950/70 px-3 py-1 font-medium uppercase tracking-wide text-rose-100">
               Property scope
             </span>
             <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900/80 px-3 py-1 text-[11px] text-slate-300">
-              Tag documents with{" "}
+              Tag
               <span className="ml-1 font-mono text-[10px] bg-slate-900/70 px-1.5 py-0.5 rounded">
                 property:{propertyId}
               </span>
@@ -154,6 +179,16 @@ export default async function PropertyDocumentsPage({
             When documents in your estate index include the tag{" "}
             <span className="font-mono text-xs">property:{propertyId}</span>,
             they will automatically appear here.
+          </p>
+          <p className="mt-3 text-xs text-slate-400">
+            Go to{" "}
+            <Link
+              href={`/app/estates/${estateId}/documents`}
+              className="text-slate-200 underline hover:text-slate-50"
+            >
+              Estate documents
+            </Link>
+            {" "}to add or tag a file.
           </p>
           <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-slate-400">
             <li>Deeds and title work</li>
@@ -202,7 +237,7 @@ export default async function PropertyDocumentsPage({
                         href={doc.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-xs text-blue-400 underline hover:text-blue-300"
+                        className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900/60 px-2.5 py-1 text-xs font-medium text-slate-200 hover:bg-slate-900"
                       >
                         View
                       </a>

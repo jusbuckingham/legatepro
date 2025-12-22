@@ -179,7 +179,39 @@ export default async function PropertyRentPage({
 
   return (
     <div className="space-y-6">
-      <header className="space-y-3">
+      <header className="space-y-4">
+        <nav className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400">
+          <Link
+            href="/app/estates"
+            className="hover:text-slate-200"
+          >
+            Estates
+          </Link>
+          <span className="text-slate-600">/</span>
+          <Link
+            href={`/app/estates/${estateId}`}
+            className="hover:text-slate-200"
+          >
+            {estateId}
+          </Link>
+          <span className="text-slate-600">/</span>
+          <Link
+            href={`/app/estates/${estateId}/properties`}
+            className="hover:text-slate-200"
+          >
+            Properties
+          </Link>
+          <span className="text-slate-600">/</span>
+          <Link
+            href={`/app/estates/${estateId}/properties/${propertyId}`}
+            className="hover:text-slate-200"
+          >
+            {property.label}
+          </Link>
+          <span className="text-slate-600">/</span>
+          <span className="text-slate-200">Rent</span>
+        </nav>
+
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
@@ -187,40 +219,49 @@ export default async function PropertyRentPage({
             </h1>
             <p className="text-sm text-slate-400">
               Rent history for{" "}
-              <span className="font-medium text-slate-100">
-                {property.label}
-              </span>
+              <span className="font-medium text-slate-100">{property.label}</span>
               {formatAddress(property) && (
                 <>
                   {" "}
                   <span className="text-slate-500">·</span>{" "}
-                  <span className="text-slate-300">
-                    {formatAddress(property)}
-                  </span>
+                  <span className="text-slate-300">{formatAddress(property)}</span>
                 </>
               )}
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              This view keeps a clean ledger for this specific property, so you
-              can answer questions like “how much rent did we actually collect
-              for this address during probate?” in seconds.
+              This ledger is scoped to this property so your final accounting is
+              fast and defensible.
             </p>
           </div>
-          <div className="flex flex-col items-end gap-2">
+
+          <div className="flex flex-col items-start gap-2 sm:items-end">
             {primaryTenant && (
               <div className="rounded-full border border-slate-700 bg-slate-900/60 px-3 py-1 text-xs text-slate-300">
                 Current tenant:{" "}
-                <span className="font-medium text-slate-100">
-                  {primaryTenant}
-                </span>
+                <span className="font-medium text-slate-100">{primaryTenant}</span>
               </div>
             )}
-            <Link
-              href={`/app/estates/${estateId}/properties/${propertyId}`}
-              className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-xs font-medium text-slate-200 hover:border-rose-500/70 hover:text-rose-100"
-            >
-              ← Back to property overview
-            </Link>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href={`/app/estates/${estateId}/rent/new`}
+                className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-500"
+              >
+                + Add payment
+              </Link>
+              <Link
+                href={`/app/estates/${estateId}/rent`}
+                className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-xs font-medium text-slate-200 hover:border-rose-500/70 hover:text-rose-100"
+              >
+                View estate rent
+              </Link>
+              <Link
+                href={`/app/estates/${estateId}/properties/${propertyId}`}
+                className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-xs font-medium text-slate-200 hover:border-rose-500/70 hover:text-rose-100"
+              >
+                ← Back to property
+              </Link>
+            </div>
           </div>
         </div>
       </header>
@@ -266,11 +307,23 @@ export default async function PropertyRentPage({
             No rent payments recorded yet for this property.
           </p>
           <p className="mt-1 text-slate-400">
-            As you receive rent, record each payment in LegatePro so you can
-            generate a clean ledger and receipts tied specifically to this
-            address. This becomes critical when you&apos;re preparing your final
-            accounting for the court.
+            Record each payment as it comes in so your ledger, receipts, and
+            final accounting are always ready.
           </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link
+              href={`/app/estates/${estateId}/rent/new`}
+              className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-500"
+            >
+              + Add first payment
+            </Link>
+            <Link
+              href={`/app/estates/${estateId}/rent`}
+              className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-xs font-medium text-slate-200 hover:border-rose-500/70 hover:text-rose-100"
+            >
+              View estate rent
+            </Link>
+          </div>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/60 text-sm">

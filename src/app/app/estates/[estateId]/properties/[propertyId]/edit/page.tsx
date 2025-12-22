@@ -92,11 +92,51 @@ export default async function EditPropertyPage({ params }: PageProps) {
             Back to properties
           </Link>
           <Link
+            href={`/app/estates/${estateId}/properties/${propertyId}`}
+            className="inline-flex items-center rounded-lg border border-slate-800 px-3 py-1.5 font-medium text-slate-300 hover:border-slate-500/70 hover:text-slate-100"
+          >
+            View property
+          </Link>
+          <Link
             href={`/app/estates/${estateId}`}
             className="inline-flex items-center rounded-lg border border-slate-800 px-3 py-1.5 font-medium text-slate-300 hover:border-slate-500/70 hover:text-slate-100"
           >
             View estate overview
           </Link>
+        </div>
+      </div>
+
+      {/* Quick links */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-3 sm:p-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+              Property shortcuts
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              Jump to related sections for <span className="font-medium text-slate-200">{title}</span>.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <Link
+              href={`/app/estates/${estateId}/properties/${propertyId}/documents`}
+              className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium text-slate-100 hover:bg-slate-800"
+            >
+              Documents
+            </Link>
+            <Link
+              href={`/app/estates/${estateId}/properties/${propertyId}/rent`}
+              className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium text-slate-100 hover:bg-slate-800"
+            >
+              Rent
+            </Link>
+            <Link
+              href={`/app/estates/${estateId}/properties/${propertyId}/utilities`}
+              className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium text-slate-100 hover:bg-slate-800"
+            >
+              Utilities
+            </Link>
+          </div>
         </div>
       </div>
 

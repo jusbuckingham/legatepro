@@ -108,6 +108,24 @@ export default async function PropertyDetailPage({ params }: PageProps) {
           >
             Edit property
           </Link>
+          <Link
+            href={`/app/estates/${estateId}/properties/${id}/documents`}
+            className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium text-slate-100 hover:bg-slate-800"
+          >
+            Documents
+          </Link>
+          <Link
+            href={`/app/estates/${estateId}/properties/${id}/rent`}
+            className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium text-slate-100 hover:bg-slate-800"
+          >
+            Rent
+          </Link>
+          <Link
+            href={`/app/estates/${estateId}/properties/${id}/utilities`}
+            className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium text-slate-100 hover:bg-slate-800"
+          >
+            Utilities
+          </Link>
           <DeletePropertyButton
             estateId={estateId}
             propertyId={id}
@@ -146,6 +164,48 @@ export default async function PropertyDetailPage({ params }: PageProps) {
         </div>
       </div>
 
+      {/* Quick actions */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Link
+          href={`/app/estates/${estateId}/properties/${id}/documents`}
+          className="group rounded-xl border border-slate-800 bg-slate-950/60 p-4 transition hover:bg-slate-950"
+        >
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Documents
+          </p>
+          <p className="mt-1 text-sm font-medium text-slate-50 group-hover:text-white">
+            Manage property documents
+          </p>
+          <p className="mt-1 text-xs text-slate-400">
+            Deeds, leases, photos, inspections
+          </p>
+        </Link>
+        <Link
+          href={`/app/estates/${estateId}/properties/${id}/rent`}
+          className="group rounded-xl border border-slate-800 bg-slate-950/60 p-4 transition hover:bg-slate-950"
+        >
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Rent
+          </p>
+          <p className="mt-1 text-sm font-medium text-slate-50 group-hover:text-white">
+            Track rent payments
+          </p>
+          <p className="mt-1 text-xs text-slate-400">Payments and history</p>
+        </Link>
+        <Link
+          href={`/app/estates/${estateId}/properties/${id}/utilities`}
+          className="group rounded-xl border border-slate-800 bg-slate-950/60 p-4 transition hover:bg-slate-950"
+        >
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Utilities
+          </p>
+          <p className="mt-1 text-sm font-medium text-slate-50 group-hover:text-white">
+            Manage utility accounts
+          </p>
+          <p className="mt-1 text-xs text-slate-400">Bills, providers, notes</p>
+        </Link>
+      </div>
+
       {/* Details */}
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-950/60 p-4 text-sm text-slate-200">
@@ -160,7 +220,7 @@ export default async function PropertyDetailPage({ params }: PageProps) {
               </p>
             </div>
             <div>
-              <p className="text-slate-500">City / State</p>
+              <p className="text-slate-500">City / state</p>
               <p className="text-slate-100">
                 {location || "No city/state set"}
               </p>

@@ -65,64 +65,115 @@ export default async function PropertyUtilitiesPage({
     .sort({ provider: 1 })
     .lean()) as unknown as UtilityItem[];
 
+  const address = property ? formatAddress(property) : "";
+
   return (
     <div className="space-y-6">
       <header className="space-y-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
-              Utilities
-            </h1>
-            {property && (
-              <>
-                <p className="text-sm text-slate-400">
-                  Accounts linked to{" "}
-                  <span className="font-medium text-slate-200">
-                    {property.label}
-                  </span>
-                  {formatAddress(property) && (
-                    <>
-                      {" "}
-                      —{" "}
-                      <span className="font-mono text-xs">
-                        {formatAddress(property)}
-                      </span>
-                    </>
-                  )}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Keep power, water, gas, and internet organized so you can show
-                  the court that everything stayed current while you served as
-                  personal representative.
-                </p>
-              </>
-            )}
-          </div>
-          <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-col gap-2">
+          <nav className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+            <Link
+              href="/app/estates"
+              className="hover:text-slate-200"
+            >
+              Estates
+            </Link>
+            <span className="text-slate-600">/</span>
+            <Link
+              href={`/app/estates/${estateId}`}
+              className="hover:text-slate-200"
+            >
+              Estate
+            </Link>
+            <span className="text-slate-600">/</span>
+            <Link
+              href={`/app/estates/${estateId}/properties`}
+              className="hover:text-slate-200"
+            >
+              Properties
+            </Link>
+            <span className="text-slate-600">/</span>
             <Link
               href={`/app/estates/${estateId}/properties/${propertyId}`}
-              className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-xs font-medium text-slate-200 hover:border-rose-500/70 hover:text-rose-100"
+              className="hover:text-slate-200"
             >
-              ← Back to property overview
+              Property
             </Link>
-            <Link
-              href={`/app/estates/${estateId}/properties/${propertyId}/utilities/new`}
-              className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-rose-500"
-            >
-              + Add utility account
-            </Link>
+            <span className="text-slate-600">/</span>
+            <span className="text-slate-200">Utilities</span>
+          </nav>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
+                Utilities
+              </h1>
+              {property ? (
+                <>
+                  <p className="text-sm text-slate-400">
+                    Accounts linked to{" "}
+                    <span className="font-medium text-slate-200">
+                      {property.label}
+                    </span>
+                    {address ? (
+                      <>
+                        {" "}—{" "}
+                        <span className="font-mono text-xs">{address}</span>
+                      </>
+                    ) : null}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Track power, water, gas, internet, and other services so you
+                    can show exactly what stayed current during probate.
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-slate-400">
+                  Track power, water, gas, internet, and other services for this
+                  property.
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-col items-start gap-2 sm:items-end">
+              <Link
+                href={`/app/estates/${estateId}/properties/${propertyId}/utilities/new`}
+                className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-rose-500"
+              >
+                + Add utility account
+              </Link>
+              <Link
+                href={`/app/estates/${estateId}/properties/${propertyId}`}
+                className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-xs font-medium text-slate-200 hover:border-rose-500/70 hover:text-rose-100"
+              >
+                ← Back to property
+              </Link>
+            </div>
           </div>
         </div>
       </header>
 
       {utilities.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/60 px-6 py-8 text-sm text-slate-300">
-          <p className="font-medium text-slate-100">No utilities added yet.</p>
+          <p className="font-medium text-slate-100">No utility accounts yet.</p>
           <p className="mt-1 text-slate-400">
-            Track electric, gas, water, trash, internet, and other services for
-            this property. You&apos;ll be able to show exactly what was paid
-            during probate.
+            Add electric, gas, water, trash, internet, and other services for
+            this property so you have a clean record of what was paid.
           </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link
+              href={`/app/estates/${estateId}/properties/${propertyId}/utilities/new`}
+              className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-rose-500"
+            >
+              + Add utility account
+            </Link>
+            <Link
+              href={`/app/estates/${estateId}/properties/${propertyId}`}
+              className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1.5 text-xs font-medium text-slate-200 hover:border-rose-500/70 hover:text-rose-100"
+            >
+              Back to property
+            </Link>
+          </div>
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-slate-700 bg-slate-900/50">
@@ -150,7 +201,12 @@ export default async function PropertyUtilitiesPage({
               {utilities.map((u: UtilityItem) => (
                 <tr key={u._id.toString()} className="hover:bg-slate-800/30">
                   <td className="px-4 py-2 text-slate-200">
-                    {u.provider || "—"}
+                    <Link
+                      href={`/app/estates/${estateId}/properties/${propertyId}/utilities/${u._id.toString()}`}
+                      className="font-medium hover:text-rose-200"
+                    >
+                      {u.provider || "Utility account"}
+                    </Link>
                   </td>
                   <td className="px-4 py-2 text-slate-200 capitalize">
                     {u.type || "—"}
@@ -161,14 +217,14 @@ export default async function PropertyUtilitiesPage({
                   <td className="px-4 py-2">
                     <span
                       className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                        u.status === "active"
+                        (u.status || "").toLowerCase() === "active"
                           ? "bg-green-700/20 text-green-300"
-                          : u.status === "closed"
+                          : (u.status || "").toLowerCase() === "closed"
                           ? "bg-slate-700/80 text-slate-200"
                           : "bg-slate-800/80 text-slate-300"
                       }`}
                     >
-                      {u.status || "unknown"}
+                      {(u.status || "unknown").toLowerCase()}
                     </span>
                   </td>
                   <td className="px-4 py-2 text-xs text-slate-400">
