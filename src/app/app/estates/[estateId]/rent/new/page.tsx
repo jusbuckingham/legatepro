@@ -31,6 +31,12 @@ export default async function NewRentPaymentPage({ params }: PageProps) {
     notFound();
   }
 
+  const now = new Date();
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  const defaultDate = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(
+    now.getDate()
+  )}`;
+
   async function createPayment(formData: FormData) {
     "use server";
 
@@ -41,8 +47,14 @@ export default async function NewRentPaymentPage({ params }: PageProps) {
 
     await connectToDatabase();
 
-    // Grab estateId from the form explicitly
-    const estateIdFromForm = (formData.get("estateId") || "").toString();
+    const estateForWrite = await Estate.findOne({
+      _id: estateId,
+      ownerId: sessionInner.user.id,
+    }).lean();
+
+    if (!estateForWrite) {
+      notFound();
+    }
 
     const tenantName = (formData.get("tenantName") || "").toString().trim();
     const amountRaw = formData.get("amount");
@@ -58,6 +70,22 @@ export default async function NewRentPaymentPage({ params }: PageProps) {
     const periodMonth = periodMonthRaw ? Number(periodMonthRaw) : 0;
     const periodYear = periodYearRaw ? Number(periodYearRaw) : 0;
 
+    if (!tenantName) {
+      return;
+    }
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return;
+    }
+
+    if (!Number.isInteger(periodMonth) || periodMonth < 1 || periodMonth > 12) {
+      return;
+    }
+
+    if (!Number.isInteger(periodYear) || periodYear < 1900 || periodYear > 2100) {
+      return;
+    }
+
     const paymentDate =
       typeof paymentDateRaw === "string" && paymentDateRaw
         ? new Date(paymentDateRaw)
@@ -65,7 +93,7 @@ export default async function NewRentPaymentPage({ params }: PageProps) {
 
     await RentPayment.create({
       ownerId: sessionInner.user.id,
-      estateId: estateIdFromForm,
+      estateId,
       tenantName,
       amount,
       paymentDate,
@@ -76,8 +104,8 @@ export default async function NewRentPaymentPage({ params }: PageProps) {
       notes,
     });
 
-    revalidatePath(`/app/estates/${estateIdFromForm}/rent`);
-    redirect(`/app/estates/${estateIdFromForm}/rent`);
+    revalidatePath(`/app/estates/${estateId}/rent`);
+    redirect(`/app/estates/${estateId}/rent`);
   }
 
   return (
@@ -104,9 +132,6 @@ export default async function NewRentPaymentPage({ params }: PageProps) {
         action={createPayment}
         className="max-w-xl space-y-4 rounded-2xl border border-slate-800 bg-slate-950/80 p-4 text-xs shadow-sm shadow-black/40"
       >
-        {/* Hidden estateId so the server action has a stable value */}
-        <input type="hidden" name="estateId" value={estateId} />
-
         {/* Tenant + amount */}
         <div className="grid gap-4 md:grid-cols-2">
           <div>
@@ -147,6 +172,7 @@ export default async function NewRentPaymentPage({ params }: PageProps) {
               name="paymentDate"
               type="date"
               required
+              defaultValue={defaultDate}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:border-rose-500 focus:outline-none"
             />
           </div>
@@ -161,6 +187,7 @@ export default async function NewRentPaymentPage({ params }: PageProps) {
               min="1"
               max="12"
               required
+              defaultValue={now.getMonth() + 1}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:border-rose-500 focus:outline-none"
               placeholder="e.g. 6"
             />
@@ -176,6 +203,7 @@ export default async function NewRentPaymentPage({ params }: PageProps) {
               min="1900"
               max="2100"
               required
+              defaultValue={now.getFullYear()}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:border-rose-500 focus:outline-none"
               placeholder="e.g. 2025"
             />

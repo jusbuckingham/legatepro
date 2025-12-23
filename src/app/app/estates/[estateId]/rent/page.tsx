@@ -104,7 +104,7 @@ export default async function EstateRentLedgerPage({ params }: PageProps) {
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-lg font-semibold text-slate-100">Rent ledger</h1>
           <p className="text-xs text-slate-400">
@@ -112,12 +112,28 @@ export default async function EstateRentLedgerPage({ params }: PageProps) {
           </p>
         </div>
 
-        <Link
-          href={`/app/estates/${estateId}/rent/new`}
-          className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 shadow-sm hover:bg-emerald-400"
-        >
-          Record rent payment
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={`/app/estates/${estateId}`}
+            className="inline-flex items-center rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:border-slate-700 hover:bg-slate-950"
+          >
+            ← Back
+          </Link>
+
+          <Link
+            href={`/app/rent`}
+            className="inline-flex items-center rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:border-slate-700 hover:bg-slate-950"
+          >
+            View all rent
+          </Link>
+
+          <Link
+            href={`/app/estates/${estateId}/rent/new`}
+            className="inline-flex items-center rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 shadow-sm hover:bg-emerald-400"
+          >
+            + Record payment
+          </Link>
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -171,14 +187,24 @@ export default async function EstateRentLedgerPage({ params }: PageProps) {
               <tr>
                 <td
                   colSpan={6}
-                  className="px-3 py-6 text-center text-xs text-slate-500"
+                  className="px-3 py-10 text-center text-xs text-slate-500"
                 >
-                  No rent payments recorded yet. Use{" "}
-                  <span className="font-medium text-emerald-300">
-                    
-                    Record rent payment
-                  </span>{" "}
-                  to add the first one.
+                  <div className="mx-auto max-w-md space-y-2">
+                    <p className="text-sm font-semibold text-slate-100">
+                      No rent payments yet
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Record the first payment to start tracking rent totals and tenant activity.
+                    </p>
+                    <div className="pt-2">
+                      <Link
+                        href={`/app/estates/${estateId}/rent/new`}
+                        className="inline-flex items-center rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 shadow-sm hover:bg-emerald-400"
+                      >
+                        + Record payment
+                      </Link>
+                    </div>
+                  </div>
                 </td>
               </tr>
             ) : (
@@ -215,16 +241,6 @@ export default async function EstateRentLedgerPage({ params }: PageProps) {
             )}
           </tbody>
         </table>
-      </div>
-
-      <div className="flex justify-between border-t border-slate-900 pt-4">
-        <Link
-          href={`/app/estates/${estateId}`}
-          className="text-xs font-medium text-slate-400 hover:text-slate-100"
-        >
-          
-          ← Back to estate overview
-        </Link>
       </div>
     </div>
   );

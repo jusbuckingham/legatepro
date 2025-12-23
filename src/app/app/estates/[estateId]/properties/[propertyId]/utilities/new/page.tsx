@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 interface PageProps {
@@ -107,11 +108,29 @@ export default function AddUtilityAccountPage({ params }: PageProps) {
   }
 
   return (
-    <div className="space-y-6">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
-          Add utility account
-        </h1>
+    <div className="mx-auto max-w-4xl space-y-6">
+      <header className="space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <Link
+              href={`/app/estates/${estateId}/properties/${propertyId}/utilities`}
+              className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200"
+            >
+              <span aria-hidden="true">←</span>
+              Back to utilities
+            </Link>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
+              Add utility account
+            </h1>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-slate-800 bg-slate-900/60 px-3 py-1 text-xs text-slate-300">
+              Property utilities
+            </span>
+          </div>
+        </div>
+
         <p className="text-sm text-slate-400">
           Capture electric, gas, water, internet, and other services so you can
           show the court every bill that was kept current during probate.
@@ -122,11 +141,16 @@ export default function AddUtilityAccountPage({ params }: PageProps) {
         onSubmit={handleSubmit}
         className="space-y-6 rounded-xl border border-slate-800 bg-slate-900/70 p-6"
       >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-medium text-slate-200">Account details</p>
+          <p className="text-xs text-slate-500">Fields marked * are required</p>
+        </div>
+
         {/* Provider + type */}
         <section className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1">
             <label className="block text-xs font-medium uppercase tracking-wide text-slate-400">
-              Provider name
+              Provider name <span className="text-rose-400">*</span>
             </label>
             <input
               required
@@ -275,17 +299,12 @@ export default function AddUtilityAccountPage({ params }: PageProps) {
         )}
 
         <div className="flex items-center justify-between gap-3 pt-2">
-          <button
-            type="button"
+          <Link
+            href={`/app/estates/${estateId}/properties/${propertyId}/utilities`}
             className="text-sm text-slate-400 hover:text-slate-200"
-            onClick={() =>
-              router.push(
-                `/app/estates/${estateId}/properties/${propertyId}/utilities`
-              )
-            }
           >
             Cancel
-          </button>
+          </Link>
 
           <button
             type="submit"

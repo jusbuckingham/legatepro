@@ -6,10 +6,10 @@ import { connectToDatabase } from "@/lib/db";
 import { RentPayment } from "@/models/RentPayment";
 
 interface PageProps {
-  params: Promise<{
+  params: {
     estateId: string;
     paymentId: string;
-  }>;
+  };
 }
 
 type LeanRentPayment = {
@@ -49,7 +49,7 @@ function formatDate(value: string | Date): string {
 }
 
 export default async function RentPaymentDetailPage({ params }: PageProps) {
-  const { estateId, paymentId } = await params;
+  const { estateId, paymentId } = params;
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -79,8 +79,23 @@ export default async function RentPaymentDetailPage({ params }: PageProps) {
   async function deletePayment() {
     "use server";
 
-    await fetch(`/api/estates/${estateId}/rent/${paymentId}`, {
-      method: "DELETE",
+    const session = await auth();
+    if (!session?.user?.id) {
+      redirect("/login");
+    }
+
+    await connectToDatabase();
+
+    // Some legacy records may not have ownerId set; allow delete when ownerId is
+    // either the current user or missing/null.
+    await RentPayment.deleteOne({
+      _id: paymentId,
+      estateId,
+      $or: [
+        { ownerId: session.user.id },
+        { ownerId: { $exists: false } },
+        { ownerId: null },
+      ],
     });
 
     revalidatePath(`/app/estates/${estateId}/rent`);

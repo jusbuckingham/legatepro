@@ -137,21 +137,44 @@ export default async function EstateExpensesPage({ params }: PageProps) {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
-      <header className="space-y-1">
-        <p className="text-xs uppercase tracking-wide text-slate-500">
-          Estate expenses
-        </p>
-        <h1 className="text-2xl font-semibold text-slate-100">
-          Expenses for {estateLabel}
-        </h1>
-        <p className="text-sm text-slate-400">
-          Track out-of-pocket costs and estate-related spending. These expenses
-          help you reconcile reimbursements and net value of the estate.
-        </p>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <p className="text-xs uppercase tracking-wide text-slate-500">
+            Estate expenses
+          </p>
+          <h1 className="text-2xl font-semibold text-slate-100">
+            Expenses for {estateLabel}
+          </h1>
+          <p className="text-sm text-slate-400">
+            Track out-of-pocket costs and estate-related spending. These expenses
+            help you reconcile reimbursements and net value of the estate.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href={`/app/estates/${estateId}`}
+            className="inline-flex items-center rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
+          >
+            ← Back
+          </Link>
+          <Link
+            href="/app/expenses"
+            className="inline-flex items-center rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
+          >
+            View all
+          </Link>
+          <Link
+            href="/app/expenses/new"
+            className="inline-flex items-center rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
+          >
+            + Add expense
+          </Link>
+        </div>
       </header>
 
       {/* Summary strip */}
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-4 md:grid-cols-2">
         <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
           <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
             Total expenses
@@ -175,32 +198,6 @@ export default async function EstateExpensesPage({ params }: PageProps) {
             Each line represents a distinct expense record.
           </p>
         </div>
-
-        <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-4 flex flex-col justify-between">
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-              Actions
-            </p>
-            <p className="mt-1 text-[11px] text-slate-500">
-              Use the global Expenses page to add or edit entries, or jump
-              directly into a specific expense from the table below.
-            </p>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Link
-              href="/app/expenses"
-              className="inline-flex items-center rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
-            >
-              View all expenses
-            </Link>
-            <Link
-              href="/app/expenses/new"
-              className="inline-flex items-center rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
-            >
-              + Add expense
-            </Link>
-          </div>
-        </div>
       </section>
 
       {/* Table */}
@@ -215,18 +212,23 @@ export default async function EstateExpensesPage({ params }: PageProps) {
         </div>
 
         {expenses.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-slate-400">
-            <p>No expenses recorded for this estate yet.</p>
-            <p className="mt-1">
-              You can add expenses from the{" "}
+          <div className="px-4 py-10 text-center text-sm text-slate-400">
+            <p className="text-slate-300">No expenses recorded for this estate yet.</p>
+            <p className="mt-1">Add your first expense to start tracking totals and reimbursements.</p>
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
               <Link
                 href="/app/expenses/new"
-                className="text-sky-400 hover:text-sky-300"
+                className="inline-flex items-center rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
               >
-                global Expenses page
+                + Add expense
               </Link>
-              .
-            </p>
+              <Link
+                href="/app/expenses"
+                className="inline-flex items-center rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
+              >
+                View all expenses
+              </Link>
+            </div>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -306,15 +308,6 @@ export default async function EstateExpensesPage({ params }: PageProps) {
           </div>
         )}
       </section>
-
-      <div className="pt-2">
-        <Link
-          href={`/app/estates/${estateId}`}
-          className="text-xs text-slate-400 hover:text-slate-200"
-        >
-          ← Back to estate overview
-        </Link>
-      </div>
     </div>
   );
 }

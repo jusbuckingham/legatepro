@@ -107,41 +107,61 @@ export default async function EstateUtilitiesPage({ params }: EstateUtilitiesPag
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Utilities</h1>
-          <p className="mt-1 text-sm text-muted-foreground max-w-2xl">
-            Track utility accounts tied to each property in this estate — providers, account
-            numbers, status, and autopay — so you have everything ready for court accountings
-            and a smooth handoff to heirs.
-          </p>
-        </div>
-        <Link
-          href={`/app/estates/${estateId}/utilities/new`}
-          className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
-        >
-          + Add utility account
-        </Link>
-      </div>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <Link
+              href={`/app/estates/${estateId}`}
+              className="text-sm text-muted-foreground hover:text-foreground hover:underline"
+            >
+              ← Back to estate
+            </Link>
+            <h1 className="text-2xl font-semibold tracking-tight">Utilities</h1>
+            <p className="text-sm text-muted-foreground max-w-2xl">
+              Track utility accounts tied to each property in this estate — providers, account numbers,
+              status, and autopay — so you have everything ready for court accountings and a smooth
+              handoff to heirs.
+            </p>
+          </div>
 
-      {utilities.length === 0 ? (
-        <div className="rounded-lg border border-dashed bg-muted/40 p-8 text-center">
-          <p className="text-sm font-medium">No utilities added yet.</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Add your first utility account to keep track of billing details, online portals,
-            and shutoff risks in one place.
-          </p>
-          <div className="mt-4">
+          <div className="flex items-center gap-2">
             <Link
               href={`/app/estates/${estateId}/utilities/new`}
               className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
             >
-              Add utility account
+              + Add utility account
             </Link>
+          </div>
+        </div>
+      </div>
+
+      {utilities.length === 0 ? (
+        <div className="rounded-lg border border-dashed bg-muted/40 p-8">
+          <div className="mx-auto max-w-xl text-center">
+            <p className="text-sm font-medium">No utilities added yet.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Add your first utility account to keep track of billing details, online portals, and shutoff
+              risks in one place.
+            </p>
+            <div className="mt-4 flex items-center justify-center gap-2">
+              <Link
+                href={`/app/estates/${estateId}/utilities/new`}
+                className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
+              >
+                Add utility account
+              </Link>
+              <Link
+                href={`/app/estates/${estateId}`}
+                className="inline-flex items-center rounded-md border bg-background px-3 py-2 text-sm font-medium text-foreground shadow-sm hover:bg-muted/40"
+              >
+                Back to estate
+              </Link>
+            </div>
           </div>
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border bg-card">
+          <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-border text-sm">
             <thead className="bg-muted/40">
               <tr>
@@ -195,7 +215,7 @@ export default async function EstateUtilitiesPage({ params }: EstateUtilitiesPag
                     )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
-                    {u.lastBillAmount ? (
+                    {typeof u.lastBillAmount === "number" ? (
                       <span>
                         ${u.lastBillAmount.toFixed(2)}
                         {u.lastBillDate ? ` • ${u.lastBillDate}` : ""}
@@ -216,6 +236,7 @@ export default async function EstateUtilitiesPage({ params }: EstateUtilitiesPag
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

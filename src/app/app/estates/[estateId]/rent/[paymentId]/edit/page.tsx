@@ -7,10 +7,10 @@ import { connectToDatabase } from "@/lib/db";
 import { RentPayment } from "@/models/RentPayment";
 
 interface PageProps {
-  params: Promise<{
+  params: {
     estateId: string;
     paymentId: string;
-  }>;
+  };
 }
 
 interface RentPaymentLeanFromDb {
@@ -67,7 +67,7 @@ function toIsoString(date: Date): string {
 }
 
 export default async function EditRentPaymentPage(props: PageProps) {
-  const { estateId, paymentId } = await props.params;
+  const { estateId, paymentId } = props.params;
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -79,7 +79,7 @@ export default async function EditRentPaymentPage(props: PageProps) {
   const doc = await RentPayment.findOne({
     _id: paymentId,
     estateId,
-    ownerId: session.user.id,
+    $or: [{ ownerId: session.user.id }, { ownerId: { $exists: false } }],
   }).lean<RentPaymentLeanFromDb | null>();
 
   if (!doc) {
@@ -148,7 +148,7 @@ export default async function EditRentPaymentPage(props: PageProps) {
       {
         _id: paymentId,
         estateId,
-        ownerId: innerSession.user.id,
+        $or: [{ ownerId: innerSession.user.id }, { ownerId: { $exists: false } }],
       },
       {
         tenantName,
