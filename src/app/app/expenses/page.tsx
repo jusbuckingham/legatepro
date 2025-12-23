@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { ChangeEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
+import PageHeader from "@/components/layout/PageHeader";
 
 // This page is a hybrid client/server page: we fetch data via a server helper
 // and then do light-weight filtering client-side.
@@ -183,70 +184,71 @@ export default function GlobalExpensesPage() {
 
   if (loading) {
     return (
-      <div className="p-6 text-sm text-slate-200">
-        <p>Loading expenses…</p>
+      <div className="space-y-6 p-6">
+        <div className="h-6 w-40 rounded bg-slate-900/60" />
+        <div className="h-4 w-72 rounded bg-slate-900/60" />
+        <div className="h-64 rounded-xl border border-slate-800 bg-slate-950/80" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="p-6 text-sm text-red-400">
-        <p>{error}</p>
+      <div className="space-y-3 p-6">
+        <h1 className="text-base font-semibold text-slate-50">All expenses</h1>
+        <p className="text-sm text-red-400">{error}</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-50">All expenses</h1>
-          <p className="mt-1 text-xs text-slate-400">
-            Cross-estate view of every expense you&apos;ve logged.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3 text-xs">
-          <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-4 py-2">
-            <div className="text-[11px] uppercase tracking-wide text-slate-500">
-              Total (filtered)
+    <div className="space-y-8 p-6">
+      <PageHeader
+        eyebrow="Overview"
+        title="All expenses"
+        description="Cross-estate view of every expense you’ve logged."
+        actions={
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-4 py-2">
+              <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                Total (filtered)
+              </div>
+              <div className="font-semibold text-slate-50">
+                {formatCurrency(totalSpent)}
+              </div>
             </div>
-            <div className="font-semibold text-slate-50">
-              {formatCurrency(totalSpent)}
+
+            <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+              <label
+                htmlFor="category-filter"
+                className="text-[11px] text-slate-400"
+              >
+                Category
+              </label>
+              <select
+                id="category-filter"
+                value={categoryFilter}
+                onChange={handleCategoryChange}
+                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-rose-500"
+              >
+                <option value="all">All</option>
+                <option value="REPAIRS_MAINTENANCE">
+                  Repairs &amp; Maintenance
+                </option>
+                <option value="PROPERTY_TAXES">Property taxes</option>
+                <option value="INSURANCE">Insurance</option>
+                <option value="UTILITIES">Utilities</option>
+                <option value="LEGAL_FEES">Legal fees</option>
+                <option value="ADMINISTRATIVE">Administrative</option>
+                <option value="TRAVEL">Travel</option>
+                <option value="PROFESSIONAL_FEES">Professional fees</option>
+                <option value="MORTGAGE">Mortgage</option>
+                <option value="MISCELLANEOUS">Miscellaneous</option>
+              </select>
             </div>
           </div>
-
-          <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
-            <label
-              htmlFor="category-filter"
-              className="text-[11px] text-slate-400"
-            >
-              Category
-            </label>
-            <select
-              id="category-filter"
-              value={categoryFilter}
-              onChange={handleCategoryChange}
-              className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-rose-500"
-            >
-              <option value="all">All</option>
-              <option value="REPAIRS_MAINTENANCE">
-                Repairs &amp; Maintenance
-              </option>
-              <option value="PROPERTY_TAXES">Property taxes</option>
-              <option value="INSURANCE">Insurance</option>
-              <option value="UTILITIES">Utilities</option>
-              <option value="LEGAL_FEES">Legal fees</option>
-              <option value="ADMINISTRATIVE">Administrative</option>
-              <option value="TRAVEL">Travel</option>
-              <option value="PROFESSIONAL_FEES">Professional fees</option>
-              <option value="MORTGAGE">Mortgage</option>
-              <option value="MISCELLANEOUS">Miscellaneous</option>
-            </select>
-          </div>
-        </div>
-      </div>
+        }
+      />
 
       <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/80">
         <div className="grid grid-cols-12 border-b border-slate-800 bg-slate-900/60 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
@@ -259,8 +261,8 @@ export default function GlobalExpensesPage() {
         </div>
 
         {filteredRows.length === 0 ? (
-          <div className="px-4 py-6 text-center text-xs text-slate-400">
-            No expenses found for this filter.
+          <div className="px-4 py-8 text-center text-xs text-slate-400">
+            No expenses found for the current filter.
           </div>
         ) : (
           <ul className="divide-y divide-slate-800 text-xs">

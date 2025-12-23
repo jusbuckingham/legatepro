@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
+import PageHeader from "@/components/layout/PageHeader";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
@@ -282,44 +283,39 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
   }, 0);
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-slate-500">
-            Billing
-          </p>
-          <h1 className="text-2xl font-semibold text-slate-100">Invoices</h1>
-          <p className="text-sm text-slate-400">
-            Track all invoices across your firm. Filter by status, timeframe,
-            or search by notes and invoice number.
-          </p>
-        </div>
-
-        <Link
-          href="/app/invoices/new"
-          className="inline-flex items-center rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400"
-        >
-          New invoice
-        </Link>
-      </header>
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow="Billing"
+        title="Invoices"
+        description="Track all invoices across your firm. Filter by status, timeframe, or search by notes and invoice number."
+        actions={
+          <Link
+            href="/app/invoices/new"
+            className="inline-flex items-center rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400"
+          >
+            New invoice
+          </Link>
+        }
+      />
 
       {/* Tab strip: All vs AR aging */}
-      <div className="mb-4 border-b border-slate-800">
-        <div className="flex gap-2">
+      <nav className="border-b border-slate-800">
+        <div className="flex gap-2 pb-3">
           <Link
             href="/app/invoices"
             className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-950"
+            aria-current="page"
           >
             All invoices
           </Link>
           <Link
             href="/app/invoices/aging"
-            className="inline-flex items-center rounded-full px-3 py-1 text-[11px] font-medium text-slate-400 hover:text-slate-100"
+            className="inline-flex items-center rounded-full border border-transparent px-3 py-1 text-[11px] font-medium text-slate-400 hover:text-slate-100"
           >
             AR aging
           </Link>
         </div>
-      </div>
+      </nav>
 
       {/* Filters */}
       <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">

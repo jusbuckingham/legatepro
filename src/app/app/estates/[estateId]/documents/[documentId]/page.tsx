@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
+import PageHeader from "@/components/layout/PageHeader";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
@@ -106,44 +107,35 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
   const tagsArray = Array.isArray(doc.tags) ? doc.tags : [];
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Breadcrumb / header */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="space-y-2">
+    <div className="space-y-8 p-6">
+      <PageHeader
+        eyebrow={
           <nav className="text-xs text-slate-500">
-            <Link href="/app/estates" className="text-slate-500 hover:underline">
+            <Link href="/app/estates" className="text-slate-400 hover:text-slate-200 hover:underline">
               Estates
             </Link>
             <span className="mx-1 text-slate-600">/</span>
             <Link
               href={`/app/estates/${estateId}`}
-              className="text-slate-300 hover:underline"
+              className="text-slate-400 hover:text-slate-200 hover:underline"
             >
               Overview
             </Link>
             <span className="mx-1 text-slate-600">/</span>
             <Link
               href={`/app/estates/${estateId}/documents`}
-              className="text-slate-300 hover:underline"
+              className="text-slate-400 hover:text-slate-200 hover:underline"
             >
-              Document index
+              Documents
             </Link>
             <span className="mx-1 text-slate-600">/</span>
-            <span className="truncate text-rose-300">{doc.label || "Document"}</span>
+            <span className="truncate text-rose-200">{doc.label || "Document"}</span>
           </nav>
-
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-slate-50">
-              {"Document details"}
-            </h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-400">
-              View how this document is indexed for the estate (subject, label, location, tags, notes, and sensitivity).
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-1 flex flex-col items-end gap-2 text-xs text-slate-400">
-          <div className="flex items-center gap-2">
+        }
+        title="Document details"
+        description="View how this document is indexed for the estate (subject, label, location, tags, notes, and sensitivity)."
+        actions={
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-200">
               {access.role}
             </span>
@@ -157,44 +149,45 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
                 Sensitive
               </span>
             )}
+
+            <Link
+              href={`/app/estates/${estateId}/documents`}
+              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+            >
+              Back
+            </Link>
+
+            {canEdit && (
+              <Link
+                href={`/app/estates/${estateId}/documents/${documentId}/edit`}
+                className="inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20"
+              >
+                Edit
+              </Link>
+            )}
+
+            {(!canEdit || forbidden) && (
+              <Link
+                href={requestAccessHref}
+                className="inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-100 hover:bg-amber-500/20"
+              >
+                Request access
+              </Link>
+            )}
+
+            {doc.url && (
+              <a
+                href={doc.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center rounded-md border border-emerald-500/60 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-100 hover:bg-emerald-500/20"
+              >
+                Open linked file
+              </a>
+            )}
           </div>
-          <Link
-            href={`/app/estates/${estateId}/documents`}
-            className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60 md:hidden"
-          >
-            Back
-          </Link>
-          {canEdit && (
-            <Link
-              href={`/app/estates/${estateId}/documents/${documentId}/edit`}
-              className="inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20"
-            >
-              Edit
-            </Link>
-          )}
-          {(!canEdit || forbidden) && (
-            <Link
-              href={requestAccessHref}
-              className="inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-100 hover:bg-amber-500/20"
-            >
-              Request access
-            </Link>
-          )}
-          {doc.url && (
-            <a
-              href={doc.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center rounded-md border border-emerald-500/60 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-100 hover:bg-emerald-500/20"
-            >
-              Open linked file
-            </a>
-          )}
-          <span className="text-[11px] text-slate-500">
-            Make sure this index always reflects where the real document lives.
-          </span>
-        </div>
-      </div>
+        }
+      />
 
       {/* Notices */}
       <div className="space-y-3">

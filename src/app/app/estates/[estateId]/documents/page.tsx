@@ -7,6 +7,7 @@ import { connectToDatabase } from "@/lib/db";
 import { requireEstateAccess } from "@/lib/estateAccess";
 
 import { EstateDocument } from "@/models/EstateDocument";
+import PageHeader from "@/components/layout/PageHeader";
 
 interface EstateDocumentsPageProps {
   params: Promise<{
@@ -215,10 +216,9 @@ export default async function EstateDocumentsPage({
   /* -------------------- JSX -------------------- */
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Header / breadcrumb */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="space-y-2">
+    <div className="mx-auto w-full max-w-6xl space-y-8 px-4 py-6 sm:px-6 lg:px-8">
+      <PageHeader
+        eyebrow={
           <nav className="text-xs text-slate-500">
             <Link href="/app/estates" className="text-slate-400 hover:text-slate-200">
               Estates
@@ -233,55 +233,53 @@ export default async function EstateDocumentsPage({
             <span className="mx-1 text-slate-600">/</span>
             <span className="text-rose-300">Document index</span>
           </nav>
+        }
+        title="Document index"
+        description="Keep a clean, court-ready index of every important document for this estate—where it lives, what it covers, and how to find it again in seconds."
+        actions={
+          <div className="flex flex-col items-end gap-2">
+            <span className="inline-flex items-center rounded-full border border-rose-500/40 bg-rose-950/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-rose-100 shadow-sm">
+              <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-rose-400" />
+              Court packet helper
+            </span>
+            <span className="text-[11px] text-slate-500">
+              Use this index when assembling your final inventory or accounting.
+            </span>
 
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-slate-50">
-              Document index
-            </h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-400">
-              Keep a clean, court-ready index of every important document for this estate—where it lives, what it covers, and how to find it again in seconds.
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
-              <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5">
-                Total: <span className="ml-1 text-slate-200">{documents.length}</span>
-              </span>
-              <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5">
-                Showing: <span className="ml-1 text-slate-200">{filteredDocuments.length}</span>
-              </span>
-              {canViewSensitive ? (
-                <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5">
-                  Sensitive: <span className="ml-1 text-slate-200">{documents.filter((d) => d.isSensitive).length}</span>
-                </span>
-              ) : null}
-            </div>
+            {canCreate ? (
+              <Link
+                href="#add-document"
+                className="inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20"
+              >
+                Add document
+              </Link>
+            ) : (
+              <Link
+                href={`/app/estates/${estateId}/documents?requestAccess=edit`}
+                className="inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-950 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/40"
+              >
+                Request edit access
+              </Link>
+            )}
           </div>
-        </div>
+        }
+      />
 
-        <div className="mt-1 flex flex-col items-end gap-2 text-xs text-slate-400">
-          <span className="inline-flex items-center rounded-full border border-rose-500/40 bg-rose-950/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-rose-100 shadow-sm">
-            <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-rose-400" />
-            Court packet helper
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+        <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5">
+          Total: <span className="ml-1 text-slate-200">{documents.length}</span>
+        </span>
+        <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5">
+          Showing: <span className="ml-1 text-slate-200">{filteredDocuments.length}</span>
+        </span>
+        {canViewSensitive ? (
+          <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5">
+            Sensitive:{" "}
+            <span className="ml-1 text-slate-200">
+              {documents.filter((d) => d.isSensitive).length}
+            </span>
           </span>
-          <span className="text-[11px] text-slate-500">
-            Use this index when assembling your final inventory or accounting.
-          </span>
-
-          {canCreate ? (
-            <Link
-              href="#add-document"
-              className="inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20"
-            >
-              Add document
-            </Link>
-          ) : (
-            <Link
-              href={`/app/estates/${estateId}/documents?requestAccess=edit`}
-              className="inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-950 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/40"
-            >
-              Request edit access
-            </Link>
-          )}
-        </div>
+        ) : null}
       </div>
 
       {/* New document entry form */}
@@ -399,7 +397,7 @@ export default async function EstateDocumentsPage({
       {documents.length > 0 ? (
         <form
           method="GET"
-          className="flex flex-col gap-2 rounded-lg border border-slate-800 bg-slate-950/80 px-3 py-2 text-xs md:flex-row md:items-center md:justify-between"
+          className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-950/80 px-4 py-3 text-xs md:flex-row md:items-center md:justify-between"
         >
           <div className="flex flex-1 items-center gap-2">
             <label htmlFor="q" className="whitespace-nowrap text-[11px] text-slate-400">
@@ -461,11 +459,11 @@ export default async function EstateDocumentsPage({
 
       {/* Document index */}
       {documents.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-slate-700 bg-slate-950/60 px-4 py-4 text-sm text-slate-400">
+        <p className="rounded-xl border border-dashed border-slate-700 bg-slate-950/60 px-5 py-5 text-sm text-slate-400">
           No documents indexed yet.
         </p>
       ) : filteredDocuments.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-slate-700 bg-slate-950/60 px-4 py-4 text-sm text-slate-400">
+        <p className="rounded-xl border border-dashed border-slate-700 bg-slate-950/60 px-5 py-5 text-sm text-slate-400">
           No documents match this search, subject, or sensitivity filter.
         </p>
       ) : (

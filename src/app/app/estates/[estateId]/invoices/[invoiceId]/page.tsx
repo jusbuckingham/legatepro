@@ -1,4 +1,5 @@
 import Link from "next/link";
+import PageHeader from "@/components/layout/PageHeader";
 import { notFound, redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
@@ -152,55 +153,50 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
     typeof invoiceDoc.invoiceNumber === "string" && invoiceDoc.invoiceNumber.trim().length > 0;
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <header className="flex flex-col gap-4 border-b border-gray-200 pb-4 md:flex-row md:items-start md:justify-between">
-        <div className="space-y-1">
-          <p className="text-xs text-gray-500">
-            <Link
-              href={`/app/estates/${estateId}/invoices`}
-              className="hover:underline"
-            >
-              ← Back to invoices
-            </Link>
-          </p>
-          <h1 className="text-2xl font-semibold">{description}</h1>
-          <p className="text-sm text-gray-500">
-            {estateName}
-            {hasInvoiceNumber ? ` • #${invoiceDoc.invoiceNumber}` : ""}
-          </p>
-        </div>
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow={
+          <Link
+            href={`/app/estates/${estateId}/invoices`}
+            className="text-xs text-gray-500 hover:underline"
+          >
+            ← Back to invoices
+          </Link>
+        }
+        title={description}
+        description={`${estateName}${hasInvoiceNumber ? ` • #${invoiceDoc.invoiceNumber}` : ""}`}
+        actions={
+          <div className="flex flex-col gap-2 sm:items-end">
+            <div className="flex items-center gap-2">
+              <span
+                className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${statusPillClasses(
+                  statusUpper,
+                )}`}
+              >
+                {statusLabel}
+              </span>
+              <span className="text-lg font-semibold">
+                {formatCurrencyFromCents(totalCents)}
+              </span>
+            </div>
 
-        <div className="flex flex-col gap-2 md:items-end">
-          <div className="flex items-center gap-2">
-            <span
-              className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${statusPillClasses(
-                statusUpper,
-              )}`}
-            >
-              {statusLabel}
-            </span>
-            <span className="text-lg font-semibold">
-              {formatCurrencyFromCents(totalCents)}
-            </span>
+            <div className="flex items-center gap-2">
+              <Link
+                href={`/app/estates/${estateId}/invoices/${invoiceId}/edit`}
+                className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-900 shadow-sm hover:bg-gray-50"
+              >
+                Edit
+              </Link>
+              <Link
+                href={`/app/estates/${estateId}/invoices/${invoiceId}/print`}
+                className="rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white shadow-sm hover:bg-blue-700"
+              >
+                Print
+              </Link>
+            </div>
           </div>
-
-          <div className="flex items-center gap-2">
-            <Link
-              href={`/app/estates/${estateId}/invoices/${invoiceId}/edit`}
-              className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-900 shadow-sm hover:bg-gray-50"
-            >
-              Edit
-            </Link>
-            <Link
-              href={`/app/estates/${estateId}/invoices/${invoiceId}/print`}
-              className="rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white shadow-sm hover:bg-blue-700"
-            >
-              Print
-            </Link>
-          </div>
-        </div>
-      </header>
+        }
+      />
 
       {/* Details card */}
       <section className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
+import PageHeader from "@/components/layout/PageHeader";
 import { Contact } from "@/models/Contact";
 
 type PageSearchParams = {
@@ -85,32 +86,24 @@ export default async function ContactsPage({ searchParams }: PageProps) {
   });
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-slate-500">
-            People
-          </p>
-          <h1 className="text-2xl font-semibold text-slate-100">
-            Contacts
-          </h1>
-          <p className="text-sm text-slate-400">
-            Keep track of executors, heirs, attorneys, vendors, and
-            other people connected to your estates.
-          </p>
-        </div>
-
-        <Link
-          href="/app/contacts/new"
-          className="inline-flex items-center rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400"
-        >
-          New contact
-        </Link>
-      </header>
+    <div className="space-y-5">
+      <PageHeader
+        eyebrow="People"
+        title="Contacts"
+        description="Keep track of executors, heirs, attorneys, vendors, and other people connected to your estates."
+        actions={
+          <Link
+            href="/app/contacts/new"
+            className="inline-flex items-center rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400"
+          >
+            New contact
+          </Link>
+        }
+      />
 
       {/* Filters */}
-      <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
-        <form className="flex flex-wrap items-end gap-3" method="GET">
+      <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 sm:p-5">
+        <form className="flex flex-wrap items-end gap-3 sm:gap-4" method="GET">
           <div className="flex-1 min-w-[160px]">
             <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-400">
               Search
@@ -154,7 +147,7 @@ export default async function ContactsPage({ searchParams }: PageProps) {
       </section>
 
       {/* Contacts table */}
-      <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+      <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 sm:p-5">
         <div className="mb-3 flex items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-slate-100">
             Contacts ({contacts.length})
@@ -162,10 +155,19 @@ export default async function ContactsPage({ searchParams }: PageProps) {
         </div>
 
         {contacts.length === 0 ? (
-          <p className="text-xs text-slate-500">
-            You don&apos;t have any contacts yet. Create your first
-            contact to start linking people to estates.
-          </p>
+          <div className="flex flex-col gap-2">
+            <p className="text-xs text-slate-500">
+              You don&apos;t have any contacts yet. Create your first contact to start linking people to estates.
+            </p>
+            <div>
+              <Link
+                href="/app/contacts/new"
+                className="inline-flex items-center rounded-md border border-slate-700 bg-slate-950/50 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-950"
+              >
+                Create a contact
+              </Link>
+            </div>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-xs">
@@ -184,12 +186,12 @@ export default async function ContactsPage({ searchParams }: PageProps) {
                 {contacts.map((contact) => (
                   <tr
                     key={contact._id}
-                    className="border-b border-slate-900 last:border-0"
+                    className="border-b border-slate-800/60 last:border-0"
                   >
                     <td className="py-2 pr-4">
                       <Link
                         href={`/app/contacts/${contact._id}`}
-                        className="text-xs text-sky-400 hover:text-sky-300"
+                        className="text-sky-400 hover:text-sky-300"
                       >
                         {contact.name}
                       </Link>

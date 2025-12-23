@@ -9,6 +9,7 @@ import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 import { Expense } from "@/models/Expense";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import PageHeader from "@/components/layout/PageHeader";
 
 // A focused row type for the UI layer
 type EstateExpenseRow = {
@@ -136,42 +137,36 @@ export default async function EstateExpensesPage({ params }: PageProps) {
       : estateTyped.displayName ?? estateTyped.caseName ?? "Estate";
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <p className="text-xs uppercase tracking-wide text-slate-500">
-            Estate expenses
-          </p>
-          <h1 className="text-2xl font-semibold text-slate-100">
-            Expenses for {estateLabel}
-          </h1>
-          <p className="text-sm text-slate-400">
-            Track out-of-pocket costs and estate-related spending. These expenses
-            help you reconcile reimbursements and net value of the estate.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href={`/app/estates/${estateId}`}
-            className="inline-flex items-center rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
-          >
-            ← Back
-          </Link>
-          <Link
-            href="/app/expenses"
-            className="inline-flex items-center rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
-          >
-            View all
-          </Link>
-          <Link
-            href="/app/expenses/new"
-            className="inline-flex items-center rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
-          >
-            + Add expense
-          </Link>
-        </div>
-      </header>
+    <div className="mx-auto w-full max-w-5xl px-4 py-8 space-y-8">
+      <PageHeader
+        eyebrow="Estate expenses"
+        title={`Expenses for ${estateLabel}`}
+        description={
+          "Track out-of-pocket costs and estate-related spending. These expenses help you reconcile reimbursements and the net value of the estate."
+        }
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={`/app/estates/${estateId}`}
+              className="inline-flex items-center rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
+            >
+              ← Back
+            </Link>
+            <Link
+              href="/app/expenses"
+              className="inline-flex items-center rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
+            >
+              View all
+            </Link>
+            <Link
+              href="/app/expenses/new"
+              className="inline-flex items-center rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
+            >
+              + Add expense
+            </Link>
+          </div>
+        }
+      />
 
       {/* Summary strip */}
       <section className="grid gap-4 md:grid-cols-2">
@@ -202,19 +197,17 @@ export default async function EstateExpensesPage({ params }: PageProps) {
 
       {/* Table */}
       <section className="rounded-lg border border-slate-800 bg-slate-950/60">
-        <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
-          <h2 className="text-sm font-semibold text-slate-100">
-            Expense history
-          </h2>
-          <p className="text-[11px] text-slate-500">
-            Sorted with most recent expenses first.
-          </p>
+        <div className="flex flex-col gap-1 border-b border-slate-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-sm font-semibold text-slate-100">Expense history</h2>
+          <p className="text-[11px] text-slate-500">Sorted with most recent expenses first.</p>
         </div>
 
         {expenses.length === 0 ? (
           <div className="px-4 py-10 text-center text-sm text-slate-400">
-            <p className="text-slate-300">No expenses recorded for this estate yet.</p>
-            <p className="mt-1">Add your first expense to start tracking totals and reimbursements.</p>
+            <p className="text-slate-200">No expenses recorded for this estate yet.</p>
+            <p className="mt-2 text-slate-400">
+              Add your first expense to start tracking totals and reimbursements.
+            </p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
               <Link
                 href="/app/expenses/new"

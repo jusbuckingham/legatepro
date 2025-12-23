@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import PageHeader from "@/components/layout/PageHeader";
 
 import { connectToDatabase } from "@/lib/db";
 import { auth } from "@/lib/auth";
@@ -155,51 +156,51 @@ export default async function EditDocumentPage({ params }: PageProps) {
   const tagsValue = Array.isArray(doc.tags) ? doc.tags.join(", ") : "";
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col justify-between gap-4 border-b border-slate-800 pb-4 sm:flex-row sm:items-center">
-        <div className="space-y-1">
-          <p className="flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow={
+          <div className="flex flex-wrap items-center gap-2">
             <span>Edit Document</span>
-            <span className="rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5 text-[10px] tracking-normal text-slate-300">
+            <span className="rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-300">
               Role: {role}
             </span>
             {isReadOnly ? (
-              <span className="rounded-full border border-rose-500/40 bg-rose-950/60 px-2 py-0.5 text-[10px] tracking-normal text-rose-200">
+              <span className="rounded-full border border-rose-500/40 bg-rose-950/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.2em] text-rose-200">
                 View-only
               </span>
             ) : null}
-          </p>
-          <h1 className="text-2xl font-semibold text-slate-50 sm:text-3xl">
-            {doc.label}
-          </h1>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-start gap-2 text-xs sm:justify-end">
-          <Link
-            href={`/app/estates/${estateId}/documents/${documentId}`}
-            className="inline-flex items-center rounded-lg border border-slate-800 px-3 py-1.5 font-medium text-slate-300 hover:border-slate-500/70 hover:text-slate-100"
-          >
-            View
-          </Link>
-          {isReadOnly ? (
+          </div>
+        }
+        title={doc.label}
+        description="Update label, subject, location, and notes."
+        actions={
+          <div className="flex flex-wrap items-center justify-start gap-2 text-xs sm:justify-end">
             <Link
-              href={requestAccessHref}
-              className="inline-flex items-center rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 font-medium text-emerald-100 hover:bg-emerald-500/20"
+              href={`/app/estates/${estateId}/documents/${documentId}`}
+              className="inline-flex items-center rounded-lg border border-slate-800 px-3 py-1.5 font-medium text-slate-300 hover:border-slate-500/70 hover:text-slate-100"
             >
-              Request access
+              View
             </Link>
-          ) : null}
-          <Link
-            href={`/app/estates/${estateId}/documents`}
-            className="inline-flex items-center rounded-lg border border-slate-800 px-3 py-1.5 font-medium text-slate-300 hover:border-slate-500/70 hover:text-slate-100"
-          >
-            Back to index
-          </Link>
-        </div>
-      </div>
+            {isReadOnly ? (
+              <Link
+                href={requestAccessHref}
+                className="inline-flex items-center rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 font-medium text-emerald-100 hover:bg-emerald-500/20"
+              >
+                Request access
+              </Link>
+            ) : null}
+            <Link
+              href={`/app/estates/${estateId}/documents`}
+              className="inline-flex items-center rounded-lg border border-slate-800 px-3 py-1.5 font-medium text-slate-300 hover:border-slate-500/70 hover:text-slate-100"
+            >
+              Back to index
+            </Link>
+          </div>
+        }
+      />
 
       {isReadOnly ? (
-        <div className="rounded-xl border border-rose-500/30 bg-rose-950/30 px-4 py-3 text-sm text-rose-100">
+        <div className="rounded-xl border border-rose-500/30 bg-rose-950/30 p-4 text-sm text-rose-100">
           <p className="font-medium">You have view-only access for this estate.</p>
           <p className="mt-1 text-xs text-rose-200/80">
             You can view document details, but editing is disabled. Ask the estate owner to upgrade your role to EDITOR if you need to make changes.

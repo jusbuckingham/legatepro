@@ -4,7 +4,7 @@ export type PageHeaderSize = "md" | "lg";
 
 export type PageHeaderProps = {
   /** Small label above the title (e.g., "Estate", "Invoices") */
-  eyebrow?: string;
+  eyebrow?: React.ReactNode;
   title: string;
   description?: string;
   actions?: React.ReactNode;
