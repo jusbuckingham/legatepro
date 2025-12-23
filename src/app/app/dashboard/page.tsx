@@ -9,6 +9,7 @@ import { Invoice } from "@/models/Invoice";
 import { TimeEntry } from "@/models/TimeEntry";
 import { WorkspaceSettings } from "@/models/WorkspaceSettings";
 import { Estate } from "@/models/Estate";
+import PageHeader from "@/components/layout/PageHeader";
 
 export const metadata: Metadata = {
   title: "Dashboard | LegatePro",
@@ -495,51 +496,45 @@ export default async function DashboardPage() {
   );
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6 space-y-8">
-      <header className="space-y-2">
-        <p className="text-xs uppercase tracking-wide text-slate-500">
-          Workspace
-        </p>
-        <h1 className="text-2xl font-semibold text-slate-100">
-          Billing overview
-        </h1>
-        <p className="text-sm text-slate-400">
-          High-level view of everything you have invoiced, collected, and still
-          have outstanding across all estates.
-        </p>
-      </header>
-
-      <section className="flex flex-wrap gap-2">
-        <Link
-          href="/app/invoices/new"
-          className="inline-flex h-10 items-center rounded-md border border-slate-800 bg-slate-900/60 px-3 text-xs font-medium text-slate-200 shadow-sm transition hover:bg-slate-900"
-        >
-          New invoice
-        </Link>
-        <Link
-          href="/app/estates/new"
-          className="inline-flex h-10 items-center rounded-md border border-slate-800 bg-slate-900/60 px-3 text-xs font-medium text-slate-200 shadow-sm transition hover:bg-slate-900"
-        >
-          New estate
-        </Link>
-        <Link
-          href="/app/time"
-          className="inline-flex h-10 items-center rounded-md border border-slate-800 bg-slate-900/60 px-3 text-xs font-medium text-slate-200 shadow-sm transition hover:bg-slate-900"
-        >
-          Track time
-        </Link>
-        <Link
-          href="/app/tasks"
-          className="inline-flex h-10 items-center rounded-md border border-slate-800 bg-slate-900/60 px-3 text-xs font-medium text-slate-200 shadow-sm transition hover:bg-slate-900"
-        >
-          View tasks
-        </Link>
-      </section>
+    <div className="mx-auto w-full max-w-6xl px-4 py-8 space-y-10">
+      <PageHeader
+        eyebrow="Workspace"
+        title="Billing overview"
+        description="High-level view of everything you have invoiced, collected, and still have outstanding across all estates."
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/app/invoices/new"
+              className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-900/60 px-3 text-xs font-medium text-slate-200 shadow-sm transition hover:bg-slate-900"
+            >
+              New invoice
+            </Link>
+            <Link
+              href="/app/estates/new"
+              className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-900/60 px-3 text-xs font-medium text-slate-200 shadow-sm transition hover:bg-slate-900"
+            >
+              New estate
+            </Link>
+            <Link
+              href="/app/time"
+              className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-900/60 px-3 text-xs font-medium text-slate-200 shadow-sm transition hover:bg-slate-900"
+            >
+              Track time
+            </Link>
+            <Link
+              href="/app/tasks"
+              className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-900/60 px-3 text-xs font-medium text-slate-200 shadow-sm transition hover:bg-slate-900"
+            >
+              View tasks
+            </Link>
+          </div>
+        }
+      />
 
 
       {/* Top-level metrics */}
       <section className="grid gap-4 md:grid-cols-4">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-4 space-y-1">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-5 space-y-1">
           <p className="text-xs font-medium text-slate-400">
             Total invoiced
           </p>
@@ -551,7 +546,7 @@ export default async function DashboardPage() {
           </p>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-4 space-y-1">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-5 space-y-1">
           <p className="text-xs font-medium text-emerald-400">
             Collected
           </p>
@@ -563,7 +558,7 @@ export default async function DashboardPage() {
           </p>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-4 space-y-1">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-5 space-y-1">
           <p className="text-xs font-medium text-amber-400">
             Outstanding
           </p>
@@ -575,7 +570,7 @@ export default async function DashboardPage() {
           </p>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-4 space-y-1">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-5 space-y-1">
           <p className="text-xs font-medium text-slate-400">
             Voided / written off
           </p>
@@ -696,7 +691,7 @@ export default async function DashboardPage() {
             No invoice activity yet in the last six months.
           </p>
         ) : (
-          <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-4">
+          <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-5">
             {monthBuckets.map((bucket) => {
               const widthPercent =
                 (bucket.invoicedCents / safeMaxInvoicedForTrend) * 100;
@@ -746,7 +741,7 @@ export default async function DashboardPage() {
 
       {/* Unbilled time card + recent invoices */}
       <section className="grid gap-4 md:grid-cols-[minmax(0,2fr),minmax(0,3fr)] items-start">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-4 space-y-2">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-5 space-y-2">
           <p className="text-xs font-medium text-sky-400">
             Unbilled time value
           </p>
@@ -772,7 +767,7 @@ export default async function DashboardPage() {
         </div>
 
         {/* Recent invoices */}
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-4 space-y-3">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-5 space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium text-slate-400">
               Recent invoices
