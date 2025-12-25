@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { RentPayment } from "@/models/RentPayment";
+import PageHeader from "@/components/layout/PageHeader";
+import PageSection from "@/components/layout/PageSection";
 
 export const metadata = {
   title: "Rent overview | LegatePro",
@@ -99,51 +101,45 @@ export default async function GlobalRentOverviewPage() {
   const hasPayments = payments.length > 0;
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-            Rent &amp; income
-          </p>
-          <h1 className="mt-2 text-2xl font-semibold text-slate-50">
-            Rent overview
-          </h1>
-          <p className="mt-1 max-w-xl text-sm text-slate-400">
-            Review rent collected across all estates and quickly see which
-            properties are generating income.
-          </p>
-        </div>
+    <div className="mx-auto w-full max-w-6xl px-4 py-8 space-y-8">
+      <PageHeader
+        eyebrow="Rent & income"
+        title="Rent overview"
+        description={
+          "Review rent collected across all estates and quickly see which properties are generating income."
+        }
+        actions={
+          <div className="flex flex-wrap gap-4">
+            <div className="rounded-2xl border border-emerald-900/60 bg-emerald-950/40 px-4 py-3 text-right shadow-sm shadow-emerald-950/40">
+              <p className="text-[0.7rem] font-medium uppercase tracking-[0.18em] text-emerald-400">
+                Total collected
+              </p>
+              <p className="mt-1 text-lg font-semibold text-emerald-100">
+                {formatCurrency(totalCollected)}
+              </p>
+              <p className="mt-0.5 text-[0.7rem] text-emerald-300/70">
+                Across {estateSummaries.length || 0} estates
+              </p>
+            </div>
 
-        <div className="flex gap-4">
-          <div className="rounded-2xl border border-emerald-900/60 bg-emerald-950/40 px-4 py-3 text-right shadow-sm shadow-emerald-950/40">
-            <p className="text-[0.7rem] font-medium uppercase tracking-[0.18em] text-emerald-400">
-              Total collected
-            </p>
-            <p className="mt-1 text-lg font-semibold text-emerald-100">
-              {formatCurrency(totalCollected)}
-            </p>
-            <p className="mt-0.5 text-[0.7rem] text-emerald-300/70">
-              Across {estateSummaries.length || 0} estates
-            </p>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-right shadow-sm shadow-slate-950/50">
+              <p className="text-[0.7rem] font-medium uppercase tracking-[0.18em] text-slate-400">
+                Rent entries
+              </p>
+              <p className="mt-1 text-lg font-semibold text-slate-100">
+                {payments.length}
+              </p>
+              <p className="mt-0.5 text-[0.7rem] text-slate-500">
+                Individual payments
+              </p>
+            </div>
           </div>
-
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-right shadow-sm shadow-slate-950/50">
-            <p className="text-[0.7rem] font-medium uppercase tracking-[0.18em] text-slate-400">
-              Rent entries
-            </p>
-            <p className="mt-1 text-lg font-semibold text-slate-100">
-              {payments.length}
-            </p>
-            <p className="mt-0.5 text-[0.7rem] text-slate-500">
-              Individual payments
-            </p>
-          </div>
-        </div>
-      </div>
+        }
+      />
 
       {/* By estate summary */}
-      <section className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+      <PageSection>
+        <h2 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
           By estate
         </h2>
 
@@ -171,12 +167,12 @@ export default async function GlobalRentOverviewPage() {
             ))}
           </div>
         )}
-      </section>
+      </PageSection>
 
       {/* All payments table */}
-      <section className="space-y-3">
+      <PageSection>
         <div className="flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+          <h2 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
             All rent payments
           </h2>
         </div>
@@ -190,13 +186,13 @@ export default async function GlobalRentOverviewPage() {
         ) : (
           <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/40">
             <table className="min-w-full text-left text-sm">
-              <thead className="border-b border-slate-800 bg-slate-900/60 text-xs uppercase tracking-[0.18em] text-slate-500">
+              <thead className="border-b border-slate-800 bg-slate-900/60 text-xs uppercase tracking-[0.18em] text-slate-400">
                 <tr>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Estate</th>
-                  <th className="px-4 py-3">Tenant</th>
-                  <th className="px-4 py-3">Period</th>
-                  <th className="px-4 py-3 text-right">Amount</th>
+                  <th scope="col" className="px-4 py-3">Date</th>
+                  <th scope="col" className="px-4 py-3">Estate</th>
+                  <th scope="col" className="px-4 py-3">Tenant</th>
+                  <th scope="col" className="px-4 py-3">Period</th>
+                  <th scope="col" className="px-4 py-3 text-right">Amount</th>
                 </tr>
               </thead>
               <tbody>
@@ -230,7 +226,7 @@ export default async function GlobalRentOverviewPage() {
             </table>
           </div>
         )}
-      </section>
+      </PageSection>
     </div>
   );
 }

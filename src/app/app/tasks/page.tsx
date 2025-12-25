@@ -289,7 +289,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const completedTasks = tasks.filter((t) => t.status === "DONE");
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-8 space-y-10">
+    <div className="mx-auto w-full max-w-6xl space-y-8 px-4 py-8">
       <PageHeader
         title="All tasks"
         description="Unified task list across all estates, with quick filters for status and per-estate work."
@@ -304,8 +304,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
       />
 
       {/* Summary row */}
-      <section className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+      <section className="grid gap-6 sm:grid-cols-3">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6">
           <p className="text-xs uppercase tracking-wide text-slate-500">
             Total tasks
           </p>
@@ -316,7 +316,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
             All tasks for your workspace.
           </p>
         </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6">
           <p className="text-xs uppercase tracking-wide text-slate-500">
             Open tasks
           </p>
@@ -327,7 +327,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
             Not completed or cancelled yet.
           </p>
         </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6">
           <p className="text-xs uppercase tracking-wide text-slate-500">
             Completed
           </p>
@@ -482,23 +482,23 @@ export default async function TasksPage({ searchParams }: PageProps) {
             <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full border-separate border-spacing-0 text-sm">
                 <thead>
-                  <tr className="bg-slate-900/80">
-                    <th className="sticky left-0 z-10 border-b border-slate-800 bg-slate-900/90 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  <tr className="bg-slate-900/70">
+                    <th className="sticky left-0 z-10 border-b border-slate-800 bg-slate-900/90 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
                       Task
                     </th>
-                    <th className="border-b border-slate-800 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    <th className="border-b border-slate-800 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
                       Estate
                     </th>
-                    <th className="border-b border-slate-800 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    <th className="border-b border-slate-800 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
                       Status
                     </th>
-                    <th className="border-b border-slate-800 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    <th className="border-b border-slate-800 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
                       Due
                     </th>
-                    <th className="border-b border-slate-800 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    <th className="border-b border-slate-800 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
                       Priority
                     </th>
-                    <th className="border-b border-slate-800 px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    <th className="border-b border-slate-800 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-400">
                       Actions
                     </th>
                   </tr>
@@ -512,10 +512,10 @@ export default async function TasksPage({ searchParams }: PageProps) {
                         key={task.id}
                         className={[
                           isOdd ? "bg-slate-900/40" : "bg-slate-950/40",
-                          "transition-colors hover:bg-slate-800/30",
+                          "transition-colors hover:bg-slate-800/25",
                         ].join(" ")}
                       >
-                        <td className="sticky left-0 z-10 max-w-md border-b border-slate-800 bg-inherit px-4 py-2 align-top text-sm text-slate-50">
+                        <td className="sticky left-0 z-10 max-w-md border-b border-slate-800 bg-inherit px-4 py-3 align-top text-sm text-slate-50">
                           <div className="flex flex-col gap-0.5">
                             <div className="flex flex-wrap items-center gap-2">
                               <Link
@@ -539,7 +539,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
                             ) : null}
                           </div>
                         </td>
-                        <td className="border-b border-slate-800 px-4 py-2 align-top text-sm">
+                        <td className="border-b border-slate-800 px-4 py-3 align-top text-sm">
                           {task.estateId ? (
                             <Link
                               href={`/app/estates/${task.estateId}`}
@@ -551,7 +551,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
                             <span className="text-xs text-slate-500">—</span>
                           )}
                         </td>
-                        <td className="border-b border-slate-800 px-4 py-2 align-top">
+                        <td className="border-b border-slate-800 px-4 py-3 align-top">
                           <span
                             className={`inline-flex h-7 items-center rounded-full border px-2 text-[11px] font-medium ${statusBadgeClass(
                               task.status,
@@ -560,21 +560,21 @@ export default async function TasksPage({ searchParams }: PageProps) {
                             {humanizeStatus(task.status)}
                           </span>
                         </td>
-                        <td className="border-b border-slate-800 px-4 py-2 align-top text-sm text-slate-200">
+                        <td className="border-b border-slate-800 px-4 py-3 align-top text-sm text-slate-200">
                           {task.dueDate ? (
                             <span>{formatDate(task.dueDate)}</span>
                           ) : (
                             <span className="text-xs text-slate-500">No due date</span>
                           )}
                         </td>
-                        <td className="border-b border-slate-800 px-4 py-2 align-top text-sm text-slate-200">
+                        <td className="border-b border-slate-800 px-4 py-3 align-top text-sm text-slate-200">
                           {task.priority ? (
                             <span className="text-xs text-slate-200">{task.priority}</span>
                           ) : (
                             <span className="text-xs text-slate-500">—</span>
                           )}
                         </td>
-                        <td className="border-b border-slate-800 px-4 py-2 align-top text-right text-xs">
+                        <td className="border-b border-slate-800 px-4 py-3 align-top text-right text-xs">
                           <Link
                             href={`/app/tasks/${task.id}`}
                             className="inline-flex items-center rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
@@ -590,13 +590,13 @@ export default async function TasksPage({ searchParams }: PageProps) {
             </div>
 
             {/* Mobile cards */}
-            <div className="space-y-2 p-3 md:hidden">
+            <div className="space-y-3 p-4 md:hidden">
               {tasks.map((task) => {
                 const due = dueBadge(task.dueDate, task.status);
                 return (
                   <div
                     key={task.id}
-                    className="rounded-xl border border-slate-800 bg-slate-900/40 p-3"
+                    className="rounded-xl border border-slate-800 bg-slate-900/40 p-4"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">

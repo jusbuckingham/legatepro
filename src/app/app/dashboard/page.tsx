@@ -496,7 +496,7 @@ export default async function DashboardPage() {
   );
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-8 space-y-10">
+    <div className="mx-auto w-full max-w-6xl space-y-8 px-4 py-8">
       <PageHeader
         eyebrow="Workspace"
         title="Billing overview"
@@ -530,11 +530,9 @@ export default async function DashboardPage() {
           </div>
         }
       />
-
-
       {/* Top-level metrics */}
-      <section className="grid gap-4 md:grid-cols-4">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-5 space-y-1">
+      <section className="grid gap-6 md:grid-cols-4">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-sm space-y-2">
           <p className="text-xs font-medium text-slate-400">
             Total invoiced
           </p>
@@ -546,7 +544,7 @@ export default async function DashboardPage() {
           </p>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-5 space-y-1">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-sm space-y-2">
           <p className="text-xs font-medium text-emerald-400">
             Collected
           </p>
@@ -558,7 +556,7 @@ export default async function DashboardPage() {
           </p>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-5 space-y-1">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-sm space-y-2">
           <p className="text-xs font-medium text-amber-400">
             Outstanding
           </p>
@@ -570,7 +568,7 @@ export default async function DashboardPage() {
           </p>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-5 space-y-1">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-sm space-y-2">
           <p className="text-xs font-medium text-slate-400">
             Voided / written off
           </p>
@@ -614,12 +612,10 @@ export default async function DashboardPage() {
             <table className="min-w-full text-xs">
               <thead className="bg-slate-900/80">
                 <tr className="text-left text-slate-400">
-                  <th className="px-3 py-2 font-medium">Bucket</th>
-                  <th className="px-3 py-2 font-medium">Amount</th>
-                  <th className="px-3 py-2 font-medium">
-                    Percent of outstanding
-                  </th>
-                  <th className="px-3 py-2 font-medium">Invoice count</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Bucket</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Amount</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Percent of outstanding</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Invoice count</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
@@ -691,7 +687,7 @@ export default async function DashboardPage() {
             No invoice activity yet in the last six months.
           </p>
         ) : (
-          <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-5">
+          <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-sm">
             {monthBuckets.map((bucket) => {
               const widthPercent =
                 (bucket.invoicedCents / safeMaxInvoicedForTrend) * 100;
@@ -715,7 +711,10 @@ export default async function DashboardPage() {
                     {bucket.label}
                   </div>
                   <div className="flex-1 space-y-1">
-                    <div className="h-2 rounded-full bg-slate-800/80 overflow-hidden">
+                    <div
+                      className="h-2 overflow-hidden rounded-full bg-slate-800/80"
+                      aria-label={`Invoiced bar for ${bucket.label}`}
+                    >
                       <div
                         className="h-full rounded-full bg-sky-500"
                         style={{ width: `${safeWidth}%` }}
@@ -741,7 +740,7 @@ export default async function DashboardPage() {
 
       {/* Unbilled time card + recent invoices */}
       <section className="grid gap-4 md:grid-cols-[minmax(0,2fr),minmax(0,3fr)] items-start">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-5 space-y-2">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-sm space-y-2">
           <p className="text-xs font-medium text-sky-400">
             Unbilled time value
           </p>
@@ -767,7 +766,7 @@ export default async function DashboardPage() {
         </div>
 
         {/* Recent invoices */}
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm p-5 space-y-3">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-sm space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium text-slate-400">
               Recent invoices
@@ -832,7 +831,7 @@ export default async function DashboardPage() {
                         })}
                       </span>
                     </div>
-                    <div className="text-right space-y-1">
+                    <div className="space-y-1 text-right">
                       <span className={statusColor}>{statusLabel}</span>
                       <div>
                         <Link
@@ -881,12 +880,12 @@ export default async function DashboardPage() {
             <table className="min-w-full text-xs">
               <thead className="bg-slate-900/80">
                 <tr className="text-left text-slate-400">
-                  <th className="px-3 py-2 font-medium">Estate</th>
-                  <th className="px-3 py-2 font-medium">Invoiced</th>
-                  <th className="px-3 py-2 font-medium">Collected</th>
-                  <th className="px-3 py-2 font-medium">Outstanding</th>
-                  <th className="px-3 py-2 font-medium">Unbilled hours</th>
-                  <th className="px-3 py-2 font-medium">Unbilled value</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Estate</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Invoiced</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Collected</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Outstanding</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Unbilled hours</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Unbilled value</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">

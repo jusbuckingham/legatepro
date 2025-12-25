@@ -6,7 +6,7 @@ export type PageHeaderProps = {
   /** Small label above the title (e.g., "Estate", "Invoices") */
   eyebrow?: React.ReactNode;
   title: string;
-  description?: string;
+  description?: React.ReactNode;
   actions?: React.ReactNode;
   size?: PageHeaderSize;
   className?: string;
@@ -26,11 +26,11 @@ export default function PageHeader({
       : "text-xl sm:text-2xl font-semibold tracking-tight";
 
   return (
-    <div
+    <header
       className={[
         "w-full",
-        "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between",
-        "pb-1",
+        "flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between",
+        "mb-6",
         className,
       ]
         .filter(Boolean)
@@ -38,7 +38,7 @@ export default function PageHeader({
     >
       <div className="min-w-0">
         {eyebrow ? (
-          <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          <div className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
             {eyebrow}
           </div>
         ) : null}
@@ -46,19 +46,19 @@ export default function PageHeader({
         <h1 className={titleClass}>{title}</h1>
 
         {description ? (
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+          <p className="mt-2 max-w-4xl text-sm leading-6 text-muted-foreground">
             {description}
           </p>
         ) : null}
       </div>
 
       {actions ? (
-        <div className="shrink-0 pt-1 sm:pt-0">
-          <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+        <div className="shrink-0">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             {actions}
           </div>
         </div>
       ) : null}
-    </div>
+    </header>
   );
 }

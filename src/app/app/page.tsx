@@ -388,13 +388,13 @@ export default async function AppDashboardPage({ searchParams }: PageProps) {
 
   if (estateCount === 0) {
     return (
-      <div className="space-y-8 p-4 md:p-6 lg:p-8">
-        <header className="space-y-1">
-          <h1 className="text-xl font-semibold text-slate-50">{dashboardGreeting(session.user.name)}</h1>
+      <div className="mx-auto w-full max-w-6xl space-y-8 px-4 py-8">
+        <header className="space-y-2">
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-50">{dashboardGreeting(session.user.name)}</h1>
           <p className="text-sm text-slate-400">
             Set up your first estate, then manage tasks, invoices, expenses, notes, documents, and contacts in one place.
           </p>
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-5 flex flex-wrap gap-2">
             <Link
               href="/app/estates/new"
               className="inline-flex items-center rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/20"
@@ -410,10 +410,10 @@ export default async function AppDashboardPage({ searchParams }: PageProps) {
           </div>
         </header>
 
-        <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-5">
+        <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="space-y-1">
-              <h2 className="text-lg font-semibold text-slate-50">Getting started</h2>
+              <h2 className="text-base font-semibold text-slate-50">Getting started</h2>
               <p className="text-sm text-slate-400">
                 Create your first estate — then track tasks, invoices, expenses, notes, documents, and contacts in one place.
               </p>
@@ -474,7 +474,7 @@ export default async function AppDashboardPage({ searchParams }: PageProps) {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+        <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-6">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold text-slate-100">Global activity</h2>
@@ -506,10 +506,10 @@ export default async function AppDashboardPage({ searchParams }: PageProps) {
   /* -------------------- JSX -------------------- */
 
   return (
-    <div className="space-y-8 p-4 md:p-6 lg:p-8">
+    <div className="mx-auto w-full max-w-6xl space-y-8 px-4 py-8">
       <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-xl font-semibold text-slate-50">{dashboardGreeting(session.user.name)}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-50">{dashboardGreeting(session.user.name)}</h1>
           <p className="text-sm text-slate-400">Your work across estates, all in one view.</p>
         </div>
 
@@ -536,7 +536,7 @@ export default async function AppDashboardPage({ searchParams }: PageProps) {
       </header>
 
       {/* Global Activity */}
-      <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+      <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-6">
         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
           <div>
             <h2 className="text-sm font-semibold text-slate-100">Global activity</h2>
@@ -596,7 +596,7 @@ export default async function AppDashboardPage({ searchParams }: PageProps) {
           </div>
         ) : (
           <>
-            <div className="mt-3 space-y-5">
+            <div className="mt-4 space-y-6">
               {globalFeedSections.map((section) => (
                 <div key={section.key} className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -737,7 +737,7 @@ export default async function AppDashboardPage({ searchParams }: PageProps) {
 
             {/* Load more row */}
             <div className="mt-4 flex items-center justify-between gap-3">
-              <p className="text-[11px] text-slate-500"> 
+              <p className="text-[11px] text-slate-500">
                 Showing {Math.min(globalFeed.length, activityLimit)} item(s)
                 {activityKindFilter ? ` for ${kindLabel(activityKindFilter) ?? activityKindFilter}` : ""}.
               </p>

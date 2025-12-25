@@ -2,8 +2,10 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { WorkspaceSettings } from "@/models/WorkspaceSettings";
-import { WorkspaceSettingsForm } from "@/components/settings/WorkspaceSettingsForm";
+import PageHeader from "@/components/layout/PageHeader";
+import PageSection from "@/components/layout/PageSection";
 import Link from "next/link";
+import { WorkspaceSettingsForm } from "@/components/settings/WorkspaceSettingsForm";
 
 export const metadata = {
   title: "Settings — LegatePro",
@@ -45,86 +47,65 @@ export default async function SettingsPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:px-6 md:py-8">
-      {/* Header */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="space-y-2">
-          <nav className="text-xs text-slate-500">
+    <div className="mx-auto w-full max-w-5xl space-y-10 px-4 py-8">
+      <PageHeader
+        eyebrow={
+          <span className="text-slate-400">
             <span className="text-slate-500">App</span>
             <span className="mx-1 text-slate-600">/</span>
             <span className="text-slate-300">Settings</span>
-          </nav>
-
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-slate-50">
-              Settings
-            </h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-400">
-              Set your firm branding and default billing values. These defaults
-              flow into invoices and other areas across LegatePro.
-            </p>
+          </span>
+        }
+        title="Settings"
+        description="Set your firm branding and default billing values. These defaults flow into invoices and other areas across LegatePro."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/app/billing"
+              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/60"
+            >
+              Billing
+            </Link>
+            <Link
+              href="/app"
+              className="inline-flex items-center justify-center rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-500/20"
+            >
+              Back to dashboard
+            </Link>
           </div>
-        </div>
+        }
+      />
 
-        <div className="flex items-center gap-2">
-          <Link
-            href="/app/billing"
-            className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/60"
-          >
-            Billing
-          </Link>
-          <Link
-            href="/app"
-            className="inline-flex items-center justify-center rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-500/20"
-          >
-            Back to dashboard
-          </Link>
-        </div>
-      </div>
-
-      {/* Helpful callout */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-        <div className="flex flex-col gap-1">
-          <p className="text-sm font-medium text-slate-100">
-            Invoice defaults live here
-          </p>
-          <p className="text-xs text-slate-400">
-            Tip: set your default hourly rate and invoice terms once—each new
-            invoice will start with these values.
-          </p>
-        </div>
-      </div>
-
-      {/* Form */}
-      <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm">
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-300">
-              Workspace profile
-            </h2>
-            <p className="mt-1 text-xs text-slate-500">
-              This info is used for invoice headers, PDFs, and your internal
-              defaults.
-            </p>
-          </div>
-        </div>
-
-        <WorkspaceSettingsForm initial={initial} />
-      </section>
-
-      <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-300">
-          Account
-        </h2>
-        <p className="mt-1 text-xs text-slate-500">
-          Your personal account details.
+      <PageSection
+        title="Invoice defaults live here"
+        description="Tip: set your default hourly rate and invoice terms once—each new invoice will start with these values."
+        className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4"
+      >
+        <p className="text-sm text-slate-200">
+          Set your defaults once and keep moving—new invoices will pick them up automatically.
         </p>
+      </PageSection>
+
+      <PageSection
+        title="Workspace profile"
+        description="This info is used for invoice headers, PDFs, and your internal defaults."
+        className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm"
+      >
+        <WorkspaceSettingsForm initial={initial} />
+      </PageSection>
+
+      <PageSection
+        title="Account"
+        description="Your personal account details."
+        className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4"
+      >
         <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2">
           <div className="text-xs text-slate-400">Email</div>
           <div className="text-sm text-slate-100">{session.user.email ?? "—"}</div>
           <div className="text-xs text-slate-400">User ID</div>
           <div className="text-sm text-slate-100">{session.user.id}</div>
         </div>
+
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
             href="/api/auth/signout?callbackUrl=/login"
@@ -133,15 +114,13 @@ export default async function SettingsPage() {
             Sign out
           </Link>
         </div>
-      </section>
+      </PageSection>
 
-      <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-300">
-          Security
-        </h2>
-        <p className="mt-1 text-xs text-slate-500">
-          Manage sign-in and security-related actions.
-        </p>
+      <PageSection
+        title="Security"
+        description="Manage sign-in and security-related actions."
+        className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4"
+      >
         <div className="mt-4">
           <Link
             href="/api/auth/signin"
@@ -153,14 +132,13 @@ export default async function SettingsPage() {
             Use this to review available sign-in options. Password reset behavior depends on your auth provider.
           </p>
         </div>
-      </section>
+      </PageSection>
 
-      {/* Footer note */}
       <p className="text-[11px] text-slate-500">
-        Need to manage your subscription or payment method? Head to {" "}
+        Need to manage your subscription or payment method? Head to{" "}
         <Link
           href="/app/billing"
-          className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+          className="text-slate-300 underline-offset-2 hover:text-emerald-300 hover:underline"
         >
           Billing
         </Link>
