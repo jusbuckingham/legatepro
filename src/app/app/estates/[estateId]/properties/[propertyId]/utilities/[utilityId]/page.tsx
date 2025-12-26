@@ -1,8 +1,7 @@
-
-
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cookies, headers } from "next/headers";
+
 
 type PageProps = {
   params: Promise<{
@@ -16,6 +15,12 @@ type UtilityApiResponse = {
   utility?: Record<string, unknown>;
   error?: string;
 };
+
+function getRequestBaseUrl(hdrs: Headers): string {
+  const proto = hdrs.get("x-forwarded-proto") ?? "http";
+  const host = hdrs.get("x-forwarded-host") ?? hdrs.get("host") ?? "";
+  return host ? `${proto}://${host}` : "";
+}
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length ? value : undefined;
@@ -53,12 +58,18 @@ async function fetchUtility(utilityId: string): Promise<Record<string, unknown> 
   const hdrs = await headers();
   const cookieStore = await cookies();
 
-  const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL ?? ""}/api/utilities/${utilityId}`.replace(/\/$/, ""), {
+  const baseUrl = getRequestBaseUrl(hdrs);
+  const url = (baseUrl
+    ? `${baseUrl}/api/utilities/${utilityId}`
+    : `/api/utilities/${utilityId}`
+  ).replace(/\/$/, "");
+
+  const res = await fetch(url, {
     method: "GET",
     cache: "no-store",
     headers: {
       // Forward auth cookies for server-side fetch.
-      cookie: cookieStore.toString(),
+      ...(cookieStore.toString() ? { cookie: cookieStore.toString() } : {}),
       // Forward a couple of useful request headers if present.
       "user-agent": hdrs.get("user-agent") ?? "",
       accept: "application/json",

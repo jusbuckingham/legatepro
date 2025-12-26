@@ -58,7 +58,12 @@ export default function EstateTimecardPage({ params }: PageProps) {
       setError(null);
 
       const res = await fetch(
-        `/api/estates/${encodeURIComponent(estateId)}/time`
+        `/api/estates/${encodeURIComponent(estateId)}/time`,
+        {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        }
       );
 
       const data: unknown = await res.json().catch(() => null);
@@ -182,20 +187,25 @@ export default function EstateTimecardPage({ params }: PageProps) {
 
     try {
       setLoading(true);
-      const res = await fetch("/api/time", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          estateId,
-          date,
-          hours: parsedHours,
-          description: description.trim(),
-          notes: notes.trim() || undefined,
-          isBillable,
-        }),
-      });
+      const res = await fetch(
+        `/api/estates/${encodeURIComponent(estateId)}/time`,
+        {
+          method: "POST",
+          credentials: "include",
+          cache: "no-store",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            estateId,
+            date,
+            hours: parsedHours,
+            description: description.trim(),
+            notes: notes.trim() || undefined,
+            isBillable,
+          }),
+        }
+      );
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);

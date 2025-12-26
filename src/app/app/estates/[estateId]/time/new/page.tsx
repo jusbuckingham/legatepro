@@ -57,8 +57,10 @@ export default function NewTimeEntryPage() {
         return;
       }
 
-      const res = await fetch("/api/time", {
+      const res = await fetch(`/api/estates/${encodeURIComponent(estateId)}/time`, {
         method: "POST",
+        credentials: "include",
+        cache: "no-store",
         headers: {
           "Content-Type": "application/json",
         },

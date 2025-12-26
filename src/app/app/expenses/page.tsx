@@ -70,7 +70,11 @@ function normalizeAmountToDollars(doc: RawExpense): number {
 }
 
 async function fetchExpensesForUser(): Promise<NormalizedExpenseRow[]> {
-  const res = await fetch("/api/expenses", { method: "GET" });
+  const res = await fetch("/api/expenses", {
+    method: "GET",
+    credentials: "include",
+    cache: "no-store",
+  });
   if (!res.ok) {
     throw new Error("Failed to fetch expenses");
   }

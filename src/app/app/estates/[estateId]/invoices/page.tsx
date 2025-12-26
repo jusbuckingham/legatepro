@@ -2,6 +2,8 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 
+import { auth } from "@/lib/auth";
+
 import CreateInvoiceForm from "./CreateInvoiceForm";
 import InvoiceStatusButtons from "./InvoiceStatusButtons";
 
@@ -120,8 +122,19 @@ async function getInvoices(estateId: string): Promise<InvoiceLean[]> {
 
 export default async function InvoicesPage({ params, searchParams }: PageProps) {
   const { estateId } = await params;
+
+  const session = await auth();
+  if (!session?.user?.id) {
+    // keep behavior consistent with other app pages
+    return (
+      <div className="p-6 text-slate-200">
+        <p>You must be signed in to view invoices.</p>
+      </div>
+    );
+  }
+
   // Access control (redirects / throws inside helper as appropriate)
-  const access = await requireEstateAccess({ estateId });
+  const access = await requireEstateAccess({ estateId, userId: session.user.id });
   const role = access.role;
   const canEdit = role !== "VIEWER";
   const canWrite = canEdit;
