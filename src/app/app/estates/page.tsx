@@ -17,13 +17,15 @@ type EstateListItem = {
   jurisdiction?: string;
 };
 
-async function getEstates(): Promise<EstateListItem[]> {
+async function getEstates(userId: string): Promise<EstateListItem[]> {
   await connectToDatabase();
 
-  // Return estates sorted by newest first.
-  // NOTE: If/when your Estate schema is scoped to the signed-in user (e.g. `ownerId`),
-  // switch this to `Estate.find({ ownerId: session.user.id })`.
-  const estates = await Estate.find().sort({ createdAt: -1 }).lean();
+  // Show estates the user owns OR collaborates on
+  const estates = await Estate.find({
+    $or: [{ ownerId: userId }, { "collaborators.userId": userId }],
+  })
+    .sort({ createdAt: -1 })
+    .lean();
 
   return estates as EstateListItem[];
 }
@@ -32,7 +34,7 @@ export default async function EstatesPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login?callbackUrl=/app/estates");
 
-  const estates = await getEstates();
+  const estates = await getEstates(session.user.id);
 
   const hasEstates = Array.isArray(estates) && estates.length > 0;
 

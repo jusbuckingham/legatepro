@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { requireEstateAccess } from "@/lib/estateAccess";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import { EstateNote } from "@/models/EstateNote";
 
 export const dynamic = "force-dynamic";
@@ -73,7 +73,7 @@ async function createNote(formData: FormData): Promise<void> {
     redirect("/login");
   }
 
-  const access = await requireEstateAccess({ estateId });
+  const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
   const role: EstateRole = (access?.role as EstateRole) ?? "VIEWER";
   if (!canWrite(role)) {
     // Viewers can read, but cannot create.
@@ -114,7 +114,7 @@ async function togglePinned(formData: FormData): Promise<void> {
     redirect("/login");
   }
 
-  const access = await requireEstateAccess({ estateId });
+  const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
   const role: EstateRole = (access?.role as EstateRole) ?? "VIEWER";
   if (!canWrite(role)) {
     // Viewers can read, but cannot modify.
@@ -152,7 +152,7 @@ async function deleteNote(formData: FormData): Promise<void> {
     redirect("/login");
   }
 
-  const access = await requireEstateAccess({ estateId });
+  const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
   const role: EstateRole = (access?.role as EstateRole) ?? "VIEWER";
   if (!canWrite(role)) {
     // Viewers can read, but cannot delete.
@@ -208,7 +208,7 @@ export default async function EstateNotesPage({
     redirect(`/login?callbackUrl=/app/estates/${estateId}/notes`);
   }
 
-  const access = await requireEstateAccess({ estateId });
+  const access = await requireEstateAccess({ estateId, userId: session.user.id });
   const role: EstateRole = (access?.role as EstateRole) ?? "VIEWER";
   const writeEnabled = canWrite(role);
 
@@ -219,7 +219,8 @@ export default async function EstateNotesPage({
     { body: 1, pinned: 1, createdAt: 1 },
   )
     .sort({ pinned: -1, createdAt: -1 })
-    .lean()) as EstateNoteLean[];
+    .lean()
+    .exec()) as EstateNoteLean[];
 
   const notes: NoteItem[] = docs.map((doc) => {
     const body =

@@ -127,6 +127,15 @@ function formatCurrency(amount: number | null | undefined): string {
   return `$${amount.toFixed(2)}`;
 }
 
+function normalizeInvoiceAmountToDollars(rawAmount: number): number {
+  // In current schema we treat totals as cents.
+  // But older data may have stored totals in dollars.
+  // Heuristic: values >= 10,000 are almost certainly cents (>= $100.00).
+  if (!Number.isFinite(rawAmount)) return 0;
+  if (rawAmount >= 10_000) return rawAmount / 100;
+  return rawAmount;
+}
+
 function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
   const d = new Date(value);
@@ -175,69 +184,72 @@ export default async function EstateOverviewPage({ params }: PageProps) {
   const canEdit = access.canEdit;
   const canViewSensitive = access.canViewSensitive;
 
-  const estateDoc = (await Estate.findById(estateId)
-    .lean()
-    .exec()) as EstateLean | null;
-
-  if (!estateDoc) {
-    notFound();
-  }
-
-  const invoiceDocs = (await Invoice.find(
-    { estateId },
-    {
-      description: 1,
-      status: 1,
-      issueDate: 1,
-      dueDate: 1,
-      subtotal: 1,
-      totalAmount: 1,
-    },
-  )
-    .lean()
-    .exec()) as InvoiceLean[];
-
   const documentFilter: Record<string, unknown> = { estateId };
   if (!canViewSensitive) {
     documentFilter.isSensitive = false;
   }
 
-  const documentDocs = (await EstateDocument.find(
-    documentFilter,
-    {
-      label: 1,
-      subject: 1,
-      url: 1,
-      location: 1,
-      fileName: 1,
-      fileType: 1,
-      fileSizeBytes: 1,
-      createdAt: 1,
-    },
-  )
-    .lean()
-    .exec()) as EstateDocumentLean[];
+  const [estateDoc, invoiceDocs, documentDocs, taskDocs, noteDocs] =
+    (await Promise.all([
+      Estate.findById(estateId).lean().exec(),
+      Invoice.find(
+        { estateId },
+        {
+          description: 1,
+          status: 1,
+          issueDate: 1,
+          dueDate: 1,
+          subtotal: 1,
+          totalAmount: 1,
+        },
+      )
+        .lean()
+        .exec(),
+      EstateDocument.find(
+        documentFilter,
+        {
+          label: 1,
+          subject: 1,
+          url: 1,
+          location: 1,
+          fileName: 1,
+          fileType: 1,
+          fileSizeBytes: 1,
+          createdAt: 1,
+        },
+      )
+        .lean()
+        .exec(),
+      EstateTask.find(
+        { estateId },
+        {
+          title: 1,
+          description: 1,
+          status: 1,
+          dueDate: 1,
+          completedAt: 1,
+        },
+      )
+        .lean()
+        .exec(),
+      EstateNote.find(
+        { estateId },
+        { body: 1, pinned: 1, createdAt: 1 },
+      )
+        .sort({ pinned: -1, createdAt: -1 })
+        .lean()
+        .exec(),
+    ])) as [
+      EstateLean | null,
+      InvoiceLean[],
+      EstateDocumentLean[],
+      EstateTaskLean[],
+      EstateNoteLean[],
+    ];
 
-  const taskDocs = (await EstateTask.find(
-    { estateId },
-    {
-      title: 1,
-      description: 1,
-      status: 1,
-      dueDate: 1,
-      completedAt: 1,
-    },
-  )
-    .lean()
-    .exec()) as EstateTaskLean[];
-
-  const noteDocs = (await EstateNote.find(
-    { estateId },
-    { body: 1, pinned: 1, createdAt: 1 },
-  )
-    .sort({ pinned: -1, createdAt: -1 })
-    .lean()
-    .exec()) as EstateNoteLean[];
+  if (!estateDoc) {
+    notFound();
+  }
 
   /** INVOICES → clean rows */
   const invoices: DashboardInvoice[] = invoiceDocs.map((doc) => {
@@ -250,7 +262,7 @@ export default async function EstateOverviewPage({ params }: PageProps) {
 
     const amountDollars =
       typeof rawAmount === "number" && !Number.isNaN(rawAmount)
-        ? rawAmount / 100
+        ? normalizeInvoiceAmountToDollars(rawAmount)
         : 0;
 
     const issue =

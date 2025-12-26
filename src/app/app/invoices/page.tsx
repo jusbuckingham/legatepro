@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
 import { Estate } from "@/models/Estate";
+import mongoose from "mongoose";
 
 type InvoiceStatus = "DRAFT" | "SENT" | "UNPAID" | "PARTIAL" | "PAID" | "VOID";
 
@@ -51,6 +52,12 @@ type InvoiceLean = {
   notes?: string;
   invoiceNumber?: string;
 };
+
+function toObjectId(id: string) {
+  return mongoose.Types.ObjectId.isValid(id)
+    ? new mongoose.Types.ObjectId(id)
+    : null;
+}
 
 type InvoiceListItem = {
   _id: string;
@@ -143,10 +150,13 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
 
   await connectToDatabase();
 
-  const estateDocs = (await Estate.find({ ownerId: session.user.id })
+  const estateDocs = (await Estate.find({
+    $or: [{ ownerId: session.user.id }, { "collaborators.userId": session.user.id }],
+  })
     .select("_id displayName caseName")
     .sort({ createdAt: -1 })
-    .lean()) as EstateOption[];
+    .lean()
+    .exec()) as EstateOption[];
 
   const q = (qRaw ?? "").trim();
   const statusFilter = (statusRaw ?? "ALL").toUpperCase();
@@ -155,8 +165,13 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
   const sortBy = sortByRaw ?? "recent";
   const invoiceNumberFilter = (invoiceNumberRaw ?? "").trim();
 
+  const userObjectId = toObjectId(session.user.id);
+
   const mongoQuery: { [key: string]: unknown } = {
-    ownerId: session.user.id,
+    $or: [
+      { ownerId: session.user.id },
+      ...(userObjectId ? [{ ownerId: userObjectId }] : []),
+    ],
   };
 
   // Status filter
@@ -171,7 +186,10 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
 
   // Estate filter
   if (estateFilter) {
-    mongoQuery.estateId = estateFilter;
+    const estateObjectId = toObjectId(estateFilter);
+    mongoQuery.estateId = estateObjectId
+      ? { $in: [estateFilter, estateObjectId] }
+      : estateFilter;
   }
 
   // Invoice number filter (more exact than the generic q search)
@@ -218,7 +236,8 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
   const invoiceDocs = (await Invoice.find(mongoQuery)
     .sort(sortOption)
     .populate("estateId", "displayName caseName")
-    .lean()) as InvoiceLean[];
+    .lean()
+    .exec()) as InvoiceLean[];
 
   const invoices: InvoiceListItem[] = invoiceDocs.map((inv) => {
     const amount = getAmount(inv);

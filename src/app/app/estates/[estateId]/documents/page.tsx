@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { requireEstateAccess } from "@/lib/estateAccess";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 
 import { EstateDocument } from "@/models/EstateDocument";
 import PageHeader from "@/components/layout/PageHeader";
@@ -77,7 +77,7 @@ async function createDocumentEntry(formData: FormData): Promise<void> {
     redirect("/login?callbackUrl=/app");
   }
 
-  const access = await requireEstateAccess({ estateId });
+  const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
   if (access.role === "VIEWER") {
     redirect(`/app/estates/${estateId}/documents?forbidden=1`);
   }
@@ -115,7 +115,7 @@ async function deleteDocument(formData: FormData): Promise<void> {
   const session = await auth();
   if (!session?.user?.id) return;
 
-  const access = await requireEstateAccess({ estateId });
+  const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
   if (access.role === "VIEWER") {
     redirect(`/app/estates/${estateId}/documents?forbidden=1`);
   }
@@ -144,7 +144,7 @@ export default async function EstateDocumentsPage({
     redirect(`/login?callbackUrl=/app/estates/${estateId}/documents`);
   }
 
-  const access = await requireEstateAccess({ estateId });
+  const access = await requireEstateAccess({ estateId, userId: session.user.id });
   const canEdit = access.role !== "VIEWER";
   const canViewSensitive = access.role !== "VIEWER";
   const canCreate = canEdit;
@@ -182,9 +182,15 @@ export default async function EstateDocumentsPage({
 
   await connectToDatabase();
 
-  const docs = await EstateDocument.find({ estateId, ownerId: session.user.id })
+  const docFilter: Record<string, unknown> = { estateId };
+  if (!canViewSensitive) {
+    docFilter.isSensitive = false;
+  }
+
+  const docs = await EstateDocument.find(docFilter)
     .sort({ subject: 1, label: 1 })
-    .lean<EstateDocumentLean[]>();
+    .lean<EstateDocumentLean[]>()
+    .exec();
 
   const documents: EstateDocumentItem[] = docs.map((doc) => ({
     _id: doc._id.toString(),

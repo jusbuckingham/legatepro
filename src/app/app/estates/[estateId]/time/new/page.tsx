@@ -42,10 +42,14 @@ export default function NewTimeEntryPage() {
     setError(null);
 
     try {
-      const hoursNumber = form.hours ? Number.parseFloat(form.hours) : 0;
-      const rateNumber = form.rate
-        ? Number.parseFloat(form.rate)
-        : undefined;
+      const hoursNumberRaw = form.hours ? Number.parseFloat(form.hours) : 0;
+      const hoursNumber = Number.isFinite(hoursNumberRaw) ? hoursNumberRaw : 0;
+
+      const rateNumberRaw = form.rate ? Number.parseFloat(form.rate) : undefined;
+      const rateNumber =
+        typeof rateNumberRaw === "number" && Number.isFinite(rateNumberRaw) && rateNumberRaw >= 0
+          ? rateNumberRaw
+          : undefined;
 
       if (!form.date || Number.isNaN(hoursNumber) || hoursNumber <= 0) {
         setError("Please provide a date and a positive number of hours.");
@@ -63,8 +67,8 @@ export default function NewTimeEntryPage() {
           date: form.date,
           hours: hoursNumber,
           rate: rateNumber,
-          activity: form.activity || undefined,
-          notes: form.notes || undefined,
+          activity: form.activity.trim() || undefined,
+          notes: form.notes.trim() || undefined,
         }),
       });
 

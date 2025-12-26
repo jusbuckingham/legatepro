@@ -54,6 +54,10 @@ function toIdString(id: string | Types.ObjectId | undefined): string | undefined
   return id.toString();
 }
 
+function toObjectId(id: string) {
+  return Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : null;
+}
+
 function parseDateInput(value: string | undefined): Date | undefined {
   if (!value) return undefined;
   const d = new Date(value);
@@ -135,12 +139,19 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
 
   await connectToDatabase();
 
-  const ownerObjectId = new Types.ObjectId(session.user.id);
+  const ownerObjectId = toObjectId(session.user.id);
+  const ownerIdOr: Array<Record<string, unknown>> = [
+    { ownerId: session.user.id },
+    ...(ownerObjectId ? [{ ownerId: ownerObjectId }] : []),
+  ];
 
   // Load all estates for this user (for filter + display)
-  const estateDocs = await Estate.find({ ownerId: ownerObjectId })
+  const estateDocs = await Estate.find({
+    $or: [...ownerIdOr, { "collaborators.userId": session.user.id }],
+  })
     .select("_id caseName courtCaseNumber decedentName status")
-    .lean();
+    .lean()
+    .exec();
 
   const estates = estateDocs as unknown as EstateDocLean[];
 
@@ -151,9 +162,10 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
   }
 
   // Load all time entries, then filter/sort in memory for now
-  const timeDocs = await TimeEntry.find({ ownerId: ownerObjectId })
+  const timeDocs = await TimeEntry.find({ $or: ownerIdOr })
     .sort({ date: -1, createdAt: -1 })
-    .lean();
+    .lean()
+    .exec();
 
   const allEntries = timeDocs as unknown as TimeEntryDocLean[];
 

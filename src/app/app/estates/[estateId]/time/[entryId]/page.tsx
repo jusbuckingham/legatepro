@@ -52,12 +52,7 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
           )}/time/${encodeURIComponent(entryId)}`
         );
 
-        let data: unknown = null;
-        try {
-          data = await res.json();
-        } catch {
-          // ignore bad JSON
-        }
+        const data: unknown = await res.json().catch(() => null);
 
         if (!res.ok) {
           const message =
@@ -163,12 +158,7 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
         }
       );
 
-      let data: unknown = null;
-      try {
-        data = await res.json();
-      } catch {
-        // ignore
-      }
+      const data: unknown = await res.json().catch(() => null);
 
       if (!res.ok) {
         const message =
@@ -256,12 +246,7 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
         }
       );
 
-      let data: unknown = null;
-      try {
-        data = await res.json();
-      } catch {
-        // ignore
-      }
+      const data: unknown = await res.json().catch(() => null);
 
       if (!res.ok) {
         const message =

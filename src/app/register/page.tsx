@@ -24,7 +24,7 @@ export default function RegisterPage() {
         body: JSON.stringify({ name, email, password })
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         setError(data?.error || "Failed to create account.");

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { requireEstateAccess } from "@/lib/estateAccess";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import { EstateTask } from "@/models/EstateTask";
 
 export const dynamic = "force-dynamic";
@@ -72,7 +72,7 @@ async function createTask(formData: FormData): Promise<void> {
   }
 
   // Permission check: viewers can't create tasks
-  const access = await requireEstateAccess({ estateId });
+  const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
   if (access.role === "VIEWER") {
     redirect(`/app/estates/${estateId}/tasks?forbidden=1`);
   }
@@ -117,7 +117,7 @@ async function updateTaskStatus(formData: FormData): Promise<void> {
     redirect("/login");
   }
 
-  const access = await requireEstateAccess({ estateId });
+  const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
   if (access.role === "VIEWER") {
     revalidatePath(`/app/estates/${estateId}/tasks`);
     return;
@@ -158,7 +158,7 @@ async function deleteTask(formData: FormData): Promise<void> {
     redirect("/login");
   }
 
-  const access = await requireEstateAccess({ estateId });
+  const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
   if (access.role === "VIEWER") {
     revalidatePath(`/app/estates/${estateId}/tasks`);
     return;
@@ -214,7 +214,7 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
   }
 
   await connectToDatabase();
-  const access = await requireEstateAccess({ estateId });
+  const access = await requireEstateAccess({ estateId, userId: session.user.id });
   const isViewer = access.role === "VIEWER";
 
   const docs = (await EstateTask.find(
@@ -222,7 +222,8 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
     { title: 1, description: 1, status: 1, dueDate: 1, completedAt: 1 }
   )
     .sort({ dueDate: 1, createdAt: 1 })
-    .lean()) as EstateTaskLean[];
+    .lean()
+    .exec()) as EstateTaskLean[];
 
   const tasks: TaskItem[] = docs.map((doc) => {
     const title =

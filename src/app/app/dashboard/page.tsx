@@ -2,6 +2,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
+import mongoose from "mongoose";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
@@ -94,6 +95,12 @@ function formatMoney(cents: number, currency: string = "USD"): string {
   }).format(amount);
 }
 
+function toObjectId(id: string) {
+  return mongoose.Types.ObjectId.isValid(id)
+    ? new mongoose.Types.ObjectId(id)
+    : null;
+}
+
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
 
@@ -103,21 +110,38 @@ export default async function DashboardPage() {
 
   await connectToDatabase();
 
+  const userObjectId = toObjectId(session.user.id);
+  const ownerIdOr: Array<Record<string, unknown>> = [
+    { ownerId: session.user.id },
+    ...(userObjectId ? [{ ownerId: userObjectId }] : []),
+  ];
+
   const [invoicesRaw, unbilledTimeRaw, workspaceSettings, estatesRaw] =
     await Promise.all([
-      Invoice.find({ ownerId: session.user.id }).lean().exec(),
+      Invoice.find({ $or: ownerIdOr }).lean().exec(),
       TimeEntry.find({
-        ownerId: session.user.id,
-        isArchived: { $ne: true },
-        $or: [
-          { billedInvoiceId: { $exists: false } },
-          { billedInvoiceId: null },
+        $and: [
+          { $or: ownerIdOr },
+          { isArchived: { $ne: true } },
+          {
+            $or: [
+              { billedInvoiceId: { $exists: false } },
+              { billedInvoiceId: null },
+            ],
+          },
         ],
       })
         .lean()
         .exec(),
-      WorkspaceSettings.findOne({ ownerId: session.user.id }).lean().exec(),
-      Estate.find({ ownerId: session.user.id }).lean().exec(),
+      WorkspaceSettings.findOne({ $or: ownerIdOr }).lean().exec(),
+      Estate.find({
+        $or: [
+          ...ownerIdOr,
+          { "collaborators.userId": session.user.id },
+        ],
+      })
+        .lean()
+        .exec(),
     ]);
 
   const invoices = invoicesRaw as InvoiceLike[];

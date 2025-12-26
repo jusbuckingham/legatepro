@@ -2,7 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { FilterQuery } from "mongoose";
 
-import { requireViewer } from "@/lib/estateAccess";
+import { auth } from "@/lib/auth";
+import { requireEstateAccess } from "@/lib/estateAccess";
 
 import { Invoice } from "@/models/Invoice";
 import { EstateDocument } from "@/models/EstateDocument";
@@ -13,6 +14,7 @@ import { EstateEvent } from "@/models/EstateEvent";
 import { EstateActivity } from "@/models/EstateActivity";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 type PageProps = {
   params: Promise<{ estateId: string }>;
@@ -449,22 +451,13 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   const pageSize = limit;
   const fetchSize = pageSize + 1;
 
-  const accessResult = await requireViewer({ estateId });
-
-  // `requireViewer` returns an access payload on success, and (depending on implementation)
-  // either a `Response`/`NextResponse` or an object containing one on failure.
-  const deniedResponse: Response | null =
-    accessResult instanceof Response
-      ? accessResult
-      : (accessResult as unknown as { response?: unknown; res?: unknown })?.response instanceof Response
-        ? ((accessResult as unknown as { response: Response }).response)
-        : (accessResult as unknown as { res?: unknown })?.res instanceof Response
-          ? ((accessResult as unknown as { res: Response }).res)
-          : null;
-
-  if (deniedResponse) {
+  const session = await auth();
+  if (!session?.user?.id) {
     return redirect(`/login?callbackUrl=/app/estates/${estateId}/timeline`);
   }
+
+  const access = await requireEstateAccess({ estateId, userId: session.user.id });
+  const canViewSensitive = access.role !== "VIEWER";
 
   const invoiceWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (isValidBefore) invoiceWhere.createdAt = { $lt: beforeDate };
@@ -475,15 +468,18 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   )
     .sort({ createdAt: -1 })
     .limit(fetchSize)
-    .lean()) as InvoiceLean[];
+    .lean()
+    .exec()) as InvoiceLean[];
 
   const documentWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (isValidBefore) documentWhere.createdAt = { $lt: beforeDate };
+  if (!canViewSensitive) (documentWhere as Record<string, unknown>).isSensitive = false;
 
   const documentDocs = (await EstateDocument.find(documentWhere, { label: 1, subject: 1, createdAt: 1 })
     .sort({ createdAt: -1 })
     .limit(fetchSize)
-    .lean()) as EstateDocumentLean[];
+    .lean()
+    .exec()) as EstateDocumentLean[];
 
   const taskWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (isValidBefore) taskWhere.createdAt = { $lt: beforeDate };
@@ -491,7 +487,8 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   const taskDocs = (await EstateTask.find(taskWhere, { title: 1, status: 1, createdAt: 1, dueDate: 1 })
     .sort({ createdAt: -1 })
     .limit(fetchSize)
-    .lean()) as EstateTaskLean[];
+    .lean()
+    .exec()) as EstateTaskLean[];
 
   const noteWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (isValidBefore) noteWhere.createdAt = { $lt: beforeDate };
@@ -499,7 +496,8 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   const noteDocs = (await EstateNote.find(noteWhere, { body: 1, pinned: 1, createdAt: 1 })
     .sort({ createdAt: -1 })
     .limit(fetchSize)
-    .lean()) as EstateNoteLean[];
+    .lean()
+    .exec()) as EstateNoteLean[];
 
   const estateEventWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (isValidBefore) estateEventWhere.createdAt = { $lt: beforeDate };
@@ -510,7 +508,8 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   )
     .sort({ createdAt: -1 })
     .limit(fetchSize)
-    .lean()) as EstateEventLean[];
+    .lean()
+    .exec()) as EstateEventLean[];
 
   const estateActivityWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (isValidBefore) estateActivityWhere.createdAt = { $lt: beforeDate };
@@ -521,7 +520,8 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   )
     .sort({ createdAt: -1 })
     .limit(fetchSize)
-    .lean()) as EstateActivityLean[];
+    .lean()
+    .exec()) as EstateActivityLean[];
 
   const events: TimelineEvent[] = [];
 

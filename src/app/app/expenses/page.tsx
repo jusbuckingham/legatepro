@@ -24,6 +24,7 @@ interface RawExpense {
   category?: string | null;
   description?: string | null;
   payee?: string | null;
+  date?: Date | string | null;
   incurredAt?: Date | string | null;
 }
 
@@ -73,8 +74,15 @@ async function fetchExpensesForUser(): Promise<NormalizedExpenseRow[]> {
   if (!res.ok) {
     throw new Error("Failed to fetch expenses");
   }
-  const data = (await res.json()) as { expenses?: RawExpense[] };
-  const rawDocs = (data.expenses ?? []) as RawExpense[];
+  const data = (await res.json().catch(() => null)) as
+    | { ok?: boolean; expenses?: RawExpense[] }
+    | { expenses?: RawExpense[] }
+    | RawExpense[]
+    | null;
+
+  const rawDocs = Array.isArray(data)
+    ? (data as RawExpense[])
+    : ((data?.expenses ?? []) as RawExpense[]);
 
   return rawDocs.map((doc) => {
     const id = normalizeObjectId(doc._id) ?? "";
@@ -97,9 +105,11 @@ async function fetchExpensesForUser(): Promise<NormalizedExpenseRow[]> {
       estateId = normalizeObjectId(doc.estateId);
     }
 
-    const incurredAtIso = doc.incurredAt
-      ? new Date(doc.incurredAt).toISOString()
-      : undefined;
+    const incurredAtIso = doc.date
+      ? new Date(doc.date).toISOString()
+      : doc.incurredAt
+        ? new Date(doc.incurredAt).toISOString()
+        : undefined;
 
     const amountDollars = normalizeAmountToDollars(doc);
 

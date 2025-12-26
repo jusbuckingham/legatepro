@@ -61,12 +61,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
         `/api/estates/${encodeURIComponent(estateId)}/time`
       );
 
-      let data: unknown = null;
-      try {
-        data = await res.json();
-      } catch {
-        // If response body is not valid JSON, we'll fall back to a generic message
-      }
+      const data: unknown = await res.json().catch(() => null);
 
       if (!res.ok) {
         const apiError =

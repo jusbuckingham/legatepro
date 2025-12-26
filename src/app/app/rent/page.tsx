@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
@@ -58,6 +59,12 @@ function getEstateLabel(estateId: LeanRentPaymentWithEstate["estateId"]): string
   );
 }
 
+function toObjectId(id: string) {
+  return mongoose.Types.ObjectId.isValid(id)
+    ? new mongoose.Types.ObjectId(id)
+    : null;
+}
+
 export default async function GlobalRentOverviewPage() {
   const session = await auth();
 
@@ -68,18 +75,25 @@ export default async function GlobalRentOverviewPage() {
   await connectToDatabase();
 
   const ownerId = session.user.id;
+  const ownerObjectId = toObjectId(ownerId);
+
+  const ownerMatch: string | { $in: (string | mongoose.Types.ObjectId)[] } =
+    ownerObjectId ? { $in: [ownerId, ownerObjectId] } : ownerId;
 
   // Load payments with estate info
-  const rawPayments = await RentPayment.find({ ownerId })
+  const rawPayments = (await RentPayment.find({ ownerId: ownerMatch })
     .populate<{ estateId: LeanEstateForRent }>("estateId", "displayName caseName")
     .sort({ paymentDate: -1 })
-    .lean();
+    .lean()
+    .exec()) as unknown[];
 
-  const payments = rawPayments as unknown as LeanRentPaymentWithEstate[];
+  const payments = (Array.isArray(rawPayments)
+    ? rawPayments
+    : []) as unknown as LeanRentPaymentWithEstate[];
 
   const totalCollected = payments.reduce(
     (sum, payment) => sum + (payment.amount || 0),
-    0,
+    0
   );
 
   // Group by estate for summary

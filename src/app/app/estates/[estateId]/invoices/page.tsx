@@ -104,7 +104,18 @@ async function getInvoices(estateId: string): Promise<InvoiceLean[]> {
     return [];
   }
 
-  return (await res.json()) as InvoiceLean[];
+  const data = (await res.json().catch(() => null)) as
+    | { ok?: boolean; invoices?: InvoiceLean[] }
+    | InvoiceLean[]
+    | null;
+
+  // Backward-compatible: older route versions may have returned the raw array.
+  if (Array.isArray(data)) {
+    return data as InvoiceLean[];
+  }
+
+  const invoices = data?.invoices;
+  return Array.isArray(invoices) ? invoices : [];
 }
 
 export default async function InvoicesPage({ params, searchParams }: PageProps) {

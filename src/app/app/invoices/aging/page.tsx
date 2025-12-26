@@ -1,5 +1,6 @@
 // src/app/app/invoices/aging/page.tsx
 import React from "react";
+import mongoose from "mongoose";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
@@ -68,6 +69,12 @@ function formatMoney(cents: number, currency: string = "USD"): string {
   }).format(amount);
 }
 
+function toObjectId(id: string) {
+  return mongoose.Types.ObjectId.isValid(id)
+    ? new mongoose.Types.ObjectId(id)
+    : null;
+}
+
 export default async function ARAgingPage() {
   const session = await getServerSession(authOptions);
 
@@ -77,15 +84,30 @@ export default async function ARAgingPage() {
 
   await connectToDatabase();
 
+  const userObjectId = toObjectId(session.user.id);
+  const ownerIdOr: Array<Record<string, unknown>> = [
+    { ownerId: session.user.id },
+    ...(userObjectId ? [{ ownerId: userObjectId }] : []),
+  ];
+
   const [invoicesRaw, estatesRaw, workspaceSettings] = await Promise.all([
     Invoice.find({
-      ownerId: session.user.id,
-      status: { $in: ["SENT", "UNPAID", "PARTIAL"] },
+      $and: [
+        { $or: ownerIdOr },
+        { status: { $in: ["SENT", "UNPAID", "PARTIAL"] } },
+      ],
     })
       .lean()
       .exec(),
-    Estate.find({ ownerId: session.user.id }).lean().exec(),
-    WorkspaceSettings.findOne({ ownerId: session.user.id }).lean().exec(),
+    Estate.find({
+      $or: [
+        ...ownerIdOr,
+        { "collaborators.userId": session.user.id },
+      ],
+    })
+      .lean()
+      .exec(),
+    WorkspaceSettings.findOne({ $or: ownerIdOr }).lean().exec(),
   ]);
 
   const invoices = invoicesRaw as InvoiceLike[];
