@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import { logActivity } from "@/lib/activity";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
+import { connectToDatabase } from "@/lib/db";
 import {
   EstateTask,
   type EstateTaskDocument,
@@ -14,6 +16,12 @@ type RouteContext = {
 };
 
 type AccessOk = { userId: string };
+
+function toObjectId(id: string) {
+  return mongoose.Types.ObjectId.isValid(id)
+    ? new mongoose.Types.ObjectId(id)
+    : null;
+}
 
 function isResponse(value: unknown): value is Response {
   return (
@@ -99,15 +107,22 @@ export async function GET(
   const access = await requireAccess(estateId, "viewer");
   if (isResponse(access)) return access;
 
-  const tasks = await EstateTask.find({ estateId })
+  const estateObjectId = toObjectId(estateId);
+  if (!estateObjectId) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
+
+  await connectToDatabase();
+
+  const tasks = await EstateTask.find({ estateId: estateObjectId })
     .sort({ createdAt: -1 })
     .lean();
 
   return NextResponse.json(
     tasks.map((t) => ({
       id: String((t as { _id: unknown })._id),
-      estateId: t.estateId,
-      ownerId: t.ownerId,
+      estateId: String(t.estateId),
+      ownerId: String(t.ownerId),
       title: t.title,
       description: (t as { description?: string | null }).description ?? null,
       status: t.status,
@@ -138,6 +153,15 @@ export async function POST(
   // Enforce estate access + edit permission
   const access = await requireAccess(estateId, "editor");
   if (isResponse(access)) return access;
+
+  const estateObjectId = toObjectId(estateId);
+  const ownerObjectId = toObjectId(access.userId);
+
+  if (!estateObjectId || !ownerObjectId) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
+
+  await connectToDatabase();
 
   let body: unknown;
   try {
@@ -188,8 +212,8 @@ export async function POST(
   }
 
   const taskDoc: EstateTaskDocument = await EstateTask.create({
-    estateId,
-    ownerId: access.userId,
+    estateId: estateObjectId,
+    ownerId: ownerObjectId,
     title: title.trim(),
     description: description?.trim() || undefined,
     status,
@@ -201,7 +225,7 @@ export async function POST(
   // Activity log: task created
   try {
     await logActivity({
-      estateId: String(estateId),
+      estateId: String(estateObjectId),
       kind: "TASK",
       action: "created",
       entityId: String(taskDoc._id),
@@ -221,8 +245,8 @@ export async function POST(
   return NextResponse.json(
     {
       id: taskDoc.id,
-      estateId: taskDoc.estateId,
-      ownerId: taskDoc.ownerId,
+      estateId: String(taskDoc.estateId),
+      ownerId: String(taskDoc.ownerId),
       title: taskDoc.title,
       description: taskDoc.description ?? null,
       status: taskDoc.status,

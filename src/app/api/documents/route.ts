@@ -2,31 +2,18 @@
 // Global estate document index API for LegatePro (metadata only — not file upload yet)
 
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import * as EstateAccess from "@/lib/estateAccess";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import { Estate } from "@/models/Estate";
 import { EstateDocument } from "@/models/EstateDocument";
 
-type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
-
-type CollaboratorLean = {
-  userId: unknown;
-  role?: unknown;
-};
-
-type EstateLean = {
-  _id: unknown;
-  ownerId?: unknown;
-  collaborators?: CollaboratorLean[];
-};
-
-type EstateIdOnlyLean = {
-  _id: unknown;
-};
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 type DocumentFilter = {
-  estateId?: string | { $in: string[] };
+  estateId?: { $in: string[] };
   subject?: string;
   $or?: Array<Record<string, unknown>>;
 };
@@ -49,113 +36,37 @@ function jsonError(status: number, message: string) {
   return NextResponse.json({ error: message }, { status });
 }
 
-function normalizeRole(input: unknown): EstateRole | null {
-  if (input === "OWNER" || input === "EDITOR" || input === "VIEWER") return input;
-  return null;
+function isValidId(id: string) {
+  return mongoose.Types.ObjectId.isValid(id);
 }
 
-function getUserEstateRole(estate: EstateLean, userId: string): EstateRole | null {
-  const ownerId = estate?.ownerId != null ? String(estate.ownerId) : null;
-  if (ownerId && ownerId === userId) return "OWNER";
-
-  const collaborators: CollaboratorLean[] = Array.isArray(estate?.collaborators)
-    ? estate.collaborators
-    : [];
-
-  const match = collaborators.find((c) => String(c.userId) === userId);
-  return normalizeRole(match?.role);
-}
-
-async function getAccessibleEstateIds(userId: string) {
-  const estates = (await Estate.find(
-    {
-      $or: [{ ownerId: userId }, { "collaborators.userId": userId }],
-    },
+async function listAccessibleEstateIds(userId: string) {
+  const estates = await Estate.find(
+    { $or: [{ ownerId: userId }, { "collaborators.userId": userId }] },
     { _id: 1 }
   )
     .lean()
-    .exec()) as unknown as EstateIdOnlyLean[];
+    .exec();
 
-  return estates.map((e) => String(e._id));
+  return estates.map((e) => String((e as { _id: unknown })._id));
 }
 
-async function requireEstateRole(
-  estateId: string,
-  userId: string,
-  allowed: EstateRole[]
-): Promise<{ ok: true; estate: EstateLean; role: EstateRole } | { ok: false; res: NextResponse }> {
-  const estate = (await Estate.findById(estateId).lean().exec()) as unknown as EstateLean | null;
-  if (!estate) return { ok: false, res: jsonError(404, "Estate not found") };
-
-  const role = getUserEstateRole(estate, userId);
-  if (!role) return { ok: false, res: jsonError(403, "Forbidden") };
-  if (!allowed.includes(role)) return { ok: false, res: jsonError(403, "Insufficient role") };
-
-  return { ok: true, estate, role };
-}
-
-// --- Centralized/fallback estate access helpers ---
-type RequireAccessFn = (args: { estateId: string; userId?: string }) => Promise<unknown>;
-
-function pickAccessFns() {
-  const mod = EstateAccess as unknown as {
-    requireEstateAccess?: RequireAccessFn;
-    requireEstateEditAccess?: RequireAccessFn;
-    listAccessibleEstateIds?: (userId: string) => Promise<string[]>;
-  };
-
-  return {
-    requireView: mod.requireEstateAccess,
-    requireEdit: mod.requireEstateEditAccess,
-    listIds: mod.listAccessibleEstateIds,
-  };
-}
-
-async function enforceViewerAccess(estateId: string, userId: string): Promise<NextResponse | null> {
-  const { requireView } = pickAccessFns();
-
-  // Prefer centralized access helpers when present.
-  if (typeof requireView === "function") {
-    try {
-      await requireView({ estateId, userId });
-      return null;
-    } catch {
-      return jsonError(403, "Forbidden");
-    }
+async function enforceViewerAccess(estateId: string, userId: string) {
+  try {
+    await requireEstateAccess({ estateId, userId });
+    return null;
+  } catch {
+    return jsonError(403, "Forbidden");
   }
-
-  // Fallback to local role checks.
-  const access = await requireEstateRole(estateId, userId, ["OWNER", "EDITOR", "VIEWER"]);
-  return access.ok ? null : access.res;
 }
 
-async function enforceEditorAccess(estateId: string, userId: string): Promise<NextResponse | null> {
-  const { requireEdit } = pickAccessFns();
-
-  if (typeof requireEdit === "function") {
-    try {
-      await requireEdit({ estateId, userId });
-      return null;
-    } catch {
-      return jsonError(403, "Insufficient role");
-    }
+async function enforceEditorAccess(estateId: string, userId: string) {
+  try {
+    await requireEstateEditAccess({ estateId, userId });
+    return null;
+  } catch {
+    return jsonError(403, "Insufficient role");
   }
-
-  const access = await requireEstateRole(estateId, userId, ["OWNER", "EDITOR"]);
-  return access.ok ? null : access.res;
-}
-
-async function listAccessibleIds(userId: string): Promise<string[]> {
-  const { listIds } = pickAccessFns();
-  if (typeof listIds === "function") {
-    try {
-      const ids = await listIds(userId);
-      return Array.isArray(ids) ? ids : [];
-    } catch {
-      // fall through
-    }
-  }
-  return getAccessibleEstateIds(userId);
 }
 
 // GET /api/documents
@@ -164,17 +75,21 @@ async function listAccessibleIds(userId: string): Promise<string[]> {
 //   subject: string               -> filter by subject/category
 //   q: string                     -> search by label, location, tags, or notes
 export async function GET(request: NextRequest) {
-  try {
-    const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) return jsonError(401, "Unauthorized");
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) return jsonError(401, "Unauthorized");
 
+  try {
     await connectToDatabase();
 
     const { searchParams } = new URL(request.url);
     const estateId = searchParams.get("estateId");
-    const subject = searchParams.get("subject");
+    const subject = searchParams.get("subject") ?? undefined;
     const q = searchParams.get("q")?.trim() ?? "";
+
+    if (estateId && !isValidId(estateId)) {
+      return jsonError(400, "Invalid estateId");
+    }
 
     // If a specific estateId is requested, enforce viewer access on that estate.
     if (estateId) {
@@ -183,7 +98,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Otherwise, only return docs for estates the user can access.
-    const accessibleEstateIds = estateId ? [estateId] : await listAccessibleIds(userId);
+    const accessibleEstateIds = estateId ? [estateId] : await listAccessibleEstateIds(userId);
 
     const filter: DocumentFilter = {
       estateId: { $in: accessibleEstateIds },
@@ -207,7 +122,7 @@ export async function GET(request: NextRequest) {
       .lean()
       .exec();
 
-    return NextResponse.json({ documents }, { status: 200 });
+    return NextResponse.json({ ok: true, documents }, { status: 200 });
   } catch (error) {
     console.error("GET /api/documents error", error);
     return NextResponse.json({ error: "Unable to load documents" }, { status: 500 });
@@ -217,11 +132,11 @@ export async function GET(request: NextRequest) {
 // POST /api/documents
 // Creates a new estate document index entry (metadata only)
 export async function POST(request: NextRequest) {
-  try {
-    const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) return jsonError(401, "Unauthorized");
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) return jsonError(401, "Unauthorized");
 
+  try {
     await connectToDatabase();
 
     const rawBody = (await request.json()) as Partial<CreateDocumentPayload> | null;
@@ -241,6 +156,7 @@ export async function POST(request: NextRequest) {
     } = rawBody ?? {};
 
     if (!estateId) return jsonError(400, "estateId is required");
+    if (!isValidId(estateId)) return jsonError(400, "Invalid estateId");
     if (!subject) return jsonError(400, "subject is required");
     if (!label) return jsonError(400, "label is required");
 
@@ -248,25 +164,23 @@ export async function POST(request: NextRequest) {
     const res = await enforceEditorAccess(estateId, userId);
     if (res) return res;
 
-    // For consistent ownership semantics, align ownerId with the estate owner when possible.
-    // (Fallback: use the current userId.)
-    let ownerId = userId;
-    try {
-      const estate = (await Estate.findById(estateId).select({ ownerId: 1 }).lean().exec()) as unknown as {
-        ownerId?: unknown;
-      } | null;
-      if (estate?.ownerId != null) ownerId = String(estate.ownerId);
-    } catch {
-      // ignore
-    }
-
     const tags = Array.isArray(incomingTags)
-      ? incomingTags
+      ? incomingTags.map((t) => String(t))
       : incomingTags
         ? [String(incomingTags)]
         : [];
 
     const isSensitive = Boolean(incomingIsSensitive);
+
+    // Keep ownerId consistent with the estate owner (Estate.ownerId is a string in this project).
+    let ownerId = userId;
+    try {
+      const estate = await Estate.findById(estateId).select({ ownerId: 1 }).lean().exec();
+      const o = (estate as { ownerId?: unknown } | null)?.ownerId;
+      if (o != null) ownerId = String(o);
+    } catch {
+      // ignore
+    }
 
     const document = await EstateDocument.create({
       ownerId,
@@ -283,7 +197,7 @@ export async function POST(request: NextRequest) {
       fileSizeBytes,
     });
 
-    return NextResponse.json({ document }, { status: 201 });
+    return NextResponse.json({ ok: true, document }, { status: 201 });
   } catch (error) {
     console.error("POST /api/documents error", error);
     return NextResponse.json({ error: "Unable to create document" }, { status: 500 });

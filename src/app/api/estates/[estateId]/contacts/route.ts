@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
+import { requireEstateEditAccess } from "@/lib/estateAccess";
 import { Estate } from "@/models/Estate";
 import { Contact } from "@/models/Contact";
 import { logEstateEvent } from "@/lib/estateEvents";
 
 type EstateLean = {
   _id: string | { toString: () => string };
+  ownerId?: string;
   displayName?: string;
   caseName?: string;
   decedentName?: string;
@@ -28,6 +31,12 @@ type LinkBody = {
   contactId?: string;
 };
 
+function toObjectId(id: string) {
+  return mongoose.Types.ObjectId.isValid(id)
+    ? new mongoose.Types.ObjectId(id)
+    : null;
+}
+
 function isMongooseCastError(err: unknown): boolean {
   return (
     typeof err === "object" &&
@@ -38,7 +47,7 @@ function isMongooseCastError(err: unknown): boolean {
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<RouteParams> },
+  { params }: { params: Promise<RouteParams> }
 ) {
   const { estateId } = await params;
 
@@ -49,6 +58,15 @@ export async function POST(
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Permission: must be able to edit this estate (collaborators allowed if your helper supports it)
+  await requireEstateEditAccess({ estateId });
+
+  const estateObjectId = toObjectId(estateId);
+  const ownerObjectId = toObjectId(session.user.id);
+  if (!estateObjectId || !ownerObjectId) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
 
   await connectToDatabase();
@@ -64,16 +82,19 @@ export async function POST(
   if (!contactId || typeof contactId !== "string") {
     return NextResponse.json(
       { error: "Missing or invalid contactId" },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
+  const contactObjectId = toObjectId(contactId);
+  if (!contactObjectId) {
+    return NextResponse.json({ error: "Invalid contactId" }, { status: 400 });
+  }
+
+  // Load estate display fields for logging (after access check)
   let estate: EstateLean | null = null;
   try {
-    estate = (await Estate.findOne({
-      _id: estateId,
-      ownerId: session.user.id,
-    })
+    estate = (await Estate.findOne({ _id: estateObjectId })
       .select("_id ownerId displayName caseName decedentName")
       .lean()) as EstateLean | null;
   } catch (err) {
@@ -87,11 +108,12 @@ export async function POST(
     return NextResponse.json({ error: "Estate not found" }, { status: 404 });
   }
 
+  // Contacts are scoped to the current user
   let contact: ContactLean | null = null;
   try {
     contact = (await Contact.findOne({
-      _id: contactId,
-      ownerId: session.user.id,
+      _id: contactObjectId,
+      ownerId: ownerObjectId,
     })
       .select("_id name email phone role")
       .lean()) as ContactLean | null;
@@ -106,13 +128,12 @@ export async function POST(
     return NextResponse.json({ error: "Contact not found" }, { status: 404 });
   }
 
-  // Log estate event
   const estateIdStr =
     typeof estate._id === "string" ? estate._id : estate._id.toString();
 
   await Contact.updateOne(
-    { _id: contactId, ownerId: session.user.id },
-    { $addToSet: { estates: estateIdStr } },
+    { _id: contactObjectId, ownerId: ownerObjectId },
+    { $addToSet: { estates: estateIdStr } }
   );
 
   const contactName =
@@ -136,21 +157,19 @@ export async function POST(
     estateId: estateIdStr,
     type: "CONTACT_LINKED",
     summary: `Contact linked: ${contactName}`,
-    detail: detail
-      ? `${detail} (${estateName})`
-      : estateName,
+    detail: detail ? `${detail} (${estateName})` : estateName,
     meta: {
-      contactId,
+      contactId: contactId,
       contactRole: contact.role ?? null,
     },
   });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true }, { status: 200 });
 }
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: Promise<RouteParams> },
+  { params }: { params: Promise<RouteParams> }
 ) {
   const { estateId } = await params;
 
@@ -163,31 +182,36 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Permission: must be able to edit this estate (collaborators allowed if your helper supports it)
+  await requireEstateEditAccess({ estateId });
+
+  const estateObjectId = toObjectId(estateId);
+  const ownerObjectId = toObjectId(session.user.id);
+  if (!estateObjectId || !ownerObjectId) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
+
   await connectToDatabase();
 
   const url = new URL(req.url);
   const contactId = url.searchParams.get("contactId");
 
-  if (!contactId) {
+  if (!contactId || typeof contactId !== "string") {
     return NextResponse.json(
       { error: "Missing contactId query parameter" },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
-  if (typeof contactId !== "string") {
-    return NextResponse.json(
-      { error: "Invalid contactId query parameter" },
-      { status: 400 },
-    );
+  const contactObjectId = toObjectId(contactId);
+  if (!contactObjectId) {
+    return NextResponse.json({ error: "Invalid contactId" }, { status: 400 });
   }
 
+  // Load estate display fields for logging (after access check)
   let estate: EstateLean | null = null;
   try {
-    estate = (await Estate.findOne({
-      _id: estateId,
-      ownerId: session.user.id,
-    })
+    estate = (await Estate.findOne({ _id: estateObjectId })
       .select("_id ownerId displayName caseName decedentName")
       .lean()) as EstateLean | null;
   } catch (err) {
@@ -201,11 +225,12 @@ export async function DELETE(
     return NextResponse.json({ error: "Estate not found" }, { status: 404 });
   }
 
+  // Contacts are scoped to the current user
   let contact: ContactLean | null = null;
   try {
     contact = (await Contact.findOne({
-      _id: contactId,
-      ownerId: session.user.id,
+      _id: contactObjectId,
+      ownerId: ownerObjectId,
     })
       .select("_id name email phone role")
       .lean()) as ContactLean | null;
@@ -220,13 +245,12 @@ export async function DELETE(
     return NextResponse.json({ error: "Contact not found" }, { status: 404 });
   }
 
-  // Log estate event
   const estateIdStr =
     typeof estate._id === "string" ? estate._id : estate._id.toString();
 
   await Contact.updateOne(
-    { _id: contactId, ownerId: session.user.id },
-    { $pull: { estates: estateIdStr } },
+    { _id: contactObjectId, ownerId: ownerObjectId },
+    { $pull: { estates: estateIdStr } }
   );
 
   const contactName =
@@ -250,14 +274,12 @@ export async function DELETE(
     estateId: estateIdStr,
     type: "CONTACT_UNLINKED",
     summary: `Contact removed: ${contactName}`,
-    detail: detail
-      ? `${detail} (${estateName})`
-      : estateName,
+    detail: detail ? `${detail} (${estateName})` : estateName,
     meta: {
-      contactId,
+      contactId: contactId,
       contactRole: contact.role ?? null,
     },
   });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true }, { status: 200 });
 }

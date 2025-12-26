@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import mongoose from "mongoose";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
@@ -9,6 +10,12 @@ import { logEstateEvent } from "@/lib/estateEvents";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function toObjectId(id: string) {
+  return mongoose.Types.ObjectId.isValid(id)
+    ? new mongoose.Types.ObjectId(id)
+    : null;
+}
 
 function isInviteRole(v: unknown): v is InviteRole {
   return v === "EDITOR" || v === "VIEWER";
@@ -43,16 +50,21 @@ function isExpired(invite: Pick<EstateInvite, "status" | "expiresAt">): boolean 
   return invite.expiresAt.getTime() <= Date.now();
 }
 
-async function requireOwner(estateId: string, userId: string) {
-  await connectToDatabase();
-  const estate = await Estate.findById(estateId);
+async function requireOwner(estateObjectId: mongoose.Types.ObjectId, userId: string) {
+  const estate = await Estate.findById(estateObjectId);
   if (!estate) {
-    return { ok: false as const, res: NextResponse.json({ error: "Estate not found" }, { status: 404 }) };
+    return {
+      ok: false as const,
+      res: NextResponse.json({ error: "Estate not found" }, { status: 404 }),
+    };
   }
 
   // Owner guardrail: only owner can manage invites.
   if (String(estate.ownerId) !== String(userId)) {
-    return { ok: false as const, res: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+    return {
+      ok: false as const,
+      res: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
+    };
   }
 
   return { ok: true as const, estate };
@@ -65,7 +77,15 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ estateId: s
   }
 
   const { estateId } = await ctx.params;
-  const result = await requireOwner(estateId, session.user.id);
+
+  const estateObjectId = toObjectId(estateId);
+  if (!estateObjectId) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
+
+  await connectToDatabase();
+
+  const result = await requireOwner(estateObjectId, session.user.id);
   if (!result.ok) return result.res;
 
   type InviteDTO = {
@@ -114,7 +134,15 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ estateId: 
   }
 
   const { estateId } = await ctx.params;
-  const result = await requireOwner(estateId, session.user.id);
+
+  const estateObjectId = toObjectId(estateId);
+  if (!estateObjectId) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
+
+  await connectToDatabase();
+
+  const result = await requireOwner(estateObjectId, session.user.id);
   if (!result.ok) return result.res;
 
   let body: unknown;
@@ -239,7 +267,15 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ estateId
   }
 
   const { estateId } = await ctx.params;
-  const result = await requireOwner(estateId, session.user.id);
+
+  const estateObjectId = toObjectId(estateId);
+  if (!estateObjectId) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
+
+  await connectToDatabase();
+
+  const result = await requireOwner(estateObjectId, session.user.id);
   if (!result.ok) return result.res;
 
   let body: unknown;

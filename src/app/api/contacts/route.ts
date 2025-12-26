@@ -2,47 +2,70 @@
 // Directory / contacts API for LegatePro
 
 import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase } from "../../../lib/db";
-import { Contact } from "../../../models/Contact";
+import mongoose from "mongoose";
+import { connectToDatabase } from "@/lib/db";
+import { auth } from "@/lib/auth";
+import { Contact } from "@/models/Contact";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+function toObjectId(id: string) {
+  return mongoose.Types.ObjectId.isValid(id)
+    ? new mongoose.Types.ObjectId(id)
+    : null;
+}
 
 // GET /api/contacts
 // Optional query params:
 //   estateId: string  -> filter contacts for a specific estate
 //   q: string         -> search by name, organization, role, or email
 export async function GET(request: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const ownerObjectId = toObjectId(session.user.id);
+  if (!ownerObjectId) {
+    return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
+  }
+
   try {
     await connectToDatabase();
-
-    // TODO: replace with real ownerId from auth/session
-    const ownerId = "demo-user"; // TODO replace with real auth user
 
     const { searchParams } = new URL(request.url);
     const estateId = searchParams.get("estateId");
     const q = searchParams.get("q")?.trim() ?? "";
 
-    type ContactFilter = {
-      ownerId: string;
-      estateId?: string;
-      $or?: Array<Record<string, unknown>>;
+    const filter: Record<string, unknown> = {
+      ownerId: ownerObjectId,
     };
-    const filter: ContactFilter = { ownerId };
 
     if (estateId) {
-      filter.estateId = estateId;
+      const estateObjectId = toObjectId(estateId);
+      if (!estateObjectId) {
+        return NextResponse.json({ error: "Invalid estateId" }, { status: 400 });
+      }
+      // Contacts store linked estates as string IDs array in this project
+      filter.estates = String(estateObjectId);
     }
 
     if (q) {
       filter.$or = [
-        { name: { $regex: new RegExp(q, "i") } },
-        { organization: { $regex: new RegExp(q, "i") } },
-        { roleOrRelationship: { $regex: new RegExp(q, "i") } },
-        { email: { $regex: new RegExp(q, "i") } },
+        { name: { $regex: q, $options: "i" } },
+        { organization: { $regex: q, $options: "i" } },
+        { roleOrRelationship: { $regex: q, $options: "i" } },
+        { email: { $regex: q, $options: "i" } },
       ];
     }
 
-    const contacts = await Contact.find(filter).sort({ name: 1 }).lean();
+    const contacts = await Contact.find(filter)
+      .sort({ name: 1 })
+      .lean()
+      .exec();
 
-    return NextResponse.json({ contacts }, { status: 200 });
+    return NextResponse.json({ ok: true, contacts }, { status: 200 });
   } catch (error) {
     console.error("GET /api/contacts error", error);
     return NextResponse.json(
@@ -55,16 +78,29 @@ export async function GET(request: NextRequest) {
 // POST /api/contacts
 // Creates a new contact in the directory
 export async function POST(request: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const ownerObjectId = toObjectId(session.user.id);
+  if (!ownerObjectId) {
+    return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
+  }
+
   try {
     await connectToDatabase();
 
-    // TODO: replace with real ownerId from auth/session
-    const ownerId = "demo-user"; // TODO replace with real auth user
+    const body = (await request.json()) as Record<string, unknown> | null;
 
-    const body = await request.json();
+    if (!body) {
+      return NextResponse.json(
+        { error: "Request body is required" },
+        { status: 400 }
+      );
+    }
 
     const {
-      estateId,
       category,
       name,
       organization,
@@ -77,9 +113,9 @@ export async function POST(request: NextRequest) {
       state,
       postalCode,
       notes,
-    } = body ?? {};
+    } = body;
 
-    if (!name) {
+    if (!name || typeof name !== "string") {
       return NextResponse.json(
         { error: "Name is required for a contact" },
         { status: 400 }
@@ -87,8 +123,7 @@ export async function POST(request: NextRequest) {
     }
 
     const contact = await Contact.create({
-      ownerId,
-      estateId,
+      ownerId: ownerObjectId,
       category,
       name,
       organization,
@@ -101,9 +136,10 @@ export async function POST(request: NextRequest) {
       state,
       postalCode,
       notes,
+      estates: [], // linked later via /api/estates/[estateId]/contacts
     });
 
-    return NextResponse.json({ contact }, { status: 201 });
+    return NextResponse.json({ ok: true, contact }, { status: 201 });
   } catch (error) {
     console.error("POST /api/contacts error", error);
     return NextResponse.json(

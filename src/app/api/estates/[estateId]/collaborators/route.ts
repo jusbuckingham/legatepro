@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
@@ -9,6 +10,9 @@ import {
   type EstateRole,
 } from "@/models/Estate";
 import { logEstateEvent } from "@/lib/estateEvents";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 type AddCollaboratorBody = {
   userId: string;
@@ -24,8 +28,20 @@ type RemoveCollaboratorBody = {
   userId: string;
 };
 
+function toObjectId(id: string) {
+  return mongoose.Types.ObjectId.isValid(id)
+    ? new mongoose.Types.ObjectId(id)
+    : null;
+}
+
 function isAssignableRole(role: unknown): role is Exclude<EstateRole, "OWNER"> {
   return role === "EDITOR" || role === "VIEWER";
+}
+
+async function loadEstateForCollaborators(estateObjectId: mongoose.Types.ObjectId) {
+  return Estate.findById(estateObjectId, { ownerId: 1, collaborators: 1 })
+    .lean<{ ownerId: string; collaborators?: EstateCollaborator[] }>()
+    .exec();
 }
 
 /**
@@ -43,19 +59,24 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const estateObjectId = toObjectId(estateId);
+  if (!estateObjectId) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
+
+  // Permission: must be an estate member
   await requireEstateAccess({ estateId, userId: session.user.id });
 
   await connectToDatabase();
 
-  const estate = await Estate.findById(estateId, { ownerId: 1, collaborators: 1 })
-    .lean<{ ownerId: string; collaborators?: EstateCollaborator[] }>();
-
+  const estate = await loadEstateForCollaborators(estateObjectId);
   if (!estate) {
     return NextResponse.json({ error: "Estate not found" }, { status: 404 });
   }
 
   return NextResponse.json(
     {
+      ok: true,
       estateId,
       ownerId: estate.ownerId,
       collaborators: estate.collaborators ?? [],
@@ -79,12 +100,22 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const estateObjectId = toObjectId(estateId);
+  if (!estateObjectId) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
+
   const access = await requireEstateAccess({ estateId, userId: session.user.id });
   if (access.role !== "OWNER") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const body = (await req.json()) as Partial<AddCollaboratorBody>;
+  let body: Partial<AddCollaboratorBody>;
+  try {
+    body = (await req.json()) as Partial<AddCollaboratorBody>;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
 
   if (!body?.userId || !isAssignableRole(body.role)) {
     return NextResponse.json(
@@ -103,7 +134,7 @@ export async function POST(
 
   await connectToDatabase();
 
-  const estate = await Estate.findById(estateId);
+  const estate = await Estate.findById(estateObjectId);
   if (!estate) {
     return NextResponse.json({ error: "Estate not found" }, { status: 404 });
   }
@@ -183,12 +214,23 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const estateObjectId = toObjectId(estateId);
+  if (!estateObjectId) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
+
   const access = await requireEstateAccess({ estateId, userId: session.user.id });
   if (access.role !== "OWNER") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const body = (await req.json()) as Partial<UpdateCollaboratorBody>;
+  let body: Partial<UpdateCollaboratorBody>;
+  try {
+    body = (await req.json()) as Partial<UpdateCollaboratorBody>;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
   if (!body?.userId || !isAssignableRole(body.role)) {
     return NextResponse.json(
       { error: "Missing/invalid userId or role (EDITOR|VIEWER)" },
@@ -198,7 +240,7 @@ export async function PATCH(
 
   await connectToDatabase();
 
-  const estate = await Estate.findById(estateId);
+  const estate = await Estate.findById(estateObjectId);
   if (!estate) {
     return NextResponse.json({ error: "Estate not found" }, { status: 404 });
   }
@@ -210,6 +252,7 @@ export async function PATCH(
       { status: 404 }
     );
   }
+
   const previousRole = collab.role;
 
   if (previousRole === body.role) {
@@ -252,12 +295,23 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const estateObjectId = toObjectId(estateId);
+  if (!estateObjectId) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
+
   const access = await requireEstateAccess({ estateId, userId: session.user.id });
   if (access.role !== "OWNER") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const body = (await req.json()) as Partial<RemoveCollaboratorBody>;
+  let body: Partial<RemoveCollaboratorBody>;
+  try {
+    body = (await req.json()) as Partial<RemoveCollaboratorBody>;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
   if (!body?.userId) {
     return NextResponse.json({ error: "Missing userId" }, { status: 400 });
   }
@@ -271,7 +325,7 @@ export async function DELETE(
 
   await connectToDatabase();
 
-  const estate = await Estate.findById(estateId);
+  const estate = await Estate.findById(estateObjectId);
   if (!estate) {
     return NextResponse.json({ error: "Estate not found" }, { status: 404 });
   }

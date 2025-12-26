@@ -1,6 +1,8 @@
 // src/app/api/estates/[estateId]/properties/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/db";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import { EstateProperty } from "@/models/EstateProperty";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +26,12 @@ type PropertyCreateBody = Partial<{
   notes: string;
 }>;
 
+function toObjectId(id: string) {
+  return mongoose.Types.ObjectId.isValid(id)
+    ? new mongoose.Types.ObjectId(id)
+    : null;
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: RouteParams
@@ -35,13 +43,22 @@ export async function GET(
   }
 
   try {
+    // Permission: must be able to view this estate (collaborators allowed)
+    await requireEstateAccess({ estateId });
+
+    const estateObjectId = toObjectId(estateId);
+    if (!estateObjectId) {
+      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    }
+
     await connectToDatabase();
 
-    const properties = await EstateProperty.find({ estateId })
+    const properties = await EstateProperty.find({ estateId: estateObjectId })
       .sort({ createdAt: -1 })
-      .lean();
+      .lean()
+      .exec();
 
-    return NextResponse.json({ properties }, { status: 200 });
+    return NextResponse.json({ ok: true, properties }, { status: 200 });
   } catch (error) {
     console.error("[GET /api/estates/[estateId]/properties] Error:", error);
     return NextResponse.json(
@@ -62,13 +79,23 @@ export async function POST(
   }
 
   try {
+    // Permission: must be able to edit this estate
+    await requireEstateEditAccess({ estateId });
+
+    const estateObjectId = toObjectId(estateId);
+    if (!estateObjectId) {
+      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    }
+
     await connectToDatabase();
 
     const body = (await req.json()) as PropertyCreateBody;
 
     const payload = {
-      estateId,
-      label: (body.name ?? body.address ?? "Untitled property").toString().trim(),
+      estateId: estateObjectId,
+      label: (body.name ?? body.address ?? "Untitled property")
+        .toString()
+        .trim(),
       name: (body.name ?? "").toString().trim(),
       type: (body.type ?? "Real estate").toString().trim(),
       category: (body.category ?? "").toString().trim(),
@@ -87,7 +114,7 @@ export async function POST(
 
     const created = await EstateProperty.create(payload);
 
-    return NextResponse.json({ property: created }, { status: 201 });
+    return NextResponse.json({ ok: true, property: created }, { status: 201 });
   } catch (error) {
     console.error("[POST /api/estates/[estateId]/properties] Error:", error);
     return NextResponse.json(

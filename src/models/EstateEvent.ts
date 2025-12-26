@@ -2,6 +2,8 @@ import { Schema, model, models, type Document, type Model } from "mongoose";
 
 export type EstateEventType =
   | "ESTATE_CREATED"
+  | "ESTATE_UPDATED"
+  | "ESTATE_DELETED"
   | "INVOICE_CREATED"
   | "INVOICE_STATUS_CHANGED"
   | "CONTACT_LINKED"
@@ -41,6 +43,8 @@ const EstateEventSchema = new Schema<EstateEventDocument>(
       required: true,
       enum: [
         "ESTATE_CREATED",
+        "ESTATE_UPDATED",
+        "ESTATE_DELETED",
         "INVOICE_CREATED",
         "INVOICE_STATUS_CHANGED",
         "CONTACT_LINKED",

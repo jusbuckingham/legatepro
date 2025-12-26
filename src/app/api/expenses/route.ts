@@ -2,8 +2,19 @@
 // Estate expenses API for LegatePro
 
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/db";
 import { Expense } from "@/models/Expense";
+import { auth } from "@/lib/auth";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+function toObjectId(id: string) {
+  return mongoose.Types.ObjectId.isValid(id)
+    ? new mongoose.Types.ObjectId(id)
+    : null;
+}
 
 // GET /api/expenses
 // Optional query params:
@@ -14,6 +25,16 @@ import { Expense } from "@/models/Expense";
 //   to: string (ISO date)     -> filter expenses on/before this date
 //   q: string                 -> search description, payee, notes
 export async function GET(request: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const ownerObjectId = toObjectId(session.user.id);
+  if (!ownerObjectId) {
+    return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
+  }
+
   try {
     await connectToDatabase();
 
@@ -25,12 +46,16 @@ export async function GET(request: NextRequest) {
     const to = searchParams.get("to");
     const q = searchParams.get("q")?.trim() ?? "";
 
-    // For now, we do NOT filter by ownerId until auth is wired up.
-    // This avoids ObjectId casting issues with fake IDs.
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = {
+      ownerId: ownerObjectId,
+    };
 
     if (estateId) {
-      filter.estateId = estateId;
+      const estateObjectId = toObjectId(estateId);
+      if (!estateObjectId) {
+        return NextResponse.json({ error: "Invalid estateId" }, { status: 400 });
+      }
+      filter.estateId = estateObjectId;
     }
 
     if (category) {
@@ -46,12 +71,16 @@ export async function GET(request: NextRequest) {
     if (from || to) {
       const dateFilter: Record<string, Date> = {};
       if (from) {
-        dateFilter.$gte = new Date(from);
+        const d = new Date(from);
+        if (!Number.isNaN(d.getTime())) dateFilter.$gte = d;
       }
       if (to) {
-        dateFilter.$lte = new Date(to);
+        const d = new Date(to);
+        if (!Number.isNaN(d.getTime())) dateFilter.$lte = d;
       }
-      filter.date = dateFilter;
+      if (Object.keys(dateFilter).length > 0) {
+        filter.date = dateFilter;
+      }
     }
 
     if (q) {
@@ -64,14 +93,15 @@ export async function GET(request: NextRequest) {
 
     const expenses = await Expense.find(filter)
       .sort({ date: -1, createdAt: -1 })
-      .lean();
+      .lean()
+      .exec();
 
-    return NextResponse.json({ expenses }, { status: 200 });
+    return NextResponse.json({ ok: true, expenses }, { status: 200 });
   } catch (error) {
     console.error("GET /api/expenses error", error);
     return NextResponse.json(
       { error: "Unable to load expenses" },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
@@ -93,6 +123,16 @@ interface CreateExpensePayload {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const ownerObjectId = toObjectId(session.user.id);
+  if (!ownerObjectId) {
+    return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
+  }
+
   try {
     await connectToDatabase();
 
@@ -101,7 +141,7 @@ export async function POST(request: NextRequest) {
     if (!body) {
       return NextResponse.json(
         { error: "Request body is required" },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
@@ -120,37 +160,35 @@ export async function POST(request: NextRequest) {
     } = body;
 
     if (!estateId) {
-      return NextResponse.json(
-        { error: "estateId is required" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "estateId is required" }, { status: 400 });
+    }
+
+    const estateObjectId = toObjectId(estateId);
+    if (!estateObjectId) {
+      return NextResponse.json({ error: "Invalid estateId" }, { status: 400 });
     }
 
     if (!date) {
-      return NextResponse.json(
-        { error: "date is required" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "date is required" }, { status: 400 });
+    }
+
+    const parsedDate = new Date(date);
+    if (Number.isNaN(parsedDate.getTime())) {
+      return NextResponse.json({ error: "date must be a valid ISO date" }, { status: 400 });
     }
 
     if (!description) {
-      return NextResponse.json(
-        { error: "description is required" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "description is required" }, { status: 400 });
     }
 
     if (amount == null || Number.isNaN(Number(amount))) {
-      return NextResponse.json(
-        { error: "A valid amount is required" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "A valid amount is required" }, { status: 400 });
     }
 
     const expense = await Expense.create({
-      // ownerId will be wired up once auth is in place
-      estateId,
-      date: new Date(date),
+      ownerId: ownerObjectId,
+      estateId: estateObjectId,
+      date: parsedDate,
       category: category || "OTHER",
       description,
       amount: Number(amount),
@@ -162,12 +200,12 @@ export async function POST(request: NextRequest) {
       documentId,
     });
 
-    return NextResponse.json({ expense }, { status: 201 });
+    return NextResponse.json({ ok: true, expense }, { status: 201 });
   } catch (error) {
     console.error("POST /api/expenses error", error);
     return NextResponse.json(
       { error: "Unable to create expense" },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }

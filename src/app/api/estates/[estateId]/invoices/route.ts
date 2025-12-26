@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import { Invoice, type InvoiceStatus } from "@/models/Invoice";
+import mongoose from "mongoose";
 
 type RouteParams = {
   params: Promise<{
@@ -19,6 +20,12 @@ interface CreateInvoiceBody {
   issueDate: string; // ISO string from client
   dueDate?: string;
   status?: InvoiceStatus;
+}
+
+function toObjectId(id: string) {
+  return mongoose.Types.ObjectId.isValid(id)
+    ? new mongoose.Types.ObjectId(id)
+    : null;
 }
 
 function parseDate(value: unknown): Date | null {
@@ -49,14 +56,24 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     const { estateId } = await params;
     await requireEstateAccess({ estateId });
 
+    const estateObjectId = toObjectId(estateId);
+    const ownerObjectId = toObjectId(session.user.id);
+
+    if (!estateObjectId || !ownerObjectId) {
+      return jsonError("Invalid id", 400);
+    }
+
     await connectToDatabase();
 
-    const invoices = await Invoice.find({ estate: estateId })
+    const invoices = await Invoice.find({
+      estateId: estateObjectId,
+      ownerId: ownerObjectId,
+    })
       .sort({ issueDate: -1 })
       .lean()
       .exec();
 
-    return NextResponse.json(invoices, { status: 200 });
+    return NextResponse.json({ ok: true, invoices }, { status: 200 });
   } catch (error) {
     console.error("[GET_INVOICES]", error);
     return jsonError("Failed to fetch invoices", 500);
@@ -101,8 +118,16 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       return jsonError("Validation failed", 400, errors);
     }
 
+    const estateObjectId = toObjectId(estateId);
+    const ownerObjectId = toObjectId(session.user.id);
+
+    if (!estateObjectId || !ownerObjectId) {
+      return jsonError("Invalid id", 400);
+    }
+
     const invoice = await Invoice.create({
-      estate: estateId,
+      estateId: estateObjectId,
+      ownerId: ownerObjectId,
       description,
       amount,
       issueDate,
@@ -110,7 +135,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       status,
     });
 
-    return NextResponse.json(invoice, { status: 201 });
+    return NextResponse.json({ ok: true, invoice }, { status: 201 });
   } catch (error) {
     console.error("[CREATE_INVOICE]", error);
     return jsonError("Failed to create invoice", 500);

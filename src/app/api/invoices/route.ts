@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
 import { auth } from "@/lib/auth";
 import { logEstateEvent } from "@/lib/estateEvents";
 import { WorkspaceSettings } from "@/models/WorkspaceSettings";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 type CreateInvoicePayload = {
   estateId: string;
@@ -38,10 +42,21 @@ type InvoiceListRow = {
   createdAt: Date | undefined;
 };
 
+function toObjectId(id: string) {
+  return mongoose.Types.ObjectId.isValid(id)
+    ? new mongoose.Types.ObjectId(id)
+    : null;
+}
+
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const ownerObjectId = toObjectId(session.user.id);
+  if (!ownerObjectId) {
+    return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
   }
 
   await connectToDatabase();
@@ -52,11 +67,15 @@ export async function GET(req: NextRequest) {
   const sort = searchParams.get("sort") ?? "issueDateDesc";
 
   const query: Record<string, unknown> = {
-    ownerId: session.user.id,
+    ownerId: ownerObjectId,
   };
 
   if (estateId) {
-    query.estateId = estateId;
+    const estateObjectId = toObjectId(estateId);
+    if (!estateObjectId) {
+      return NextResponse.json({ error: "Invalid estateId" }, { status: 400 });
+    }
+    query.estateId = estateObjectId;
   }
 
   if (statusFilter && statusFilter !== "ALL") {
@@ -96,13 +115,18 @@ export async function GET(req: NextRequest) {
     createdAt: inv.createdAt,
   }));
 
-  return NextResponse.json(rows);
+  return NextResponse.json({ ok: true, invoices: rows }, { status: 200 });
 }
 
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const ownerObjectId = toObjectId(session.user.id);
+  if (!ownerObjectId) {
+    return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
   }
 
   await connectToDatabase();
@@ -202,13 +226,15 @@ export async function POST(req: NextRequest) {
   } = body;
 
   if (!estateId) {
-    return NextResponse.json(
-      { error: "estateId is required" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "estateId is required" }, { status: 400 });
   }
 
-  // Load workspace settings for defaults
+  const estateObjectId = toObjectId(estateId);
+  if (!estateObjectId) {
+    return NextResponse.json({ error: "Invalid estateId" }, { status: 400 });
+  }
+
+  // Load workspace settings for defaults (WorkspaceSettings.ownerId is a string in this project)
   const settings = await WorkspaceSettings.findOne({
     ownerId: session.user.id,
   })
@@ -216,8 +242,7 @@ export async function POST(req: NextRequest) {
     .catch(() => null as unknown as null);
 
   const currency =
-    (typeof currencyFromBody === "string" &&
-    currencyFromBody.trim().length > 0
+    (typeof currencyFromBody === "string" && currencyFromBody.trim().length > 0
       ? currencyFromBody.trim().toUpperCase()
       : undefined) ?? (settings?.defaultCurrency ?? "USD");
 
@@ -227,9 +252,7 @@ export async function POST(req: NextRequest) {
       : 0;
 
   const notesToUse =
-    typeof notes === "string" && notes.trim().length > 0
-      ? notes
-      : undefined;
+    typeof notes === "string" && notes.trim().length > 0 ? notes : undefined;
 
   let resolvedDueDate: Date | string | undefined = dueDate;
 
@@ -251,7 +274,7 @@ export async function POST(req: NextRequest) {
 
         if (days > 0) {
           resolvedDueDate = new Date(
-            base.getTime() + days * 24 * 60 * 60 * 1000,
+            base.getTime() + days * 24 * 60 * 60 * 1000
           );
         } else {
           resolvedDueDate = base;
@@ -265,19 +288,15 @@ export async function POST(req: NextRequest) {
   // Compute subtotal/total from line items if available (supports both legacy and new editor shapes).
   const subtotalFromItems = Array.isArray(lineItems)
     ? lineItems.reduce((acc, item) => {
-        const quantity =
-          typeof item.quantity === "number" ? item.quantity : 0;
+        const quantity = typeof item.quantity === "number" ? item.quantity : 0;
 
         const unitPriceCents =
-          typeof item.unitPriceCents === "number"
-            ? item.unitPriceCents
-            : 0;
+          typeof item.unitPriceCents === "number" ? item.unitPriceCents : 0;
 
         const amountCentsField =
           typeof item.amountCents === "number" ? item.amountCents : 0;
 
-        const amountField =
-          typeof item.amount === "number" ? item.amount : 0;
+        const amountField = typeof item.amount === "number" ? item.amount : 0;
 
         const rateField = typeof item.rate === "number" ? item.rate : 0;
 
@@ -322,7 +341,7 @@ export async function POST(req: NextRequest) {
   let invoiceNumber: string | undefined;
   try {
     const lastInvoiceForOwner = await Invoice.findOne({
-      ownerId: session.user.id,
+      ownerId: ownerObjectId,
     })
       .sort({ createdAt: -1 })
       .lean()
@@ -347,8 +366,8 @@ export async function POST(req: NextRequest) {
   }
 
   const invoiceDoc = await Invoice.create({
-    ownerId: session.user.id,
-    estateId,
+    ownerId: ownerObjectId,
+    estateId: estateObjectId,
     status,
     issueDate,
     dueDate: resolvedDueDate ?? undefined,
@@ -360,10 +379,10 @@ export async function POST(req: NextRequest) {
     invoiceNumber,
   });
 
-  // Log estate event for the new invoice
+  // Log estate event for the new invoice (EstateEvent.estateId is stored as a string)
   try {
     await logEstateEvent({
-      estateId,
+      estateId: String(estateObjectId),
       ownerId: session.user.id,
       type: "INVOICE_CREATED",
       summary: "Invoice created",
@@ -378,22 +397,23 @@ export async function POST(req: NextRequest) {
 
   if (isHtmlRequest) {
     const redirectUrl = `/app/estates/${estateId}/invoices/${invoiceDoc._id}`;
-    return NextResponse.redirect(new URL(redirectUrl, req.url), {
-      status: 303,
-    });
+    return NextResponse.redirect(new URL(redirectUrl, req.url), { status: 303 });
   }
 
   return NextResponse.json(
     {
-      id: String(invoiceDoc._id),
-      estateId: String(invoiceDoc.estateId),
-      status: invoiceDoc.status,
-      issueDate: invoiceDoc.issueDate,
-      dueDate: invoiceDoc.dueDate ?? null,
-      totalAmount: invoiceDoc.totalAmount ?? safeAmount,
-      currency: invoiceDoc.currency ?? currency,
-      invoiceNumber: invoiceDoc.invoiceNumber ?? invoiceNumber ?? null,
+      ok: true,
+      invoice: {
+        id: String(invoiceDoc._id),
+        estateId: String(invoiceDoc.estateId),
+        status: invoiceDoc.status,
+        issueDate: invoiceDoc.issueDate,
+        dueDate: invoiceDoc.dueDate ?? null,
+        totalAmount: invoiceDoc.totalAmount ?? safeAmount,
+        currency: invoiceDoc.currency ?? currency,
+        invoiceNumber: invoiceDoc.invoiceNumber ?? invoiceNumber ?? null,
+      },
     },
-    { status: 201 },
+    { status: 201 }
   );
 }
