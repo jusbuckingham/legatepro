@@ -57,9 +57,10 @@ export async function POST(
   }
 
   const userEmail = session.user.email.toLowerCase();
+  const inviteEmail = String(invite.email ?? "").toLowerCase();
 
   // Email must match the invited email
-  if (invite.email !== userEmail) {
+  if (!inviteEmail || inviteEmail !== userEmail) {
     return NextResponse.json(
       { error: "Invite email does not match your account" },
       { status: 403 }
@@ -126,7 +127,7 @@ export async function POST(
     detail: `${userEmail} accepted an invite (link)`,
     meta: {
       userId: session.user.id,
-      email: invite.email,
+      email: inviteEmail,
       role: invite.role,
     },
   });

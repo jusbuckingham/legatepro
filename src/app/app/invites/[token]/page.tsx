@@ -22,7 +22,15 @@ export default async function InviteAcceptPage({
   const { token } = await params;
 
   const sp = searchParams ? await searchParams : undefined;
-  const error = typeof sp?.error === "string" ? sp.error : undefined;
+
+  const getParam = (key: string): string | undefined => {
+    const raw = sp?.[key];
+    if (typeof raw === "string") return raw;
+    if (Array.isArray(raw)) return raw[0];
+    return undefined;
+  };
+
+  const error = getParam("error");
 
   const errorMessage =
     error === "unauthorized"
@@ -56,6 +64,13 @@ export default async function InviteAcceptPage({
   }
 
   const expired = isExpired(invite);
+
+  // Persist expiration so the UI and stored state stay aligned.
+  if (expired) {
+    invite.status = "EXPIRED";
+    await estate.save();
+  }
+
   const status: EstateInvite["status"] | "EXPIRED" = expired
     ? "EXPIRED"
     : invite.status;
@@ -67,7 +82,10 @@ export default async function InviteAcceptPage({
     ? String(session.user.email).toLowerCase()
     : null;
 
-  const inviteEmail = String(invite.email).toLowerCase();
+  const inviteEmail = String(invite.email ?? "").toLowerCase();
+  if (!inviteEmail) {
+    notFound();
+  }
   const role = invite.role as InviteRole;
 
   async function acceptInviteAction() {
@@ -167,12 +185,6 @@ export default async function InviteAcceptPage({
     redirect(`/app/estates/${String(estate._id)}`);
   }
 
-  const canAccept =
-    status === "PENDING" &&
-    !!session?.user?.id &&
-    !!signedInEmail &&
-    signedInEmail === inviteEmail;
-
   return (
     <div className="mx-auto w-full max-w-xl p-6">
       <div className="rounded-lg border border-gray-200 bg-white p-6">
@@ -208,7 +220,7 @@ export default async function InviteAcceptPage({
               Please sign in to accept this invite.
             </p>
             <a
-              href={`/app?next=${encodeURIComponent(`/app/invites/${token}`)}`}
+              href={`/login?callbackUrl=${encodeURIComponent(`/app/invites/${token}`)}`}
               className="mt-3 inline-flex items-center rounded-md bg-black px-4 py-2 text-sm font-medium text-white"
             >
               Sign in to accept
@@ -230,7 +242,6 @@ export default async function InviteAcceptPage({
             <button
               type="submit"
               className="inline-flex w-full items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-              disabled={!canAccept}
             >
               Accept invite
             </button>
