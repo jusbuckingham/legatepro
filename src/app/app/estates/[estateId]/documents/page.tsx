@@ -153,9 +153,9 @@ export default async function EstateDocumentsPage({
   let subjectFilter = "";
   let sensitiveOnly = false;
 
-  if (searchParams) {
-    const sp = await searchParams;
+  const sp = searchParams ? await searchParams : undefined;
 
+  if (sp) {
     const q = sp.q;
     const subject = sp.subject;
     const sensitive = sp.sensitive;
@@ -175,6 +175,8 @@ export default async function EstateDocumentsPage({
       sensitive === "true" ||
       sensitive === "on";
   }
+
+  const forbidden = sp?.forbidden === "1";
 
   if (!canViewSensitive) {
     sensitiveOnly = false;
@@ -270,6 +272,44 @@ export default async function EstateDocumentsPage({
           </div>
         }
       />
+
+      {forbidden && (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+          <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-medium">Action blocked</p>
+              <p className="text-xs text-rose-200">
+                You don’t have edit permissions for this estate. Request access from the owner to add, edit, or remove documents.
+              </p>
+            </div>
+            <Link
+              href={`/app/estates/${estateId}?requestAccess=1`}
+              className="mt-2 inline-flex items-center justify-center rounded-md border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/25 md:mt-0"
+            >
+              Request edit access
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {!canEdit && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-medium">Viewer access</p>
+              <p className="text-xs text-amber-200">
+                You can view the document index, but you can’t add, edit, or remove entries.
+              </p>
+            </div>
+            <Link
+              href={`/app/estates/${estateId}?requestAccess=1`}
+              className="mt-2 inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-xs font-medium text-amber-100 hover:bg-amber-500/25 md:mt-0"
+            >
+              Request edit access
+            </Link>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
         <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5">
@@ -576,14 +616,7 @@ export default async function EstateDocumentsPage({
                               </button>
                             </form>
                           </>
-                        ) : (
-                          <Link
-                            href={`/app/estates/${estateId}/documents?requestAccess=edit`}
-                            className="text-slate-500 hover:text-slate-300 underline-offset-2 hover:underline"
-                          >
-                            Request access
-                          </Link>
-                        )}
+                        ) : null}
                       </div>
                     </td>
                   </tr>

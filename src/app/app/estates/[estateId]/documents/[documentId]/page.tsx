@@ -46,34 +46,24 @@ const SUBJECT_LABELS: Record<string, string> = {
   OTHER: "Other",
 };
 
-
 export default async function EstateDocumentDetailPage({ params, searchParams }: PageProps) {
   const { estateId, documentId } = await params;
 
+  const sp = searchParams ? await searchParams : undefined;
+
+  const getParam = (key: string): string => {
+    const raw = sp?.[key];
+    if (typeof raw === "string") return raw;
+    if (Array.isArray(raw)) return raw[0] ?? "";
+    return "";
+  };
+
   // Optional banner trigger when we redirect viewers away from edit actions
-  let forbidden = false;
-  let confirmNeeded = false;
-  if (searchParams) {
-    const sp = await searchParams;
+  const forbiddenRaw = getParam("forbidden");
+  const confirmRaw = getParam("confirm");
 
-    const rawForbidden = sp.forbidden;
-    const forbiddenVal =
-      typeof rawForbidden === "string"
-        ? rawForbidden
-        : Array.isArray(rawForbidden)
-          ? rawForbidden[0]
-          : "";
-    forbidden = forbiddenVal === "1" || forbiddenVal?.toLowerCase() === "true";
-
-    const rawConfirm = sp.confirm;
-    const confirmVal =
-      typeof rawConfirm === "string"
-        ? rawConfirm
-        : Array.isArray(rawConfirm)
-          ? rawConfirm[0]
-          : "";
-    confirmNeeded = confirmVal === "1" || confirmVal?.toLowerCase() === "true";
-  }
+  const forbidden = forbiddenRaw === "1" || forbiddenRaw.toLowerCase() === "true";
+  const confirmNeeded = confirmRaw === "1" || confirmRaw.toLowerCase() === "true";
 
   const requestAccessHref = `/app/estates/${estateId}/collaborators?${
     new URLSearchParams({
@@ -88,7 +78,7 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
     redirect(`/login?callbackUrl=/app/estates/${estateId}/documents/${documentId}`);
   }
 
-  const access = (await requireEstateAccess({ estateId })) as { role: EstateRole };
+  const access = (await requireEstateAccess({ estateId, userId: session.user.id })) as { role: EstateRole };
   const canEdit = roleAtLeast(access.role, "EDITOR");
 
   await connectToDatabase();

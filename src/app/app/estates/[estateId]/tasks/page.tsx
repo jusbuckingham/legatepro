@@ -179,9 +179,9 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
 
   let searchQuery = "";
   let statusFilter: TaskStatus | "ALL" = "ALL";
+  const sp = searchParams ? await searchParams : undefined;
 
-  if (searchParams) {
-    const sp = await searchParams;
+  if (sp) {
     const qRaw = sp.q;
     const statusRaw = sp.status;
 
@@ -208,6 +208,8 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
     }
   }
 
+  const forbidden = sp?.forbidden === "1";
+
   const session = await auth();
   if (!session?.user?.id) {
     redirect(`/login?callbackUrl=/app/estates/${estateId}/tasks`);
@@ -216,6 +218,7 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
   await connectToDatabase();
   const access = await requireEstateAccess({ estateId, userId: session.user.id });
   const isViewer = access.role === "VIEWER";
+  const canEdit = !isViewer;
 
   const docs = (await EstateTask.find(
     { estateId },
@@ -301,7 +304,7 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
 
         <div className="mt-1 flex flex-col items-end gap-2 text-xs text-gray-500">
           <div className="flex flex-wrap items-center gap-2">
-            {isViewer ? (
+            {!canEdit ? (
               <Link
                 href={`/app/estates/${estateId}?requestAccess=1`}
                 className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
@@ -331,9 +334,7 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
             </span>
             <span>·</span>
             <span
-              className={
-                overdueCount > 0 ? "font-medium text-red-600" : "font-medium text-gray-500"
-              }
+              className={overdueCount > 0 ? "font-medium text-red-600" : "font-medium text-gray-500"}
             >
               {overdueCount} overdue
             </span>
@@ -345,7 +346,16 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
         </div>
       </div>
 
-      {isViewer && (
+      {forbidden && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+          <div className="font-semibold">Action blocked</div>
+          <div className="text-xs text-rose-800">
+            You don’t have edit permissions for this estate. Request access from the owner to create or update tasks.
+          </div>
+        </div>
+      )}
+
+      {!canEdit && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
@@ -368,9 +378,7 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
       <section className="space-y-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-700">
-              Add a new task
-            </h2>
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-700">Add a new task</h2>
             <p className="mt-1 text-xs text-gray-500">
               Capture clear, concrete steps—&quot;Call bank about estate account&quot;,
               &quot;Gather property tax statements&quot;, or &quot;Prepare inventory for court&quot;.
@@ -379,7 +387,7 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
         </div>
 
         <form action={createTask} className="space-y-3 pt-1">
-          <fieldset disabled={isViewer} className="space-y-3">
+          <fieldset disabled={!canEdit} className="space-y-3">
             <input type="hidden" name="estateId" value={estateId} />
 
             <div className="space-y-1">
@@ -387,7 +395,7 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
               <input
                 name="title"
                 required
-                disabled={isViewer}
+                disabled={!canEdit}
                 placeholder="e.g. File initial inventory with the court"
                 className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900 placeholder:text-gray-400"
               />
@@ -398,7 +406,7 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
               <textarea
                 name="description"
                 rows={2}
-                disabled={isViewer}
+                disabled={!canEdit}
                 placeholder="Any notes, phone numbers, or details to remember…"
                 className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900 placeholder:text-gray-400"
               />
@@ -410,7 +418,7 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
                 <input
                   type="date"
                   name="dueDate"
-                  disabled={isViewer}
+                  disabled={!canEdit}
                   className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
                 />
               </div>
@@ -418,7 +426,7 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
                 <label className="text-xs font-medium text-gray-800">Status</label>
                 <select
                   name="status"
-                  disabled={isViewer}
+                  disabled={!canEdit}
                   className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
                   defaultValue="NOT_STARTED"
                 >
@@ -432,9 +440,9 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
             <div className="flex justify-end border-t border-gray-100 pt-3">
               <button
                 type="submit"
-                disabled={isViewer}
+                disabled={!canEdit}
                 className={
-                  isViewer
+                  !canEdit
                     ? "cursor-not-allowed rounded-md bg-gray-200 px-3 py-1.5 text-sm font-medium text-gray-500"
                     : "rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800"
                 }
@@ -448,7 +456,10 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
 
       {/* Filters */}
       <section className="space-y-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
-        <form method="GET" className="flex flex-col gap-2 text-xs md:flex-row md:items-center md:justify-between">
+        <form
+          method="GET"
+          className="flex flex-col gap-2 text-xs md:flex-row md:items-center md:justify-between"
+        >
           <div className="flex flex-1 items-center gap-2">
             <label htmlFor="q" className="whitespace-nowrap text-[11px] text-gray-500">
               Search
@@ -530,7 +541,7 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
               >
                 Back to overview
               </Link>
-              {isViewer ? (
+              {!canEdit ? (
                 <Link
                   href={`/app/estates/${estateId}?requestAccess=1`}
                   className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
@@ -627,76 +638,52 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
                       </td>
 
                       <td className="px-3 py-2 align-top">
-                        <div className={`flex justify-end gap-3 text-xs ${isViewer ? "opacity-60" : ""}`}>
+                        <div className="flex justify-end gap-3 text-xs">
                           <Link
                             href={`/app/estates/${estateId}/tasks/${task._id}`}
                             className="font-medium text-gray-700 hover:underline"
                           >
                             View
                           </Link>
-                          <Link
-                            href={`/app/estates/${estateId}/tasks/${task._id}/edit`}
-                            aria-disabled={isViewer}
-                            className={
-                              isViewer
-                                ? "pointer-events-none cursor-not-allowed font-medium text-gray-400"
-                                : "font-medium text-gray-700 hover:underline"
-                            }
-                          >
-                            Edit
-                          </Link>
 
-                          {task.status !== "DONE" ? (
-                            <form action={updateTaskStatus}>
-                              <input type="hidden" name="estateId" value={estateId} />
-                              <input type="hidden" name="taskId" value={task._id} />
-                              <input type="hidden" name="status" value="DONE" />
-                              <button
-                                type="submit"
-                                disabled={isViewer}
-                                className={
-                                  isViewer
-                                    ? "cursor-not-allowed text-gray-400"
-                                    : "font-medium text-green-700 hover:underline"
-                                }
+                          {canEdit ? (
+                            <>
+                              <Link
+                                href={`/app/estates/${estateId}/tasks/${task._id}/edit`}
+                                className="font-medium text-gray-700 hover:underline"
                               >
-                                Mark done
-                              </button>
-                            </form>
-                          ) : (
-                            <form action={updateTaskStatus}>
-                              <input type="hidden" name="estateId" value={estateId} />
-                              <input type="hidden" name="taskId" value={task._id} />
-                              <input type="hidden" name="status" value="IN_PROGRESS" />
-                              <button
-                                type="submit"
-                                disabled={isViewer}
-                                className={
-                                  isViewer
-                                    ? "cursor-not-allowed text-gray-400"
-                                    : "font-medium text-blue-700 hover:underline"
-                                }
-                              >
-                                Reopen
-                              </button>
-                            </form>
-                          )}
+                                Edit
+                              </Link>
 
-                          <form action={deleteTask}>
-                            <input type="hidden" name="estateId" value={estateId} />
-                            <input type="hidden" name="taskId" value={task._id} />
-                            <button
-                              type="submit"
-                              disabled={isViewer}
-                              className={
-                                isViewer
-                                  ? "cursor-not-allowed text-gray-400"
-                                  : "font-medium text-red-600 hover:underline"
-                              }
-                            >
-                              Delete
-                            </button>
-                          </form>
+                              {task.status !== "DONE" ? (
+                                <form action={updateTaskStatus}>
+                                  <input type="hidden" name="estateId" value={estateId} />
+                                  <input type="hidden" name="taskId" value={task._id} />
+                                  <input type="hidden" name="status" value="DONE" />
+                                  <button type="submit" className="font-medium text-green-700 hover:underline">
+                                    Mark done
+                                  </button>
+                                </form>
+                              ) : (
+                                <form action={updateTaskStatus}>
+                                  <input type="hidden" name="estateId" value={estateId} />
+                                  <input type="hidden" name="taskId" value={task._id} />
+                                  <input type="hidden" name="status" value="IN_PROGRESS" />
+                                  <button type="submit" className="font-medium text-blue-700 hover:underline">
+                                    Reopen
+                                  </button>
+                                </form>
+                              )}
+
+                              <form action={deleteTask}>
+                                <input type="hidden" name="estateId" value={estateId} />
+                                <input type="hidden" name="taskId" value={task._id} />
+                                <button type="submit" className="font-medium text-red-600 hover:underline">
+                                  Delete
+                                </button>
+                              </form>
+                            </>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -723,9 +710,7 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
                         {task.title}
                       </Link>
                       {task.description ? (
-                        <div className="mt-1 line-clamp-2 text-xs text-gray-600">
-                          {task.description}
-                        </div>
+                        <div className="mt-1 line-clamp-2 text-xs text-gray-600">{task.description}</div>
                       ) : null}
                     </div>
 
@@ -766,74 +751,54 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
                       )}
                     </div>
 
-                    <div className={`flex items-center gap-3 ${isViewer ? "opacity-60" : ""}`}>
+                    <div className="flex items-center gap-3">
                       <Link
                         href={`/app/estates/${estateId}/tasks/${task._id}`}
                         className="font-semibold text-gray-700"
                       >
                         View
                       </Link>
-                      <Link
-                        href={`/app/estates/${estateId}/tasks/${task._id}/edit`}
-                        aria-disabled={isViewer}
-                        className={
-                          isViewer
-                            ? "pointer-events-none cursor-not-allowed font-semibold text-gray-400"
-                            : "font-semibold text-gray-700"
-                        }
-                      >
-                        Edit
-                      </Link>
 
-                      {task.status !== "DONE" ? (
-                        <form action={updateTaskStatus}>
-                          <input type="hidden" name="estateId" value={estateId} />
-                          <input type="hidden" name="taskId" value={task._id} />
-                          <input type="hidden" name="status" value="DONE" />
-                          <button
-                            type="submit"
-                            disabled={isViewer}
-                            className={
-                              isViewer ? "cursor-not-allowed text-gray-400" : "font-semibold text-green-700"
-                            }
+                      {canEdit ? (
+                        <>
+                          <Link
+                            href={`/app/estates/${estateId}/tasks/${task._id}/edit`}
+                            className="font-semibold text-gray-700"
                           >
-                            Done
-                          </button>
-                        </form>
-                      ) : (
-                        <form action={updateTaskStatus}>
-                          <input type="hidden" name="estateId" value={estateId} />
-                          <input type="hidden" name="taskId" value={task._id} />
-                          <input type="hidden" name="status" value="IN_PROGRESS" />
-                          <button
-                            type="submit"
-                            disabled={isViewer}
-                            className={
-                              isViewer ? "cursor-not-allowed text-gray-400" : "font-semibold text-blue-700"
-                            }
-                          >
-                            Reopen
-                          </button>
-                        </form>
-                      )}
+                            Edit
+                          </Link>
 
-                      <form action={deleteTask}>
-                        <input type="hidden" name="estateId" value={estateId} />
-                        <input type="hidden" name="taskId" value={task._id} />
-                        <button
-                          type="submit"
-                          disabled={isViewer}
-                          className={isViewer ? "cursor-not-allowed text-gray-400" : "font-semibold text-red-600"}
-                        >
-                          Delete
-                        </button>
-                      </form>
+                          {task.status !== "DONE" ? (
+                            <form action={updateTaskStatus}>
+                              <input type="hidden" name="estateId" value={estateId} />
+                              <input type="hidden" name="taskId" value={task._id} />
+                              <input type="hidden" name="status" value="DONE" />
+                              <button type="submit" className="font-semibold text-green-700">
+                                Done
+                              </button>
+                            </form>
+                          ) : (
+                            <form action={updateTaskStatus}>
+                              <input type="hidden" name="estateId" value={estateId} />
+                              <input type="hidden" name="taskId" value={task._id} />
+                              <input type="hidden" name="status" value="IN_PROGRESS" />
+                              <button type="submit" className="font-semibold text-blue-700">
+                                Reopen
+                              </button>
+                            </form>
+                          )}
+
+                          <form action={deleteTask}>
+                            <input type="hidden" name="estateId" value={estateId} />
+                            <input type="hidden" name="taskId" value={task._id} />
+                            <button type="submit" className="font-semibold text-red-600">
+                              Delete
+                            </button>
+                          </form>
+                        </>
+                      ) : null}
                     </div>
                   </div>
-
-                  {isViewer ? (
-                    <div className="mt-2 text-[11px] text-gray-400">Viewer role: actions are disabled.</div>
-                  ) : null}
                 </div>
               ))}
             </div>

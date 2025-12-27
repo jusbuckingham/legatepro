@@ -77,7 +77,7 @@ async function createNote(formData: FormData): Promise<void> {
   const role: EstateRole = (access?.role as EstateRole) ?? "VIEWER";
   if (!canWrite(role)) {
     // Viewers can read, but cannot create.
-    return;
+    redirect(`/app/estates/${estateId}/notes?forbidden=1`);
   }
 
   await connectToDatabase();
@@ -118,7 +118,7 @@ async function togglePinned(formData: FormData): Promise<void> {
   const role: EstateRole = (access?.role as EstateRole) ?? "VIEWER";
   if (!canWrite(role)) {
     // Viewers can read, but cannot modify.
-    return;
+    redirect(`/app/estates/${estateId}/notes?forbidden=1`);
   }
 
   await connectToDatabase();
@@ -156,7 +156,7 @@ async function deleteNote(formData: FormData): Promise<void> {
   const role: EstateRole = (access?.role as EstateRole) ?? "VIEWER";
   if (!canWrite(role)) {
     // Viewers can read, but cannot delete.
-    return;
+    redirect(`/app/estates/${estateId}/notes?forbidden=1`);
   }
 
   await connectToDatabase();
@@ -178,9 +178,9 @@ export default async function EstateNotesPage({
   let searchQuery = "";
   let showPinnedOnly = false;
 
-  if (searchParams) {
-    const sp = await searchParams;
+  const sp = searchParams ? await searchParams : undefined;
 
+  if (sp) {
     const qRaw = sp.q;
     searchQuery =
       typeof qRaw === "string"
@@ -202,6 +202,8 @@ export default async function EstateNotesPage({
       pinnedValue === "true" ||
       pinnedValue === "on";
   }
+
+  const forbidden = sp?.forbidden === "1";
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -323,6 +325,24 @@ export default async function EstateNotesPage({
         </div>
       </div>
 
+      {forbidden && (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+          <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-medium">Action blocked</p>
+              <p className="text-xs text-rose-200">
+                You don’t have edit permissions for this estate. Request access from the owner to create, pin, or delete notes.
+              </p>
+            </div>
+            <Link
+              href={`/app/estates/${estateId}/collaborators`}
+              className="mt-2 inline-flex items-center justify-center rounded-md border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/25 md:mt-0"
+            >
+              Request edit access
+            </Link>
+          </div>
+        </div>
+      )}
       {!writeEnabled && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
           <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
@@ -510,24 +530,6 @@ export default async function EstateNotesPage({
           </div>
         ) : (
           <div className="space-y-3">
-            {!writeEnabled ? (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="font-medium">Viewer access</p>
-                    <p className="text-[11px] text-amber-200">
-                      You can view notes, but Edit/Pin/Remove are disabled.
-                    </p>
-                  </div>
-                  <Link
-                    href={`/app/estates/${estateId}/collaborators`}
-                    className="mt-2 inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-100 hover:bg-amber-500/25 md:mt-0"
-                  >
-                    Request edit access
-                  </Link>
-                </div>
-              </div>
-            ) : null}
 
             {/* Desktop table */}
             <div className="hidden overflow-hidden rounded-xl border border-slate-800/80 bg-slate-900/40 md:block">
@@ -587,61 +589,38 @@ export default async function EstateNotesPage({
                             >
                               Edit
                             </Link>
-                          ) : (
-                            <span
-                              className="cursor-not-allowed text-slate-600"
-                              title="Viewer role cannot edit notes"
-                            >
-                              Edit
-                            </span>
-                          )}
+                          ) : null}
 
-                          <form action={togglePinned}>
-                            <input type="hidden" name="estateId" value={estateId} />
-                            <input type="hidden" name="noteId" value={note._id} />
-                            <input
-                              type="hidden"
-                              name="nextPinned"
-                              value={note.pinned ? "false" : "true"}
-                            />
-                            <button
-                              type="submit"
-                              disabled={!writeEnabled}
-                              className={`hover:underline ${
-                                writeEnabled
-                                  ? "text-slate-300 hover:text-emerald-300"
-                                  : "cursor-not-allowed text-slate-600"
-                              }`}
-                              title={
-                                writeEnabled
-                                  ? undefined
-                                  : "Viewer role cannot pin/unpin notes"
-                              }
-                            >
-                              {note.pinned ? "Unpin" : "Pin"}
-                            </button>
-                          </form>
+                          {writeEnabled ? (
+                            <form action={togglePinned}>
+                              <input type="hidden" name="estateId" value={estateId} />
+                              <input type="hidden" name="noteId" value={note._id} />
+                              <input
+                                type="hidden"
+                                name="nextPinned"
+                                value={note.pinned ? "false" : "true"}
+                              />
+                              <button
+                                type="submit"
+                                className="text-slate-300 hover:text-emerald-300 hover:underline"
+                              >
+                                {note.pinned ? "Unpin" : "Pin"}
+                              </button>
+                            </form>
+                          ) : null}
 
-                          <form action={deleteNote}>
-                            <input type="hidden" name="estateId" value={estateId} />
-                            <input type="hidden" name="noteId" value={note._id} />
-                            <button
-                              type="submit"
-                              disabled={!writeEnabled}
-                              className={`hover:underline ${
-                                writeEnabled
-                                  ? "text-rose-400 hover:text-rose-300"
-                                  : "cursor-not-allowed text-slate-600"
-                              }`}
-                              title={
-                                writeEnabled
-                                  ? undefined
-                                  : "Viewer role cannot remove notes"
-                              }
-                            >
-                              Remove
-                            </button>
-                          </form>
+                          {writeEnabled ? (
+                            <form action={deleteNote}>
+                              <input type="hidden" name="estateId" value={estateId} />
+                              <input type="hidden" name="noteId" value={note._id} />
+                              <button
+                                type="submit"
+                                className="text-rose-400 hover:text-rose-300 hover:underline"
+                              >
+                                Remove
+                              </button>
+                            </form>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -703,61 +682,38 @@ export default async function EstateNotesPage({
                       >
                         Edit
                       </Link>
-                    ) : (
-                      <span
-                        className="cursor-not-allowed text-slate-600"
-                        title="Viewer role cannot edit notes"
-                      >
-                        Edit
-                      </span>
-                    )}
+                    ) : null}
 
-                    <form action={togglePinned}>
-                      <input type="hidden" name="estateId" value={estateId} />
-                      <input type="hidden" name="noteId" value={note._id} />
-                      <input
-                        type="hidden"
-                        name="nextPinned"
-                        value={note.pinned ? "false" : "true"}
-                      />
-                      <button
-                        type="submit"
-                        disabled={!writeEnabled}
-                        className={`hover:underline ${
-                          writeEnabled
-                            ? "text-slate-300 hover:text-emerald-300"
-                            : "cursor-not-allowed text-slate-600"
-                        }`}
-                        title={
-                          writeEnabled
-                            ? undefined
-                            : "Viewer role cannot pin/unpin notes"
-                        }
-                      >
-                        {note.pinned ? "Unpin" : "Pin"}
-                      </button>
-                    </form>
+                    {writeEnabled ? (
+                      <form action={togglePinned}>
+                        <input type="hidden" name="estateId" value={estateId} />
+                        <input type="hidden" name="noteId" value={note._id} />
+                        <input
+                          type="hidden"
+                          name="nextPinned"
+                          value={note.pinned ? "false" : "true"}
+                        />
+                        <button
+                          type="submit"
+                          className="text-slate-300 hover:text-emerald-300 hover:underline"
+                        >
+                          {note.pinned ? "Unpin" : "Pin"}
+                        </button>
+                      </form>
+                    ) : null}
 
-                    <form action={deleteNote}>
-                      <input type="hidden" name="estateId" value={estateId} />
-                      <input type="hidden" name="noteId" value={note._id} />
-                      <button
-                        type="submit"
-                        disabled={!writeEnabled}
-                        className={`hover:underline ${
-                          writeEnabled
-                            ? "text-rose-400 hover:text-rose-300"
-                            : "cursor-not-allowed text-slate-600"
-                        }`}
-                        title={
-                          writeEnabled
-                            ? undefined
-                            : "Viewer role cannot remove notes"
-                        }
-                      >
-                        Remove
-                      </button>
-                    </form>
+                    {writeEnabled ? (
+                      <form action={deleteNote}>
+                        <input type="hidden" name="estateId" value={estateId} />
+                        <input type="hidden" name="noteId" value={note._id} />
+                        <button
+                          type="submit"
+                          className="text-rose-400 hover:text-rose-300 hover:underline"
+                        >
+                          Remove
+                        </button>
+                      </form>
+                    ) : null}
                   </div>
                 </div>
               ))}

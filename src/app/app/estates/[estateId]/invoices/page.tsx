@@ -137,7 +137,6 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
   const access = await requireEstateAccess({ estateId, userId: session.user.id });
   const role = access.role;
   const canEdit = role !== "VIEWER";
-  const canWrite = canEdit;
 
   // --- GET filters from searchParams
   let searchQuery = "";
@@ -236,6 +235,14 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
           )}
         </div>
       </header>
+
+      {!canEdit && (
+        <section className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4">
+          <p className="text-sm text-rose-100">
+            <span className="font-semibold">View-only access:</span> you can review invoices, but creating or editing requires edit permissions from the estate owner.
+          </p>
+        </section>
+      )}
 
       {/* Summary strip */}
       <section className="grid gap-4 md:grid-cols-4">
@@ -362,7 +369,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
               {filteredInvoices.map((inv) => {
                 const locked = isLockedStatus(inv.status);
                 const overdue = normalizeStatus(inv.status) === "overdue";
-                const canEditInvoice = canWrite && !locked;
+                const canEditInvoice = canEdit && !locked;
 
                 return (
                   <div
@@ -387,7 +394,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
                       <div className="text-lg font-bold text-slate-100 shrink-0">{formatMoney(inv.amount)}</div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {canWrite && !locked ? (
+                      {canEdit && !locked ? (
                         <InvoiceStatusButtons invoiceId={inv._id} initialStatus={inv.status ?? "draft"} />
                       ) : (
                         <span
@@ -447,7 +454,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
                   {filteredInvoices.map((inv) => {
                     const locked = isLockedStatus(inv.status);
                     const overdue = normalizeStatus(inv.status) === "overdue";
-                    const canEditInvoice = canWrite && !locked;
+                    const canEditInvoice = canEdit && !locked;
 
                     return (
                       <tr
@@ -469,7 +476,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
                         <td className="px-3 py-2 align-top text-slate-400">{toDateLabel(inv.issueDate)}</td>
                         <td className="px-3 py-2 align-top text-slate-400">{toDateLabel(inv.dueDate)}</td>
                         <td className="px-3 py-2 align-top">
-                          {canWrite && !locked ? (
+                          {canEdit && !locked ? (
                             <InvoiceStatusButtons invoiceId={inv._id} initialStatus={inv.status ?? "draft"} />
                           ) : (
                             <span

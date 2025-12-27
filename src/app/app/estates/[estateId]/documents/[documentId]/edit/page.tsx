@@ -83,7 +83,7 @@ async function updateDocument(formData: FormData): Promise<void> {
   await connectToDatabase();
 
   // Permission check (OWNER/EDITOR can edit)
-  const access = await requireEstateAccess({ estateId });
+  const access = await requireEstateAccess({ estateId, userId: session.user.id });
   const role = (access as { role: EstateRole | undefined }).role;
 
   if (!role || !roleAtLeast(role, "EDITOR")) {
@@ -134,7 +134,7 @@ export default async function EditDocumentPage({ params }: PageProps) {
 
   await connectToDatabase();
 
-  const access = await requireEstateAccess({ estateId });
+  const access = await requireEstateAccess({ estateId, userId: session.user.id });
   const role = (access as { role: EstateRole | undefined }).role;
 
   if (!role) {
@@ -143,6 +143,10 @@ export default async function EditDocumentPage({ params }: PageProps) {
   }
 
   const isReadOnly = !roleAtLeast(role, "EDITOR");
+
+  if (isReadOnly) {
+    redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
+  }
 
   const doc = await EstateDocument.findOne({
     _id: documentId,
@@ -199,24 +203,6 @@ export default async function EditDocumentPage({ params }: PageProps) {
         }
       />
 
-      {isReadOnly ? (
-        <div className="rounded-xl border border-rose-500/30 bg-rose-950/30 p-4 text-sm text-rose-100">
-          <p className="font-medium">You have view-only access for this estate.</p>
-          <p className="mt-1 text-xs text-rose-200/80">
-            You can view document details, but editing is disabled. Ask the estate owner to upgrade your role to EDITOR if you need to make changes.
-            <span className="ml-1">
-              Or{" "}
-              <Link
-                href={requestAccessHref}
-                className="font-medium text-rose-100 underline-offset-2 hover:underline"
-              >
-                request access
-              </Link>
-              .
-            </span>
-          </p>
-        </div>
-      ) : null}
 
       <form
         action={updateDocument}
@@ -238,7 +224,6 @@ export default async function EditDocumentPage({ params }: PageProps) {
               name="label"
               defaultValue={doc.label}
               required
-              disabled={isReadOnly}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 ring-emerald-500/0 transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
             />
           </div>
@@ -255,7 +240,6 @@ export default async function EditDocumentPage({ params }: PageProps) {
               name="subject"
               defaultValue={doc.subject}
               required
-              disabled={isReadOnly}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 ring-emerald-500/0 transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
             >
               {!Object.prototype.hasOwnProperty.call(SUBJECT_LABELS, doc.subject) ? (
@@ -282,7 +266,6 @@ export default async function EditDocumentPage({ params }: PageProps) {
               id="location"
               name="location"
               defaultValue={doc.location || ""}
-              disabled={isReadOnly}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 ring-emerald-500/0 transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
             />
           </div>
@@ -297,7 +280,6 @@ export default async function EditDocumentPage({ params }: PageProps) {
               type="url"
               placeholder="https://drive.google.com/..."
               defaultValue={doc.url || ""}
-              disabled={isReadOnly}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 ring-emerald-500/0 transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
             />
           </div>
@@ -314,7 +296,6 @@ export default async function EditDocumentPage({ params }: PageProps) {
             id="tags"
             name="tags"
             defaultValue={tagsValue}
-            disabled={isReadOnly}
             className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 ring-emerald-500/0 transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
           />
         </div>
@@ -328,7 +309,6 @@ export default async function EditDocumentPage({ params }: PageProps) {
             name="notes"
             rows={4}
             defaultValue={doc.notes || ""}
-            disabled={isReadOnly}
             className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-0 ring-emerald-500/0 transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40"
           />
         </div>
@@ -343,7 +323,6 @@ export default async function EditDocumentPage({ params }: PageProps) {
               type="checkbox"
               name="isSensitive"
               defaultChecked={Boolean(doc.isSensitive)}
-              disabled={isReadOnly}
               className="h-3.5 w-3.5 rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-emerald-500/40"
             />
             Mark as sensitive
@@ -351,14 +330,9 @@ export default async function EditDocumentPage({ params }: PageProps) {
 
           <button
             type="submit"
-            disabled={isReadOnly}
-            className={
-              isReadOnly
-                ? "inline-flex cursor-not-allowed items-center rounded-lg border border-slate-700 bg-slate-900 px-4 py-1.5 text-xs font-semibold text-slate-400"
-                : "inline-flex items-center rounded-lg border border-emerald-500/60 bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-emerald-50 shadow-sm shadow-black/40 hover:bg-emerald-500"
-            }
+            className="inline-flex items-center rounded-lg border border-emerald-500/60 bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-emerald-50 shadow-sm shadow-black/40 hover:bg-emerald-500"
           >
-            {isReadOnly ? "View-only" : "Save changes"}
+            Save changes
           </button>
         </div>
       </form>

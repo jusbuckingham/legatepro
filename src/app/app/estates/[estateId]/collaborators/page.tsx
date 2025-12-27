@@ -42,16 +42,29 @@ async function getCollaboratorsFromDb(estateId: string) {
 
 export default async function CollaboratorsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ estateId: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { estateId } = await params;
 
   const session = await auth();
-  if (!session?.user?.id) redirect("/app/login");
+  if (!session?.user?.id) {
+    redirect(`/login?callbackUrl=/app/estates/${estateId}/collaborators`);
+  }
 
   const access = await getEstateAccess(estateId, session.user.id);
   if (!access) redirect("/app/estates");
+
+  const sp = searchParams ? await searchParams : undefined;
+  const forbiddenRaw = sp?.forbidden;
+  const forbidden =
+    forbiddenRaw === "1" ||
+    (typeof forbiddenRaw === "string" && forbiddenRaw.toLowerCase() === "true") ||
+    (Array.isArray(forbiddenRaw) && (forbiddenRaw[0] === "1" || (forbiddenRaw[0] ?? "").toLowerCase() === "true"));
+
+  const canManage = access.role === "OWNER";
 
   const data = await getCollaboratorsFromDb(estateId);
 
@@ -72,6 +85,25 @@ export default async function CollaboratorsPage({
         only view this list.
       </p>
 
+      {forbidden && (
+        <div className="mt-4 rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="font-semibold">Action blocked</div>
+              <div className="text-xs text-rose-800">
+                You don’t have permission to manage collaborators for this estate.
+              </div>
+            </div>
+            <Link
+              href={`/app/estates/${estateId}?requestAccess=1`}
+              className="inline-flex items-center justify-center rounded-md border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-900 hover:bg-rose-100"
+            >
+              Request edit access
+            </Link>
+          </div>
+        </div>
+      )}
+
       <div className="mt-4 rounded-md border border-gray-200 bg-white p-4">
         <div className="text-sm font-semibold">Your role</div>
         <div className="mt-1 text-sm text-gray-700">
@@ -82,6 +114,25 @@ export default async function CollaboratorsPage({
             : "Viewer"}
         </div>
       </div>
+
+      {!canManage && (
+        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="font-semibold">Read-only access</div>
+              <div className="text-xs text-amber-800">
+                Only the Owner can add/remove collaborators and change roles.
+              </div>
+            </div>
+            <Link
+              href={`/app/estates/${estateId}?requestAccess=1`}
+              className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+            >
+              Request edit access
+            </Link>
+          </div>
+        </div>
+      )}
 
       <div className="mt-6 rounded-md border border-gray-200 bg-white p-4">
         <div className="text-sm font-semibold">Owner</div>
@@ -94,7 +145,7 @@ export default async function CollaboratorsPage({
         <div className="flex items-center justify-between">
           <div className="text-sm font-semibold">Collaborators</div>
           <span className="text-xs text-gray-500">
-            {access.role === "OWNER" ? "Manage access" : "Read-only"}
+            {canManage ? "Manage access" : "Read-only"}
           </span>
         </div>
 
@@ -109,7 +160,7 @@ export default async function CollaboratorsPage({
                   addedAt: c.addedAt,
                 }) as ManagerCollaborator
             )}
-            isOwner={access.role === "OWNER"}
+            isOwner={canManage}
           />
         </div>
       </div>

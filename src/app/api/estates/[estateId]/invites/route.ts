@@ -17,6 +17,10 @@ function toObjectId(id: string) {
     : null;
 }
 
+function asTrimmedString(v: unknown): string {
+  return typeof v === "string" ? v.trim() : "";
+}
+
 function isInviteRole(v: unknown): v is InviteRole {
   return v === "EDITOR" || v === "VIEWER";
 }
@@ -88,6 +92,20 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ estateId: s
   const result = await requireOwner(estateObjectId, session.user.id);
   if (!result.ok) return result.res;
 
+  // Persist expiration so the UI and stored state stay aligned.
+  let didExpire = false;
+  const estateInvites = (result.estate.invites ?? []) as EstateInvite[];
+  for (const inv of estateInvites) {
+    if (isExpired(inv)) {
+      inv.status = "EXPIRED";
+      didExpire = true;
+    }
+  }
+  if (didExpire) {
+    result.estate.invites = estateInvites;
+    await result.estate.save();
+  }
+
   type InviteDTO = {
     token: string;
     email: string;
@@ -101,7 +119,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ estateId: s
     revokedAt?: Date;
   };
 
-  const invites: InviteDTO[] = (result.estate.invites ?? []).map((inv: EstateInvite) => {
+  const invites: InviteDTO[] = estateInvites.map((inv: EstateInvite) => {
     const expired = isExpired(inv);
     return {
       token: inv.token,
@@ -285,7 +303,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ estateId
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const token = typeof (body as { token?: unknown })?.token === "string" ? (body as { token?: string }).token!.trim() : "";
+  const token = asTrimmedString((body as { token?: unknown })?.token);
   const email = normalizeEmail((body as { email?: unknown })?.email);
 
   if (!token && !email) {
