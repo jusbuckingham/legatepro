@@ -3,6 +3,8 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { getApiErrorMessage } from "@/lib/utils";
+
 type ExpenseEditFormProps = {
   estateId: string;
   expenseId: string;
@@ -99,12 +101,8 @@ export function ExpenseEditForm({
       });
 
       if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as
-          | { error?: string }
-          | null;
-        setErrorMsg(
-          data?.error ?? "Failed to save expense. Please try again.",
-        );
+        const msg = await getApiErrorMessage(res);
+        setErrorMsg(msg || "Failed to save expense. Please try again.");
         setIsSaving(false);
         return;
       }

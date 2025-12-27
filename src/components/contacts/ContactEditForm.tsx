@@ -3,6 +3,8 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { getApiErrorMessage } from "@/lib/utils";
+
 type ContactRole =
   | "EXECUTOR"
   | "ADMINISTRATOR"
@@ -81,12 +83,8 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        const message =
-          typeof data.error === "string"
-            ? data.error
-            : "Failed to update contact.";
-        setError(message);
+        const msg = await getApiErrorMessage(res);
+        setError(msg || "Failed to update contact.");
         setSaving(false);
         return;
       }

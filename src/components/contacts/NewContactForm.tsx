@@ -3,6 +3,8 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { getApiErrorMessage } from "@/lib/utils";
+
 type ContactRole =
   | "EXECUTOR"
   | "ADMINISTRATOR"
@@ -68,12 +70,8 @@ export function NewContactForm() {
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        const message =
-          typeof data.error === "string"
-            ? data.error
-            : "Failed to create contact.";
-        setError(message);
+        const msg = await getApiErrorMessage(res);
+        setError(msg || "Failed to create contact.");
         setSaving(false);
         return;
       }

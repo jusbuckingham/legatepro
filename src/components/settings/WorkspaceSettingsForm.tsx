@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { getApiErrorMessage } from "@/lib/utils";
+
 const invoiceTermsOptions: { value: string; label: string }[] = [
   { value: "DUE_ON_RECEIPT", label: "Due on receipt" },
   { value: "NET_15", label: "Net 15" },
@@ -95,11 +97,9 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
       });
 
       if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as {
-          error?: string;
-        };
+        const msg = await getApiErrorMessage(res);
         setStatus("error");
-        setErrorMessage(data.error ?? "Failed to save settings.");
+        setErrorMessage(msg || "Failed to save settings.");
         return;
       }
 
