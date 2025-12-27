@@ -2,9 +2,9 @@ import React from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { redirect, notFound } from "next/navigation";
-import { getServerSession } from "next-auth";
 
-import { authOptions } from "@/lib/auth";
+import { auth } from "@/lib/auth";
+import { requireEstateAccess } from "@/lib/estateAccess";
 import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 import { Expense } from "@/models/Expense";
@@ -50,26 +50,26 @@ export const metadata: Metadata = {
 export default async function EstateExpensesPage({ params }: PageProps) {
   const { estateId } = await params;
 
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.id) {
-    redirect("/login");
+    redirect(`/login?callbackUrl=/app/estates/${estateId}/expenses`);
   }
 
   await connectToDatabase();
 
-  const estateDoc = await Estate.findOne({
-    _id: estateId,
-    ownerId: session.user.id,
-  })
-    .lean()
-    .exec();
+  const access = await requireEstateAccess({ estateId, userId: session.user.id });
+  if (!access.hasAccess) {
+    redirect("/app/estates");
+  }
 
+  const canEdit = access.canEdit;
+
+  const estateDoc = await Estate.findOne({ _id: estateId }).lean().exec();
   if (!estateDoc) {
     notFound();
   }
 
   const expensesRaw = await Expense.find({
-    ownerId: session.user.id,
     estateId,
   })
     .sort({ date: -1, createdAt: -1 })
@@ -158,12 +158,21 @@ export default async function EstateExpensesPage({ params }: PageProps) {
             >
               View all
             </Link>
-            <Link
-              href="/app/expenses/new"
-              className="inline-flex items-center rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
-            >
-              + Add expense
-            </Link>
+            {canEdit ? (
+              <Link
+                href={`/app/expenses/new?estateId=${encodeURIComponent(estateId)}`}
+                className="inline-flex items-center rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
+              >
+                + Add expense
+              </Link>
+            ) : (
+              <Link
+                href={`/app/estates/${estateId}?requestAccess=1`}
+                className="inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+              >
+                Request edit access
+              </Link>
+            )}
           </div>
         }
       />
@@ -209,12 +218,21 @@ export default async function EstateExpensesPage({ params }: PageProps) {
               Add your first expense to start tracking totals and reimbursements.
             </p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
-              <Link
-                href="/app/expenses/new"
-                className="inline-flex items-center rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
-              >
-                + Add expense
-              </Link>
+              {canEdit ? (
+                <Link
+                  href={`/app/expenses/new?estateId=${encodeURIComponent(estateId)}`}
+                  className="inline-flex items-center rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
+                >
+                  + Add expense
+                </Link>
+              ) : (
+                <Link
+                  href={`/app/estates/${estateId}?requestAccess=1`}
+                  className="inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+                >
+                  Request edit access
+                </Link>
+              )}
               <Link
                 href="/app/expenses"
                 className="inline-flex items-center rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
@@ -280,12 +298,14 @@ export default async function EstateExpensesPage({ params }: PageProps) {
                     </td>
                     <td className="px-4 py-2 align-top text-xs text-right">
                       <div className="inline-flex items-center gap-2">
-                        <Link
-                          href={`/app/expenses/${exp.id}/edit`}
-                          className="text-[11px] font-medium text-sky-400 hover:text-sky-300"
-                        >
-                          Edit
-                        </Link>
+                        {canEdit ? (
+                          <Link
+                            href={`/app/expenses/${exp.id}/edit`}
+                            className="text-[11px] font-medium text-sky-400 hover:text-sky-300"
+                          >
+                            Edit
+                          </Link>
+                        ) : null}
                         <Link
                           href={`/app/expenses/${exp.id}`}
                           className="text-[11px] text-slate-400 hover:text-slate-200"
