@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { getApiErrorMessage, safeJson } from "@/lib/utils";
+
 type Role = "EDITOR" | "VIEWER";
 
 type Collaborator = {
@@ -98,16 +100,14 @@ export default function CollaboratorsManager({
     setInvitesLoading(false);
 
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setInvitesError(data.error ?? "Failed to load invites");
+      const msg = await getApiErrorMessage(res);
+      setInvitesError(msg || "Failed to load invites");
       return;
     }
 
-    const data = (await res.json().catch(() => ({}))) as {
-      invites?: Invite[];
-    };
+    const data = (await safeJson<{ invites?: Invite[] }>(res)) ?? null;
 
-    setInvites(Array.isArray(data.invites) ? data.invites : []);
+    setInvites(Array.isArray(data?.invites) ? data!.invites! : []);
   }
 
   useEffect(() => {
@@ -134,18 +134,16 @@ export default function CollaboratorsManager({
     setInvitesLoading(false);
 
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setInvitesError(data.error ?? "Failed to create invite");
+      const msg = await getApiErrorMessage(res);
+      setInvitesError(msg || "Failed to create invite");
       return;
     }
 
-    const data = (await res.json().catch(() => ({}))) as {
-      inviteUrl?: string;
-    };
+    const data = (await safeJson<{ inviteUrl?: string }>(res)) ?? null;
 
     setInviteEmail("");
     setInviteRole("VIEWER");
-    setCreatedInviteUrl(typeof data.inviteUrl === "string" ? data.inviteUrl : null);
+    setCreatedInviteUrl(typeof data?.inviteUrl === "string" ? data.inviteUrl : null);
     setInfo("Invite created.");
     await fetchInvites();
   }
@@ -168,8 +166,8 @@ export default function CollaboratorsManager({
     setInvitesLoading(false);
 
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setInvitesError(data.error ?? "Failed to revoke invite");
+      const msg = await getApiErrorMessage(res);
+      setInvitesError(msg || "Failed to revoke invite");
       return;
     }
 
@@ -200,8 +198,8 @@ export default function CollaboratorsManager({
     setLoading(false);
 
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error ?? "Failed to add collaborator");
+      const msg = await getApiErrorMessage(res);
+      setError(msg || "Failed to add collaborator");
       return;
     }
 
@@ -231,8 +229,8 @@ export default function CollaboratorsManager({
     setLoading(false);
 
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error ?? "Failed to update role");
+      const msg = await getApiErrorMessage(res);
+      setError(msg || "Failed to update role");
       return;
     }
 
@@ -256,8 +254,8 @@ export default function CollaboratorsManager({
     setLoading(false);
 
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error ?? "Failed to remove collaborator");
+      const msg = await getApiErrorMessage(res);
+      setError(msg || "Failed to remove collaborator");
       return;
     }
 

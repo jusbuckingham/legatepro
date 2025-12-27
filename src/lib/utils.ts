@@ -28,3 +28,35 @@ export function formatDate(
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+/**
+ * Safe JSON parsing for `fetch` responses.
+ *
+ * Why: `await res.json()` can throw (empty body, non-JSON, etc). This helper keeps
+ * callers from sprinkling `catch(() => ...)` everywhere.
+ */
+export async function safeJson<T = unknown>(res: Response): Promise<T | null> {
+  try {
+    // Some APIs return empty bodies on errors; guard the common case.
+    const text = await res.text();
+    if (!text) return null;
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Best-effort extraction of an error message from an API response.
+ */
+export async function getApiErrorMessage(res: Response): Promise<string> {
+  const data = await safeJson<unknown>(res);
+  if (data && typeof data === "object") {
+    const maybe =
+      (data as { error?: unknown; message?: unknown }).error ??
+      (data as { message?: unknown }).message;
+
+    if (typeof maybe === "string" && maybe.trim()) return maybe.trim();
+  }
+  return res.statusText || "Request failed";
+}
