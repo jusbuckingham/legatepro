@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import type { FilterQuery } from "mongoose";
 
 import { auth } from "@/lib/auth";
+import { connectToDatabase } from "@/lib/db";
 import { requireEstateAccess } from "@/lib/estateAccess";
 
 import { Invoice } from "@/models/Invoice";
@@ -457,7 +458,15 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   }
 
   const access = await requireEstateAccess({ estateId, userId: session.user.id });
-  const canViewSensitive = access.role !== "VIEWER";
+  if (!access.hasAccess) {
+    redirect("/app/estates");
+  }
+
+  const isViewer = access.role === "VIEWER";
+  const canCreate = access.canEdit;
+  const canViewSensitive = !isViewer;
+
+  await connectToDatabase();
 
   const invoiceWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (isValidBefore) invoiceWhere.createdAt = { $lt: beforeDate };
@@ -830,18 +839,30 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
 
         <div className="mt-1 flex flex-col items-start gap-2 text-xs text-gray-500 md:items-end">
           <div className="flex flex-wrap items-center gap-2 md:justify-end">
-            <Link
-              href={`/app/estates/${estateId}/tasks/new`}
-              className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-            >
-              + New task
-            </Link>
-            <Link
-              href={`/app/estates/${estateId}/invoices/new`}
-              className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-            >
-              + New invoice
-            </Link>
+            {canCreate ? (
+              <>
+                <Link
+                  href={`/app/estates/${estateId}/tasks/new`}
+                  className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                >
+                  + New task
+                </Link>
+                <Link
+                  href={`/app/estates/${estateId}/invoices/new`}
+                  className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                >
+                  + New invoice
+                </Link>
+              </>
+            ) : (
+              <Link
+                href={`/app/estates/${estateId}?requestAccess=1`}
+                className="inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+              >
+                Request edit access
+              </Link>
+            )}
+
             <Link
               href={`/app/estates/${estateId}/documents`}
               className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
