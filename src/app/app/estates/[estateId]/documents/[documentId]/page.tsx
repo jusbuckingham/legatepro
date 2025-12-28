@@ -4,7 +4,7 @@ import PageHeader from "@/components/layout/PageHeader";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { requireEstateAccess } from "@/lib/estateAccess";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import { EstateDocument } from "@/models/EstateDocument";
 
 export const dynamic = "force-dynamic";
@@ -45,6 +45,43 @@ const SUBJECT_LABELS: Record<string, string> = {
   RECEIPTS: "Receipts",
   OTHER: "Other",
 };
+
+/**
+ * Server action: delete this document index entry.
+ * Requires EDITOR access. Uses a confirmation checkbox to avoid accidents.
+ */
+async function deleteDocument(formData: FormData): Promise<void> {
+  "use server";
+
+  const estateId = formData.get("estateId")?.toString();
+  const documentId = formData.get("documentId")?.toString();
+  const confirm = formData.get("confirmDelete")?.toString();
+
+  if (!estateId || !documentId) return;
+
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect(`/login?callbackUrl=/app/estates/${estateId}/documents/${documentId}`);
+  }
+
+  const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
+  if (access.role === "VIEWER") {
+    redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
+  }
+
+  if (confirm !== "on") {
+    redirect(`/app/estates/${estateId}/documents/${documentId}?confirm=1`);
+  }
+
+  await connectToDatabase();
+
+  await EstateDocument.findOneAndDelete({
+    _id: documentId,
+    estateId,
+  });
+
+  redirect(`/app/estates/${estateId}/documents?deleted=1`);
+}
 
 export default async function EstateDocumentDetailPage({ params, searchParams }: PageProps) {
   const { estateId, documentId } = await params;
@@ -147,7 +184,7 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
               Back
             </Link>
 
-            {canEdit && (
+            {canEdit && !forbidden && (
               <Link
                 href={`/app/estates/${estateId}/documents/${documentId}/edit`}
                 className="inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20"
@@ -318,6 +355,47 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
           </div>
         </div>
       </section>
+
+      {canEdit ? (
+        <section className="space-y-3 rounded-xl border border-rose-500/20 bg-rose-950/20 p-4 shadow-sm">
+          <div>
+            <h2 className="text-sm font-semibold text-rose-100">Danger zone</h2>
+            <p className="mt-1 text-xs text-rose-200/80">
+              Deleting removes the document <span className="font-semibold">index entry</span> from this estate. It
+              does not delete any external file you linked.
+            </p>
+          </div>
+
+          <form action={deleteDocument} className="space-y-3">
+            <input type="hidden" name="estateId" value={estateId} />
+            <input type="hidden" name="documentId" value={documentId} />
+
+            <label className="flex items-start gap-2 text-xs text-rose-100">
+              <input
+                type="checkbox"
+                name="confirmDelete"
+                className="mt-0.5 h-4 w-4 rounded border-rose-500/40 bg-slate-950 text-rose-400 focus:ring-rose-400"
+              />
+              <span>
+                I understand this will remove the document index entry for <span className="font-semibold">{doc.label || "this document"}</span>.
+              </span>
+            </label>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <button
+                type="submit"
+                className="inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20"
+              >
+                Delete index entry
+              </button>
+
+              <p className="text-[11px] text-rose-200/70">
+                Tip: if you only need to change label/subject, use Edit instead.
+              </p>
+            </div>
+          </form>
+        </section>
+      ) : null}
 
     </div>
   );

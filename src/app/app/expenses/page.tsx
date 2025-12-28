@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { ChangeEvent } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import { getApiErrorMessage, safeJson } from "@/lib/utils";
 
@@ -159,26 +159,23 @@ export default function GlobalExpensesPage() {
   const [error, setError] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
 
-  useEffect(() => {
-    let isMounted = true;
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
 
-    (async () => {
-      try {
-        const data = await fetchExpensesForUser();
-        if (!isMounted) return;
-        setRows(data);
-      } catch {
-        if (!isMounted) return;
-        setError("Unable to load expenses right now.");
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    })();
-
-    return () => {
-      isMounted = false;
-    };
+    try {
+      const data = await fetchExpensesForUser();
+      setRows(data);
+    } catch {
+      setError("Unable to load expenses right now.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const filteredRows = useMemo(() => {
     const categoryParam = searchParams?.get("category");
@@ -201,19 +198,79 @@ export default function GlobalExpensesPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6 p-6">
-        <div className="h-6 w-40 rounded bg-slate-900/60" />
-        <div className="h-4 w-72 rounded bg-slate-900/60" />
-        <div className="h-64 rounded-xl border border-slate-800 bg-slate-950/80" />
+      <div className="space-y-8 p-6">
+        <div className="space-y-3">
+          <div className="h-6 w-44 rounded bg-slate-900/60" />
+          <div className="h-4 w-80 rounded bg-slate-900/60" />
+        </div>
+
+        <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/80">
+          <div className="grid grid-cols-12 border-b border-slate-800 bg-slate-900/60 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+            <div className="col-span-2">Date</div>
+            <div className="col-span-3">Estate</div>
+            <div className="col-span-2">Category</div>
+            <div className="col-span-2">Payee</div>
+            <div className="col-span-2 text-right">Amount</div>
+            <div className="col-span-1 text-right">Edit</div>
+          </div>
+
+          <ul className="divide-y divide-slate-800">
+            {Array.from({ length: 8 }).map((_, idx) => (
+              <li key={idx} className="grid grid-cols-12 items-center px-4 py-3">
+                <div className="col-span-2">
+                  <div className="h-3 w-20 rounded bg-slate-900/60" />
+                </div>
+                <div className="col-span-3">
+                  <div className="h-3 w-40 rounded bg-slate-900/60" />
+                </div>
+                <div className="col-span-2">
+                  <div className="h-3 w-24 rounded bg-slate-900/60" />
+                </div>
+                <div className="col-span-2">
+                  <div className="h-3 w-28 rounded bg-slate-900/60" />
+                </div>
+                <div className="col-span-2 flex justify-end">
+                  <div className="h-3 w-16 rounded bg-slate-900/60" />
+                </div>
+                <div className="col-span-1 flex justify-end">
+                  <div className="h-3 w-8 rounded bg-slate-900/60" />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="space-y-3 p-6">
-        <h1 className="text-base font-semibold text-slate-50">All expenses</h1>
-        <p className="text-sm text-red-400">{error}</p>
+      <div className="space-y-4 p-6">
+        <div>
+          <h1 className="text-base font-semibold text-slate-50">All expenses</h1>
+          <p className="mt-1 text-xs text-slate-400">Cross-estate view of every expense you’ve logged.</p>
+        </div>
+
+        <div className="rounded-xl border border-red-900/40 bg-red-950/40 p-4">
+          <div className="text-sm font-semibold text-red-200">Couldn’t load expenses</div>
+          <div className="mt-1 text-xs text-red-200/80">{error}</div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="inline-flex items-center justify-center rounded-md bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-900 hover:bg-white"
+            >
+              Retry
+            </button>
+            <Link
+              href="/app/estates"
+              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-900"
+            >
+              Back to estates
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }
@@ -278,8 +335,35 @@ export default function GlobalExpensesPage() {
         </div>
 
         {filteredRows.length === 0 ? (
-          <div className="px-4 py-8 text-center text-xs text-slate-400">
-            No expenses found for the current filter.
+          <div className="px-4 py-10">
+            <div className="mx-auto max-w-md text-center">
+              <div className="text-sm font-semibold text-slate-100">No expenses yet</div>
+              <div className="mt-1 text-xs text-slate-400">
+                Track probate costs, repairs, travel, filing fees, and anything you’ll want to reimburse or report.
+              </div>
+
+              <div className="mt-5 flex flex-wrap justify-center gap-2">
+                <Link
+                  href="/app/expenses/new"
+                  className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-400"
+                >
+                  Add an expense
+                </Link>
+                <Link
+                  href="/app/estates"
+                  className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-900"
+                >
+                  Go to an estate
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setCategoryFilter("all")}
+                  className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-900"
+                >
+                  Clear filters
+                </button>
+              </div>
+            </div>
           </div>
         ) : (
           <ul className="divide-y divide-slate-800 text-xs">

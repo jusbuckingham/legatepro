@@ -125,7 +125,6 @@ async function deleteDocument(formData: FormData): Promise<void> {
   await EstateDocument.findOneAndDelete({
     _id: documentId,
     estateId,
-    ownerId: session.user.id,
   });
 
   revalidatePath(`/app/estates/${estateId}/documents`);
@@ -505,13 +504,71 @@ export default async function EstateDocumentsPage({
 
       {/* Document index */}
       {documents.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-slate-700 bg-slate-950/60 px-5 py-5 text-sm text-slate-400">
-          No documents indexed yet.
-        </p>
+        <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/60 px-6 py-6">
+          <div className="max-w-2xl">
+            <div className="text-sm font-semibold text-slate-100">No documents indexed yet</div>
+            <div className="mt-1 text-xs text-slate-400">
+              Add a few key items first: death certificate, court letters, bank statements, and any property documents.
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {canCreate ? (
+                <Link
+                  href="#add-document"
+                  className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-rose-400"
+                >
+                  Add first document
+                </Link>
+              ) : (
+                <Link
+                  href={`/app/estates/${estateId}?requestAccess=1`}
+                  className="inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/15"
+                >
+                  Request edit access
+                </Link>
+              )}
+
+              <Link
+                href={`/app/estates/${estateId}`}
+                className="inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-900/40"
+              >
+                Back to overview
+              </Link>
+            </div>
+
+            <div className="mt-3 text-[11px] text-slate-500">
+              Tip: use consistent labels (vendor + date range) so your final accounting is faster.
+            </div>
+          </div>
+        </div>
       ) : filteredDocuments.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-slate-700 bg-slate-950/60 px-5 py-5 text-sm text-slate-400">
-          No documents match this search, subject, or sensitivity filter.
-        </p>
+        <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/60 px-6 py-6">
+          <div className="max-w-2xl">
+            <div className="text-sm font-semibold text-slate-100">No matching documents</div>
+            <div className="mt-1 text-xs text-slate-400">
+              Try adjusting your search, subject, or sensitivity filter.
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link
+                href={`/app/estates/${estateId}/documents`}
+                className="inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-900/40"
+              >
+                Clear filters
+              </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  const el = document.getElementById("add-document");
+                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+                className="inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-500/20"
+              >
+                Add a document
+              </button>
+            </div>
+          </div>
+        </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/70 shadow-sm">
           <table className="min-w-full text-left text-sm">

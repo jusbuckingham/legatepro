@@ -2,8 +2,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 
-
-import { safeJson } from "@/lib/utils";
+import { getApiErrorMessage, safeJson } from "@/lib/utils";
 import { auth } from "@/lib/auth";
 
 import CreateInvoiceForm from "./CreateInvoiceForm";
@@ -90,36 +89,43 @@ async function getBaseUrl(): Promise<string> {
   return `${proto}://${host}`;
 }
 
-async function getInvoices(estateId: string): Promise<InvoiceLean[]> {
-  const baseUrl = await getBaseUrl();
+async function getInvoices(
+  estateId: string
+): Promise<{ invoices: InvoiceLean[]; error?: string }> {
+  try {
+    const baseUrl = await getBaseUrl();
 
-  // IMPORTANT: When a Server Component calls an internal API route, it does NOT
-  // automatically forward auth cookies. If the API route uses `auth()`, we must
-  // forward the cookie header or the request may 401 and the UI will look empty.
-  const h = await headers();
-  const cookie = h.get("cookie") ?? "";
+    // IMPORTANT: When a Server Component calls an internal API route, it does NOT
+    // automatically forward auth cookies. If the API route uses `auth()`, we must
+    // forward the cookie header or the request may 401 and the UI will look empty.
+    const h = await headers();
+    const cookie = h.get("cookie") ?? "";
 
-  const res = await fetch(`${baseUrl}/api/estates/${estateId}/invoices`, {
-    cache: "no-store",
-    headers: cookie ? { cookie } : undefined,
-  });
+    const res = await fetch(`${baseUrl}/api/estates/${estateId}/invoices`, {
+      cache: "no-store",
+      headers: cookie ? { cookie } : undefined,
+    });
 
-  if (!res.ok) {
-    return [];
+    if (!res.ok) {
+      const msg = await getApiErrorMessage(res);
+      return { invoices: [], error: msg || "Couldn’t load invoices right now." };
+    }
+
+    const data = (await safeJson(res)) as
+      | { ok?: boolean; invoices?: InvoiceLean[] }
+      | InvoiceLean[]
+      | null;
+
+    // Backward-compatible: older route versions may have returned the raw array.
+    if (Array.isArray(data)) {
+      return { invoices: data as InvoiceLean[] };
+    }
+
+    const invoices = data?.invoices;
+    return { invoices: Array.isArray(invoices) ? invoices : [] };
+  } catch {
+    return { invoices: [], error: "Couldn’t load invoices right now." };
   }
-
-  const data = (await safeJson(res)) as
-    | { ok?: boolean; invoices?: InvoiceLean[] }
-    | InvoiceLean[]
-    | null;
-
-  // Backward-compatible: older route versions may have returned the raw array.
-  if (Array.isArray(data)) {
-    return data as InvoiceLean[];
-  }
-
-  const invoices = data?.invoices;
-  return Array.isArray(invoices) ? invoices : [];
 }
 
 export default async function InvoicesPage({ params, searchParams }: PageProps) {
@@ -151,7 +157,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
     if (sp?.overdue && (sp.overdue === "1" || sp.overdue === "true")) overdueOnly = true;
   }
 
-  const invoices = await getInvoices(estateId);
+  const { invoices, error } = await getInvoices(estateId);
   // computedInvoices: derive status "overdue" if dueDate passed and not paid/void
   const computedInvoices = invoices.map((inv) => {
     const locked = isLockedStatus(inv.status);
@@ -237,6 +243,31 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
           )}
         </div>
       </header>
+
+      {error ? (
+        <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-rose-100">Couldn’t load invoices</div>
+              <div className="mt-1 text-xs text-rose-100/80">{error}</div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href={`/app/estates/${estateId}/invoices`}
+                className="inline-flex items-center justify-center rounded-md border border-rose-500/30 bg-slate-950/60 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-slate-900/50"
+              >
+                Retry
+              </Link>
+              <Link
+                href={`/app/estates/${estateId}`}
+                className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-900/50"
+              >
+                Back to overview
+              </Link>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {!canEdit && (
         <section className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4">
@@ -346,13 +377,51 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
 
         {/* Empty state: no invoices */}
         {computedInvoices.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <div className="mb-3 h-16 w-16 rounded-full border-2 border-dashed border-slate-700 flex items-center justify-center">
-              <svg width="36" height="36" viewBox="0 0 24 24" className="text-slate-700">
-                <path fill="currentColor" d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.83a2 2 0 0 0-.59-1.41l-4.83-4.83A2 2 0 0 0 13.17 1H6zm0 2h7v5a2 2 0 0 0 2 2h5v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4zm9 0.41L19.59 7H16a1 1 0 0 1-1-1V2.41z"/>
-              </svg>
+          <div className="rounded-xl border border-dashed border-slate-800 bg-slate-950/40 p-8">
+            <div className="mx-auto max-w-lg text-center">
+              <div className="mb-3 inline-flex h-16 w-16 items-center justify-center rounded-full border-2 border-dashed border-slate-700">
+                <svg width="36" height="36" viewBox="0 0 24 24" className="text-slate-700">
+                  <path
+                    fill="currentColor"
+                    d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.83a2 2 0 0 0-.59-1.41l-4.83-4.83A2 2 0 0 0 13.17 1H6zm0 2h7v5a2 2 0 0 0 2 2h5v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4zm9 0.41L19.59 7H16a1 1 0 0 1-1-1V2.41z"
+                  />
+                </svg>
+              </div>
+
+              <div className="text-sm font-semibold text-slate-100">No invoices yet</div>
+              <div className="mt-1 text-xs text-slate-400">
+                Create an invoice when you’re ready to bill time or expenses for this estate.
+              </div>
+
+              <div className="mt-5 flex flex-wrap justify-center gap-2">
+                {canEdit ? (
+                  <Link
+                    href={`/app/estates/${estateId}/invoices/new`}
+                    className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-400"
+                  >
+                    Create invoice
+                  </Link>
+                ) : (
+                  <Link
+                    href={`/app/estates/${estateId}?requestAccess=1`}
+                    className="inline-flex items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-500/15"
+                  >
+                    Request edit access
+                  </Link>
+                )}
+
+                <Link
+                  href={`/app/estates/${estateId}`}
+                  className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-900"
+                >
+                  Back to overview
+                </Link>
+              </div>
+
+              <div className="mt-3 text-[11px] text-slate-500">
+                Tip: start with a draft invoice and update the status to Sent when you’re ready.
+              </div>
             </div>
-            <div className="text-slate-400 text-sm">No invoices yet.</div>
           </div>
         ) : filteredInvoices.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10">

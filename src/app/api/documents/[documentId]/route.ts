@@ -1,288 +1,184 @@
 import { NextRequest, NextResponse } from "next/server";
-import mongoose from "mongoose";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { EstateDocument } from "@/models/EstateDocument";
-import { logActivity } from "@/lib/activity";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
+import { EstateDocument } from "@/models/EstateDocument";
 
 export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
 
-type RouteParams = { documentId: string };
+type Sensitivity = "LOW" | "MEDIUM" | "HIGH";
 
-function toObjectId(id: string) {
-  return mongoose.Types.ObjectId.isValid(id)
-    ? new mongoose.Types.ObjectId(id)
-    : null;
+function normalizeSensitivity(raw: unknown): Sensitivity {
+  if (typeof raw !== "string") return "LOW";
+  const up = raw.toUpperCase();
+  if (up === "MEDIUM" || up === "HIGH") return up as Sensitivity;
+  return "LOW";
 }
 
-function jsonError(status: number, message: string) {
-  return NextResponse.json({ error: message }, { status });
+function normalizeSubject(raw: unknown): string {
+  if (typeof raw !== "string") return "OTHER";
+  const v = raw.trim();
+  return v.length ? v : "OTHER";
 }
 
-function pick<T extends Record<string, unknown>>(obj: T, keys: Array<keyof T>) {
-  const out: Record<string, unknown> = {};
-  for (const k of keys) {
-    if (k in obj) out[String(k)] = obj[k];
+function docToItem(doc: unknown) {
+  const d = (doc ?? {}) as Record<string, unknown>;
+
+  const getString = (key: string): string | undefined => {
+    const v = d[key];
+    return typeof v === "string" ? v : undefined;
+  };
+
+  const getDateIso = (key: string): string | undefined => {
+    const v = d[key];
+    if (!v) return undefined;
+    const dt = v instanceof Date ? v : new Date(String(v));
+    return Number.isNaN(dt.getTime()) ? undefined : dt.toISOString();
+  };
+
+  return {
+    _id: String(d._id ?? ""),
+    estateId: String(d.estateId ?? ""),
+    label: getString("label") ?? "Document",
+    subject: getString("subject") ?? "OTHER",
+    sensitivity: normalizeSensitivity(d.sensitivity),
+    url: getString("url") ?? null,
+    notes: getString("notes") ?? null,
+    createdAt: getDateIso("createdAt"),
+    updatedAt: getDateIso("updatedAt"),
+  };
+}
+
+async function getDocOr404(documentId: string) {
+  await connectToDatabase();
+  const doc = await EstateDocument.findById(documentId).lean().exec();
+  return doc ?? null;
+}
+
+export async function GET(_req: NextRequest, ctx: { params: Promise<{ documentId: string }> }) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
-  return out;
+
+  const { documentId } = await ctx.params;
+  if (!documentId) {
+    return NextResponse.json({ ok: false, error: "Missing documentId" }, { status: 400 });
+  }
+
+  const doc = await getDocOr404(documentId);
+  if (!doc) {
+    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+  }
+
+  await requireEstateAccess({ estateId: String(doc.estateId), userId: session.user.id });
+
+  return NextResponse.json({ ok: true, document: docToItem(doc) }, { status: 200 });
 }
 
-async function loadDocumentOr404(documentId: string) {
-  const docObjectId = toObjectId(documentId);
-  if (!docObjectId) return { res: jsonError(400, "Invalid id") };
+/**
+ * PATCH /api/documents/:documentId
+ * Body: { label?, subject?, sensitivity?, url?, notes? }
+ */
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ documentId: string }> }) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { documentId } = await ctx.params;
+  if (!documentId) {
+    return NextResponse.json({ ok: false, error: "Missing documentId" }, { status: 400 });
+  }
+
+  const existing = await getDocOr404(documentId);
+  if (!existing) {
+    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+  }
+
+  const estateId = String(existing.estateId);
+  const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
+  if (access.role === "VIEWER") {
+    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+  }
+
+  const body: unknown = await req.json().catch(() => null);
+  const typed = (body ?? {}) as {
+    label?: string;
+    subject?: string;
+    sensitivity?: string;
+    url?: string | null;
+    notes?: string | null;
+  };
+
+  const update: Record<string, unknown> = {};
+
+  if (typeof typed.label === "string") {
+    const v = typed.label.trim();
+    if (!v) {
+      return NextResponse.json({ ok: false, error: "label cannot be empty" }, { status: 400 });
+    }
+    update.label = v;
+  }
+
+  if (typed.subject !== undefined) update.subject = normalizeSubject(typed.subject);
+  if (typed.sensitivity !== undefined) update.sensitivity = normalizeSensitivity(typed.sensitivity);
+
+  if (typed.url !== undefined) {
+    const v = typeof typed.url === "string" ? typed.url.trim() : "";
+    update.url = v || undefined;
+  }
+
+  if (typed.notes !== undefined) {
+    const v = typeof typed.notes === "string" ? typed.notes.trim() : "";
+    update.notes = v || undefined;
+  }
 
   await connectToDatabase();
 
-  const document = await EstateDocument.findById(docObjectId);
-  if (!document) return { res: jsonError(404, "Document not found") };
+  const updated = await EstateDocument.findOneAndUpdate(
+    { _id: documentId, estateId },
+    update,
+    { new: true }
+  )
+    .lean()
+    .exec();
 
-  return { document };
-}
-
-async function enforceViewerAccessForDocument(
-  estateId: string,
-  userId: string,
-  isSensitive: boolean
-) {
-  let access: { role?: string } | undefined;
-
-  try {
-    access = await requireEstateAccess({ estateId, userId });
-  } catch {
-    return { res: jsonError(403, "Forbidden") };
+  if (!updated) {
+    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
-  // VIEWER cannot access sensitive docs; return 404 to avoid leaking existence
-  if (isSensitive && access.role === "VIEWER") {
-    return { res: jsonError(404, "Document not found") };
-  }
-
-  return { access };
-}
-
-async function enforceEditorAccessForDocument(
-  estateId: string,
-  userId: string,
-  isSensitive: boolean
-) {
-  let access: { role?: string } | undefined;
-
-  try {
-    access = await requireEstateEditAccess({ estateId, userId });
-  } catch {
-    return { res: jsonError(403, "Forbidden") };
-  }
-
-  // Defense in depth: VIEWER should never reach this, but keep consistent behavior.
-  if (isSensitive && access.role === "VIEWER") {
-    return { res: jsonError(404, "Document not found") };
-  }
-
-  return { access };
+  return NextResponse.json({ ok: true, document: docToItem(updated) }, { status: 200 });
 }
 
 /**
- * GET /api/documents/[documentId]
- * - Estate members can view
- * - VIEWER cannot view sensitive docs (404)
+ * DELETE /api/documents/:documentId
  */
-export async function GET(
-  _req: NextRequest,
-  context: { params: Promise<RouteParams> }
-) {
-  try {
-    const { documentId } = await context.params;
-
-    const session = await auth();
-    if (!session?.user?.id) return jsonError(401, "Unauthorized");
-
-    const loaded = await loadDocumentOr404(documentId);
-    if ("res" in loaded) return loaded.res;
-
-    const document = loaded.document;
-    const estateId = String(document.estateId);
-
-    const accessCheck = await enforceViewerAccessForDocument(
-      estateId,
-      session.user.id,
-      Boolean(document.isSensitive)
-    );
-    if ("res" in accessCheck) return accessCheck.res;
-
-    return NextResponse.json({ ok: true, document }, { status: 200 });
-  } catch (error) {
-    console.error("[DOCUMENT_GET]", error);
-    return jsonError(500, "Failed to fetch document");
+export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ documentId: string }> }) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
-}
 
-/**
- * PATCH /api/documents/[documentId]
- * - Requires editor/owner
- * - Uses allowlist updates to avoid accidental schema corruption
- */
-export async function PATCH(
-  req: NextRequest,
-  context: { params: Promise<RouteParams> }
-) {
-  try {
-    const { documentId } = await context.params;
-
-    const session = await auth();
-    if (!session?.user?.id) return jsonError(401, "Unauthorized");
-
-    let body: Record<string, unknown>;
-    try {
-      body = (await req.json()) as Record<string, unknown>;
-    } catch {
-      return jsonError(400, "Invalid JSON");
-    }
-
-    const loaded = await loadDocumentOr404(documentId);
-    if ("res" in loaded) return loaded.res;
-
-    const existing = loaded.document;
-    const estateId = String(existing.estateId);
-
-    const accessCheck = await enforceEditorAccessForDocument(
-      estateId,
-      session.user.id,
-      Boolean(existing.isSensitive)
-    );
-    if ("res" in accessCheck) return accessCheck.res;
-
-    // Prevent VIEWER from making a doc sensitive, even if access code changes later.
-    if (body?.isSensitive === true && accessCheck.access?.role === "VIEWER") {
-      return jsonError(403, "Forbidden");
-    }
-
-    // Keep consistent with GET/DELETE: VIEWER gets 404 for sensitive docs
-    if (Boolean(existing.isSensitive) && accessCheck.access?.role === "VIEWER") {
-      return jsonError(404, "Document not found");
-    }
-
-    const previousSnapshot = {
-      label: existing.label ?? null,
-      subject: existing.subject ?? null,
-      isSensitive: Boolean(existing.isSensitive),
-      tags: Array.isArray(existing.tags) ? existing.tags : [],
-    };
-
-    // Allowlist fields only
-    const updates = pick(body, [
-      "subject",
-      "label",
-      "location",
-      "url",
-      "tags",
-      "notes",
-      "isSensitive",
-      "fileName",
-      "fileType",
-      "fileSizeBytes",
-    ]);
-
-    Object.assign(existing, updates);
-    const document = await existing.save();
-
-    // Activity log: document updated (best-effort)
-    try {
-      await logActivity({
-        estateId: String(document.estateId),
-        kind: "DOCUMENT",
-        action: "updated",
-        entityId: String(document._id),
-        message: `Document updated: ${String(document.label ?? "Untitled")}`,
-        snapshot: {
-          previous: previousSnapshot,
-          current: {
-            label: document.label ?? null,
-            subject: document.subject ?? null,
-            isSensitive: Boolean(document.isSensitive),
-            tags: Array.isArray(document.tags) ? document.tags : [],
-          },
-        },
-      });
-    } catch {
-      // no-op
-    }
-
-    return NextResponse.json({ ok: true, document }, { status: 200 });
-  } catch (error) {
-    console.error("[DOCUMENT_PATCH]", error);
-    return jsonError(500, "Failed to update document");
+  const { documentId } = await ctx.params;
+  if (!documentId) {
+    return NextResponse.json({ ok: false, error: "Missing documentId" }, { status: 400 });
   }
-}
 
-/**
- * PUT /api/documents/[documentId]
- * Alias to PATCH for backward compatibility with existing callers.
- */
-export async function PUT(
-  req: NextRequest,
-  context: { params: Promise<RouteParams> }
-) {
-  return PATCH(req, context);
-}
-
-/**
- * DELETE /api/documents/[documentId]
- * - Requires editor/owner
- */
-export async function DELETE(
-  _req: NextRequest,
-  context: { params: Promise<RouteParams> }
-) {
-  try {
-    const { documentId } = await context.params;
-
-    const session = await auth();
-    if (!session?.user?.id) return jsonError(401, "Unauthorized");
-
-    const loaded = await loadDocumentOr404(documentId);
-    if ("res" in loaded) return loaded.res;
-
-    const document = loaded.document;
-    const estateId = String(document.estateId);
-
-    const accessCheck = await enforceEditorAccessForDocument(
-      estateId,
-      session.user.id,
-      Boolean(document.isSensitive)
-    );
-    if ("res" in accessCheck) return accessCheck.res;
-
-    if (Boolean(document.isSensitive) && accessCheck.access?.role === "VIEWER") {
-      return jsonError(404, "Document not found");
-    }
-
-    await document.deleteOne();
-
-    // Activity log: document deleted (best-effort)
-    try {
-      await logActivity({
-        estateId: String(document.estateId),
-        kind: "DOCUMENT",
-        action: "deleted",
-        entityId: String(document._id),
-        message: `Document deleted: ${String(document.label ?? "Untitled")}`,
-        snapshot: {
-          label: document.label ?? null,
-          subject: document.subject ?? null,
-          isSensitive: Boolean(document.isSensitive),
-          tags: Array.isArray(document.tags) ? document.tags : [],
-        },
-      });
-    } catch {
-      // no-op
-    }
-
-    return NextResponse.json({ ok: true }, { status: 200 });
-  } catch (error) {
-    console.error("[DOCUMENT_DELETE]", error);
-    return jsonError(500, "Failed to delete document");
+  const existing = await getDocOr404(documentId);
+  if (!existing) {
+    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
+
+  const estateId = String(existing.estateId);
+  const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
+  if (access.role === "VIEWER") {
+    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+  }
+
+  await connectToDatabase();
+  await EstateDocument.findOneAndDelete({ _id: documentId, estateId });
+
+  return NextResponse.json({ ok: true }, { status: 200 });
 }

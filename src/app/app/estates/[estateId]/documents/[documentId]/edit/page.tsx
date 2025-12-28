@@ -6,7 +6,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import { connectToDatabase } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { EstateDocument } from "@/models/EstateDocument";
-import { requireEstateAccess } from "@/lib/estateAccess";
+import { requireEstateEditAccess } from "@/lib/estateAccess";
 
 interface PageProps {
   params: Promise<{
@@ -27,13 +27,6 @@ interface EstateDocumentLean {
   tags?: string[];
   notes?: string;
   isSensitive?: boolean;
-}
-
-type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
-
-function roleAtLeast(role: EstateRole, min: EstateRole): boolean {
-  const order: Record<EstateRole, number> = { VIEWER: 0, EDITOR: 1, OWNER: 2 };
-  return order[role] >= order[min];
 }
 
 const SUBJECT_LABELS: Record<string, string> = {
@@ -83,10 +76,8 @@ async function updateDocument(formData: FormData): Promise<void> {
   await connectToDatabase();
 
   // Permission check (OWNER/EDITOR can edit)
-  const access = await requireEstateAccess({ estateId, userId: session.user.id });
-  const role = (access as { role: EstateRole | undefined }).role;
-
-  if (!role || !roleAtLeast(role, "EDITOR")) {
+  const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
+  if (access.role === "VIEWER") {
     redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
   }
 
@@ -95,7 +86,7 @@ async function updateDocument(formData: FormData): Promise<void> {
     .map((t) => t.trim())
     .filter(Boolean);
 
-  await EstateDocument.findOneAndUpdate(
+  const updated = await EstateDocument.findOneAndUpdate(
     {
       _id: documentId,
       estateId,
@@ -111,6 +102,10 @@ async function updateDocument(formData: FormData): Promise<void> {
     },
   );
 
+  if (!updated) {
+    redirect(`/app/estates/${estateId}/documents/${documentId}/edit?notFound=1`);
+  }
+
   revalidatePath(`/app/estates/${estateId}/documents`);
   revalidatePath(`/app/estates/${estateId}/documents/${documentId}`);
 
@@ -119,10 +114,6 @@ async function updateDocument(formData: FormData): Promise<void> {
 
 export default async function EditDocumentPage({ params }: PageProps) {
   const { estateId, documentId } = await params;
-
-  const requestAccessHref = `/app/estates/${encodeURIComponent(
-    estateId,
-  )}/documents/${encodeURIComponent(documentId)}?requestAccess=1`;
 
   const session = await auth();
 
@@ -134,17 +125,14 @@ export default async function EditDocumentPage({ params }: PageProps) {
 
   await connectToDatabase();
 
-  const access = await requireEstateAccess({ estateId, userId: session.user.id });
-  const role = (access as { role: EstateRole | undefined }).role;
+  const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
+  const role = access.role;
 
   if (!role) {
-    // No access to this estate
     notFound();
   }
 
-  const isReadOnly = !roleAtLeast(role, "EDITOR");
-
-  if (isReadOnly) {
+  if (role === "VIEWER") {
     redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
   }
 
@@ -168,11 +156,6 @@ export default async function EditDocumentPage({ params }: PageProps) {
             <span className="rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-300">
               Role: {role}
             </span>
-            {isReadOnly ? (
-              <span className="rounded-full border border-rose-500/40 bg-rose-950/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.2em] text-rose-200">
-                View-only
-              </span>
-            ) : null}
           </div>
         }
         title={doc.label}
@@ -185,14 +168,6 @@ export default async function EditDocumentPage({ params }: PageProps) {
             >
               View
             </Link>
-            {isReadOnly ? (
-              <Link
-                href={requestAccessHref}
-                className="inline-flex items-center rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 font-medium text-emerald-100 hover:bg-emerald-500/20"
-              >
-                Request access
-              </Link>
-            ) : null}
             <Link
               href={`/app/estates/${estateId}/documents`}
               className="inline-flex items-center rounded-lg border border-slate-800 px-3 py-1.5 font-medium text-slate-300 hover:border-slate-500/70 hover:text-slate-100"
@@ -202,8 +177,6 @@ export default async function EditDocumentPage({ params }: PageProps) {
           </div>
         }
       />
-
-
       <form
         action={updateDocument}
         className="space-y-6 rounded-xl border border-slate-800 bg-slate-950/40 p-4 sm:p-6"
