@@ -96,8 +96,10 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) {
-        const msg = await getApiErrorMessage(res);
+      const data: { ok?: boolean; error?: string } = await res.json();
+
+      if (!res.ok || data?.ok === false) {
+        const msg = data?.error || (await getApiErrorMessage(res));
         setStatus("error");
         setErrorMessage(msg || "Failed to save settings.");
         return;

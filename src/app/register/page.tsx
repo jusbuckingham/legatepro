@@ -25,15 +25,23 @@ export default function RegisterPage() {
         body: JSON.stringify({ name, email, password })
       });
 
-      const data = (await safeJson<{ error?: string }>(res)) ?? null;
+      const data =
+        (await safeJson<{ ok?: boolean; error?: string }>(res)) ?? null;
 
-      if (!res.ok) {
-        const msg =
-          typeof data?.error === "string" && data.error.trim()
-            ? data.error
-            : await getApiErrorMessage(res);
+      const apiError =
+        typeof data?.error === "string" && data.error.trim() ? data.error : null;
 
+      // Treat non-2xx responses OR explicit ok:false payloads as errors.
+      if (!res.ok || data?.ok === false) {
+        const msg = apiError ?? (await getApiErrorMessage(res));
         setError(msg || "Failed to create account.");
+        setSubmitting(false);
+        return;
+      }
+
+      // If the API is expected to return { ok: true } on success, enforce it.
+      if (data?.ok !== true) {
+        setError(apiError || "Failed to create account.");
         setSubmitting(false);
         return;
       }

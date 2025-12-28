@@ -10,7 +10,7 @@ interface DeleteEstateButtonProps {
 
 export function DeleteEstateButton({
   estateId,
-  estateTitle
+  estateTitle,
 }: DeleteEstateButtonProps) {
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
@@ -33,16 +33,12 @@ export function DeleteEstateButton({
         method: "DELETE"
       });
 
-      if (!response.ok) {
-        let message = "Failed to delete estate.";
-        try {
-          const data = (await response.json()) as { error?: string };
-          if (data.error) message = data.error;
-        } catch {
-          // ignore JSON parse errors
-        }
-        setError(message);
-        setIsDeleting(false);
+      const data = (await response.json().catch(() => null)) as
+        | { ok?: boolean; error?: string }
+        | null;
+
+      if (!response.ok || data?.ok === false) {
+        setError(data?.error || "Failed to delete estate.");
         return;
       }
 
@@ -52,6 +48,7 @@ export function DeleteEstateButton({
     } catch (err) {
       console.error(err);
       setError("Unexpected error while deleting estate.");
+    } finally {
       setIsDeleting(false);
     }
   };

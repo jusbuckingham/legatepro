@@ -15,6 +15,7 @@ type PageProps = {
 };
 
 type UtilityApiResponse = {
+  ok: boolean;
   utility?: Record<string, unknown>;
   error?: string;
 };
@@ -85,14 +86,13 @@ async function fetchUtility(utilityId: string): Promise<Record<string, unknown> 
     return null;
   }
 
-  const data = (await safeJson(res)) as UtilityApiResponse | Record<string, unknown> | null;
+  const data = (await safeJson(res)) as UtilityApiResponse | null;
 
-  if (data && typeof data === "object" && "utility" in data) {
-    const u = (data as UtilityApiResponse).utility;
-    return u && typeof u === "object" ? u : null;
-  }
+  if (!data || typeof data !== "object") return null;
+  if (data.ok === false) return null;
 
-  return data && typeof data === "object" ? (data as Record<string, unknown>) : null;
+  const u = data.utility;
+  return u && typeof u === "object" ? u : null;
 }
 
 export default async function UtilityDetailPage({ params }: PageProps) {

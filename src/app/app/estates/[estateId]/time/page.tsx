@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState, FormEvent, use as usePromise } from "react";
 import Link from "next/link";
 
-import { getApiErrorMessage, safeJson } from "@/lib/utils";
+import { safeJson } from "@/lib/utils";
 
 interface TimeEntry {
   _id?: string;
@@ -21,6 +21,29 @@ interface PageProps {
   params: Promise<{
     estateId: string;
   }>;
+}
+
+type ApiErrorPayload = { ok: false; error: string };
+
+type ApiSuccessPayload<T extends object> = { ok: true } & T;
+
+type ApiPayload<T extends object> = ApiErrorPayload | ApiSuccessPayload<T>;
+
+function getErrorFromApiPayload(payload: unknown, fallback: string): string {
+  if (!payload || typeof payload !== "object") return fallback;
+
+  const maybe = payload as { error?: unknown; ok?: unknown };
+
+  if (maybe.ok === false && typeof maybe.error === "string" && maybe.error.trim()) {
+    return maybe.error;
+  }
+
+  // Some endpoints may still return `{ error: "..." }` without the ok flag.
+  if (typeof maybe.error === "string" && maybe.error.trim()) {
+    return maybe.error;
+  }
+
+  return fallback;
 }
 
 function formatDisplayDate(isoLike: string): string {
@@ -62,13 +85,14 @@ export default function EstateTimecardPage({ params }: PageProps) {
 
       const data: unknown = await safeJson(res);
 
+      // Avoid double-reading the response body by deriving the message from the parsed payload.
       if (!res.ok) {
-        const apiError = await getApiErrorMessage(res);
+        const msg = getErrorFromApiPayload(data, "Failed to load time entries");
         console.error("Failed to load time entries:", res.status, res.statusText, data);
-        throw new Error(apiError || "Failed to load time entries");
+        throw new Error(msg);
       }
 
-      const typed = (data ?? {}) as {
+      const payload = (data ?? {}) as ApiPayload<{
         entries?: Array<{
           id?: string;
           _id?: string;
@@ -81,9 +105,26 @@ export default function EstateTimecardPage({ params }: PageProps) {
           note?: string;
           isBillable?: boolean;
         }>;
-      };
+      }>;
 
-      const loadedEntriesRaw = Array.isArray(typed.entries) ? typed.entries : [];
+      if (payload && typeof payload === "object" && (payload as ApiErrorPayload).ok === false) {
+        throw new Error(getErrorFromApiPayload(payload, "Failed to load time entries"));
+      }
+
+      const loadedEntriesRaw = Array.isArray((payload as { entries?: unknown }).entries)
+        ? ((payload as { entries: unknown[] }).entries as Array<{
+            id?: string;
+            _id?: string;
+            estateId?: string;
+            date?: string;
+            minutes?: number;
+            hours?: number;
+            description?: string;
+            notes?: string;
+            note?: string;
+            isBillable?: boolean;
+          }>)
+        : [];
 
       const loadedEntries: TimeEntry[] = loadedEntriesRaw.map((raw) => {
         const id =
@@ -170,9 +211,16 @@ export default function EstateTimecardPage({ params }: PageProps) {
         }),
       });
 
+      const data: unknown = await safeJson(res);
+
       if (!res.ok) {
-        const msg = await getApiErrorMessage(res);
-        throw new Error(msg || "Failed to create time entry.");
+        const msg = getErrorFromApiPayload(data, "Failed to create time entry.");
+        throw new Error(msg);
+      }
+
+      // If the API returns `{ ok: false }` while still sending a 2xx, treat as error.
+      if (data && typeof data === "object" && (data as { ok?: unknown }).ok === false) {
+        throw new Error(getErrorFromApiPayload(data, "Failed to create time entry."));
       }
 
       setDescription("");

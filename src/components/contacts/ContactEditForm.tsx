@@ -25,6 +25,11 @@ type ContactEditFormProps = {
   };
 };
 
+type ApiResponse = {
+  ok: boolean;
+  error?: string;
+};
+
 function normalizeRole(value: string): ContactRole {
   const upper = value.toUpperCase();
   if (
@@ -71,7 +76,7 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
         email: email.trim(),
         phone: phone.trim(),
         role,
-        notes: notes,
+        notes,
       };
 
       const res = await fetch(`/api/contacts/${contactId}`, {
@@ -82,10 +87,11 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) {
-        const msg = await getApiErrorMessage(res);
-        setError(msg || "Failed to update contact.");
-        setSaving(false);
+      const data = (await res.json().catch(() => null)) as ApiResponse | null;
+
+      if (!res.ok || !data || data.ok !== true) {
+        const msg = data?.error || (await getApiErrorMessage(res)) || "Failed to update contact.";
+        setError(msg);
         return;
       }
 
@@ -93,6 +99,7 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
     } catch (err) {
       console.error(err);
       setError("Something went wrong while saving. Please try again.");
+    } finally {
       setSaving(false);
     }
   };

@@ -23,6 +23,10 @@ type Invite = {
   expiresAt?: string;
 };
 
+type ApiError = { ok: false; error: string };
+type ApiOk<T extends Record<string, unknown> = Record<string, never>> = { ok: true } & T;
+type ApiResponse<T extends Record<string, unknown> = Record<string, never>> = ApiOk<T> | ApiError;
+
 export default function CollaboratorsManager({
   estateId,
   collaborators,
@@ -99,15 +103,18 @@ export default function CollaboratorsManager({
 
     setInvitesLoading(false);
 
-    if (!res.ok) {
-      const msg = await getApiErrorMessage(res);
+    const data = (await safeJson<ApiResponse<{ invites?: Invite[] }>>(res)) ?? null;
+
+    if (!res.ok || !data || data.ok === false) {
+      const msg =
+        data && data.ok === false
+          ? data.error
+          : await Promise.resolve(getApiErrorMessage(res));
       setInvitesError(msg || "Failed to load invites");
       return;
     }
 
-    const data = (await safeJson<{ invites?: Invite[] }>(res)) ?? null;
-
-    setInvites(Array.isArray(data?.invites) ? data!.invites! : []);
+    setInvites(Array.isArray(data.invites) ? data.invites : []);
   }
 
   useEffect(() => {
@@ -133,17 +140,20 @@ export default function CollaboratorsManager({
 
     setInvitesLoading(false);
 
-    if (!res.ok) {
-      const msg = await getApiErrorMessage(res);
+    const data = (await safeJson<ApiResponse<{ inviteUrl?: string }>>(res)) ?? null;
+
+    if (!res.ok || !data || data.ok === false) {
+      const msg =
+        data && data.ok === false
+          ? data.error
+          : await Promise.resolve(getApiErrorMessage(res));
       setInvitesError(msg || "Failed to create invite");
       return;
     }
 
-    const data = (await safeJson<{ inviteUrl?: string }>(res)) ?? null;
-
     setInviteEmail("");
     setInviteRole("VIEWER");
-    setCreatedInviteUrl(typeof data?.inviteUrl === "string" ? data.inviteUrl : null);
+    setCreatedInviteUrl(typeof data.inviteUrl === "string" ? data.inviteUrl : null);
     setInfo("Invite created.");
     await fetchInvites();
   }
@@ -165,8 +175,13 @@ export default function CollaboratorsManager({
 
     setInvitesLoading(false);
 
-    if (!res.ok) {
-      const msg = await getApiErrorMessage(res);
+    const data = (await safeJson<ApiResponse>(res)) ?? null;
+
+    if (!res.ok || !data || data.ok === false) {
+      const msg =
+        data && data.ok === false
+          ? data.error
+          : await Promise.resolve(getApiErrorMessage(res));
       setInvitesError(msg || "Failed to revoke invite");
       return;
     }
@@ -197,8 +212,13 @@ export default function CollaboratorsManager({
 
     setLoading(false);
 
-    if (!res.ok) {
-      const msg = await getApiErrorMessage(res);
+    const data = (await safeJson<ApiResponse>(res)) ?? null;
+
+    if (!res.ok || !data || data.ok === false) {
+      const msg =
+        data && data.ok === false
+          ? data.error
+          : await Promise.resolve(getApiErrorMessage(res));
       setError(msg || "Failed to add collaborator");
       return;
     }
@@ -228,8 +248,13 @@ export default function CollaboratorsManager({
 
     setLoading(false);
 
-    if (!res.ok) {
-      const msg = await getApiErrorMessage(res);
+    const data = (await safeJson<ApiResponse>(res)) ?? null;
+
+    if (!res.ok || !data || data.ok === false) {
+      const msg =
+        data && data.ok === false
+          ? data.error
+          : await Promise.resolve(getApiErrorMessage(res));
       setError(msg || "Failed to update role");
       return;
     }
@@ -253,8 +278,13 @@ export default function CollaboratorsManager({
 
     setLoading(false);
 
-    if (!res.ok) {
-      const msg = await getApiErrorMessage(res);
+    const data = (await safeJson<ApiResponse>(res)) ?? null;
+
+    if (!res.ok || !data || data.ok === false) {
+      const msg =
+        data && data.ok === false
+          ? data.error
+          : await Promise.resolve(getApiErrorMessage(res));
       setError(msg || "Failed to remove collaborator");
       return;
     }
@@ -305,7 +335,6 @@ export default function CollaboratorsManager({
           </div>
 
           {error && <div className="mt-2 text-xs text-red-600">{error}</div>}
-          {info && <div className="mt-2 text-xs text-gray-600">{info}</div>}
         </div>
       )}
 

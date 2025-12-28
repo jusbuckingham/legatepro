@@ -90,9 +90,14 @@ export function TaskForm({
         }),
       });
 
-      if (!res.ok) {
-        const msg = await getApiErrorMessage(res);
-        throw new Error(msg || "Failed to save task");
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok || data?.ok !== true) {
+        const msg =
+          data?.error ||
+          (await getApiErrorMessage(res)) ||
+          "Failed to save task";
+        throw new Error(msg);
       }
 
       router.push(`/app/estates/${estateId}/tasks`);

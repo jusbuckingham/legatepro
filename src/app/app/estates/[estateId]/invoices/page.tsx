@@ -101,7 +101,7 @@ async function getInvoices(
     const h = await headers();
     const cookie = h.get("cookie") ?? "";
 
-    const res = await fetch(`${baseUrl}/api/estates/${estateId}/invoices`, {
+    const res = await fetch(`${baseUrl}/api/estates/${encodeURIComponent(estateId)}/invoices`, {
       cache: "no-store",
       headers: cookie ? { cookie } : undefined,
     });
@@ -112,13 +112,21 @@ async function getInvoices(
     }
 
     const data = (await safeJson(res)) as
-      | { ok?: boolean; invoices?: InvoiceLean[] }
+      | { ok?: boolean; error?: string; invoices?: InvoiceLean[] }
       | InvoiceLean[]
       | null;
 
     // Backward-compatible: older route versions may have returned the raw array.
     if (Array.isArray(data)) {
       return { invoices: data as InvoiceLean[] };
+    }
+
+    // New contract: { ok: false, error: string }
+    if (data && data.ok === false) {
+      return {
+        invoices: [],
+        error: data.error || "Couldn’t load invoices right now.",
+      };
     }
 
     const invoices = data?.invoices;

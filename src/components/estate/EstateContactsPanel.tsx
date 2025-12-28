@@ -73,10 +73,16 @@ export function EstateContactsPanel({
         body: JSON.stringify({ contactId: selectedContactId }),
       });
 
-      if (!res.ok) {
-        const msg = await getApiErrorMessage(res);
+      const data = (await res.json().catch(() => null)) as
+        | {
+            ok: boolean;
+            error?: string;
+          }
+        | null;
+
+      if (!res.ok || !data?.ok) {
+        const msg = data?.error || (await getApiErrorMessage(res));
         setError(msg || "Failed to link contact.");
-        setBusy(false);
         return;
       }
 
@@ -100,10 +106,10 @@ export function EstateContactsPanel({
       });
 
       setSelectedContactId("");
-      setBusy(false);
     } catch (err) {
       console.error(err);
       setError("Something went wrong while linking. Please try again.");
+    } finally {
       setBusy(false);
     }
   };
@@ -122,10 +128,16 @@ export function EstateContactsPanel({
         },
       );
 
-      if (!res.ok) {
-        const msg = await getApiErrorMessage(res);
+      const data = (await res.json().catch(() => null)) as
+        | {
+            ok: boolean;
+            error?: string;
+          }
+        | null;
+
+      if (!res.ok || !data?.ok) {
+        const msg = data?.error || (await getApiErrorMessage(res));
         setError(msg || "Failed to unlink contact.");
-        setBusy(false);
         return;
       }
 
@@ -147,11 +159,10 @@ export function EstateContactsPanel({
 
         return next;
       });
-
-      setBusy(false);
     } catch (err) {
       console.error(err);
       setError("Something went wrong while unlinking. Please try again.");
+    } finally {
       setBusy(false);
     }
   };

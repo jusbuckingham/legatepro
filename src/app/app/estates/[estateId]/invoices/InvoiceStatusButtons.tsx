@@ -3,6 +3,14 @@
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 
+async function safeJson<T>(res: Response): Promise<T | null> {
+  try {
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
 type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'void' | string;
 
 type Props = {
@@ -58,9 +66,11 @@ export default function InvoiceStatusButtons({
         body: JSON.stringify({ status: nextStatus }),
       });
 
-      if (!res.ok) {
+      const data = await safeJson<{ ok?: boolean; error?: string }>(res);
+
+      if (!res.ok || data?.ok === false) {
         setStatus(previousStatus);
-        setFeedback('Could not update invoice status.');
+        setFeedback(data?.error || 'Could not update invoice.');
         setFeedbackType('error');
         return;
       }

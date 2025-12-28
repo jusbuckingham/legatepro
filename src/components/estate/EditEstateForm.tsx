@@ -43,6 +43,8 @@ export function EditEstateForm({
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  type ApiResponse = { ok: boolean; error?: string };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     setError(null);
@@ -66,21 +68,15 @@ export function EditEstateForm({
         body: JSON.stringify(payload)
       });
 
-      if (!response.ok) {
-        let message = "Failed to update estate.";
-        try {
-          const data = (await response.json()) as { error?: string };
-          if (data.error) message = data.error;
-        } catch {
-          // ignore JSON parse errors
-        }
+      const data = (await response.json().catch(() => null)) as ApiResponse | null;
+
+      if (!response.ok || !data?.ok) {
+        const message = data?.error ?? "Failed to update estate.";
         setError(message);
-        setIsSubmitting(false);
         return;
       }
 
       setSaved(true);
-      setIsSubmitting(false);
 
       // Go back to the estate detail page
       router.push(`/app/estates/${estateId}`);
@@ -88,6 +84,7 @@ export function EditEstateForm({
     } catch (err) {
       console.error(err);
       setError("Unexpected error while updating the estate.");
+    } finally {
       setIsSubmitting(false);
     }
   };

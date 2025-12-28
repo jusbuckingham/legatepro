@@ -4,7 +4,7 @@ import { use as usePromise, useEffect, useState, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import { getApiErrorMessage, safeJson } from "@/lib/utils";
+import { safeJson } from "@/lib/utils";
 
 interface TimeEntry {
   _id: string;
@@ -21,6 +21,25 @@ interface PageProps {
     estateId: string;
     entryId: string;
   }>;
+}
+
+function getErrorFromApiPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+
+  // Preferred contract: { ok: false, error: "..." }
+  if ("ok" in payload && (payload as { ok?: unknown }).ok === false) {
+    const err = (payload as { error?: unknown }).error;
+    return typeof err === "string" && err.trim() ? err : "Request failed.";
+  }
+
+  // Legacy fallbacks
+  const err = (payload as { error?: unknown }).error;
+  if (typeof err === "string" && err.trim()) return err;
+
+  const msg = (payload as { message?: unknown }).message;
+  if (typeof msg === "string" && msg.trim()) return msg;
+
+  return null;
 }
 
 export default function TimeEntryDetailPage({ params }: PageProps) {
@@ -55,10 +74,10 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
         );
 
         const data: unknown = await safeJson(res);
+        const apiError = getErrorFromApiPayload(data);
 
-        if (!res.ok) {
-          const msg = await getApiErrorMessage(res);
-          throw new Error(msg || "Failed to load time entry.");
+        if (!res.ok || apiError) {
+          throw new Error(apiError || "Failed to load time entry.");
         }
 
         const rawEntry =
@@ -155,10 +174,10 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
       );
 
       const data: unknown = await safeJson(res);
+      const apiError = getErrorFromApiPayload(data);
 
-      if (!res.ok) {
-        const msg = await getApiErrorMessage(res);
-        throw new Error(msg || "Failed to update time entry.");
+      if (!res.ok || apiError) {
+        throw new Error(apiError || "Failed to update time entry.");
       }
 
       // Update local entry from response if available
@@ -236,9 +255,11 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
         }
       );
 
-      if (!res.ok) {
-        const msg = await getApiErrorMessage(res);
-        throw new Error(msg || "Failed to delete time entry.");
+      const data: unknown = await safeJson(res);
+      const apiError = getErrorFromApiPayload(data);
+
+      if (!res.ok || apiError) {
+        throw new Error(apiError || "Failed to delete time entry.");
       }
 
       router.push(`/app/estates/${estateId}/time`);

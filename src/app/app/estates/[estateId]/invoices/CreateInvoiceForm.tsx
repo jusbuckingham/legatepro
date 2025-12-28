@@ -1,4 +1,3 @@
-// src/app/app/estates/[estateId]/invoices/CreateInvoiceForm.tsx
 'use client';
 
 import { useState } from 'react';
@@ -27,19 +26,27 @@ export default function CreateInvoiceForm({ estateId }: Props) {
     setSuccess(null);
 
     try {
+      const amountNumber = Number(amount);
+      if (!Number.isFinite(amountNumber) || amountNumber < 0) {
+        throw new Error('Please enter a valid amount');
+      }
+
       const res = await fetch(`/api/estates/${estateId}/invoices`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           description,
-          amount: Number(amount),
+          amount: amountNumber,
           issueDate: new Date(issueDate).toISOString(),
           dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
         }),
       });
 
-      if (!res.ok) {
-        const data = (await safeJson(res)) as { error?: string; message?: string } | null;
+      const data = (await safeJson(res)) as
+        | { ok?: boolean; error?: string; message?: string; invoice?: { _id?: string } }
+        | null;
+
+      if (!res.ok || data?.ok === false) {
         const msg =
           typeof data?.error === 'string'
             ? data.error

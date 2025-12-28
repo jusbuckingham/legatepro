@@ -107,21 +107,27 @@ export default function NewEstatePage() {
       });
 
       const data = ((await safeJson(res)) ?? null) as
-        | { error?: string; message?: string; estate?: { _id?: string } }
+        | {
+            ok?: boolean;
+            error?: string;
+            message?: string;
+            estate?: { _id?: string };
+          }
         | null;
 
-      if (!res.ok) {
-        const msg =
-          typeof data?.error === "string" && data.error.trim()
-            ? data.error
-            : typeof data?.message === "string" && data.message.trim()
-            ? data.message
-            : await getApiErrorMessage(res);
+      const apiError =
+        typeof data?.error === "string" && data.error.trim()
+          ? data.error
+          : typeof data?.message === "string" && data.message.trim()
+          ? data.message
+          : null;
 
+      if (!res.ok || data?.ok === false) {
+        const msg = apiError ?? (await getApiErrorMessage(res));
         throw new Error(msg || "Unable to create estate. Please try again.");
       }
 
-      const estateId = (data?.estate?._id as string | undefined) ?? undefined;
+      const estateId = data?.estate?._id;
 
       if (estateId) {
         router.push(`/app/estates/${estateId}`);

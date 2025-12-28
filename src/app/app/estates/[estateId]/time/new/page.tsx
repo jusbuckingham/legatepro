@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getApiErrorMessage, safeJson } from "@/lib/utils";
+import { safeJson } from "@/lib/utils";
 
 interface TimeEntryForm {
   date: string;
@@ -10,6 +10,26 @@ interface TimeEntryForm {
   rate: string;
   activity: string;
   notes: string;
+}
+
+function getErrorFromApiPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+
+  const record = payload as Record<string, unknown>;
+
+  if (record.ok === false && typeof record.error === "string" && record.error.trim()) {
+    return record.error;
+  }
+
+  if (typeof record.error === "string" && record.error.trim()) {
+    return record.error;
+  }
+
+  if (typeof record.message === "string" && record.message.trim()) {
+    return record.message;
+  }
+
+  return null;
 }
 
 export default function NewTimeEntryPage() {
@@ -73,16 +93,15 @@ export default function NewTimeEntryPage() {
         }),
       });
 
+      const details = await safeJson(res);
+
       if (!res.ok) {
-        const details = (await safeJson(res)) as { error?: string; message?: string } | null;
+        const msg = getErrorFromApiPayload(details);
+        throw new Error(msg || "Failed to save time entry. Please try again.");
+      }
 
-        const msg =
-          typeof details?.error === "string" && details.error.trim()
-            ? details.error
-            : typeof details?.message === "string" && details.message.trim()
-            ? details.message
-            : await getApiErrorMessage(res);
-
+      if (details && typeof details === "object" && (details as { ok?: boolean }).ok === false) {
+        const msg = getErrorFromApiPayload(details);
         throw new Error(msg || "Failed to save time entry. Please try again.");
       }
 

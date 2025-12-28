@@ -4,7 +4,7 @@ import { useState, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import { getApiErrorMessage, safeJson } from "@/lib/utils";
+import { safeJson } from "@/lib/utils";
 
 interface PageProps {
   params: {
@@ -36,6 +36,29 @@ interface UtilityFormState {
   status: string;
   isAutoPay: boolean;
   notes: string;
+}
+
+type ApiErrorBody =
+  | { ok?: boolean; error?: unknown; message?: unknown }
+  | Record<string, unknown>
+  | null;
+
+function getErrorFromApiBody(body: ApiErrorBody): string | null {
+  if (!body || typeof body !== "object") return null;
+
+  const maybeOk = (body as { ok?: unknown }).ok;
+  const maybeError = (body as { error?: unknown }).error;
+  const maybeMessage = (body as { message?: unknown }).message;
+
+  if (maybeOk === false) {
+    if (typeof maybeError === "string" && maybeError.trim()) return maybeError;
+    if (typeof maybeMessage === "string" && maybeMessage.trim()) return maybeMessage;
+  }
+
+  if (typeof maybeError === "string" && maybeError.trim()) return maybeError;
+  if (typeof maybeMessage === "string" && maybeMessage.trim()) return maybeMessage;
+
+  return null;
 }
 
 export default function AddUtilityAccountPage({ params }: PageProps) {
@@ -90,17 +113,11 @@ export default function AddUtilityAccountPage({ params }: PageProps) {
         }),
       });
 
-      if (!res.ok) {
-        const body = (await safeJson(res)) as { error?: string; message?: string } | null;
+      const body = (await safeJson(res)) as ApiErrorBody;
+      const apiError = getErrorFromApiBody(body);
 
-        const msg =
-          typeof body?.error === "string" && body.error.trim()
-            ? body.error
-            : typeof body?.message === "string" && body.message.trim()
-            ? body.message
-            : await getApiErrorMessage(res);
-
-        throw new Error(msg || "Failed to create utility account");
+      if (!res.ok || apiError) {
+        throw new Error(apiError || `Request failed (${res.status})`);
       }
 
       router.push(
@@ -108,9 +125,9 @@ export default function AddUtilityAccountPage({ params }: PageProps) {
       );
       router.refresh();
     } catch (err) {
-      console.error("Error creating utility account:", err);
+      console.error("Unable to create utility account:", err);
       setError(
-        err instanceof Error ? err.message : "Failed to create utility account"
+        err instanceof Error ? err.message : "Unable to create utility account"
       );
     } finally {
       setSaving(false);

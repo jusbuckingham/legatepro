@@ -69,13 +69,17 @@ export function NewContactForm() {
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) {
-        const msg = await getApiErrorMessage(res);
+      type ApiResponse = { ok?: boolean; error?: string };
+      const data = (await res.json().catch(() => null)) as ApiResponse | null;
+
+      if (!res.ok || data?.ok === false) {
+        const msg = data?.error || (await getApiErrorMessage(res));
         setError(msg || "Failed to create contact.");
         setSaving(false);
         return;
       }
 
+      setSaving(false);
       router.push("/app/contacts");
     } catch (err) {
       // basic error handling is fine here; no eslint disable needed

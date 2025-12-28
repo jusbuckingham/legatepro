@@ -107,18 +107,19 @@ export function PropertyForm({
         body: JSON.stringify(payload)
       });
 
-      if (!response.ok) {
-        let message = isEdit
+      type ApiResponse = {
+        ok: boolean;
+        error?: string;
+        [key: string]: unknown;
+      };
+
+      const data = (await response.json().catch(() => null)) as ApiResponse | null;
+
+      if (!response.ok || data?.ok !== true) {
+        const fallback = isEdit
           ? "Failed to update property."
           : "Failed to create property.";
-        try {
-          const data = (await response.json()) as { error?: string };
-          if (data.error) message = data.error;
-        } catch {
-          // ignore
-        }
-        setError(message);
-        setIsSubmitting(false);
+        setError(data?.error || fallback);
         return;
       }
 
@@ -127,6 +128,7 @@ export function PropertyForm({
     } catch (err) {
       console.error(err);
       setError("Unexpected error while saving property.");
+    } finally {
       setIsSubmitting(false);
     }
   };

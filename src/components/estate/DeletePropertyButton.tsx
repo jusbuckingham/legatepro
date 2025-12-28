@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { getApiErrorMessage } from "@/lib/utils";
 
 interface DeletePropertyButtonProps {
   estateId: string;
@@ -38,16 +39,12 @@ export function DeletePropertyButton({
         { method: "DELETE" }
       );
 
-      if (!response.ok) {
-        let message = "Failed to delete property.";
-        try {
-          const data = (await response.json()) as { error?: string };
-          if (data.error) message = data.error;
-        } catch {
-          // ignore
-        }
+      const data = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+
+      if (!response.ok || !data?.ok) {
+        const apiMessage = await Promise.resolve(getApiErrorMessage(response));
+        const message = data?.error || apiMessage || "Failed to delete property.";
         setError(message);
-        setIsDeleting(false);
         return;
       }
 
@@ -56,6 +53,7 @@ export function DeletePropertyButton({
     } catch (err) {
       console.error(err);
       setError("Unexpected error while deleting property.");
+    } finally {
       setIsDeleting(false);
     }
   };

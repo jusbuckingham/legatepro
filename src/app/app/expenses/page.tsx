@@ -82,10 +82,15 @@ async function fetchExpensesForUser(): Promise<NormalizedExpenseRow[]> {
   }
 
   const data = (await safeJson(res)) as
-    | { ok?: boolean; expenses?: RawExpense[] }
+    | { ok: true; expenses?: RawExpense[] }
+    | { ok: false; error?: string }
     | { expenses?: RawExpense[] }
     | RawExpense[]
     | null;
+
+  if (data && !Array.isArray(data) && "ok" in data && data.ok === false) {
+    throw new Error(data.error || "Failed to fetch expenses");
+  }
 
   const rawDocs = Array.isArray(data)
     ? (data as RawExpense[])
