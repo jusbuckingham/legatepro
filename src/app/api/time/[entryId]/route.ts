@@ -27,7 +27,7 @@ export async function GET(
       return NextResponse.json({ ok: false, error: "Time entry not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, entry }, { status: 200 });
+    return NextResponse.json({ ok: true, data: { entry } }, { status: 200 });
   } catch (error) {
     console.error("[TIME_ENTRY_GET_ERROR]", error);
     return NextResponse.json(
@@ -57,7 +57,25 @@ export async function PATCH(
 
     const updates: Record<string, unknown> = {};
 
-    if (date !== undefined) updates.date = new Date(date);
+    if (date !== undefined) {
+      let parsed: Date | null = null;
+
+      if (date instanceof Date) {
+        parsed = date;
+      } else if (typeof date === "string" || typeof date === "number") {
+        const d = new Date(date);
+        if (!Number.isNaN(d.getTime())) parsed = d;
+      }
+
+      if (!parsed) {
+        return NextResponse.json(
+          { ok: false, error: "date must be a valid date" },
+          { status: 400 }
+        );
+      }
+
+      updates.date = parsed;
+    }
     if (hours !== undefined) updates.hours = hours;
     if (rate !== undefined) updates.rate = rate;
     if (description !== undefined) updates.description = description;
@@ -73,7 +91,7 @@ export async function PATCH(
       return NextResponse.json({ ok: false, error: "Time entry not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, entry: updated }, { status: 200 });
+    return NextResponse.json({ ok: true, data: { entry: updated } }, { status: 200 });
   } catch (error) {
     console.error("[TIME_ENTRY_PATCH_ERROR]", error);
     return NextResponse.json(
@@ -97,7 +115,7 @@ export async function DELETE(
       return NextResponse.json({ ok: false, error: "Time entry not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return NextResponse.json({ ok: true, data: { success: true } }, { status: 200 });
   } catch (error) {
     console.error("[TIME_ENTRY_DELETE_ERROR]", error);
     return NextResponse.json(

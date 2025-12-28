@@ -72,18 +72,26 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
-  return NextResponse.json({
-    id: String(invoice._id),
-    estateId: String(invoice.estateId),
-    status: invoice.status,
-    issueDate: invoice.issueDate,
-    dueDate: invoice.dueDate ?? null,
-    notes: invoice.notes ?? "",
-    currency: invoice.currency ?? "USD",
-    subtotal: invoice.subtotal ?? 0,
-    totalAmount: invoice.totalAmount ?? 0,
-    lineItems: invoice.lineItems ?? [],
-  });
+  return NextResponse.json(
+    {
+      ok: true,
+      data: {
+        invoice: {
+          id: String(invoice._id),
+          estateId: String(invoice.estateId),
+          status: invoice.status,
+          issueDate: invoice.issueDate,
+          dueDate: invoice.dueDate ?? null,
+          notes: invoice.notes ?? "",
+          currency: invoice.currency ?? "USD",
+          subtotal: invoice.subtotal ?? 0,
+          totalAmount: invoice.totalAmount ?? 0,
+          lineItems: invoice.lineItems ?? [],
+        },
+      },
+    },
+    { status: 200 },
+  );
 }
 
 /**
@@ -247,7 +255,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
   } catch (err) {
     console.error("Error updating invoice", err);
     return NextResponse.json(
-      { error: "Failed to update invoice" },
+      { ok: false, error: "Failed to update invoice" },
       { status: 500 },
     );
   }
@@ -278,7 +286,7 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
   }
 
   return NextResponse.json(
-    { success: true, id: String(deleted._id) },
+    { ok: true, data: { success: true, id: String(deleted._id) } },
     { status: 200 },
   );
 }

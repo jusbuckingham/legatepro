@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 
     if (!estateId) {
       return NextResponse.json(
-        { error: "estateId is required" },
+        { ok: false, error: "estateId is required" },
         { status: 400 }
       );
     }
@@ -66,11 +66,11 @@ export async function GET(request: NextRequest) {
       .lean()
       .exec();
 
-    return NextResponse.json({ tasks }, { status: 200 });
+    return NextResponse.json({ ok: true, data: { tasks } }, { status: 200 });
   } catch (error) {
     console.error("GET /api/tasks error", error);
     return NextResponse.json(
-      { error: "Unable to load tasks" },
+      { ok: false, error: "Unable to load tasks" },
       { status: 500 }
     );
   }
@@ -85,14 +85,14 @@ export async function POST(request: NextRequest) {
 
     if (!estateId) {
       return NextResponse.json(
-        { error: "estateId is required" },
+        { ok: false, error: "estateId is required" },
         { status: 400 }
       );
     }
 
     if (!title) {
       return NextResponse.json(
-        { error: "title is required" },
+        { ok: false, error: "title is required" },
         { status: 400 }
       );
     }
@@ -111,11 +111,14 @@ export async function POST(request: NextRequest) {
       isCompleted: typeof isCompleted === "boolean" ? isCompleted : false,
     });
 
-    return NextResponse.json({ task }, { status: 201 });
+    return NextResponse.json(
+      { ok: true, data: { task } },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("POST /api/tasks error", error);
     return NextResponse.json(
-      { error: "Unable to create task" },
+      { ok: false, error: "Unable to create task" },
       { status: 500 }
     );
   }
