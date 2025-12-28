@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import "./globals.css";
+import ToastHost from "@/components/ui/ToastHost";
 
 export const metadata: Metadata = {
   title: "LegatePro — Modern Probate Management",
@@ -46,6 +47,8 @@ export default function RootLayout({
             </main>
           </div>
         </div>
+
+        <ToastHost />
       </body>
     </html>
   );
