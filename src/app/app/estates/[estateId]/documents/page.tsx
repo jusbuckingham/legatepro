@@ -556,16 +556,12 @@ export default async function EstateDocumentsPage({
               >
                 Clear filters
               </Link>
-              <button
-                type="button"
-                onClick={() => {
-                  const el = document.getElementById("add-document");
-                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-                }}
+              <Link
+                href="#add-document"
                 className="inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-500/20"
               >
                 Add a document
-              </button>
+              </Link>
             </div>
           </div>
         </div>

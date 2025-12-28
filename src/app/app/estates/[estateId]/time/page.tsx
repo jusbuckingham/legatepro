@@ -297,16 +297,18 @@ export default function EstateTimecardPage({ params }: PageProps) {
           <button
             type="button"
             onClick={() => handleExportCsv("all")}
-            disabled={entries.length === 0}
-            className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={entries.length === 0 || loadingEntries}
+            className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-slate-900/40"
+            title={loadingEntries ? "Loading entries…" : entries.length === 0 ? "No entries to export" : "Export all entries as CSV"}
           >
             Export all CSV
           </button>
           <button
             type="button"
             onClick={() => handleExportCsv("billable")}
-            disabled={entries.length === 0}
-            className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={entries.length === 0 || loadingEntries}
+            className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-slate-900/40"
+            title={loadingEntries ? "Loading entries…" : entries.length === 0 ? "No entries to export" : "Export billable entries as CSV"}
           >
             Export billable CSV
           </button>

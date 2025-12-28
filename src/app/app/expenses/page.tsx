@@ -7,9 +7,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import { getApiErrorMessage, safeJson } from "@/lib/utils";
 
-// This page is a hybrid client/server page: we fetch data via a server helper
-// and then do light-weight filtering client-side.
-
 interface RawEstate {
   _id: string | { toString(): string };
   caseName?: string | null;
@@ -171,8 +168,9 @@ export default function GlobalExpensesPage() {
     try {
       const data = await fetchExpensesForUser();
       setRows(data);
-    } catch {
-      setError("Unable to load expenses right now.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to load expenses right now.";
+      setError(message || "Unable to load expenses right now.");
     } finally {
       setLoading(false);
     }
@@ -360,13 +358,15 @@ export default function GlobalExpensesPage() {
                 >
                   Go to an estate
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => setCategoryFilter("all")}
-                  className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-900"
-                >
-                  Clear filters
-                </button>
+                {categoryFilter !== "all" || searchParams?.get("category") ? (
+                  <button
+                    type="button"
+                    onClick={() => setCategoryFilter("all")}
+                    className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-900"
+                  >
+                    Clear filters
+                  </button>
+                ) : null}
               </div>
             </div>
           </div>

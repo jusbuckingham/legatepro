@@ -206,7 +206,10 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
   // Summary stats
   const totalAmount = computedInvoices.reduce((sum, inv) => sum + inv.amount, 0);
   const unpaidTotal = computedInvoices
-    .filter((inv) => normalizeStatus(inv.status) !== "paid")
+    .filter((inv) => {
+      const s = normalizeStatus(inv.status);
+      return s !== "paid" && s !== "void";
+    })
     .reduce((sum, inv) => sum + inv.amount, 0);
   const overdueCount = computedInvoices.filter((inv) => normalizeStatus(inv.status) === "overdue").length;
   const paidCount = computedInvoices.filter((inv) => normalizeStatus(inv.status) === "paid").length;
@@ -307,7 +310,9 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
 
       {/* Create/readonly info */}
       {canEdit ? (
-        <CreateInvoiceForm estateId={estateId} />
+        <section id="create-invoice" className="scroll-mt-24">
+          <CreateInvoiceForm estateId={estateId} />
+        </section>
       ) : (
         <section className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
           <p className="text-sm text-slate-400">
@@ -404,7 +409,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
               <div className="mt-5 flex flex-wrap justify-center gap-2">
                 {canEdit ? (
                   <Link
-                    href={`/app/estates/${estateId}/invoices/new`}
+                    href={`${filterAction}#create-invoice`}
                     className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-400"
                   >
                     Create invoice

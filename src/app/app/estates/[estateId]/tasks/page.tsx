@@ -313,7 +313,7 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
               </Link>
             ) : (
               <Link
-                href={`/app/estates/${estateId}/tasks/new`}
+                href="#new-task"
                 className="inline-flex items-center justify-center rounded-md bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800"
               >
                 New task
@@ -350,7 +350,7 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
           <div className="font-semibold">Action blocked</div>
           <div className="text-xs text-rose-800">
-            You don’t have edit permissions for this estate. Request access from the owner to create or update tasks.
+            You don’t have edit permissions for this estate. Request access from the owner to create, update, or delete tasks.
           </div>
         </div>
       )}
@@ -375,7 +375,10 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
       )}
 
       {/* New task form */}
-      <section className="space-y-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+      <section
+        id="new-task"
+        className="space-y-3 scroll-mt-24 rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
+      >
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-700">Add a new task</h2>
@@ -550,7 +553,7 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
                 </Link>
               ) : (
                 <Link
-                  href={`/app/estates/${estateId}/tasks/new`}
+                  href="#new-task"
                   className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100"
                 >
                   New task
