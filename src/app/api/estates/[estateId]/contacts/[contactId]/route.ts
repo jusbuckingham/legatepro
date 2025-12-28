@@ -27,6 +27,20 @@ function isCastError(err: unknown): boolean {
   );
 }
 
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
+function isInvalidIdError(err: unknown): boolean {
+  const message = getErrorMessage(err);
+  return (
+    message.includes("Invalid estateId") ||
+    message.includes("Invalid contactId") ||
+    isCastError(err)
+  );
+}
+
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { estateId, contactId } = await params;
@@ -52,17 +66,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ ok: true, contact }, { status: 200 });
   } catch (error) {
-    if (String(error).includes("Invalid estateId") || String(error).includes("Invalid contactId") || isCastError(error)) {
+    if (isInvalidIdError(error)) {
       return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
-    console.error(
-      "[GET /api/estates/[estateId]/contacts/[contactId]] Error:",
-      error,
-    );
-    return NextResponse.json(
-      { ok: false, error: "Failed to fetch contact" },
-      { status: 500 },
-    );
+    console.error("[GET /api/estates/[estateId]/contacts/[contactId]] Error:", error);
+    return NextResponse.json({ ok: false, error: "Failed to fetch contact" }, { status: 500 });
   }
 }
 
@@ -134,17 +142,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ ok: true, contact: updated }, { status: 200 });
   } catch (error) {
-    if (String(error).includes("Invalid estateId") || String(error).includes("Invalid contactId") || isCastError(error)) {
+    if (isInvalidIdError(error)) {
       return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
-    console.error(
-      "[PATCH /api/estates/[estateId]/contacts/[contactId]] Error:",
-      error,
-    );
-    return NextResponse.json(
-      { ok: false, error: "Failed to update contact" },
-      { status: 500 },
-    );
+    console.error("[PATCH /api/estates/[estateId]/contacts/[contactId]] Error:", error);
+    return NextResponse.json({ ok: false, error: "Failed to update contact" }, { status: 500 });
   }
 }
 
@@ -173,16 +175,10 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (error) {
-    if (String(error).includes("Invalid estateId") || String(error).includes("Invalid contactId") || isCastError(error)) {
+    if (isInvalidIdError(error)) {
       return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
-    console.error(
-      "[DELETE /api/estates/[estateId]/contacts/[contactId]] Error:",
-      error,
-    );
-    return NextResponse.json(
-      { ok: false, error: "Failed to delete contact" },
-      { status: 500 },
-    );
+    console.error("[DELETE /api/estates/[estateId]/contacts/[contactId]] Error:", error);
+    return NextResponse.json({ ok: false, error: "Failed to delete contact" }, { status: 500 });
   }
 }

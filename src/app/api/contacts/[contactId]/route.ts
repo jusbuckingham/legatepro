@@ -76,14 +76,17 @@ export async function GET(
   }
 
   return NextResponse.json({
-    _id: contact._id,
-    name: contact.name ?? "",
-    email: contact.email ?? "",
-    phone: contact.phone ?? "",
-    role: contact.role ?? "OTHER",
-    notes: contact.notes ?? "",
-    estates: contact.estates ?? [],
-  });
+    ok: true,
+    contact: {
+      _id: contact._id,
+      name: contact.name ?? "",
+      email: contact.email ?? "",
+      phone: contact.phone ?? "",
+      role: contact.role ?? "OTHER",
+      notes: contact.notes ?? "",
+      estates: contact.estates ?? [],
+    },
+  }, { status: 200 });
 }
 
 export async function PATCH(
@@ -112,7 +115,7 @@ export async function PATCH(
     const trimmed = body.name.trim();
     if (!trimmed) {
       return NextResponse.json(
-        { error: "Name is required" },
+        { ok: false, error: "Name is required" },
         { status: 400 },
       );
     }
@@ -151,12 +154,15 @@ export async function PATCH(
   }
 
   return NextResponse.json({
-    _id: updated._id,
-    name: updated.name ?? "",
-    email: updated.email ?? "",
-    phone: updated.phone ?? "",
-    role: updated.role ?? "OTHER",
-    notes: updated.notes ?? "",
-    estates: updated.estates ?? [],
-  });
+    ok: true,
+    contact: {
+      _id: updated._id,
+      name: updated.name ?? "",
+      email: updated.email ?? "",
+      phone: updated.phone ?? "",
+      role: updated.role ?? "OTHER",
+      notes: updated.notes ?? "",
+      estates: updated.estates ?? [],
+    },
+  }, { status: 200 });
 }

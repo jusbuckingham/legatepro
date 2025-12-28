@@ -93,7 +93,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
     return NextResponse.json({ ok: false, error: "Time entry not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ entry: serializeEntry(entry) });
+  return NextResponse.json({ ok: true, entry: serializeEntry(entry) }, { status: 200 });
 }
 
 // ---- PUT (EDIT) -----------------------------------------------------------
@@ -227,7 +227,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
 
   const saved = (await doc.save()).toObject() as TimeEntryRecord;
 
-  return NextResponse.json({ entry: serializeEntry(saved) });
+  return NextResponse.json({ ok: true, entry: serializeEntry(saved) }, { status: 200 });
 }
 
 // ---- DELETE ---------------------------------------------------------------
@@ -252,8 +252,5 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
     return NextResponse.json({ ok: false, error: "Time entry not found" }, { status: 404 });
   }
 
-  return NextResponse.json({
-    success: true,
-    entry: serializeEntry(deleted),
-  });
+  return NextResponse.json({ ok: true, entry: serializeEntry(deleted) }, { status: 200 });
 }

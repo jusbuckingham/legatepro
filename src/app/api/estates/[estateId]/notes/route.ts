@@ -82,11 +82,11 @@ export async function GET(
       .sort({ pinned: -1, createdAt: -1 })
       .lean();
 
-    return NextResponse.json({ notes }, { status: 200 });
+    return NextResponse.json({ ok: true, notes }, { status: 200 });
   } catch (error) {
     console.error("[GET /api/estates/[estateId]/notes] Error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch notes" },
+      { ok: false, error: "Failed to fetch notes" },
       { status: 500 }
     );
   }
@@ -114,10 +114,7 @@ export async function POST(
     const json = (await req.json()) as CreateNotePayload;
 
     if (!json.subject || !json.body) {
-      return NextResponse.json(
-        { error: "Subject and body are required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "Subject and body are required" }, { status: 400 });
     }
 
     const note = await EstateNote.create({
@@ -156,11 +153,11 @@ export async function POST(
       },
     });
 
-    return NextResponse.json({ note }, { status: 201 });
+    return NextResponse.json({ ok: true, note }, { status: 201 });
   } catch (error) {
     console.error("[POST /api/estates/[estateId]/notes] Error:", error);
     return NextResponse.json(
-      { error: "Failed to create note" },
+      { ok: false, error: "Failed to create note" },
       { status: 500 }
     );
   }
