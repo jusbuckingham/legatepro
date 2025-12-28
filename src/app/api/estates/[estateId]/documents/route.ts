@@ -76,13 +76,10 @@ export async function GET(
       .sort({ createdAt: -1 })
       .lean();
 
-    return NextResponse.json({ documents }, { status: 200 });
+    return NextResponse.json({ ok: true, documents }, { status: 200 });
   } catch (error) {
     console.error("[GET /api/estates/[estateId]/documents] Error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch documents" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: "Failed to fetch documents" }, { status: 500 });
   }
 }
 
@@ -130,10 +127,7 @@ export async function POST(
     }
 
     if (!label || typeof label !== "string") {
-      return NextResponse.json(
-        { error: "Label is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "Label is required" }, { status: 400 });
     }
 
     const normalizedTags = Array.isArray(tags)
@@ -181,12 +175,9 @@ export async function POST(
       // Don't block document creation if activity logging fails
     }
 
-    return NextResponse.json({ document }, { status: 201 });
+    return NextResponse.json({ ok: true, document }, { status: 201 });
   } catch (error) {
     console.error("[POST /api/estates/[estateId]/documents] Error:", error);
-    return NextResponse.json(
-      { error: "Failed to create document" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: "Failed to create document" }, { status: 500 });
   }
 }

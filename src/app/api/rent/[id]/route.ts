@@ -2,8 +2,8 @@
 // Single Rent Payment API (view, update, delete)
 
 import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase } from "../../../../lib/db";
-import { RentPayment } from "../../../../models/RentPayment";
+import { connectToDatabase } from "@/lib/db";
+import { RentPayment } from "@/models/RentPayment";
 
 type RouteParams = {
   params: Promise<{
@@ -20,13 +20,13 @@ const OWNER_ID_PLACEHOLDER = "demo-user";
  * GET /api/rent/[id]
  * Fetch a single rent payment record
  */
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+export async function GET(_request: NextRequest, { params }: RouteParams): Promise<NextResponse> {
   try {
     const { id } = await params;
 
     if (!id) {
       return NextResponse.json(
-        { error: "Missing rent payment id" },
+        { ok: false, error: "Missing rent payment id" },
         { status: 400 }
       );
     }
@@ -42,19 +42,19 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     if (!payment) {
       return NextResponse.json(
-        { error: "Rent payment not found" },
+        { ok: false, error: "Rent payment not found" },
         { status: 404 }
       );
     }
 
     return NextResponse.json(
-      { payment: { ...payment, _id: String(payment._id) } },
-      { status: 200 }
+      { ok: true, payment: { ...payment, _id: String(payment._id) } },
+      { status: 200, headers: { "Cache-Control": "no-store" } }
     );
   } catch (error) {
     console.error("GET /api/rent/[id] error", error);
     return NextResponse.json(
-      { error: "Unable to load rent payment" },
+      { ok: false, error: "Unable to load rent payment" },
       { status: 500 }
     );
   }
@@ -64,13 +64,13 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
  * PATCH /api/rent/[id]
  * Update a single rent payment record (partial update)
  */
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+export async function PATCH(request: NextRequest, { params }: RouteParams): Promise<NextResponse> {
   try {
     const { id } = await params;
 
     if (!id) {
       return NextResponse.json(
-        { error: "Missing rent payment id" },
+        { ok: false, error: "Missing rent payment id" },
         { status: 400 }
       );
     }
@@ -90,7 +90,18 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       "reference",
     ] as const;
 
-    const updates: Partial<Record<typeof allowedFields[number], unknown>> = await request.json();
+    let updates: Partial<Record<typeof allowedFields[number], unknown>> = {};
+    try {
+      const parsed = await request.json();
+      if (parsed && typeof parsed === "object") {
+        updates = parsed;
+      }
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: "Invalid JSON" },
+        { status: 400 }
+      );
+    }
 
     const updatePayload: Record<string, unknown> = {};
 
@@ -98,9 +109,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       if (key in updates) {
         const value = updates[key];
         if (key === "paymentDate" && value != null) {
-          updatePayload.paymentDate = new Date(
-            value as string | number | Date
-          );
+          if (
+            typeof value === "string" ||
+            typeof value === "number" ||
+            value instanceof Date
+          ) {
+            updatePayload.paymentDate = new Date(value);
+          }
         } else if (key === "amount" && value != null) {
           updatePayload.amount = Number(value);
         } else {
@@ -117,19 +132,19 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (!payment) {
       return NextResponse.json(
-        { error: "Rent payment not found" },
+        { ok: false, error: "Rent payment not found" },
         { status: 404 }
       );
     }
 
     return NextResponse.json(
-      { payment: { ...payment, _id: String(payment._id) } },
-      { status: 200 }
+      { ok: true, payment: { ...payment, _id: String(payment._id) } },
+      { status: 200, headers: { "Cache-Control": "no-store" } }
     );
   } catch (error) {
     console.error("PATCH /api/rent/[id] error", error);
     return NextResponse.json(
-      { error: "Unable to update rent payment" },
+      { ok: false, error: "Unable to update rent payment" },
       { status: 500 }
     );
   }
@@ -142,13 +157,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(
   _request: NextRequest,
   { params }: RouteParams
-) {
+): Promise<NextResponse> {
   try {
     const { id } = await params;
 
     if (!id) {
       return NextResponse.json(
-        { error: "Missing rent payment id" },
+        { ok: false, error: "Missing rent payment id" },
         { status: 400 }
       );
     }
@@ -164,19 +179,19 @@ export async function DELETE(
 
     if (!payment) {
       return NextResponse.json(
-        { error: "Rent payment not found" },
+        { ok: false, error: "Rent payment not found" },
         { status: 404 }
       );
     }
 
     return NextResponse.json(
-      { success: true, id },
-      { status: 200 }
+      { ok: true, id },
+      { status: 200, headers: { "Cache-Control": "no-store" } }
     );
   } catch (error) {
     console.error("DELETE /api/rent/[id] error", error);
     return NextResponse.json(
-      { error: "Unable to delete rent payment" },
+      { ok: false, error: "Unable to delete rent payment" },
       { status: 500 }
     );
   }

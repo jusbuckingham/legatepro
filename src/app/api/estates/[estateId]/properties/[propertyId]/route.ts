@@ -30,7 +30,7 @@ export async function GET(
 
   if (!estateId || !propertyId) {
     return NextResponse.json(
-      { error: "Missing estateId or propertyId" },
+      { ok: false, error: "Missing estateId or propertyId" },
       { status: 400 }
     );
   }
@@ -45,16 +45,16 @@ export async function GET(
 
     if (!property) {
       return NextResponse.json(
-        { error: "Property not found" },
+        { ok: false, error: "Property not found" },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({ property }, { status: 200 });
+    return NextResponse.json({ ok: true, property }, { status: 200 });
   } catch (error) {
     console.error("[GET /api/estates/[estateId]/properties/[propertyId]]", error);
     return NextResponse.json(
-      { error: "Failed to load property" },
+      { ok: false, error: "Failed to load property" },
       { status: 500 }
     );
   }
@@ -68,7 +68,7 @@ export async function PATCH(
 
   if (!estateId || !propertyId) {
     return NextResponse.json(
-      { error: "Missing estateId or propertyId" },
+      { ok: false, error: "Missing estateId or propertyId" },
       { status: 400 }
     );
   }
@@ -130,7 +130,7 @@ export async function PATCH(
 
     if (Object.keys(update).length === 0) {
       return NextResponse.json(
-        { error: "No valid fields provided" },
+        { ok: false, error: "No valid fields provided" },
         { status: 400 }
       );
     }
@@ -143,19 +143,19 @@ export async function PATCH(
 
     if (!updated) {
       return NextResponse.json(
-        { error: "Property not found" },
+        { ok: false, error: "Property not found" },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({ property: updated }, { status: 200 });
+    return NextResponse.json({ ok: true, property: updated }, { status: 200 });
   } catch (error) {
     console.error(
       "[PATCH /api/estates/[estateId]/properties/[propertyId]]",
       error
     );
     return NextResponse.json(
-      { error: "Failed to update property" },
+      { ok: false, error: "Failed to update property" },
       { status: 500 }
     );
   }
@@ -169,7 +169,7 @@ export async function DELETE(
 
   if (!estateId || !propertyId) {
     return NextResponse.json(
-      { error: "Missing estateId or propertyId" },
+      { ok: false, error: "Missing estateId or propertyId" },
       { status: 400 }
     );
   }
@@ -184,16 +184,16 @@ export async function DELETE(
 
     if (!deleted) {
       return NextResponse.json(
-        { error: "Property not found" },
+        { ok: false, error: "Property not found" },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({ success: true }, { status: 200 });
+    return NextResponse.json({ ok: true }, { status: 200 });
   } catch (error) {
     console.error("[DELETE /api/estates/[estateId]/properties/[propertyId]]", error);
     return NextResponse.json(
-      { error: "Failed to delete property" },
+      { ok: false, error: "Failed to delete property" },
       { status: 500 }
     );
   }

@@ -9,6 +9,10 @@ import { logActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store",
+} as const;
+
 type RouteContext = {
   params: Promise<{
     invoiceId: string;
@@ -41,30 +45,39 @@ function friendlyStatus(status: string | null | undefined): string {
   }
 }
 
-export async function PATCH(req: Request, ctx: RouteContext) {
+export async function PATCH(req: Request, ctx: RouteContext): Promise<NextResponse> {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { ok: false, error: "Unauthorized" },
+      { status: 401, headers: NO_STORE_HEADERS }
+    );
   }
 
   const { invoiceId } = await ctx.params;
 
   if (!invoiceId || !isValidObjectId(invoiceId)) {
-    return NextResponse.json({ ok: false, error: "Invalid invoiceId" }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "Invalid invoiceId" },
+      { status: 400, headers: NO_STORE_HEADERS }
+    );
   }
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "Invalid JSON body" },
+      { status: 400, headers: NO_STORE_HEADERS }
+    );
   }
 
   const nextStatus = normalizeStatus((body as { status?: unknown })?.status);
   if (!nextStatus) {
     return NextResponse.json(
       { ok: false, error: "Invalid status. Use DRAFT | SENT | PAID | VOID" },
-      { status: 400 },
+      { status: 400, headers: NO_STORE_HEADERS }
     );
   }
 
@@ -76,7 +89,10 @@ export async function PATCH(req: Request, ctx: RouteContext) {
   });
 
   if (!invoice) {
-    return NextResponse.json({ ok: false, error: "Invoice not found" }, { status: 404 });
+    return NextResponse.json(
+      { ok: false, error: "Invoice not found" },
+      { status: 404, headers: NO_STORE_HEADERS }
+    );
   }
 
   const previousStatusRaw = invoice.status ? String(invoice.status).toUpperCase() : null;
@@ -85,12 +101,17 @@ export async function PATCH(req: Request, ctx: RouteContext) {
 
   // No-op: still return ok, but don’t spam logs
   if (previousStatusRaw === nextStatus) {
-    return NextResponse.json({
-      ok: true,
-      invoiceId,
-      status: nextStatus,
-      message: "Status unchanged",
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        data: {
+          invoiceId,
+          status: nextStatus,
+          message: "Status unchanged",
+        },
+      },
+      { status: 200, headers: NO_STORE_HEADERS }
+    );
   }
 
   invoice.status = nextStatus;
@@ -148,10 +169,15 @@ export async function PATCH(req: Request, ctx: RouteContext) {
     // don’t block status change if activity logging fails
   }
 
-  return NextResponse.json({
-    ok: true,
-    invoiceId,
-    estateId: estateIdStr,
-    status: nextStatus,
-  });
+  return NextResponse.json(
+    {
+      ok: true,
+      data: {
+        invoiceId,
+        estateId: estateIdStr,
+        status: nextStatus,
+      },
+    },
+    { status: 200, headers: NO_STORE_HEADERS }
+  );
 }

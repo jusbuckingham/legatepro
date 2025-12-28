@@ -80,11 +80,11 @@ export async function GET(
       return NextResponse.json({ ok: false, error: "Note not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ note }, { status: 200 });
+    return NextResponse.json({ ok: true, note }, { status: 200 });
   } catch (error) {
     console.error("[GET /api/estates/[estateId]/notes/[noteId]] Error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch note" },
+      { ok: false, error: "Failed to fetch note" },
       { status: 500 }
     );
   }
@@ -174,14 +174,14 @@ export async function PATCH(
     });
 
     const note = noteDoc.toObject();
-    return NextResponse.json({ note }, { status: 200 });
+    return NextResponse.json({ ok: true, note }, { status: 200 });
   } catch (error) {
     console.error(
       "[PATCH /api/estates/[estateId]/notes/[noteId]] Error:",
       error
     );
     return NextResponse.json(
-      { error: "Failed to update note" },
+      { ok: false, error: "Failed to update note" },
       { status: 500 }
     );
   }
@@ -235,14 +235,14 @@ export async function DELETE(
       },
     });
 
-    return NextResponse.json({ success: true }, { status: 200 });
+    return NextResponse.json({ ok: true }, { status: 200 });
   } catch (error) {
     console.error(
       "[DELETE /api/estates/[estateId]/notes/[noteId]] Error:",
       error
     );
     return NextResponse.json(
-      { error: "Failed to delete note" },
+      { ok: false, error: "Failed to delete note" },
       { status: 500 }
     );
   }

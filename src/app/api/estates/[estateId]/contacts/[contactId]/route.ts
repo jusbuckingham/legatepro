@@ -50,7 +50,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ ok: false, error: "Contact not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ contact }, { status: 200 });
+    return NextResponse.json({ ok: true, contact }, { status: 200 });
   } catch (error) {
     if (String(error).includes("Invalid estateId") || String(error).includes("Invalid contactId") || isCastError(error)) {
       return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
@@ -60,7 +60,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       error,
     );
     return NextResponse.json(
-      { error: "Failed to fetch contact" },
+      { ok: false, error: "Failed to fetch contact" },
       { status: 500 },
     );
   }
@@ -77,7 +77,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const updates = await request.json();
+    let updates: unknown;
+    try {
+      updates = await request.json();
+    } catch {
+      return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    }
+
+    if (typeof updates !== "object" || updates === null) {
+      return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    }
+    const updatesObj = updates as Record<string, unknown>;
 
     const allowedFields = [
       "name",
@@ -97,8 +107,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const filteredUpdates: Record<string, unknown> = {};
     for (const key of allowedFields) {
-      if (key in updates) {
-        filteredUpdates[key] = updates[key];
+      if (key in updatesObj) {
+        filteredUpdates[key] = updatesObj[key];
       }
     }
 
@@ -122,7 +132,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ ok: false, error: "Contact not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ contact: updated }, { status: 200 });
+    return NextResponse.json({ ok: true, contact: updated }, { status: 200 });
   } catch (error) {
     if (String(error).includes("Invalid estateId") || String(error).includes("Invalid contactId") || isCastError(error)) {
       return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
@@ -132,7 +142,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       error,
     );
     return NextResponse.json(
-      { error: "Failed to update contact" },
+      { ok: false, error: "Failed to update contact" },
       { status: 500 },
     );
   }
@@ -161,7 +171,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ ok: false, error: "Contact not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true }, { status: 200 });
+    return NextResponse.json({ ok: true }, { status: 200 });
   } catch (error) {
     if (String(error).includes("Invalid estateId") || String(error).includes("Invalid contactId") || isCastError(error)) {
       return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
@@ -171,7 +181,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       error,
     );
     return NextResponse.json(
-      { error: "Failed to delete contact" },
+      { ok: false, error: "Failed to delete contact" },
       { status: 500 },
     );
   }

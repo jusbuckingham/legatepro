@@ -21,11 +21,13 @@ function normalizeObjectId(value: unknown): string | undefined {
   return String(value);
 }
 
-// GET /api/time
+// GET /api/estates/:estateId/time
 // Optional query params:
-//   - estateId: limit to a single estate
 //   - from, to: ISO date strings to bound the date range (inclusive)
-export async function GET(req: NextRequest): Promise<NextResponse> {
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ estateId: string }> }
+): Promise<NextResponse> {
   const session = await auth();
 
   if (!session?.user?.id) {
@@ -33,17 +35,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   const { searchParams } = new URL(req.url);
-  const estateId = searchParams.get("estateId");
+  const { estateId } = await params;
   const from = searchParams.get("from");
   const to = searchParams.get("to");
 
   const query: Record<string, unknown> = {
     ownerId: session.user.id,
+    estateId,
   };
-
-  if (estateId) {
-    query.estateId = estateId;
-  }
 
   if (from || to) {
     const dateQuery: { $gte?: Date; $lte?: Date } = {};
@@ -86,31 +85,35 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       };
     });
 
-    return NextResponse.json({ entries }, { status: 200 });
+    return NextResponse.json({ ok: true, entries }, { status: 200 });
   } catch (error) {
     console.error("[GET /api/time] Error:", error);
     return NextResponse.json(
-      { error: "Failed to load time entries" },
+      { ok: false, error: "Failed to load time entries" },
       { status: 500 }
     );
   }
 }
 
-// POST /api/time
-// Accepts JSON body with at minimum: { estateId, date, minutes | hours }
+// POST /api/estates/:estateId/time
+// Accepts JSON body with at minimum: { date, minutes | hours }
 // Other optional fields: description, notes, hourlyRate, billable, invoiced, activityType, taskId
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ estateId: string }> }
+): Promise<NextResponse> {
   const session = await auth();
 
   if (!session?.user?.id) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
+  const { estateId } = await params;
+
   try {
     await connectToDatabase();
 
     const body = (await req.json()) as {
-      estateId?: string;
       date?: string;
       minutes?: number | string | null;
       hours?: number | string | null;
@@ -123,16 +126,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       taskId?: string | null;
     };
 
-    if (!body.estateId) {
-      return NextResponse.json(
-        { error: "estateId is required" },
-        { status: 400 }
-      );
-    }
-
     if (!body.date) {
       return NextResponse.json(
-        { error: "date is required" },
+        { ok: false, error: "date is required" },
         { status: 400 }
       );
     }
@@ -147,7 +143,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     if (!minutes || Number.isNaN(minutes) || minutes <= 0) {
       return NextResponse.json(
-        { error: "A positive number of minutes or hours is required" },
+        { ok: false, error: "A positive number of minutes or hours is required" },
         { status: 400 }
       );
     }
@@ -167,7 +163,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const created = await TimeEntry.create({
       ownerId: session.user.id,
-      estateId: body.estateId,
+      estateId,
       date: new Date(body.date),
       minutes,
       description: body.description?.trim() || undefined,
@@ -207,11 +203,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       amount: amountCreated,
     };
 
-    return NextResponse.json({ entry }, { status: 201 });
+    return NextResponse.json({ ok: true, entry }, { status: 201 });
   } catch (error) {
     console.error("[POST /api/time] Error:", error);
     return NextResponse.json(
-      { error: "Failed to create time entry" },
+      { ok: false, error: "Failed to create time entry" },
       { status: 500 }
     );
   }

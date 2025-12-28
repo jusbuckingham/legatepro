@@ -55,7 +55,7 @@ export async function GET(
 
     if (!estateId || !expenseId) {
       return NextResponse.json(
-        { error: "Missing estateId or expenseId" },
+        { ok: false, error: "Missing estateId or expenseId" },
         { status: 400 }
       );
     }
@@ -76,14 +76,14 @@ export async function GET(
       return NextResponse.json({ ok: false, error: "Expense not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ expense }, { status: 200 });
+    return NextResponse.json({ ok: true, expense }, { status: 200 });
   } catch (error) {
     console.error(
       "[GET /api/estates/[estateId]/expenses/[expenseId]] Error:",
       error
     );
     return NextResponse.json(
-      { error: "Failed to fetch expense" },
+      { ok: false, error: "Failed to fetch expense" },
       { status: 500 }
     );
   }
@@ -107,7 +107,7 @@ export async function PATCH(
 
     if (!estateId || !expenseId) {
       return NextResponse.json(
-        { error: "Missing estateId or expenseId" },
+        { ok: false, error: "Missing estateId or expenseId" },
         { status: 400 }
       );
     }
@@ -170,14 +170,14 @@ export async function PATCH(
       return NextResponse.json({ ok: false, error: "Expense not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ expense: updated }, { status: 200 });
+    return NextResponse.json({ ok: true, expense: updated }, { status: 200 });
   } catch (error) {
     console.error(
       "[PATCH /api/estates/[estateId]/expenses/[expenseId]] Error:",
       error
     );
     return NextResponse.json(
-      { error: "Failed to update expense" },
+      { ok: false, error: "Failed to update expense" },
       { status: 500 }
     );
   }
@@ -201,7 +201,7 @@ export async function DELETE(
 
     if (!estateId || !expenseId) {
       return NextResponse.json(
-        { error: "Missing estateId or expenseId" },
+        { ok: false, error: "Missing estateId or expenseId" },
         { status: 400 }
       );
     }
@@ -222,14 +222,14 @@ export async function DELETE(
       return NextResponse.json({ ok: false, error: "Expense not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true }, { status: 200 });
+    return NextResponse.json({ ok: true }, { status: 200 });
   } catch (error) {
     console.error(
       "[DELETE /api/estates/[estateId]/expenses/[expenseId]] Error:",
       error
     );
     return NextResponse.json(
-      { error: "Failed to delete expense" },
+      { ok: false, error: "Failed to delete expense" },
       { status: 500 }
     );
   }

@@ -8,7 +8,7 @@ import { User } from "@/models/User";
 
 // GET /api/auth
 // Returns a mock "current user" for development.
-export async function GET() {
+export async function GET(): Promise<NextResponse> {
   try {
     await connectToDatabase();
 
@@ -49,12 +49,25 @@ export async function GET() {
       subscriptionStatus: asString(user?.subscriptionStatus),
     };
 
-    return NextResponse.json({ ok: true, data: { user: safeUser } }, { status: 200 });
+    return NextResponse.json(
+      { ok: true, data: { user: safeUser } },
+      {
+        status: 200,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
+    );
   } catch (error) {
     console.error("GET /api/auth error", error);
     return NextResponse.json(
       { ok: false, error: "Unable to load current user" },
-      { status: 500 }
+      {
+        status: 500,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
     );
   }
 }

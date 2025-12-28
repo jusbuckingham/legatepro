@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase } from "../../../../lib/db";
-import { EstateProperty } from "../../../../models/EstateProperty";
+
+import { connectToDatabase } from "@/lib/db";
+import { EstateProperty } from "@/models/EstateProperty";
+
+export const dynamic = "force-dynamic";
+
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store",
+} as const;
 
 interface RouteParams {
   params: Promise<{ propertyId: string }>;
@@ -29,17 +36,14 @@ interface UpdatePropertyPayload {
  * GET /api/properties/[propertyId]?estateId=...
  * Fetch a single property, optionally scoped to an estate.
  */
-export async function GET(
-  request: NextRequest,
-  { params }: RouteParams
-) {
+export async function GET(request: NextRequest, { params }: RouteParams): Promise<NextResponse> {
   try {
     const { propertyId } = await params;
 
     if (!propertyId) {
       return NextResponse.json(
-        { error: "Property ID is required" },
-        { status: 400 }
+        { ok: false, error: "Property ID is required" },
+        { status: 400, headers: NO_STORE_HEADERS }
       );
     }
 
@@ -57,17 +61,20 @@ export async function GET(
 
     if (!property) {
       return NextResponse.json(
-        { error: "Property not found" },
-        { status: 404 }
+        { ok: false, error: "Property not found" },
+        { status: 404, headers: NO_STORE_HEADERS }
       );
     }
 
-    return NextResponse.json(property);
+    return NextResponse.json(
+      { ok: true, data: { property } },
+      { status: 200, headers: NO_STORE_HEADERS }
+    );
   } catch (error) {
     console.error("Error fetching property:", error);
     return NextResponse.json(
-      { error: "Failed to fetch property" },
-      { status: 500 }
+      { ok: false, error: "Failed to fetch property" },
+      { status: 500, headers: NO_STORE_HEADERS }
     );
   }
 }
@@ -76,21 +83,26 @@ export async function GET(
  * PUT /api/properties/[propertyId]
  * Update a single property.
  */
-export async function PUT(
-  request: NextRequest,
-  { params }: RouteParams
-) {
+export async function PUT(request: NextRequest, { params }: RouteParams): Promise<NextResponse> {
   try {
     const { propertyId } = await params;
 
     if (!propertyId) {
       return NextResponse.json(
-        { error: "Property ID is required" },
-        { status: 400 }
+        { ok: false, error: "Property ID is required" },
+        { status: 400, headers: NO_STORE_HEADERS }
       );
     }
 
-    const body = (await request.json()) as Partial<UpdatePropertyPayload> | null;
+    let body: Partial<UpdatePropertyPayload> | null = null;
+    try {
+      body = (await request.json()) as Partial<UpdatePropertyPayload> | null;
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: "Invalid JSON" },
+        { status: 400, headers: NO_STORE_HEADERS }
+      );
+    }
 
     const {
       estateId,
@@ -113,8 +125,8 @@ export async function PUT(
 
     if (!estateId) {
       return NextResponse.json(
-        { error: "Estate ID is required" },
-        { status: 400 }
+        { ok: false, error: "Estate ID is required" },
+        { status: 400, headers: NO_STORE_HEADERS }
       );
     }
 
@@ -153,17 +165,20 @@ export async function PUT(
 
     if (!property) {
       return NextResponse.json(
-        { error: "Property not found or does not belong to this estate" },
-        { status: 404 }
+        { ok: false, error: "Property not found or does not belong to this estate" },
+        { status: 404, headers: NO_STORE_HEADERS }
       );
     }
 
-    return NextResponse.json(property);
+    return NextResponse.json(
+      { ok: true, data: { property } },
+      { status: 200, headers: NO_STORE_HEADERS }
+    );
   } catch (error) {
     console.error("Error updating property:", error);
     return NextResponse.json(
-      { error: "Failed to update property" },
-      { status: 500 }
+      { ok: false, error: "Failed to update property" },
+      { status: 500, headers: NO_STORE_HEADERS }
     );
   }
 }
@@ -172,17 +187,14 @@ export async function PUT(
  * DELETE /api/properties/[propertyId]?estateId=...
  * (Optional) Remove a property from an estate.
  */
-export async function DELETE(
-  request: NextRequest,
-  { params }: RouteParams
-) {
+export async function DELETE(request: NextRequest, { params }: RouteParams): Promise<NextResponse> {
   try {
     const { propertyId } = await params;
 
     if (!propertyId) {
       return NextResponse.json(
-        { error: "Property ID is required" },
-        { status: 400 }
+        { ok: false, error: "Property ID is required" },
+        { status: 400, headers: NO_STORE_HEADERS }
       );
     }
 
@@ -191,8 +203,8 @@ export async function DELETE(
 
     if (!estateId) {
       return NextResponse.json(
-        { error: "Estate ID is required" },
-        { status: 400 }
+        { ok: false, error: "Estate ID is required" },
+        { status: 400, headers: NO_STORE_HEADERS }
       );
     }
 
@@ -205,17 +217,20 @@ export async function DELETE(
 
     if (!result) {
       return NextResponse.json(
-        { error: "Property not found or already deleted" },
-        { status: 404 }
+        { ok: false, error: "Property not found or already deleted" },
+        { status: 404, headers: NO_STORE_HEADERS }
       );
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json(
+      { ok: true, data: { success: true } },
+      { status: 200, headers: NO_STORE_HEADERS }
+    );
   } catch (error) {
     console.error("Error deleting property:", error);
     return NextResponse.json(
-      { error: "Failed to delete property" },
-      { status: 500 }
+      { ok: false, error: "Failed to delete property" },
+      { status: 500, headers: NO_STORE_HEADERS }
     );
   }
 }

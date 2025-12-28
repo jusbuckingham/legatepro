@@ -65,7 +65,7 @@ export async function GET(
     return NextResponse.json({ ok: false, error: "Invoice not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ invoice });
+  return NextResponse.json({ ok: true, invoice }, { status: 200 });
 }
 
 export async function PUT(
@@ -156,7 +156,7 @@ export async function PUT(
   Object.assign(invoice, update);
   await invoice.save(); // pre-save hook will recompute totals
 
-  return NextResponse.json({ invoice });
+  return NextResponse.json({ ok: true, invoice }, { status: 200 });
 }
 
 export async function DELETE(
@@ -182,5 +182,5 @@ export async function DELETE(
     return NextResponse.json({ ok: false, error: "Invoice not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ ok: true }, { status: 200 });
 }

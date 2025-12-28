@@ -10,10 +10,7 @@ interface RouteParams {
   }>;
 }
 
-export async function GET(
-  _request: Request,
-  { params }: RouteParams
-): Promise<NextResponse> {
+export async function GET(_request: Request, { params }: RouteParams): Promise<NextResponse> {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -34,23 +31,14 @@ export async function GET(
       return NextResponse.json({ ok: false, error: "Payment not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ payment }, { status: 200 });
+    return NextResponse.json({ ok: true, payment }, { status: 200 });
   } catch (error) {
-    console.error(
-      "[GET /api/estates/[estateId]/rent/[paymentId]] Error:",
-      error
-    );
-    return NextResponse.json(
-      { error: "Failed to fetch payment" },
-      { status: 500 }
-    );
+    console.error("[GET /api/estates/[estateId]/rent/[paymentId]] Error:", error);
+    return NextResponse.json({ ok: false, error: "Failed to fetch payment" }, { status: 500 });
   }
 }
 
-export async function PATCH(
-  request: Request,
-  { params }: RouteParams
-): Promise<NextResponse> {
+export async function PATCH(request: Request, { params }: RouteParams): Promise<NextResponse> {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -79,23 +67,14 @@ export async function PATCH(
       return NextResponse.json({ ok: false, error: "Payment not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ payment: updated }, { status: 200 });
+    return NextResponse.json({ ok: true, payment: updated }, { status: 200 });
   } catch (error) {
-    console.error(
-      "[PATCH /api/estates/[estateId]/rent/[paymentId]] Error:",
-      error
-    );
-    return NextResponse.json(
-      { error: "Failed to update payment" },
-      { status: 500 }
-    );
+    console.error("[PATCH /api/estates/[estateId]/rent/[paymentId]] Error:", error);
+    return NextResponse.json({ ok: false, error: "Failed to update payment" }, { status: 500 });
   }
 }
 
-export async function DELETE(
-  _request: Request,
-  { params }: RouteParams
-): Promise<NextResponse> {
+export async function DELETE(_request: Request, { params }: RouteParams): Promise<NextResponse> {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -116,15 +95,9 @@ export async function DELETE(
       return NextResponse.json({ ok: false, error: "Payment not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true }, { status: 200 });
+    return NextResponse.json({ ok: true }, { status: 200 });
   } catch (error) {
-    console.error(
-      "[DELETE /api/estates/[estateId]/rent/[paymentId]] Error:",
-      error
-    );
-    return NextResponse.json(
-      { error: "Failed to delete payment" },
-      { status: 500 }
-    );
+    console.error("[DELETE /api/estates/[estateId]/rent/[paymentId]] Error:", error);
+    return NextResponse.json({ ok: false, error: "Failed to delete payment" }, { status: 500 });
   }
 }

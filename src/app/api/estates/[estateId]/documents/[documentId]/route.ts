@@ -40,11 +40,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ ok: false, error: "Document not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ document }, { status: 200 });
+    return NextResponse.json({ ok: true, document }, { status: 200 });
   } catch (error) {
     console.error("[GET /api/estates/[estateId]/documents/[documentId]] Error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch document" },
+      { ok: false, error: "Failed to fetch document" },
       { status: 500 }
     );
   }
@@ -65,7 +65,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     await connectToDatabase();
 
-    const updates: unknown = await request.json();
+    let updates: unknown;
+    try {
+      updates = await request.json();
+    } catch {
+      return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    }
     const updateObj = (updates && typeof updates === "object") ? (updates as Record<string, unknown>) : {};
 
     const allowedFields = [
@@ -86,10 +91,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     if (Object.keys(filteredUpdates).length === 0) {
-      return NextResponse.json(
-        { error: "No valid fields provided" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "No valid fields provided" }, { status: 400 });
     }
 
     const updated = await EstateDocument.findOneAndUpdate(
@@ -106,11 +108,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ ok: false, error: "Document not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ document: updated }, { status: 200 });
+    return NextResponse.json({ ok: true, document: updated }, { status: 200 });
   } catch (error) {
     console.error("[PATCH /api/estates/[estateId]/documents/[documentId]] Error:", error);
     return NextResponse.json(
-      { error: "Failed to update document" },
+      { ok: false, error: "Failed to update document" },
       { status: 500 }
     );
   }
@@ -141,11 +143,11 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ ok: false, error: "Document not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true }, { status: 200 });
+    return NextResponse.json({ ok: true }, { status: 200 });
   } catch (error) {
     console.error("[DELETE /api/estates/[estateId]/documents/[documentId]] Error:", error);
     return NextResponse.json(
-      { error: "Failed to delete document" },
+      { ok: false, error: "Failed to delete document" },
       { status: 500 }
     );
   }
