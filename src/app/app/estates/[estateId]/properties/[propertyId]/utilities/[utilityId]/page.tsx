@@ -20,6 +20,12 @@ type UtilityApiResponse = {
   error?: string;
 };
 
+type UtilityFetchResult =
+  | { kind: "ok"; utility: Record<string, unknown> }
+  | { kind: "not_found" }
+  | { kind: "unauthorized"; message?: string }
+  | { kind: "error"; message?: string };
+
 function getRequestBaseUrl(hdrs: Headers): string {
   const proto = hdrs.get("x-forwarded-proto") ?? "http";
   const host = hdrs.get("x-forwarded-host") ?? hdrs.get("host") ?? "";
@@ -56,17 +62,14 @@ function formatDate(value: unknown): string | undefined {
   return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
-async function fetchUtility(utilityId: string): Promise<Record<string, unknown> | null> {
+async function fetchUtility(utilityId: string): Promise<UtilityFetchResult> {
   // Prefer a single-source utility endpoint. This keeps the page resilient even if
   // estate/property scoping is handled server-side.
   const hdrs = await headers();
   const cookieStore = await cookies();
 
   const baseUrl = getRequestBaseUrl(hdrs);
-  const url = (baseUrl
-    ? `${baseUrl}/api/utilities/${utilityId}`
-    : `/api/utilities/${utilityId}`
-  ).replace(/\/$/, "");
+  const url = (baseUrl ? `${baseUrl}/api/utilities/${utilityId}` : `/api/utilities/${utilityId}`).replace(/\/$/, "");
 
   const res = await fetch(url, {
     method: "GET",
@@ -80,26 +83,107 @@ async function fetchUtility(utilityId: string): Promise<Record<string, unknown> 
     },
   });
 
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    // Try to surface a meaningful error payload in dev, but don't hard-crash the UI.
-    return null;
+  if (res.status === 404) return { kind: "not_found" };
+
+  // Explicitly handle auth-related responses so the UI can message clearly.
+  if (res.status === 401 || res.status === 403) {
+    const data = (await safeJson(res)) as UtilityApiResponse | null;
+    const msg = data && typeof data === "object" ? asString((data as UtilityApiResponse).error) : undefined;
+    return { kind: "unauthorized", message: msg };
   }
 
   const data = (await safeJson(res)) as UtilityApiResponse | null;
 
-  if (!data || typeof data !== "object") return null;
-  if (data.ok === false) return null;
+  if (!res.ok) {
+    const msg = data && typeof data === "object" ? asString((data as UtilityApiResponse).error) : undefined;
+    return { kind: "error", message: msg };
+  }
+
+  if (!data || typeof data !== "object") return { kind: "error" };
+  if (data.ok === false) return { kind: "error", message: asString(data.error) };
 
   const u = data.utility;
-  return u && typeof u === "object" ? u : null;
+  if (!u || typeof u !== "object") return { kind: "error" };
+
+  return { kind: "ok", utility: u };
 }
 
 export default async function UtilityDetailPage({ params }: PageProps) {
   const { estateId, propertyId, utilityId } = await params;
 
-  const utility = await fetchUtility(utilityId);
-  if (!utility) notFound();
+  const result = await fetchUtility(utilityId);
+
+  if (result.kind === "not_found") notFound();
+
+  if (result.kind === "unauthorized") {
+    return (
+      <div className="mx-auto w-full max-w-3xl px-4 py-10">
+        <div className="mb-6">
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-zinc-500">
+            <Link
+              href={`/app/estates/${estateId}/properties/${propertyId}/utilities`}
+              className="hover:text-zinc-700"
+            >
+              Utilities
+            </Link>
+            <span aria-hidden="true">/</span>
+            <span className="text-zinc-700">Utility</span>
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">Access denied</h1>
+          <p className="mt-2 text-sm text-zinc-600">
+            {result.message ?? "You don’t have permission to view this utility."}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={`/app/estates/${estateId}/properties/${propertyId}/utilities`}
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50"
+            >
+              Back to utilities
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (result.kind === "error") {
+    return (
+      <div className="mx-auto w-full max-w-3xl px-4 py-10">
+        <div className="mb-6">
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-zinc-500">
+            <Link
+              href={`/app/estates/${estateId}/properties/${propertyId}/utilities`}
+              className="hover:text-zinc-700"
+            >
+              Utilities
+            </Link>
+            <span aria-hidden="true">/</span>
+            <span className="text-zinc-700">Utility</span>
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">Unable to load utility</h1>
+          <p className="mt-2 text-sm text-zinc-600">
+            {result.message ?? "Something went wrong while loading this utility."}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={`/app/estates/${estateId}/properties/${propertyId}/utilities`}
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50"
+            >
+              Back to utilities
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const utility = result.utility;
 
   const name =
     asString(utility.name) ||

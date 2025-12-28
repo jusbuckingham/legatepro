@@ -47,6 +47,9 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
   const router = useRouter();
 
   const [entry, setEntry] = useState<TimeEntry | null>(null);
+  const [missingKind, setMissingKind] = useState<
+    "unauthorized" | "not_found" | "error" | null
+  >(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -65,6 +68,8 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
     async function loadEntry() {
       setLoading(true);
       setError(null);
+      setMissingKind(null);
+      let localMissingKind: "unauthorized" | "not_found" | "error" | null = null;
 
       try {
         const res = await fetch(
@@ -77,6 +82,22 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
         const apiError = getErrorFromApiPayload(data);
 
         if (!res.ok || apiError) {
+          const status = res.status;
+
+          if (status === 401 || status === 403) {
+            localMissingKind = "unauthorized";
+            setMissingKind("unauthorized");
+            throw new Error(apiError || "You don’t have access to this time entry.");
+          }
+
+          if (status === 404) {
+            localMissingKind = "not_found";
+            setMissingKind("not_found");
+            throw new Error(apiError || "This time entry no longer exists.");
+          }
+
+          localMissingKind = "error";
+          setMissingKind("error");
           throw new Error(apiError || "Failed to load time entry.");
         }
 
@@ -123,9 +144,14 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
         setNotes(normalized.notes ?? "");
         setIsBillable(normalized.isBillable ?? true);
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Unable to load time entry."
-        );
+        setEntry(null);
+        setError(err instanceof Error ? err.message : "Unable to load time entry.");
+
+        // If we failed before setting a specific missing kind, default to a generic error state.
+        if (!localMissingKind) {
+          localMissingKind = "error";
+          setMissingKind("error");
+        }
       } finally {
         setLoading(false);
       }
@@ -352,9 +378,42 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
         {loading ? (
           <p className="text-sm text-slate-400">Loading…</p>
         ) : !entry ? (
-          <p className="text-sm text-red-400">
-            {error || "Time entry not found."}
-          </p>
+          <div className="rounded-md border border-slate-800 bg-slate-950/40 p-4">
+            <h3 className="text-sm font-semibold text-slate-100">
+              {missingKind === "unauthorized"
+                ? "Unauthorized"
+                : missingKind === "not_found"
+                ? "Time entry not found"
+                : "Unable to load time entry"}
+            </h3>
+            <p className="mt-1 text-sm text-slate-400">
+              {error ||
+                (missingKind === "unauthorized"
+                  ? "You don’t have permission to view this entry."
+                  : missingKind === "not_found"
+                  ? "This entry may have been deleted or the link is incorrect."
+                  : "Something went wrong while loading this entry.")}
+            </p>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link
+                href={`/app/estates/${estateId}/time`}
+                className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
+              >
+                Back to timecard
+              </Link>
+
+              {missingKind === "error" && (
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="inline-flex items-center rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          </div>
         ) : (
           <form
             onSubmit={handleSave}
@@ -369,7 +428,10 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
                   id="date"
                   type="date"
                   value={date}
-                  onChange={(e) => setDate(e.target.value)}
+                  onChange={(e) => {
+                    setSuccess(null);
+                    setDate(e.target.value);
+                  }}
                   className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
                 />
               </div>
@@ -384,7 +446,10 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
                   step="0.25"
                   min="0"
                   value={hours}
-                  onChange={(e) => setHours(e.target.value)}
+                  onChange={(e) => {
+                    setSuccess(null);
+                    setHours(e.target.value);
+                  }}
                   className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
                 />
                 <p className="text-[11px] text-slate-500">
@@ -397,7 +462,10 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
                 <input
                   type="checkbox"
                   checked={isBillable}
-                  onChange={(e) => setIsBillable(e.target.checked)}
+                  onChange={(e) => {
+                    setSuccess(null);
+                    setIsBillable(e.target.checked);
+                  }}
                   className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-red-500 focus:ring-red-500"
                 />
                 Billable to estate
@@ -413,7 +481,10 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
                   id="description"
                   type="text"
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(e) => {
+                    setSuccess(null);
+                    setDescription(e.target.value);
+                  }}
                   placeholder="Reviewed mail, called attorney, organized documents…"
                   className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
                 />
@@ -426,7 +497,10 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
                 <textarea
                   id="notes"
                   value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
+                  onChange={(e) => {
+                    setSuccess(null);
+                    setNotes(e.target.value);
+                  }}
                   rows={4}
                   className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
                 />

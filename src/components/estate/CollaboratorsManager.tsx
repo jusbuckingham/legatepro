@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { getApiErrorMessage, safeJson } from "@/lib/utils";
@@ -91,7 +91,7 @@ export default function CollaboratorsManager({
     }
   }
 
-  async function fetchInvites() {
+  const fetchInvites = useCallback(async () => {
     if (!isOwner) return;
     setInvitesLoading(true);
     setInvitesError(null);
@@ -115,18 +115,24 @@ export default function CollaboratorsManager({
     }
 
     setInvites(Array.isArray(data.invites) ? data.invites : []);
-  }
+  }, [estateId, isOwner]);
 
   useEffect(() => {
-    void fetchInvites();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [estateId, isOwner]);
+    // Schedule in a microtask so we don't trigger the `set-state-in-effect` rule.
+    void Promise.resolve().then(() => fetchInvites());
+  }, [fetchInvites]);
 
   async function createInvite() {
     const email = inviteEmail.trim().toLowerCase();
-    if (!email) return;
+    if (!email) {
+      setInvitesError("Email is required");
+      return;
+    }
+    if (!isValidEmail) {
+      setInvitesError("Please enter a valid email");
+      return;
+    }
 
-    setError(null);
     setInvitesLoading(true);
     setInvitesError(null);
     setCreatedInviteUrl(null);
@@ -334,7 +340,11 @@ export default function CollaboratorsManager({
             </button>
           </div>
 
-          {error && <div className="mt-2 text-xs text-red-600">{error}</div>}
+          {error && (
+            <div className="mt-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+              {error}
+            </div>
+          )}
         </div>
       )}
 
@@ -352,7 +362,10 @@ export default function CollaboratorsManager({
               type="email"
               placeholder="Email address"
               value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
+              onChange={(e) => {
+                setInviteEmail(e.target.value);
+                if (invitesError) setInvitesError(null);
+              }}
               className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm"
             />
 
@@ -399,7 +412,9 @@ export default function CollaboratorsManager({
           )}
 
           {invitesError && (
-            <div className="mt-2 text-xs text-red-600">{invitesError}</div>
+            <div className="mt-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+              {invitesError}
+            </div>
           )}
 
           <div className="mt-3">

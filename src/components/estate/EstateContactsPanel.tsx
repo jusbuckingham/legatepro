@@ -58,6 +58,7 @@ export function EstateContactsPanel({
     useState<AvailableContact[]>(initialAvailable);
   const [selectedContactId, setSelectedContactId] = useState("");
   const [busy, setBusy] = useState(false);
+  const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleLink = async () => {
@@ -86,24 +87,27 @@ export function EstateContactsPanel({
         return;
       }
 
-      setAvailableContacts((prev) => {
-        const idx = prev.findIndex((c) => c._id === selectedContactId);
-        if (idx === -1) return prev;
-        const contact = prev[idx];
-        const next = [...prev];
-        next.splice(idx, 1);
+      const contactToLink = availableContacts.find(
+        (c) => c._id === selectedContactId,
+      );
 
-        setLinkedContacts((linkedPrev) => [
-          ...linkedPrev,
-          {
-            _id: contact._id,
-            name: contact.name,
-            role: contact.role,
-          },
-        ]);
+      if (!contactToLink) {
+        setError("Selected contact is no longer available.");
+        return;
+      }
 
-        return next;
-      });
+      setAvailableContacts((prev) =>
+        prev.filter((c) => c._id !== selectedContactId),
+      );
+
+      setLinkedContacts((prev) => [
+        ...prev,
+        {
+          _id: contactToLink._id,
+          name: contactToLink.name,
+          role: contactToLink.role,
+        },
+      ]);
 
       setSelectedContactId("");
     } catch (err) {
@@ -116,6 +120,7 @@ export function EstateContactsPanel({
 
   const handleUnlink = async (contactId: string) => {
     setBusy(true);
+    setUnlinkingId(contactId);
     setError(null);
 
     try {
@@ -141,28 +146,28 @@ export function EstateContactsPanel({
         return;
       }
 
-      setLinkedContacts((prev) => {
-        const idx = prev.findIndex((c) => c._id === contactId);
-        if (idx === -1) return prev;
-        const contact = prev[idx];
-        const next = [...prev];
-        next.splice(idx, 1);
+      const contactToUnlink = linkedContacts.find((c) => c._id === contactId);
 
-        setAvailableContacts((availablePrev) => [
-          ...availablePrev,
-          {
-            _id: contact._id,
-            name: contact.name,
-            role: contact.role,
-          },
-        ]);
+      if (!contactToUnlink) {
+        setError("Contact is no longer linked.");
+        return;
+      }
 
-        return next;
-      });
+      setLinkedContacts((prev) => prev.filter((c) => c._id !== contactId));
+
+      setAvailableContacts((prev) => [
+        ...prev,
+        {
+          _id: contactToUnlink._id,
+          name: contactToUnlink.name,
+          role: contactToUnlink.role,
+        },
+      ]);
     } catch (err) {
       console.error(err);
       setError("Something went wrong while unlinking. Please try again.");
     } finally {
+      setUnlinkingId(null);
       setBusy(false);
     }
   };
@@ -181,7 +186,11 @@ export function EstateContactsPanel({
       </div>
 
       {error && (
-        <p className="text-xs text-red-400">
+        <p
+          className="text-xs text-red-400"
+          role="alert"
+          aria-live="polite"
+        >
           {error}
         </p>
       )}
@@ -216,7 +225,7 @@ export function EstateContactsPanel({
           onClick={handleLink}
           className="rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-60"
         >
-          {busy ? "Working…" : "Link contact"}
+          {busy ? "Linking…" : "Link contact"}
         </button>
       </div>
 
@@ -254,11 +263,11 @@ export function EstateContactsPanel({
                 </div>
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={busy && unlinkingId === c._id}
                   onClick={() => handleUnlink(c._id)}
                   className="text-[11px] text-slate-400 hover:text-red-400 disabled:opacity-60"
                 >
-                  Remove
+                  {busy && unlinkingId === c._id ? "Removing…" : "Remove"}
                 </button>
               </li>
             ))}

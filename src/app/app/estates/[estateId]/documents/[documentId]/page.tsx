@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { redirect, notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 
 import { auth } from "@/lib/auth";
@@ -128,7 +128,71 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
     .exec();
 
   if (!doc) {
-    notFound();
+    return (
+      <div className="space-y-8 p-6">
+        <PageHeader
+          eyebrow={
+            <nav className="text-xs text-slate-500">
+              <Link href="/app/estates" className="text-slate-400 hover:text-slate-200 hover:underline">
+                Estates
+              </Link>
+              <span className="mx-1 text-slate-600">/</span>
+              <Link
+                href={`/app/estates/${estateId}`}
+                className="text-slate-400 hover:text-slate-200 hover:underline"
+              >
+                Overview
+              </Link>
+              <span className="mx-1 text-slate-600">/</span>
+              <Link
+                href={`/app/estates/${estateId}/documents`}
+                className="text-slate-400 hover:text-slate-200 hover:underline"
+              >
+                Documents
+              </Link>
+              <span className="mx-1 text-slate-600">/</span>
+              <span className="truncate text-rose-200">Not found</span>
+            </nav>
+          }
+          title="Document not found"
+          description="This document index entry doesn’t exist (or was removed)."
+          actions={
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-200">
+                {access.role}
+              </span>
+              <Link
+                href={`/app/estates/${estateId}/documents`}
+                className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+              >
+                Back to documents
+              </Link>
+            </div>
+          }
+        />
+
+        <section className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm">
+          <p className="text-sm font-semibold text-slate-50">We couldn’t find this document.</p>
+          <p className="mt-1 text-sm text-slate-300">
+            It may have been deleted, or the link might be incorrect.
+          </p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <Link
+              href={`/app/estates/${estateId}/documents`}
+              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+            >
+              Return to documents
+            </Link>
+            <Link
+              href={`/app/estates/${estateId}`}
+              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+            >
+              Back to overview
+            </Link>
+          </div>
+        </section>
+      </div>
+    );
   }
 
   const tagsArray = Array.isArray(doc.tags) ? doc.tags : [];
