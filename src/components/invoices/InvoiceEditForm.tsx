@@ -190,10 +190,11 @@ export function InvoiceEditForm({
         }),
       });
 
-      if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null;
+      const data = (await response.json().catch(() => null)) as
+        | { ok?: boolean; error?: string }
+        | null;
+
+      if (!response.ok || data?.ok === false) {
         const message =
           data?.error || `Unable to save invoice (status ${response.status})`;
         setSaveError(message);
