@@ -27,12 +27,12 @@ function toObjectId(id: string) {
 export async function GET(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const ownerObjectId = toObjectId(session.user.id);
   if (!ownerObjectId) {
-    return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid user id" }, { status: 400 });
   }
 
   try {
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
     if (estateId) {
       const estateObjectId = toObjectId(estateId);
       if (!estateObjectId) {
-        return NextResponse.json({ error: "Invalid estateId" }, { status: 400 });
+        return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
       }
       filter.estateId = estateObjectId;
     }
@@ -125,12 +125,12 @@ interface CreateExpensePayload {
 export async function POST(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const ownerObjectId = toObjectId(session.user.id);
   if (!ownerObjectId) {
-    return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid user id" }, { status: 400 });
   }
 
   try {
@@ -160,29 +160,29 @@ export async function POST(request: NextRequest) {
     } = body;
 
     if (!estateId) {
-      return NextResponse.json({ error: "estateId is required" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "estateId is required" }, { status: 400 });
     }
 
     const estateObjectId = toObjectId(estateId);
     if (!estateObjectId) {
-      return NextResponse.json({ error: "Invalid estateId" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
     }
 
     if (!date) {
-      return NextResponse.json({ error: "date is required" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "date is required" }, { status: 400 });
     }
 
     const parsedDate = new Date(date);
     if (Number.isNaN(parsedDate.getTime())) {
-      return NextResponse.json({ error: "date must be a valid ISO date" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "date must be a valid ISO date" }, { status: 400 });
     }
 
     if (!description) {
-      return NextResponse.json({ error: "description is required" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "description is required" }, { status: 400 });
     }
 
     if (amount == null || Number.isNaN(Number(amount))) {
-      return NextResponse.json({ error: "A valid amount is required" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "A valid amount is required" }, { status: 400 });
     }
 
     const expense = await Expense.create({

@@ -59,7 +59,7 @@ export async function GET(
 
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   await connectToDatabase();
@@ -72,7 +72,7 @@ export async function GET(
     .lean()) as ContactLeanDoc | null;
 
   if (!contact) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
   return NextResponse.json({
@@ -94,7 +94,7 @@ export async function PATCH(
 
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   await connectToDatabase();
@@ -103,7 +103,7 @@ export async function PATCH(
   try {
     body = (await req.json()) as UpdatePayload;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
 
   const update: UpdatePayload = {};
@@ -147,7 +147,7 @@ export async function PATCH(
     .lean()) as ContactLeanDoc | null;
 
   if (!updated) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
   return NextResponse.json({

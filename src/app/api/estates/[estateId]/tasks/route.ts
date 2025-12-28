@@ -72,7 +72,7 @@ async function requireAccess(
 
   const userId = extractUserId(result);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   return { userId };
@@ -109,7 +109,7 @@ export async function GET(
 
   const estateObjectId = toObjectId(estateId);
   if (!estateObjectId) {
-    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
   await connectToDatabase();
@@ -158,7 +158,7 @@ export async function POST(
   const ownerObjectId = toObjectId(access.userId);
 
   if (!estateObjectId || !ownerObjectId) {
-    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
   await connectToDatabase();

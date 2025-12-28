@@ -49,7 +49,7 @@ export async function GET(
   const session = await auth();
 
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const { estateId, invoiceId } = await params;
@@ -62,7 +62,7 @@ export async function GET(
   }).lean();
 
   if (!invoice) {
-    return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Invoice not found" }, { status: 404 });
   }
 
   return NextResponse.json({ invoice });
@@ -75,7 +75,7 @@ export async function PUT(
   const session = await auth();
 
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const { estateId, invoiceId } = await params;
@@ -86,7 +86,7 @@ export async function PUT(
   try {
     body = (await request.json()) as UpdateInvoiceBody;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
   }
 
   const invoice = await Invoice.findOne({
@@ -95,7 +95,7 @@ export async function PUT(
   });
 
   if (!invoice) {
-    return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Invoice not found" }, { status: 404 });
   }
 
   const update: Record<string, unknown> = {};
@@ -107,7 +107,7 @@ export async function PUT(
   if (body.issueDate != null) {
     const d = parseDate(body.issueDate);
     if (!d) {
-      return NextResponse.json({ error: "Invalid issueDate" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid issueDate" }, { status: 400 });
     }
     update.issueDate = d;
   }
@@ -115,7 +115,7 @@ export async function PUT(
   if (body.dueDate != null) {
     const d = parseDate(body.dueDate);
     if (!d) {
-      return NextResponse.json({ error: "Invalid dueDate" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid dueDate" }, { status: 400 });
     }
     update.dueDate = d;
   }
@@ -126,7 +126,7 @@ export async function PUT(
   } else if (body.paidAt != null) {
     const d = parseDate(body.paidAt);
     if (!d) {
-      return NextResponse.json({ error: "Invalid paidAt" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid paidAt" }, { status: 400 });
     }
     update.paidAt = d;
   }
@@ -166,7 +166,7 @@ export async function DELETE(
   const session = await auth();
 
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const { estateId, invoiceId } = await params;
@@ -179,7 +179,7 @@ export async function DELETE(
   }).lean();
 
   if (!deleted) {
-    return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Invoice not found" }, { status: 404 });
   }
 
   return NextResponse.json({ success: true });

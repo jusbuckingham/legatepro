@@ -24,14 +24,14 @@ export async function GET(
     const entry = await TimeEntry.findById(entryId).lean();
 
     if (!entry) {
-      return NextResponse.json({ error: "Time entry not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Time entry not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ entry });
+    return NextResponse.json({ ok: true, entry }, { status: 200 });
   } catch (error) {
     console.error("[TIME_ENTRY_GET_ERROR]", error);
     return NextResponse.json(
-      { error: "Failed to load time entry" },
+      { ok: false, error: "Failed to load time entry" },
       { status: 500 }
     );
   }
@@ -70,14 +70,14 @@ export async function PATCH(
     }).lean();
 
     if (!updated) {
-      return NextResponse.json({ error: "Time entry not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Time entry not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ entry: updated });
+    return NextResponse.json({ ok: true, entry: updated }, { status: 200 });
   } catch (error) {
     console.error("[TIME_ENTRY_PATCH_ERROR]", error);
     return NextResponse.json(
-      { error: "Failed to update time entry" },
+      { ok: false, error: "Failed to update time entry" },
       { status: 500 }
     );
   }
@@ -94,14 +94,14 @@ export async function DELETE(
     const deleted = await TimeEntry.findByIdAndDelete(entryId).lean();
 
     if (!deleted) {
-      return NextResponse.json({ error: "Time entry not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Time entry not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ ok: true }, { status: 200 });
   } catch (error) {
     console.error("[TIME_ENTRY_DELETE_ERROR]", error);
     return NextResponse.json(
-      { error: "Failed to delete time entry" },
+      { ok: false, error: "Failed to delete time entry" },
       { status: 500 }
     );
   }

@@ -41,7 +41,7 @@ function serialize(settings: InstanceType<typeof WorkspaceSettings>) {
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   await connectToDatabase();
@@ -63,14 +63,14 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   let payload: SettingsUpdatePayload;
   try {
     payload = (await req.json()) as SettingsUpdatePayload;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
 
   await connectToDatabase();

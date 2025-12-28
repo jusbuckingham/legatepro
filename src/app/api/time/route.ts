@@ -33,7 +33,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     const { searchParams } = new URL(req.url);
@@ -67,12 +67,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       updatedAt: doc.updatedAt.toISOString(),
     }));
 
-    return NextResponse.json({ entries }, { status: 200 });
+    return NextResponse.json({ ok: true, entries }, { status: 200 });
   } catch (error) {
     console.error("[GET /api/time] Error:", error);
     return NextResponse.json(
-      { error: "Failed to load time entries" },
-      { status: 500 }
+      { ok: false, error: "Failed to load time entries" },
+      { status: 500 },
     );
   }
 }
@@ -122,12 +122,28 @@ function toIsoString(value: unknown): string {
   return String(value);
 }
 
+function parseOptionalFiniteNumber(raw: string | undefined): number | undefined {
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  const n = Number.parseFloat(trimmed);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function parseOptionalDate(raw: string | undefined): Date | undefined {
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  const d = new Date(trimmed);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
 // POST /api/time
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     await connectToDatabase();
@@ -135,43 +151,68 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const { estateId, taskId, description, date, hours, minutes, rate } =
       await parseTimePostBody(req);
 
+    if (date && date.trim() !== "" && !parseOptionalDate(date)) {
+      return NextResponse.json(
+        { ok: false, error: "date must be a valid ISO date" },
+        { status: 400 },
+      );
+    }
+
     if (!estateId) {
       return NextResponse.json(
-        { error: "Missing estateId" },
-        { status: 400 }
+        { ok: false, error: "Missing estateId" },
+        { status: 400 },
       );
     }
 
     // Compute total minutes from hours + minutes fields
-    const hoursNumber =
-      hours && hours.trim() !== "" ? Number.parseFloat(hours) : 0;
-    const minutesNumber =
-      minutes && minutes.trim() !== "" ? Number.parseInt(minutes, 10) : 0;
+    const hoursNumberRaw = hours?.trim() ?? "";
+    const minutesNumberRaw = minutes?.trim() ?? "";
+
+    const hoursNumber = hoursNumberRaw ? Number.parseFloat(hoursNumberRaw) : 0;
+    const minutesNumber = minutesNumberRaw ? Number.parseInt(minutesNumberRaw, 10) : 0;
+
+    if ((hoursNumberRaw && !Number.isFinite(hoursNumber)) || (minutesNumberRaw && !Number.isFinite(minutesNumber))) {
+      return NextResponse.json(
+        { ok: false, error: "Hours/minutes must be valid numbers." },
+        { status: 400 },
+      );
+    }
+
+    if (hoursNumber < 0 || minutesNumber < 0) {
+      return NextResponse.json(
+        { ok: false, error: "Hours/minutes cannot be negative." },
+        { status: 400 },
+      );
+    }
 
     const totalMinutes =
-      Number.isFinite(hoursNumber) && hoursNumber > 0
-        ? Math.round(hoursNumber * 60) + minutesNumber
-        : minutesNumber;
+      hoursNumber > 0 ? Math.round(hoursNumber * 60) + minutesNumber : minutesNumber;
 
     if (!Number.isFinite(totalMinutes) || totalMinutes <= 0) {
       return NextResponse.json(
         {
-          error:
-            "Please provide a positive amount of time (hours and/or minutes).",
+          ok: false,
+          error: "Please provide a positive amount of time (hours and/or minutes).",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const rateNumber =
-      rate && rate.trim() !== "" ? Number.parseFloat(rate) : undefined;
+    const rateNumber = parseOptionalFiniteNumber(rate);
+    if (rate && rate.trim() !== "" && typeof rateNumber !== "number") {
+      return NextResponse.json(
+        { ok: false, error: "Rate must be a valid number." },
+        { status: 400 },
+      );
+    }
 
     const entryDoc = await TimeEntry.create({
       estateId,
       taskId: taskId || undefined,
       description: description?.trim() ?? "",
       minutes: totalMinutes,
-      date: date ? new Date(date) : new Date(),
+      date: parseOptionalDate(date) ?? new Date(),
       rate: rateNumber,
       ownerId: session.user.id,
     });
@@ -195,14 +236,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       updatedAt: toIsoString(entryDoc.updatedAt as unknown),
     };
 
-    return NextResponse.json({ entry }, { status: 201 });
+    return NextResponse.json({ ok: true, entry }, { status: 201 });
   } catch (error) {
     console.error("Error creating time entry:", error);
     const message =
       error instanceof Error && error.message
         ? error.message
         : "Failed to create time entry";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
 
@@ -211,7 +252,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     const { searchParams } = new URL(req.url);
@@ -220,8 +261,8 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
 
     if (!id) {
       return NextResponse.json(
-        { error: "Missing id for time entry to delete" },
-        { status: 400 }
+        { ok: false, error: "Missing id for time entry to delete" },
+        { status: 400 },
       );
     }
 
@@ -240,17 +281,17 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
 
     if (!deleted) {
       return NextResponse.json(
-        { error: "Time entry not found" },
-        { status: 404 }
+        { ok: false, error: "Time entry not found" },
+        { status: 404 },
       );
     }
 
-    return NextResponse.json({ success: true }, { status: 200 });
+    return NextResponse.json({ ok: true }, { status: 200 });
   } catch (error) {
     console.error("[DELETE /api/time] Error:", error);
     return NextResponse.json(
-      { error: "Failed to delete time entry" },
-      { status: 500 }
+      { ok: false, error: "Failed to delete time entry" },
+      { status: 500 },
     );
   }
 }

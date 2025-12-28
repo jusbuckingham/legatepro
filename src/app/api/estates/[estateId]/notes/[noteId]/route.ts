@@ -64,7 +64,7 @@ export async function GET(
     const session = await auth();
     const userId = session?.user?.id;
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     // Enforce estate access (collaborators allowed)
@@ -77,7 +77,7 @@ export async function GET(
     }).lean();
 
     if (!note) {
-      return NextResponse.json({ error: "Note not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Note not found" }, { status: 404 });
     }
 
     return NextResponse.json({ note }, { status: 200 });
@@ -108,7 +108,7 @@ export async function PATCH(
     const session = await auth();
     const userId = session?.user?.id;
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     // Enforce estate access (collaborators allowed) + edit permission
@@ -129,7 +129,7 @@ export async function PATCH(
     });
 
     if (!noteDoc) {
-      return NextResponse.json({ error: "Note not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Note not found" }, { status: 404 });
     }
 
     const beforeObj = typeof noteDoc.toObject === "function" ? (noteDoc.toObject() as unknown) : (noteDoc as unknown);
@@ -198,7 +198,7 @@ export async function DELETE(
     const session = await auth();
     const userId = session?.user?.id;
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     // Enforce estate access (collaborators allowed) + edit permission
@@ -211,7 +211,7 @@ export async function DELETE(
     }).lean();
 
     if (!deleted) {
-      return NextResponse.json({ error: "Note not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Note not found" }, { status: 404 });
     }
 
     // Activity log: note deleted

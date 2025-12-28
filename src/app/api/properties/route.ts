@@ -2,6 +2,9 @@
 // Estate properties API for LegatePro
 
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
+
+import { auth } from "../../../lib/auth";
 import { connectToDatabase } from "../../../lib/db";
 import { EstateProperty } from "../../../models/EstateProperty";
 
@@ -16,6 +19,14 @@ function parseOptionalBoolean(value: unknown): boolean | undefined {
   return undefined;
 }
 
+function escapeRegex(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isValidObjectId(value: string): boolean {
+  return mongoose.Types.ObjectId.isValid(value);
+}
+
 // GET /api/properties
 // Optional query params:
 //   estateId: string            -> filter by estate
@@ -27,15 +38,26 @@ export async function GET(request: NextRequest) {
   try {
     await connectToDatabase();
 
-    // TODO: replace with real ownerId from auth/session
-    const ownerId = "demo-user";
+    const session = await auth();
+    const ownerId = session?.user?.id;
+
+    if (!ownerId) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
 
     const { searchParams } = new URL(request.url);
     const estateId = searchParams.get("estateId");
+    if (estateId && !isValidObjectId(estateId)) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid estateId" },
+        { status: 400 },
+      );
+    }
     const isRentedParam = searchParams.get("isRented");
     const city = searchParams.get("city");
     const state = searchParams.get("state");
     const q = (searchParams.get("q") ?? "").trim();
+    const qSafe = q ? escapeRegex(q) : "";
 
     const filter: Record<string, unknown> = { ownerId };
 
@@ -59,23 +81,24 @@ export async function GET(request: NextRequest) {
 
     if (q) {
       filter.$or = [
-        { nickname: { $regex: q, $options: "i" } },
-        { streetAddress: { $regex: q, $options: "i" } },
-        { city: { $regex: q, $options: "i" } },
-        { notes: { $regex: q, $options: "i" } },
+        { nickname: { $regex: qSafe, $options: "i" } },
+        { streetAddress: { $regex: qSafe, $options: "i" } },
+        { city: { $regex: qSafe, $options: "i" } },
+        { notes: { $regex: qSafe, $options: "i" } },
       ];
     }
 
     const properties = await EstateProperty.find(filter)
       .sort({ createdAt: -1 })
-      .lean();
+      .lean()
+      .exec();
 
-    return NextResponse.json({ properties }, { status: 200 });
+    return NextResponse.json({ ok: true, properties }, { status: 200 });
   } catch (error) {
     console.error("GET /api/properties error", error);
     return NextResponse.json(
-      { error: "Unable to load properties" },
-      { status: 500 }
+      { ok: false, error: "Unable to load properties" },
+      { status: 500 },
     );
   }
 }
@@ -86,8 +109,12 @@ export async function POST(request: NextRequest) {
   try {
     await connectToDatabase();
 
-    // TODO: replace with real ownerId from auth/session
-    const ownerId = "demo-user";
+    const session = await auth();
+    const ownerId = session?.user?.id;
+
+    if (!ownerId) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
 
     interface CreatePropertyPayload {
       estateId?: string;
@@ -105,7 +132,15 @@ export async function POST(request: NextRequest) {
       notes?: string;
     }
 
-    const body = (await request.json()) as CreatePropertyPayload | null;
+    let body: CreatePropertyPayload | null = null;
+    try {
+      body = (await request.json()) as CreatePropertyPayload | null;
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: "Invalid JSON" },
+        { status: 400 },
+      );
+    }
 
     const {
       estateId,
@@ -125,15 +160,22 @@ export async function POST(request: NextRequest) {
 
     if (!estateId) {
       return NextResponse.json(
-        { error: "estateId is required" },
-        { status: 400 }
+        { ok: false, error: "estateId is required" },
+        { status: 400 },
+      );
+    }
+
+    if (!isValidObjectId(estateId)) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid estateId" },
+        { status: 400 },
       );
     }
 
     if (!nickname && !streetAddress) {
       return NextResponse.json(
-        { error: "A nickname or streetAddress is required for a property" },
-        { status: 400 }
+        { ok: false, error: "A nickname or streetAddress is required for a property" },
+        { status: 400 },
       );
     }
 
@@ -157,12 +199,12 @@ export async function POST(request: NextRequest) {
       notes,
     });
 
-    return NextResponse.json({ property }, { status: 201 });
+    return NextResponse.json({ ok: true, property }, { status: 201 });
   } catch (error) {
     console.error("POST /api/properties error", error);
     return NextResponse.json(
-      { error: "Unable to create property" },
-      { status: 500 }
+      { ok: false, error: "Unable to create property" },
+      { status: 500 },
     );
   }
 }

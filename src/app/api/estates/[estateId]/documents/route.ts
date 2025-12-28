@@ -53,7 +53,7 @@ export async function GET(
     const session = await auth();
 
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     const access = await (requireEstateAccess as unknown as RequireAccessFn)({
@@ -96,7 +96,7 @@ export async function POST(
     const session = await auth();
 
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     const access = await (requireEstateEditAccess as unknown as RequireAccessFn)({
@@ -126,7 +126,7 @@ export async function POST(
     // Defense in depth: do not allow VIEWER access (should already be blocked by requireEditor)
     // and keep the policy that only non-VIEWER roles may create sensitive docs.
     if (Boolean(isSensitive) && role === "VIEWER") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
 
     if (!label || typeof label !== "string") {

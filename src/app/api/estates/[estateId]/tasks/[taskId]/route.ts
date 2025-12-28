@@ -78,7 +78,7 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
   const task = await Task.findOne({ _id: taskId, estateId });
 
   if (!task) {
-    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
 
   return NextResponse.json({ task }, { status: 200 });
@@ -97,7 +97,7 @@ async function updateTask(req: NextRequest, { params }: RouteContext) {
 
   const userId = access.data.userId;
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   await connectToDatabase();
@@ -107,13 +107,13 @@ async function updateTask(req: NextRequest, { params }: RouteContext) {
   try {
     body = (await req.json()) as UpdateTaskBody;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
   }
 
   // Load before-state for comparison / logging
   const before = (await Task.findOne({ _id: taskId, estateId }).lean().exec()) as unknown as TaskLite | null;
   if (!before) {
-    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
 
   const update: Record<string, unknown> = {};
@@ -143,7 +143,7 @@ async function updateTask(req: NextRequest, { params }: RouteContext) {
   );
 
   if (!updated) {
-    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
 
   // Activity logging
@@ -205,7 +205,7 @@ export async function DELETE(_req: NextRequest, { params }: RouteContext) {
 
   const userId = access.data.userId;
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   await connectToDatabase();
@@ -213,7 +213,7 @@ export async function DELETE(_req: NextRequest, { params }: RouteContext) {
   const deleted = await Task.findOneAndDelete({ _id: taskId, estateId });
 
   if (!deleted) {
-    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
 
   const title = getStr(deleted.toObject?.() ?? deleted, "title");

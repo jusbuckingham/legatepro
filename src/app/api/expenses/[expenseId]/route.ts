@@ -60,7 +60,7 @@ function normalizeAmountCents(raw: unknown): number | undefined {
 export async function GET(req: NextRequest, { params }: RouteContext) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const { expenseId } = await params;
@@ -75,7 +75,7 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
     .exec();
 
   if (!expenseDoc) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
   const expense = expenseDoc as unknown as LeanExpenseShape;
@@ -101,7 +101,7 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
 export async function PUT(req: NextRequest, { params }: RouteContext) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const { expenseId } = await params;
@@ -112,7 +112,7 @@ export async function PUT(req: NextRequest, { params }: RouteContext) {
   try {
     body = (await req.json()) as UpdateExpensePayload;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
 
   const updateDoc: Record<string, unknown> = {};
@@ -174,7 +174,7 @@ export async function PUT(req: NextRequest, { params }: RouteContext) {
       .exec();
 
     if (!updatedDoc) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
     }
 
     const updated = updatedDoc as unknown as LeanExpenseShape;

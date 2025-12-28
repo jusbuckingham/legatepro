@@ -54,7 +54,7 @@ function coerceStatus(value: unknown): InvoiceStatus | undefined {
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   await connectToDatabase();
@@ -69,7 +69,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     .exec();
 
   if (!invoice) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
   return NextResponse.json({
@@ -94,7 +94,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 export async function PUT(req: NextRequest, { params }: RouteParams) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   await connectToDatabase();
@@ -228,7 +228,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
       .exec();
 
     if (!updated) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
     }
 
     const updatedDoc = updated as { estateId: unknown; _id: unknown };
@@ -259,7 +259,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 export async function DELETE(_req: NextRequest, { params }: RouteParams) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   await connectToDatabase();
@@ -274,7 +274,7 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
     .exec();
 
   if (!deleted) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
   return NextResponse.json(

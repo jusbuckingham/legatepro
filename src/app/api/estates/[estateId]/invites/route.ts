@@ -59,7 +59,7 @@ async function requireOwner(estateObjectId: mongoose.Types.ObjectId, userId: str
   if (!estate) {
     return {
       ok: false as const,
-      res: NextResponse.json({ error: "Estate not found" }, { status: 404 }),
+      res: NextResponse.json({ ok: false, error: "Estate not found" }, { status: 404 }),
     };
   }
 
@@ -67,7 +67,7 @@ async function requireOwner(estateObjectId: mongoose.Types.ObjectId, userId: str
   if (String(estate.ownerId) !== String(userId)) {
     return {
       ok: false as const,
-      res: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
+      res: NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 }),
     };
   }
 
@@ -77,14 +77,14 @@ async function requireOwner(estateObjectId: mongoose.Types.ObjectId, userId: str
 export async function GET(req: NextRequest, ctx: { params: Promise<{ estateId: string }> }) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const { estateId } = await ctx.params;
 
   const estateObjectId = toObjectId(estateId);
   if (!estateObjectId) {
-    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
   await connectToDatabase();
@@ -148,14 +148,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ estateId: s
 export async function POST(req: NextRequest, ctx: { params: Promise<{ estateId: string }> }) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const { estateId } = await ctx.params;
 
   const estateObjectId = toObjectId(estateId);
   if (!estateObjectId) {
-    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
   await connectToDatabase();
@@ -167,7 +167,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ estateId: 
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
 
   const email = normalizeEmail((body as { email?: unknown })?.email);
@@ -281,14 +281,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ estateId: 
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ estateId: string }> }) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const { estateId } = await ctx.params;
 
   const estateObjectId = toObjectId(estateId);
   if (!estateObjectId) {
-    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
   await connectToDatabase();
@@ -300,14 +300,14 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ estateId
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
 
   const token = asTrimmedString((body as { token?: unknown })?.token);
   const email = normalizeEmail((body as { email?: unknown })?.email);
 
   if (!token && !email) {
-    return NextResponse.json({ error: "Provide token or email" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Provide token or email" }, { status: 400 });
   }
 
   const invites: EstateInvite[] = (result.estate.invites ?? []) as EstateInvite[];
@@ -319,18 +319,18 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ estateId
   });
 
   if (!target) {
-    return NextResponse.json({ error: "Invite not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Invite not found" }, { status: 404 });
   }
 
   // Only revoke pending invites (non-expired).
   if (target.status !== "PENDING") {
-    return NextResponse.json({ error: `Invite is ${target.status.toLowerCase()}` }, { status: 400 });
+    return NextResponse.json({ ok: false, error: `Invite is ${target.status.toLowerCase()}` }, { status: 400 });
   }
 
   if (isExpired(target)) {
     target.status = "EXPIRED";
     await result.estate.save();
-    return NextResponse.json({ error: "Invite already expired" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invite already expired" }, { status: 400 });
   }
 
   target.status = "REVOKED";

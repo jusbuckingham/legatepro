@@ -17,7 +17,7 @@ async function requireViewerAccess(
   const userId = session?.user?.id;
 
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   try {
@@ -29,7 +29,7 @@ async function requireViewerAccess(
 
     return { userId };
   } catch {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 }
 
@@ -40,7 +40,7 @@ async function requireEditorAccess(
   const userId = session?.user?.id;
 
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   try {
@@ -52,7 +52,7 @@ async function requireEditorAccess(
 
     return { userId };
   } catch {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }
 }
 

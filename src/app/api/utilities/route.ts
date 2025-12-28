@@ -2,8 +2,19 @@
 // Utility accounts API for LegatePro
 
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
+
+import { auth } from "../../../lib/auth";
 import { connectToDatabase } from "../../../lib/db";
 import { UtilityAccount } from "../../../models/UtilityAccount";
+
+function escapeRegex(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isValidObjectId(value: string): boolean {
+  return mongoose.Types.ObjectId.isValid(value);
+}
 
 // GET /api/utilities
 // Optional query params:
@@ -13,16 +24,29 @@ import { UtilityAccount } from "../../../models/UtilityAccount";
 //   q: string                   -> search by providerName, accountNumber, notes
 export async function GET(request: NextRequest) {
   try {
-    await connectToDatabase();
+    const session = await auth();
+    const ownerId = session?.user?.id;
+    if (!ownerId) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
 
-    // TODO: replace with real ownerId from auth/session
-    const ownerId = "demo-user";
+    await connectToDatabase();
 
     const { searchParams } = new URL(request.url);
     const estateId = searchParams.get("estateId");
     const propertyId = searchParams.get("propertyId");
+
+    if (estateId && !isValidObjectId(estateId)) {
+      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
+    }
+
+    if (propertyId && !isValidObjectId(propertyId)) {
+      return NextResponse.json({ ok: false, error: "Invalid propertyId" }, { status: 400 });
+    }
+
     const type = searchParams.get("type");
     const q = searchParams.get("q")?.trim() ?? "";
+    const qSafe = q ? escapeRegex(q) : "";
 
     const filter: Record<string, unknown> = { ownerId };
 
@@ -40,21 +64,22 @@ export async function GET(request: NextRequest) {
 
     if (q) {
       filter.$or = [
-        { providerName: { $regex: q, $options: "i" } },
-        { accountNumber: { $regex: q, $options: "i" } },
-        { notes: { $regex: q, $options: "i" } },
+        { providerName: { $regex: qSafe, $options: "i" } },
+        { accountNumber: { $regex: qSafe, $options: "i" } },
+        { notes: { $regex: qSafe, $options: "i" } },
       ];
     }
 
     const utilities = await UtilityAccount.find(filter)
       .sort({ providerName: 1 })
-      .lean();
+      .lean()
+      .exec();
 
-    return NextResponse.json({ utilities }, { status: 200 });
+    return NextResponse.json({ ok: true, utilities }, { status: 200 });
   } catch (error) {
     console.error("GET /api/utilities error", error);
     return NextResponse.json(
-      { error: "Unable to load utility accounts" },
+      { ok: false, error: "Unable to load utility accounts" },
       { status: 500 }
     );
   }
@@ -64,12 +89,20 @@ export async function GET(request: NextRequest) {
 // Creates a new utility account record
 export async function POST(request: NextRequest) {
   try {
+    const session = await auth();
+    const ownerId = session?.user?.id;
+    if (!ownerId) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+
     await connectToDatabase();
 
-    // TODO: replace with real ownerId from auth/session
-    const ownerId = "demo-user";
-
-    const body = await request.json();
+    let body: unknown = null;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    }
 
     const {
       estateId,
@@ -84,26 +117,28 @@ export async function POST(request: NextRequest) {
       status,
       isAutoPay,
       notes,
-    } = body ?? {};
+    } = (body ?? {}) as Record<string, unknown>;
 
     if (!estateId) {
-      return NextResponse.json(
-        { error: "estateId is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "estateId is required" }, { status: 400 });
+    }
+
+    if (!isValidObjectId(String(estateId))) {
+      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
+    }
+
+    if (propertyId && !isValidObjectId(String(propertyId))) {
+      return NextResponse.json({ ok: false, error: "Invalid propertyId" }, { status: 400 });
     }
 
     if (!providerName) {
-      return NextResponse.json(
-        { error: "providerName is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "providerName is required" }, { status: 400 });
     }
 
     const utility = await UtilityAccount.create({
       ownerId,
-      estateId,
-      propertyId,
+      estateId: String(estateId),
+      propertyId: propertyId ? String(propertyId) : undefined,
       providerName,
       utilityType: utilityType || "other",
       accountNumber,
@@ -116,11 +151,11 @@ export async function POST(request: NextRequest) {
       notes,
     });
 
-    return NextResponse.json({ utility }, { status: 201 });
+    return NextResponse.json({ ok: true, utility }, { status: 201 });
   } catch (error) {
     console.error("POST /api/utilities error", error);
     return NextResponse.json(
-      { error: "Unable to create utility account" },
+      { ok: false, error: "Unable to create utility account" },
       { status: 500 }
     );
   }

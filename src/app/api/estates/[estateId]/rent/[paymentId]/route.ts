@@ -17,7 +17,7 @@ export async function GET(
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     const { estateId, paymentId } = await params;
@@ -31,7 +31,7 @@ export async function GET(
     }).lean();
 
     if (!payment) {
-      return NextResponse.json({ error: "Payment not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Payment not found" }, { status: 404 });
     }
 
     return NextResponse.json({ payment }, { status: 200 });
@@ -54,7 +54,7 @@ export async function PATCH(
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     const { estateId, paymentId } = await params;
@@ -76,7 +76,7 @@ export async function PATCH(
     ).lean();
 
     if (!updated) {
-      return NextResponse.json({ error: "Payment not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Payment not found" }, { status: 404 });
     }
 
     return NextResponse.json({ payment: updated }, { status: 200 });
@@ -99,7 +99,7 @@ export async function DELETE(
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     const { estateId, paymentId } = await params;
@@ -113,7 +113,7 @@ export async function DELETE(
     }).lean();
 
     if (!deleted) {
-      return NextResponse.json({ error: "Payment not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Payment not found" }, { status: 404 });
     }
 
     return NextResponse.json({ success: true }, { status: 200 });

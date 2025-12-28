@@ -35,7 +35,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const session = await auth();
 
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     await connectToDatabase();
@@ -47,13 +47,13 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     }).lean();
 
     if (!contact) {
-      return NextResponse.json({ error: "Contact not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Contact not found" }, { status: 404 });
     }
 
     return NextResponse.json({ contact }, { status: 200 });
   } catch (error) {
     if (String(error).includes("Invalid estateId") || String(error).includes("Invalid contactId") || isCastError(error)) {
-      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
     console.error(
       "[GET /api/estates/[estateId]/contacts/[contactId]] Error:",
@@ -74,7 +74,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const session = await auth();
 
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     const updates = await request.json();
@@ -103,7 +103,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     if (Object.keys(filteredUpdates).length === 0) {
-      return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "No valid fields to update" }, { status: 400 });
     }
 
     await connectToDatabase();
@@ -119,13 +119,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     ).lean();
 
     if (!updated) {
-      return NextResponse.json({ error: "Contact not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Contact not found" }, { status: 404 });
     }
 
     return NextResponse.json({ contact: updated }, { status: 200 });
   } catch (error) {
     if (String(error).includes("Invalid estateId") || String(error).includes("Invalid contactId") || isCastError(error)) {
-      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
     console.error(
       "[PATCH /api/estates/[estateId]/contacts/[contactId]] Error:",
@@ -146,7 +146,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     const session = await auth();
 
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     await connectToDatabase();
@@ -158,13 +158,13 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     }).lean();
 
     if (!deleted) {
-      return NextResponse.json({ error: "Contact not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Contact not found" }, { status: 404 });
     }
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
     if (String(error).includes("Invalid estateId") || String(error).includes("Invalid contactId") || isCastError(error)) {
-      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
     console.error(
       "[DELETE /api/estates/[estateId]/contacts/[contactId]] Error:",

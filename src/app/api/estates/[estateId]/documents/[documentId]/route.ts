@@ -21,11 +21,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const session = await auth();
 
     if (!isValidObjectId(estateId) || !isValidObjectId(documentId)) {
-      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
 
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     await connectToDatabase();
@@ -37,7 +37,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     }).lean();
 
     if (!document) {
-      return NextResponse.json({ error: "Document not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Document not found" }, { status: 404 });
     }
 
     return NextResponse.json({ document }, { status: 200 });
@@ -56,11 +56,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const session = await auth();
 
     if (!isValidObjectId(estateId) || !isValidObjectId(documentId)) {
-      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
 
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     await connectToDatabase();
@@ -103,7 +103,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     ).lean();
 
     if (!updated) {
-      return NextResponse.json({ error: "Document not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Document not found" }, { status: 404 });
     }
 
     return NextResponse.json({ document: updated }, { status: 200 });
@@ -122,11 +122,11 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     const session = await auth();
 
     if (!isValidObjectId(estateId) || !isValidObjectId(documentId)) {
-      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
 
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     await connectToDatabase();
@@ -138,7 +138,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     }).lean();
 
     if (!deleted) {
-      return NextResponse.json({ error: "Document not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Document not found" }, { status: 404 });
     }
 
     return NextResponse.json({ success: true }, { status: 200 });

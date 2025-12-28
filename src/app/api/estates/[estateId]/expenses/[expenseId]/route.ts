@@ -48,7 +48,7 @@ export async function GET(
   try {
     const userId = await getSessionUserId();
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     const { estateId, expenseId } = await params;
@@ -61,7 +61,7 @@ export async function GET(
     }
 
     if (!isValidObjectId(estateId) || !isValidObjectId(expenseId)) {
-      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
 
     await connectToDatabase();
@@ -73,7 +73,7 @@ export async function GET(
     }).lean();
 
     if (!expense) {
-      return NextResponse.json({ error: "Expense not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Expense not found" }, { status: 404 });
     }
 
     return NextResponse.json({ expense }, { status: 200 });
@@ -100,7 +100,7 @@ export async function PATCH(
   try {
     const userId = await getSessionUserId();
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     const { estateId, expenseId } = await params;
@@ -113,7 +113,7 @@ export async function PATCH(
     }
 
     if (!isValidObjectId(estateId) || !isValidObjectId(expenseId)) {
-      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
 
     const raw = await req.json().catch(() => null);
@@ -148,7 +148,7 @@ export async function PATCH(
     }
 
     if (Object.keys(update).length === 0) {
-      return NextResponse.json({ error: "No valid fields provided" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "No valid fields provided" }, { status: 400 });
     }
 
     await connectToDatabase();
@@ -167,7 +167,7 @@ export async function PATCH(
     ).lean();
 
     if (!updated) {
-      return NextResponse.json({ error: "Expense not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Expense not found" }, { status: 404 });
     }
 
     return NextResponse.json({ expense: updated }, { status: 200 });
@@ -194,7 +194,7 @@ export async function DELETE(
   try {
     const userId = await getSessionUserId();
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     const { estateId, expenseId } = await params;
@@ -207,7 +207,7 @@ export async function DELETE(
     }
 
     if (!isValidObjectId(estateId) || !isValidObjectId(expenseId)) {
-      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
 
     await connectToDatabase();
@@ -219,7 +219,7 @@ export async function DELETE(
     }).lean();
 
     if (!deleted) {
-      return NextResponse.json({ error: "Expense not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Expense not found" }, { status: 404 });
     }
 
     return NextResponse.json({ success: true }, { status: 200 });

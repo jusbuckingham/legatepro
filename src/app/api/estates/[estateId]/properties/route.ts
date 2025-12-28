@@ -39,7 +39,7 @@ export async function GET(
   const { estateId } = await params;
 
   if (!estateId || typeof estateId !== "string") {
-    return NextResponse.json({ error: "Missing estateId" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Missing estateId" }, { status: 400 });
   }
 
   try {
@@ -48,7 +48,7 @@ export async function GET(
 
     const estateObjectId = toObjectId(estateId);
     if (!estateObjectId) {
-      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
 
     await connectToDatabase();
@@ -75,7 +75,7 @@ export async function POST(
   const { estateId } = await params;
 
   if (!estateId || typeof estateId !== "string") {
-    return NextResponse.json({ error: "Missing estateId" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Missing estateId" }, { status: 400 });
   }
 
   try {
@@ -84,7 +84,7 @@ export async function POST(
 
     const estateObjectId = toObjectId(estateId);
     if (!estateObjectId) {
-      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
 
     await connectToDatabase();

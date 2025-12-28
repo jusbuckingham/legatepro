@@ -44,26 +44,26 @@ function friendlyStatus(status: string | null | undefined): string {
 export async function PATCH(req: Request, ctx: RouteContext) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const { invoiceId } = await ctx.params;
 
   if (!invoiceId || !isValidObjectId(invoiceId)) {
-    return NextResponse.json({ error: "Invalid invoiceId" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid invoiceId" }, { status: 400 });
   }
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
   }
 
   const nextStatus = normalizeStatus((body as { status?: unknown })?.status);
   if (!nextStatus) {
     return NextResponse.json(
-      { error: "Invalid status. Use DRAFT | SENT | PAID | VOID" },
+      { ok: false, error: "Invalid status. Use DRAFT | SENT | PAID | VOID" },
       { status: 400 },
     );
   }
@@ -76,7 +76,7 @@ export async function PATCH(req: Request, ctx: RouteContext) {
   });
 
   if (!invoice) {
-    return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Invoice not found" }, { status: 404 });
   }
 
   const previousStatusRaw = invoice.status ? String(invoice.status).toUpperCase() : null;

@@ -53,12 +53,12 @@ export async function PATCH(
   const { estateId } = await params;
 
   if (!estateId) {
-    return NextResponse.json({ error: "Missing estateId" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Missing estateId" }, { status: 400 });
   }
 
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   // Permission: must be able to edit this estate
@@ -66,14 +66,14 @@ export async function PATCH(
 
   const estateObjectId = toObjectId(estateId);
   if (!estateObjectId) {
-    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
   let data: UpdateEstateBody;
   try {
     data = (await req.json()) as UpdateEstateBody;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
 
   // Only allow a safe subset to be updated (prevents accidental schema corruption)
@@ -104,7 +104,7 @@ export async function PATCH(
       .exec();
 
     if (!updated) {
-      return NextResponse.json({ error: "Estate not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Estate not found" }, { status: 404 });
     }
 
     try {
@@ -136,12 +136,12 @@ export async function DELETE(
   const { estateId } = await params;
 
   if (!estateId) {
-    return NextResponse.json({ error: "Missing estateId" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Missing estateId" }, { status: 400 });
   }
 
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   // Permission: must be able to edit this estate
@@ -149,7 +149,7 @@ export async function DELETE(
 
   const estateObjectId = toObjectId(estateId);
   if (!estateObjectId) {
-    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
   try {
@@ -163,7 +163,7 @@ export async function DELETE(
       .exec();
 
     if (!deleted) {
-      return NextResponse.json({ error: "Estate not found" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "Estate not found" }, { status: 404 });
     }
 
     try {

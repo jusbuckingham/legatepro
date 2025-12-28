@@ -52,12 +52,12 @@ export async function POST(
   const { estateId } = await params;
 
   if (!estateId || typeof estateId !== "string") {
-    return NextResponse.json({ error: "Missing estateId" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Missing estateId" }, { status: 400 });
   }
 
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   // Permission: must be able to edit this estate (collaborators allowed if your helper supports it)
@@ -66,7 +66,7 @@ export async function POST(
   const estateObjectId = toObjectId(estateId);
   const ownerObjectId = toObjectId(session.user.id);
   if (!estateObjectId || !ownerObjectId) {
-    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
   await connectToDatabase();
@@ -75,7 +75,7 @@ export async function POST(
   try {
     body = (await req.json()) as LinkBody;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
 
   const contactId = body.contactId;
@@ -88,7 +88,7 @@ export async function POST(
 
   const contactObjectId = toObjectId(contactId);
   if (!contactObjectId) {
-    return NextResponse.json({ error: "Invalid contactId" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid contactId" }, { status: 400 });
   }
 
   // Load estate display fields for logging (after access check)
@@ -99,13 +99,13 @@ export async function POST(
       .lean()) as EstateLean | null;
   } catch (err) {
     if (isMongooseCastError(err)) {
-      return NextResponse.json({ error: "Invalid estateId" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
     }
     throw err;
   }
 
   if (!estate) {
-    return NextResponse.json({ error: "Estate not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Estate not found" }, { status: 404 });
   }
 
   // Contacts are scoped to the current user
@@ -119,13 +119,13 @@ export async function POST(
       .lean()) as ContactLean | null;
   } catch (err) {
     if (isMongooseCastError(err)) {
-      return NextResponse.json({ error: "Invalid contactId" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid contactId" }, { status: 400 });
     }
     throw err;
   }
 
   if (!contact) {
-    return NextResponse.json({ error: "Contact not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Contact not found" }, { status: 404 });
   }
 
   const estateIdStr =
@@ -174,12 +174,12 @@ export async function DELETE(
   const { estateId } = await params;
 
   if (!estateId || typeof estateId !== "string") {
-    return NextResponse.json({ error: "Missing estateId" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Missing estateId" }, { status: 400 });
   }
 
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   // Permission: must be able to edit this estate (collaborators allowed if your helper supports it)
@@ -188,7 +188,7 @@ export async function DELETE(
   const estateObjectId = toObjectId(estateId);
   const ownerObjectId = toObjectId(session.user.id);
   if (!estateObjectId || !ownerObjectId) {
-    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
   await connectToDatabase();
@@ -205,7 +205,7 @@ export async function DELETE(
 
   const contactObjectId = toObjectId(contactId);
   if (!contactObjectId) {
-    return NextResponse.json({ error: "Invalid contactId" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid contactId" }, { status: 400 });
   }
 
   // Load estate display fields for logging (after access check)
@@ -216,13 +216,13 @@ export async function DELETE(
       .lean()) as EstateLean | null;
   } catch (err) {
     if (isMongooseCastError(err)) {
-      return NextResponse.json({ error: "Invalid estateId" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
     }
     throw err;
   }
 
   if (!estate) {
-    return NextResponse.json({ error: "Estate not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Estate not found" }, { status: 404 });
   }
 
   // Contacts are scoped to the current user
@@ -236,13 +236,13 @@ export async function DELETE(
       .lean()) as ContactLean | null;
   } catch (err) {
     if (isMongooseCastError(err)) {
-      return NextResponse.json({ error: "Invalid contactId" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid contactId" }, { status: 400 });
     }
     throw err;
   }
 
   if (!contact) {
-    return NextResponse.json({ error: "Contact not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Contact not found" }, { status: 404 });
   }
 
   const estateIdStr =

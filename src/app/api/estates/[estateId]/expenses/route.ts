@@ -23,7 +23,7 @@ export async function GET(
 ) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const { estateId } = await params;
@@ -32,7 +32,7 @@ export async function GET(
   const ownerObjectId = toObjectId(session.user.id);
 
   if (!estateObjectId || !ownerObjectId) {
-    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
   await connectToDatabase();
@@ -58,7 +58,7 @@ export async function POST(
 ) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const { estateId } = await params;
@@ -67,7 +67,7 @@ export async function POST(
   const ownerObjectId = toObjectId(session.user.id);
 
   if (!estateObjectId || !ownerObjectId) {
-    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
   const body = (await req.json()) as Record<string, unknown>;

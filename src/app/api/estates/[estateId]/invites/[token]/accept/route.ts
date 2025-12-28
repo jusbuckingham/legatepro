@@ -18,7 +18,7 @@ export async function POST(
 ) {
   const session = await auth();
   if (!session?.user?.id || !session.user.email) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const { estateId, token } = await ctx.params;
@@ -31,7 +31,7 @@ export async function POST(
   });
 
   if (!estate) {
-    return NextResponse.json({ error: "Invite not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Invite not found" }, { status: 404 });
   }
 
   const invite = (estate.invites ?? []).find(
@@ -39,7 +39,7 @@ export async function POST(
   );
 
   if (!invite) {
-    return NextResponse.json({ error: "Invite not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Invite not found" }, { status: 404 });
   }
 
   if (invite.status !== "PENDING") {
@@ -53,7 +53,7 @@ export async function POST(
     invite.status = "EXPIRED";
     await estate.save();
 
-    return NextResponse.json({ error: "Invite expired" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invite expired" }, { status: 400 });
   }
 
   const userEmail = session.user.email.toLowerCase();

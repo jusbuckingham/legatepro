@@ -49,9 +49,12 @@ export async function GET() {
       subscriptionStatus: asString(user?.subscriptionStatus),
     };
 
-    return NextResponse.json({ user: safeUser }, { status: 200 });
+    return NextResponse.json({ ok: true, user: safeUser }, { status: 200 });
   } catch (error) {
     console.error("GET /api/auth error", error);
-    return NextResponse.json({ error: "Unable to load current user" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: "Unable to load current user" },
+      { status: 500 },
+    );
   }
 }

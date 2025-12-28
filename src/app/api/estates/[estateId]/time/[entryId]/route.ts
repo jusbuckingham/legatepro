@@ -76,7 +76,7 @@ function serializeEntry(entry: TimeEntryRecord) {
 export async function GET(_req: NextRequest, context: RouteContext) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const { estateId, entryId } = await context.params;
@@ -90,7 +90,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
   }).lean<TimeEntryRecord | null>();
 
   if (!entry) {
-    return NextResponse.json({ error: "Time entry not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Time entry not found" }, { status: 404 });
   }
 
   return NextResponse.json({ entry: serializeEntry(entry) });
@@ -101,7 +101,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
 export async function PUT(req: NextRequest, context: RouteContext) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const { estateId, entryId } = await context.params;
@@ -179,7 +179,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
   });
 
   if (!existing) {
-    return NextResponse.json({ error: "Time entry not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Time entry not found" }, { status: 404 });
   }
 
   // Narrow to a mutable doc that definitely has our custom fields
@@ -235,7 +235,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
 export async function DELETE(_req: NextRequest, context: RouteContext) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const { estateId, entryId } = await context.params;
@@ -249,7 +249,7 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
   }).lean<TimeEntryRecord | null>();
 
   if (!deleted) {
-    return NextResponse.json({ error: "Time entry not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Time entry not found" }, { status: 404 });
   }
 
   return NextResponse.json({

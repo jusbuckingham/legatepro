@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
 
     // --- Validation ---
     if (!estateId)
-      return NextResponse.json({ error: "estateId is required" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "estateId is required" }, { status: 400 });
 
     if (!propertyId)
       return NextResponse.json(

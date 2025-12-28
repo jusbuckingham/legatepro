@@ -23,12 +23,12 @@ function toObjectId(id: string) {
 export async function GET(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const ownerObjectId = toObjectId(session.user.id);
   if (!ownerObjectId) {
-    return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid user id" }, { status: 400 });
   }
 
   try {
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     if (estateId) {
       const estateObjectId = toObjectId(estateId);
       if (!estateObjectId) {
-        return NextResponse.json({ error: "Invalid estateId" }, { status: 400 });
+        return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
       }
       // Contacts store linked estates as string IDs array in this project
       filter.estates = String(estateObjectId);
@@ -80,12 +80,12 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const ownerObjectId = toObjectId(session.user.id);
   if (!ownerObjectId) {
-    return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid user id" }, { status: 400 });
   }
 
   try {

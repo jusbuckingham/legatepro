@@ -50,7 +50,7 @@ export async function PATCH(
 ): Promise<Response> {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   await connectToDatabase();
@@ -154,7 +154,7 @@ export async function PATCH(
   const existingTask = (await EstateTask.findById(taskId)) as EstateTaskDocument | null;
 
   if (!existingTask) {
-    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
 
   const access = await requireEstateEditAccess({
@@ -227,7 +227,7 @@ export async function DELETE(
 ): Promise<Response> {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   await connectToDatabase();
@@ -242,7 +242,7 @@ export async function DELETE(
 
   const existingTask = (await EstateTask.findById(taskId)) as EstateTaskDocument | null;
   if (!existingTask) {
-    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
 
   const access = await requireEstateEditAccess({
@@ -257,7 +257,7 @@ export async function DELETE(
 
   const deleted = await EstateTask.findByIdAndDelete(taskId);
   if (!deleted) {
-    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
 
   // Activity log: task deleted

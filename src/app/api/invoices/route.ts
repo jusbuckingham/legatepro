@@ -51,12 +51,12 @@ function toObjectId(id: string) {
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const ownerObjectId = toObjectId(session.user.id);
   if (!ownerObjectId) {
-    return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid user id" }, { status: 400 });
   }
 
   await connectToDatabase();
@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
   if (estateId) {
     const estateObjectId = toObjectId(estateId);
     if (!estateObjectId) {
-      return NextResponse.json({ error: "Invalid estateId" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
     }
     query.estateId = estateObjectId;
   }
@@ -121,12 +121,12 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const ownerObjectId = toObjectId(session.user.id);
   if (!ownerObjectId) {
-    return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid user id" }, { status: 400 });
   }
 
   await connectToDatabase();
@@ -226,12 +226,12 @@ export async function POST(req: NextRequest) {
   } = body;
 
   if (!estateId) {
-    return NextResponse.json({ error: "estateId is required" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "estateId is required" }, { status: 400 });
   }
 
   const estateObjectId = toObjectId(estateId);
   if (!estateObjectId) {
-    return NextResponse.json({ error: "Invalid estateId" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
   }
 
   // Load workspace settings for defaults (WorkspaceSettings.ownerId is a string in this project)

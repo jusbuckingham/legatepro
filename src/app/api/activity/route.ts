@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 function jsonError(status: number, message: string) {
-  return NextResponse.json({ error: message }, { status });
+  return NextResponse.json({ ok: false, error: message }, { status });
 }
 
 // GET /api/activity

@@ -16,16 +16,16 @@ export async function GET(
 
     if (!utility) {
       return NextResponse.json(
-        { error: "Utility account not found" },
+        { ok: false, error: "Utility account not found" },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({ utility }, { status: 200 });
+    return NextResponse.json({ ok: true, utility }, { status: 200 });
   } catch (error) {
     console.error("[UTILITY_GET]", error);
     return NextResponse.json(
-      { error: "Failed to fetch utility account" },
+      { ok: false, error: "Failed to fetch utility account" },
       { status: 500 }
     );
   }
@@ -47,16 +47,16 @@ export async function PUT(
 
     if (!utility) {
       return NextResponse.json(
-        { error: "Utility account not found" },
+        { ok: false, error: "Utility account not found" },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({ utility }, { status: 200 });
+    return NextResponse.json({ ok: true, utility }, { status: 200 });
   } catch (error) {
     console.error("[UTILITY_PUT]", error);
     return NextResponse.json(
-      { error: "Failed to update utility account" },
+      { ok: false, error: "Failed to update utility account" },
       { status: 500 }
     );
   }
@@ -74,16 +74,16 @@ export async function DELETE(
 
     if (!utility) {
       return NextResponse.json(
-        { error: "Utility account not found" },
+        { ok: false, error: "Utility account not found" },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({ success: true }, { status: 200 });
+    return NextResponse.json({ ok: true, success: true }, { status: 200 });
   } catch (error) {
     console.error("[UTILITY_DELETE]", error);
     return NextResponse.json(
-      { error: "Failed to delete utility account" },
+      { ok: false, error: "Failed to delete utility account" },
       { status: 500 }
     );
   }
