@@ -4,6 +4,8 @@ import { use as usePromise, useEffect, useState, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import { getApiErrorMessage, safeJson } from "@/lib/utils";
+
 interface TimeEntry {
   _id: string;
   estateId: string;
@@ -52,17 +54,11 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
           )}/time/${encodeURIComponent(entryId)}`
         );
 
-        const data: unknown = await res.json().catch(() => null);
+        const data: unknown = await safeJson(res);
 
         if (!res.ok) {
-          const message =
-            data &&
-            typeof data === "object" &&
-            "error" in data &&
-            typeof (data as { error: unknown }).error === "string"
-              ? (data as { error: string }).error
-              : "Failed to load time entry.";
-          throw new Error(message);
+          const msg = await getApiErrorMessage(res);
+          throw new Error(msg || "Failed to load time entry.");
         }
 
         const rawEntry =
@@ -158,17 +154,11 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
         }
       );
 
-      const data: unknown = await res.json().catch(() => null);
+      const data: unknown = await safeJson(res);
 
       if (!res.ok) {
-        const message =
-          data &&
-          typeof data === "object" &&
-          "error" in data &&
-          typeof (data as { error: unknown }).error === "string"
-            ? (data as { error: string }).error
-            : "Failed to update time entry.";
-        throw new Error(message);
+        const msg = await getApiErrorMessage(res);
+        throw new Error(msg || "Failed to update time entry.");
       }
 
       // Update local entry from response if available
@@ -246,17 +236,9 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
         }
       );
 
-      const data: unknown = await res.json().catch(() => null);
-
       if (!res.ok) {
-        const message =
-          data &&
-          typeof data === "object" &&
-          "error" in data &&
-          typeof (data as { error: unknown }).error === "string"
-            ? (data as { error: string }).error
-            : "Failed to delete time entry.";
-        throw new Error(message);
+        const msg = await getApiErrorMessage(res);
+        throw new Error(msg || "Failed to delete time entry.");
       }
 
       router.push(`/app/estates/${estateId}/time`);

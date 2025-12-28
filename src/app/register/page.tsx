@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
+import { getApiErrorMessage, safeJson } from "@/lib/utils";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -24,10 +25,15 @@ export default function RegisterPage() {
         body: JSON.stringify({ name, email, password })
       });
 
-      const data = await res.json().catch(() => ({}));
+      const data = (await safeJson<{ error?: string }>(res)) ?? null;
 
       if (!res.ok) {
-        setError(data?.error || "Failed to create account.");
+        const msg =
+          typeof data?.error === "string" && data.error.trim()
+            ? data.error
+            : await getApiErrorMessage(res);
+
+        setError(msg || "Failed to create account.");
         setSubmitting(false);
         return;
       }

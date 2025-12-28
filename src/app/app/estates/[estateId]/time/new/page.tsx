@@ -1,9 +1,8 @@
-
-
 "use client";
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { getApiErrorMessage, safeJson } from "@/lib/utils";
 
 interface TimeEntryForm {
   date: string;
@@ -75,10 +74,16 @@ export default function NewTimeEntryPage() {
       });
 
       if (!res.ok) {
-        const details = await res.json().catch(() => null);
-        const message =
-          details?.error || "Failed to save time entry. Please try again.";
-        throw new Error(message);
+        const details = (await safeJson(res)) as { error?: string; message?: string } | null;
+
+        const msg =
+          typeof details?.error === "string" && details.error.trim()
+            ? details.error
+            : typeof details?.message === "string" && details.message.trim()
+            ? details.message
+            : await getApiErrorMessage(res);
+
+        throw new Error(msg || "Failed to save time entry. Please try again.");
       }
 
       // On success, go back to the main timecard list

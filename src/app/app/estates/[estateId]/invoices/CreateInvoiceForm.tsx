@@ -3,6 +3,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { getApiErrorMessage, safeJson } from '@/lib/utils';
 
 type Props = {
   estateId: string;
@@ -38,8 +39,15 @@ export default function CreateInvoiceForm({ estateId }: Props) {
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to create invoice');
+        const data = (await safeJson(res)) as { error?: string; message?: string } | null;
+        const msg =
+          typeof data?.error === 'string'
+            ? data.error
+            : typeof data?.message === 'string'
+            ? data.message
+            : await getApiErrorMessage(res);
+
+        throw new Error(msg || 'Failed to create invoice');
       }
 
       setSuccess('Invoice created');

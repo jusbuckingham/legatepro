@@ -3,6 +3,8 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { getApiErrorMessage } from "@/lib/utils";
+
 type TaskStatus = "OPEN" | "DONE";
 type TaskPriority = "LOW" | "MEDIUM" | "HIGH";
 
@@ -89,8 +91,8 @@ export function TaskForm({
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to save task");
+        const msg = await getApiErrorMessage(res);
+        throw new Error(msg || "Failed to save task");
       }
 
       router.push(`/app/estates/${estateId}/tasks`);

@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+
 import { cookies, headers } from "next/headers";
+
+import { safeJson } from "@/lib/utils";
 
 
 type PageProps = {
@@ -82,8 +85,14 @@ async function fetchUtility(utilityId: string): Promise<Record<string, unknown> 
     return null;
   }
 
-  const data = (await res.json().catch(() => null)) as UtilityApiResponse | null;
-  return (data?.utility ?? (data as unknown as Record<string, unknown>) ?? null) as Record<string, unknown> | null;
+  const data = (await safeJson(res)) as UtilityApiResponse | Record<string, unknown> | null;
+
+  if (data && typeof data === "object" && "utility" in data) {
+    const u = (data as UtilityApiResponse).utility;
+    return u && typeof u === "object" ? u : null;
+  }
+
+  return data && typeof data === "object" ? (data as Record<string, unknown>) : null;
 }
 
 export default async function UtilityDetailPage({ params }: PageProps) {

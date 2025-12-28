@@ -4,6 +4,8 @@ import { useState, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import { getApiErrorMessage, safeJson } from "@/lib/utils";
+
 interface PageProps {
   params: {
     estateId: string;
@@ -89,8 +91,16 @@ export default function AddUtilityAccountPage({ params }: PageProps) {
       });
 
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || "Failed to create utility account");
+        const body = (await safeJson(res)) as { error?: string; message?: string } | null;
+
+        const msg =
+          typeof body?.error === "string" && body.error.trim()
+            ? body.error
+            : typeof body?.message === "string" && body.message.trim()
+            ? body.message
+            : await getApiErrorMessage(res);
+
+        throw new Error(msg || "Failed to create utility account");
       }
 
       router.push(

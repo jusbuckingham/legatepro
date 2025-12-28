@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { getApiErrorMessage } from "@/lib/utils";
 
 type LinkedContact = {
   _id: string;
@@ -73,12 +74,8 @@ export function EstateContactsPanel({
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        const message =
-          typeof data.error === "string"
-            ? data.error
-            : "Failed to link contact.";
-        setError(message);
+        const msg = await getApiErrorMessage(res);
+        setError(msg || "Failed to link contact.");
         setBusy(false);
         return;
       }
@@ -126,12 +123,8 @@ export function EstateContactsPanel({
       );
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        const message =
-          typeof data.error === "string"
-            ? data.error
-            : "Failed to unlink contact.";
-        setError(message);
+        const msg = await getApiErrorMessage(res);
+        setError(msg || "Failed to unlink contact.");
         setBusy(false);
         return;
       }

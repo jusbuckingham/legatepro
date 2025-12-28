@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import type { ChangeEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import PageHeader from "@/components/layout/PageHeader";
+import { getApiErrorMessage, safeJson } from "@/lib/utils";
 
 // This page is a hybrid client/server page: we fetch data via a server helper
 // and then do light-weight filtering client-side.
@@ -76,9 +77,11 @@ async function fetchExpensesForUser(): Promise<NormalizedExpenseRow[]> {
     cache: "no-store",
   });
   if (!res.ok) {
-    throw new Error("Failed to fetch expenses");
+    const msg = await getApiErrorMessage(res);
+    throw new Error(msg || "Failed to fetch expenses");
   }
-  const data = (await res.json().catch(() => null)) as
+
+  const data = (await safeJson(res)) as
     | { ok?: boolean; expenses?: RawExpense[] }
     | { expenses?: RawExpense[] }
     | RawExpense[]

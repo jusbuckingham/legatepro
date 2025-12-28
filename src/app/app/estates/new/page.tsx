@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getApiErrorMessage, safeJson } from "@/lib/utils";
 
 interface EstateFormState {
   name: string;
@@ -105,16 +106,22 @@ export default function NewEstatePage() {
         }),
       });
 
+      const data = ((await safeJson(res)) ?? null) as
+        | { error?: string; message?: string; estate?: { _id?: string } }
+        | null;
+
       if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        const message =
-          (data && (data.error || data.message)) ||
-          "Unable to create estate. Please try again.";
-        throw new Error(message);
+        const msg =
+          typeof data?.error === "string" && data.error.trim()
+            ? data.error
+            : typeof data?.message === "string" && data.message.trim()
+            ? data.message
+            : await getApiErrorMessage(res);
+
+        throw new Error(msg || "Unable to create estate. Please try again.");
       }
 
-      const data = (await res.json().catch(() => ({} as unknown))) as { estate?: { _id?: string } };
-      const estateId = data?.estate?._id as string | undefined;
+      const estateId = (data?.estate?._id as string | undefined) ?? undefined;
 
       if (estateId) {
         router.push(`/app/estates/${estateId}`);

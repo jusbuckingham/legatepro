@@ -2,6 +2,8 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 
+
+import { safeJson } from "@/lib/utils";
 import { auth } from "@/lib/auth";
 
 import CreateInvoiceForm from "./CreateInvoiceForm";
@@ -106,7 +108,7 @@ async function getInvoices(estateId: string): Promise<InvoiceLean[]> {
     return [];
   }
 
-  const data = (await res.json().catch(() => null)) as
+  const data = (await safeJson(res)) as
     | { ok?: boolean; invoices?: InvoiceLean[] }
     | InvoiceLean[]
     | null;

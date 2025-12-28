@@ -4,6 +4,8 @@
 import { useEffect, useState, FormEvent, use as usePromise } from "react";
 import Link from "next/link";
 
+import { getApiErrorMessage, safeJson } from "@/lib/utils";
+
 interface TimeEntry {
   _id?: string;
   id?: string;
@@ -66,24 +68,17 @@ export default function EstateTimecardPage({ params }: PageProps) {
         }
       );
 
-      const data: unknown = await res.json().catch(() => null);
+      const data: unknown = await safeJson(res);
 
       if (!res.ok) {
-        const apiError =
-          data &&
-          typeof data === "object" &&
-          "error" in data &&
-          typeof (data as { error: unknown }).error === "string"
-            ? (data as { error: string }).error
-            : "Failed to load time entries";
-
+        const apiError = await getApiErrorMessage(res);
         console.error(
           "Failed to load time entries:",
           res.status,
           res.statusText,
           data
         );
-        throw new Error(apiError);
+        throw new Error(apiError || "Failed to load time entries");
       }
 
       // Expect the API to return a clean JSON payload shaped like:
@@ -208,9 +203,8 @@ export default function EstateTimecardPage({ params }: PageProps) {
       );
 
       if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        const msg = data?.error || "Failed to create time entry.";
-        throw new Error(msg);
+        const msg = await getApiErrorMessage(res);
+        throw new Error(msg || "Failed to create time entry.");
       }
 
       // Reset form & reload entries
