@@ -81,6 +81,7 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
   const expense = expenseDoc as unknown as LeanExpenseShape;
 
   return NextResponse.json({
+    ok: true,
     id: String(expense._id),
     estateId: String(expense.estateId),
     description: expense.description ?? "",
@@ -90,8 +91,7 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
     notes: expense.notes ?? "",
     reimbursable: Boolean(expense.reimbursable),
     incurredAt: expense.incurredAt ?? null,
-    amountCents:
-      typeof expense.amountCents === "number" ? expense.amountCents : 0,
+    amountCents: typeof expense.amountCents === "number" ? expense.amountCents : 0,
     receiptUrl: expense.receiptUrl ?? "",
     createdAt: expense.createdAt ?? null,
     updatedAt: expense.updatedAt ?? null,
@@ -180,6 +180,7 @@ export async function PUT(req: NextRequest, { params }: RouteContext) {
     const updated = updatedDoc as unknown as LeanExpenseShape;
 
     return NextResponse.json({
+      ok: true,
       id: String(updated._id),
       estateId: String(updated.estateId),
       description: updated.description ?? "",
@@ -189,8 +190,7 @@ export async function PUT(req: NextRequest, { params }: RouteContext) {
       notes: updated.notes ?? "",
       reimbursable: Boolean(updated.reimbursable),
       incurredAt: updated.incurredAt ?? null,
-      amountCents:
-        typeof updated.amountCents === "number" ? updated.amountCents : 0,
+      amountCents: typeof updated.amountCents === "number" ? updated.amountCents : 0,
       receiptUrl: updated.receiptUrl ?? "",
       createdAt: updated.createdAt ?? null,
       updatedAt: updated.updatedAt ?? null,
@@ -198,7 +198,7 @@ export async function PUT(req: NextRequest, { params }: RouteContext) {
   } catch (err) {
     console.error("Error updating expense", err);
     return NextResponse.json(
-      { error: "Failed to update expense" },
+      { ok: false, error: "Failed to update expense" },
       { status: 500 },
     );
   }

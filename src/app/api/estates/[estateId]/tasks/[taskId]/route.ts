@@ -81,7 +81,7 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
     return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ task }, { status: 200 });
+  return NextResponse.json({ ok: true, task }, { status: 200 });
 }
 
 /**
@@ -184,7 +184,7 @@ async function updateTask(req: NextRequest, { params }: RouteContext) {
     });
   }
 
-  return NextResponse.json({ task: updated }, { status: 200 });
+  return NextResponse.json({ ok: true, task: updated }, { status: 200 });
 }
 
 export async function PUT(req: NextRequest, ctx: RouteContext) {
@@ -233,5 +233,5 @@ export async function DELETE(_req: NextRequest, { params }: RouteContext) {
     },
   });
 
-  return NextResponse.json({ success: true }, { status: 200 });
+  return NextResponse.json({ ok: true }, { status: 200 });
 }

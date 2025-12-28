@@ -116,7 +116,11 @@ export async function PATCH(
       return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
 
-    const raw = await req.json().catch(() => null);
+    const raw = await req.json().catch(() => undefined);
+    if (raw === undefined) {
+      return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    }
+
     const body = asPatchBody(raw);
 
     const update: Record<string, unknown> = {};
@@ -143,6 +147,9 @@ export async function PATCH(
       if (body.propertyId === null || body.propertyId === "") {
         update.propertyId = null;
       } else if (typeof body.propertyId === "string") {
+        if (!isValidObjectId(body.propertyId)) {
+          return NextResponse.json({ ok: false, error: "Invalid propertyId" }, { status: 400 });
+        }
         update.propertyId = body.propertyId;
       }
     }

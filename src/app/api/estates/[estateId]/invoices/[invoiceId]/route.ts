@@ -54,7 +54,7 @@ export async function GET(
 
   const { estateId, invoiceId } = await params;
   await connectToDatabase();
-  await requireEstateAccess({ estateId });
+  await requireEstateAccess({ estateId, userId: session.user.id });
 
   const invoice = await Invoice.findOne({
     _id: invoiceId,
@@ -80,7 +80,7 @@ export async function PUT(
 
   const { estateId, invoiceId } = await params;
   await connectToDatabase();
-  await requireEstateEditAccess({ estateId });
+  await requireEstateEditAccess({ estateId, userId: session.user.id });
 
   let body: UpdateInvoiceBody;
   try {
@@ -171,7 +171,7 @@ export async function DELETE(
 
   const { estateId, invoiceId } = await params;
   await connectToDatabase();
-  await requireEstateEditAccess({ estateId });
+  await requireEstateEditAccess({ estateId, userId: session.user.id });
 
   const deleted = await Invoice.findOneAndDelete({
     _id: invoiceId,
@@ -182,5 +182,5 @@ export async function DELETE(
     return NextResponse.json({ ok: false, error: "Invoice not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ ok: true }, { status: 200 });
+  return NextResponse.json({ ok: true, deleted: true }, { status: 200 });
 }

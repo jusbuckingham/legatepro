@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
+import { connectToDatabase } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import { EstateNote } from "@/models/EstateNote";
@@ -71,6 +72,8 @@ export async function GET(
     const access = await requireView(estateId, userId);
     if (isResponseLike(access)) return access;
 
+    await connectToDatabase();
+
     const note = await EstateNote.findOne({
       _id: noteId,
       estateId,
@@ -115,7 +118,14 @@ export async function PATCH(
     const access = await requireEdit(estateId, userId);
     if (isResponseLike(access)) return access;
 
-    const json = (await req.json()) as UpdateNotePayload;
+    await connectToDatabase();
+
+    let json: UpdateNotePayload;
+    try {
+      json = (await req.json()) as UpdateNotePayload;
+    } catch {
+      return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    }
 
     const update: UpdateNotePayload = {};
     if (typeof json.subject === "string") update.subject = json.subject;
@@ -204,6 +214,8 @@ export async function DELETE(
     // Enforce estate access (collaborators allowed) + edit permission
     const access = await requireEdit(estateId, userId);
     if (isResponseLike(access)) return access;
+
+    await connectToDatabase();
 
     const deleted = await EstateNote.findOneAndDelete({
       _id: noteId,

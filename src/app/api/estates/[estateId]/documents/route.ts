@@ -26,6 +26,15 @@ function getRoleFromAccess(access: unknown): string | undefined {
   return typeof role === "string" ? role : undefined;
 }
 
+async function safeJson(request: NextRequest): Promise<{ ok: true; value: unknown } | { ok: false }> {
+  try {
+    const value = await request.json();
+    return { ok: true, value };
+  } catch {
+    return { ok: false };
+  }
+}
+
 function getFailureResponse(access: unknown): NextResponse | undefined {
   if (!access || typeof access !== "object") return undefined;
   const anyAccess = access as Record<string, unknown>;
@@ -105,20 +114,28 @@ export async function POST(
 
     const role = getRoleFromAccess(access);
 
-    const body = await request.json();
+    const parsed = await safeJson(request);
+    if (!parsed.ok) {
+      return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    }
 
-    const {
-      label,
-      subject,
-      notes,
-      location,
-      url,
-      tags,
-      isSensitive,
-      fileName,
-      fileType,
-      fileSizeBytes,
-    } = body ?? {};
+    const body = parsed.value;
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    }
+
+    const bodyObj = body as Record<string, unknown>;
+
+    const label = bodyObj.label;
+    const subject = bodyObj.subject;
+    const notes = bodyObj.notes;
+    const location = bodyObj.location;
+    const url = bodyObj.url;
+    const tags = bodyObj.tags;
+    const isSensitive = bodyObj.isSensitive;
+    const fileName = bodyObj.fileName;
+    const fileType = bodyObj.fileType;
+    const fileSizeBytes = bodyObj.fileSizeBytes;
 
     // Defense in depth: do not allow VIEWER access (should already be blocked by requireEditor)
     // and keep the policy that only non-VIEWER roles may create sensitive docs.
@@ -131,7 +148,10 @@ export async function POST(
     }
 
     const normalizedTags = Array.isArray(tags)
-      ? tags.filter((t: unknown) => typeof t === "string")
+      ? tags
+          .filter((t: unknown): t is string => typeof t === "string")
+          .map((t) => t.trim())
+          .filter((t) => t.length > 0)
       : [];
 
     const document = await EstateDocument.create({

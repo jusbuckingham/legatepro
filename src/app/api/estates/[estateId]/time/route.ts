@@ -7,6 +7,15 @@ import {
   TimeEntryActivityType
 } from "@/models/TimeEntry";
 
+type RouteContext = { params: Promise<{ estateId: string }> };
+
+function parseIsoDate(value: string | null): Date | null {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
 function normalizeObjectId(value: unknown): string | undefined {
   if (!value) return undefined;
   if (typeof value === "string") return value;
@@ -26,7 +35,7 @@ function normalizeObjectId(value: unknown): string | undefined {
 //   - from, to: ISO date strings to bound the date range (inclusive)
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ estateId: string }> }
+  { params }: RouteContext
 ): Promise<NextResponse> {
   const session = await auth();
 
@@ -39,15 +48,25 @@ export async function GET(
   const from = searchParams.get("from");
   const to = searchParams.get("to");
 
+  const fromDate = parseIsoDate(from);
+  const toDate = parseIsoDate(to);
+
+  if (from && !fromDate) {
+    return NextResponse.json({ ok: false, error: "from must be a valid ISO date" }, { status: 400 });
+  }
+  if (to && !toDate) {
+    return NextResponse.json({ ok: false, error: "to must be a valid ISO date" }, { status: 400 });
+  }
+
   const query: Record<string, unknown> = {
     ownerId: session.user.id,
     estateId,
   };
 
-  if (from || to) {
+  if (fromDate || toDate) {
     const dateQuery: { $gte?: Date; $lte?: Date } = {};
-    if (from) dateQuery.$gte = new Date(from);
-    if (to) dateQuery.$lte = new Date(to);
+    if (fromDate) dateQuery.$gte = fromDate;
+    if (toDate) dateQuery.$lte = toDate;
     query.date = dateQuery;
   }
 
@@ -100,7 +119,7 @@ export async function GET(
 // Other optional fields: description, notes, hourlyRate, billable, invoiced, activityType, taskId
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ estateId: string }> }
+  { params }: RouteContext
 ): Promise<NextResponse> {
   const session = await auth();
 
@@ -127,10 +146,12 @@ export async function POST(
     };
 
     if (!body.date) {
-      return NextResponse.json(
-        { ok: false, error: "date is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "date is required" }, { status: 400 });
+    }
+
+    const bodyDate = parseIsoDate(body.date);
+    if (!bodyDate) {
+      return NextResponse.json({ ok: false, error: "date must be a valid ISO date" }, { status: 400 });
     }
 
     // Normalise minutes: allow client to send either minutes or hours
@@ -164,7 +185,7 @@ export async function POST(
     const created = await TimeEntry.create({
       ownerId: session.user.id,
       estateId,
-      date: new Date(body.date),
+      date: bodyDate,
       minutes,
       description: body.description?.trim() || undefined,
       notes: body.notes?.trim() || undefined,

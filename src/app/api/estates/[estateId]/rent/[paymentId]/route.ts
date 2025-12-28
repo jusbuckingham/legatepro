@@ -46,7 +46,20 @@ export async function PATCH(request: Request, { params }: RouteParams): Promise<
     }
 
     const { estateId, paymentId } = await params;
-    const body = await request.json();
+
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    }
+
+    const update: Record<string, unknown> = {};
+    if ("amount" in body) update.amount = body.amount;
+    if ("date" in body) update.date = body.date;
+    if ("notes" in body) update.notes = body.notes;
+    if ("method" in body) update.method = body.method;
+    if ("propertyId" in body) update.propertyId = body.propertyId;
 
     await connectToDatabase();
 
@@ -56,7 +69,7 @@ export async function PATCH(request: Request, { params }: RouteParams): Promise<
         estateId,
         ownerId: session.user.id,
       },
-      body,
+      update,
       {
         new: true,
         runValidators: true,
