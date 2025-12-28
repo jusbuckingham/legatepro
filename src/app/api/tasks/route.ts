@@ -80,8 +80,22 @@ export async function GET(request: NextRequest) {
 // Creates a new task (Owner / Editor only)
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as CreateTaskBody;
-    const { estateId, title, category, dueDate, notes, isCompleted } = body;
+    let body: CreateTaskBody;
+    try {
+      body = (await request.json()) as CreateTaskBody;
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: "Invalid JSON" },
+        { status: 400 }
+      );
+    }
+
+    const estateId = typeof body.estateId === "string" ? body.estateId.trim() : "";
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    const category = typeof body.category === "string" ? body.category.trim() : undefined;
+    const notes = typeof body.notes === "string" ? body.notes.trim() : undefined;
+    const dueDate = body.dueDate ?? null;
+    const isCompleted = body.isCompleted;
 
     if (!estateId) {
       return NextResponse.json(
@@ -102,12 +116,24 @@ export async function POST(request: NextRequest) {
 
     await connectToDatabase();
 
+    let parsedDueDate: Date | undefined;
+    if (typeof dueDate === "string" && dueDate.trim()) {
+      const d = new Date(dueDate);
+      if (Number.isNaN(d.getTime())) {
+        return NextResponse.json(
+          { ok: false, error: "dueDate must be a valid ISO date" },
+          { status: 400 }
+        );
+      }
+      parsedDueDate = d;
+    }
+
     const task = await Task.create({
       estateId,
       title,
-      category,
-      dueDate: dueDate ? new Date(dueDate) : undefined,
-      notes,
+      category: category || undefined,
+      dueDate: parsedDueDate,
+      notes: notes || undefined,
       isCompleted: typeof isCompleted === "boolean" ? isCompleted : false,
     });
 

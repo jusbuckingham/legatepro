@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
       .lean()
       .exec();
 
-    return NextResponse.json({ ok: true, utilities }, { status: 200 });
+    return NextResponse.json({ ok: true, data: { utilities } }, { status: 200 });
   } catch (error) {
     console.error("GET /api/utilities error", error);
     return NextResponse.json(
@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
       notes,
     });
 
-    return NextResponse.json({ ok: true, utility }, { status: 201 });
+    return NextResponse.json({ ok: true, data: { utility } }, { status: 201 });
   } catch (error) {
     console.error("POST /api/utilities error", error);
     return NextResponse.json(

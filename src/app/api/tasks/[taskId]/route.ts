@@ -58,7 +58,7 @@ export async function PATCH(
   const { taskId } = await params;
   if (!taskId) {
     return NextResponse.json(
-      { error: "Missing taskId in route params" },
+      { ok: false, error: "Missing taskId in route params" },
       { status: 400 },
     );
   }
@@ -68,14 +68,14 @@ export async function PATCH(
     body = await req.json();
   } catch {
     return NextResponse.json(
-      { error: "Invalid JSON body" },
+      { ok: false, error: "Invalid JSON body" },
       { status: 400 },
     );
   }
 
   if (!body || typeof body !== "object") {
     return NextResponse.json(
-      { error: "Body must be an object" },
+      { ok: false, error: "Body must be an object" },
       { status: 400 },
     );
   }
@@ -218,7 +218,10 @@ export async function PATCH(
     // Don't block task updates if activity logging fails
   }
 
-  return NextResponse.json(serializeTask(existingTask));
+  return NextResponse.json(
+    { ok: true, data: { task: serializeTask(existingTask) } },
+    { status: 200 },
+  );
 }
 
 export async function DELETE(
@@ -235,7 +238,7 @@ export async function DELETE(
   const { taskId } = await params;
   if (!taskId) {
     return NextResponse.json(
-      { error: "Missing taskId in route params" },
+      { ok: false, error: "Missing taskId in route params" },
       { status: 400 },
     );
   }
@@ -278,7 +281,10 @@ export async function DELETE(
     // Don't block task deletion if activity logging fails
   }
 
-  return new NextResponse(null, { status: 204 });
+  return NextResponse.json(
+    { ok: true, data: { success: true, id: String(taskId) } },
+    { status: 200 },
+  );
 }
 
 export const dynamic = "force-dynamic";

@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
       .lean()
       .exec();
 
-    return NextResponse.json({ ok: true, properties }, { status: 200 });
+    return NextResponse.json({ ok: true, data: { properties } }, { status: 200 });
   } catch (error) {
     console.error("GET /api/properties error", error);
     return NextResponse.json(
@@ -199,7 +199,7 @@ export async function POST(request: NextRequest) {
       notes,
     });
 
-    return NextResponse.json({ ok: true, property }, { status: 201 });
+    return NextResponse.json({ ok: true, data: { property } }, { status: 201 });
   } catch (error) {
     console.error("POST /api/properties error", error);
     return NextResponse.json(

@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
       _id: String(p._id),
     }));
 
-    return NextResponse.json({ ok: true, payments }, { status: 200 });
+    return NextResponse.json({ ok: true, data: { payments } }, { status: 200 });
   } catch (error) {
     console.error("GET /api/rent error", error);
     return NextResponse.json(
@@ -216,7 +216,7 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(
-      { ok: true, payment: { ...payment.toJSON(), _id: String(payment._id) } },
+      { ok: true, data: { payment: { ...payment.toJSON(), _id: String(payment._id) } } },
       { status: 201 }
     );
   } catch (error) {
