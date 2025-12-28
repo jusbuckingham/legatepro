@@ -1,6 +1,6 @@
 "use client";
 
-import { use as usePromise, useEffect, useState, FormEvent } from "react";
+import { use as usePromise, useEffect, useRef, useState, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -56,6 +56,8 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  const lastLoadedKeyRef = useRef<string | null>(null);
+
   // Form state
   const [date, setDate] = useState<string>("");
   const [hours, setHours] = useState<string>("1.0");
@@ -65,6 +67,9 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
 
   // Load the entry once
   useEffect(() => {
+    const loadKey = `${estateId}:${entryId}`;
+    if (lastLoadedKeyRef.current === loadKey) return;
+    lastLoadedKeyRef.current = loadKey;
     async function loadEntry() {
       setLoading(true);
       setError(null);
@@ -158,7 +163,7 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
     }
 
     void loadEntry();
-  }, [estateId, entryId]);
+  }, [estateId, entryId, missingKind]);
 
   async function handleSave(e: FormEvent) {
     e.preventDefault();

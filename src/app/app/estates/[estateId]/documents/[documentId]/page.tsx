@@ -115,7 +115,62 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
     redirect(`/login?callbackUrl=/app/estates/${estateId}/documents/${documentId}`);
   }
 
-  const access = (await requireEstateAccess({ estateId, userId: session.user.id })) as { role: EstateRole };
+  let access: { role: EstateRole } | null = null;
+
+  try {
+    access = (await requireEstateAccess({ estateId, userId: session.user.id })) as { role: EstateRole };
+  } catch {
+    // If access resolution fails (missing estate access / auth mismatch), show a clear Unauthorized state.
+    return (
+      <div className="space-y-8 p-6">
+        <PageHeader
+          eyebrow={
+            <nav className="text-xs text-slate-500">
+              <Link href="/app/estates" className="text-slate-400 hover:text-slate-200 hover:underline">
+                Estates
+              </Link>
+              <span className="mx-1 text-slate-600">/</span>
+              <span className="truncate text-rose-200">Unauthorized</span>
+            </nav>
+          }
+          title="Unauthorized"
+          description="You don’t have access to this estate (or your session expired)."
+          actions={
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Link
+                href="/app/estates"
+                className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+              >
+                Back to estates
+              </Link>
+            </div>
+          }
+        />
+
+        <section className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm">
+          <p className="text-sm font-semibold text-slate-50">We can’t show this document.</p>
+          <p className="mt-1 text-sm text-slate-300">
+            If you think you should have access, ask an estate OWNER to add you as a collaborator.
+          </p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <Link
+              href="/app/estates"
+              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+            >
+              Return to estates
+            </Link>
+            <Link
+              href={`/login?callbackUrl=/app/estates/${estateId}/documents/${documentId}`}
+              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+            >
+              Re-authenticate
+            </Link>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   const canEdit = roleAtLeast(access.role, "EDITOR");
 
   await connectToDatabase();
@@ -159,7 +214,7 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
           actions={
             <div className="flex flex-wrap items-center justify-end gap-2">
               <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-200">
-                {access.role}
+                {access?.role ?? "VIEWER"}
               </span>
               <Link
                 href={`/app/estates/${estateId}/documents`}
@@ -228,7 +283,7 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
         actions={
           <div className="flex flex-wrap items-center justify-end gap-2">
             <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-200">
-              {access.role}
+              {access?.role ?? "VIEWER"}
             </span>
             {(!canEdit || forbidden) && (
               <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-950/50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-100">
