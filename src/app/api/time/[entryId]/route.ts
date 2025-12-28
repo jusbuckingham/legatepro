@@ -97,7 +97,10 @@ export async function GET(
 
     const estateId = entry.estateId ? String(entry.estateId) : "";
     if (!estateId) {
-      return NextResponse.json({ ok: false, error: "Time entry missing estateId" }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: "Time entry missing estateId" },
+        { status: 500 }
+      );
     }
 
     const access = await getEstateAccess({ estateId, userId });
@@ -142,7 +145,10 @@ export async function PATCH(
 
     const estateId = existing.estateId ? String(existing.estateId) : "";
     if (!estateId) {
-      return NextResponse.json({ ok: false, error: "Time entry missing estateId" }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: "Time entry missing estateId" },
+        { status: 500 }
+      );
     }
 
     const access = await getEstateAccess({ estateId, userId });
@@ -261,7 +267,10 @@ export async function DELETE(
 
     const estateId = existing.estateId ? String(existing.estateId) : "";
     if (!estateId) {
-      return NextResponse.json({ ok: false, error: "Time entry missing estateId" }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: "Time entry missing estateId" },
+        { status: 500 }
+      );
     }
 
     const access = await getEstateAccess({ estateId, userId });
