@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { getApiErrorMessage } from "@/lib/utils";
 
 type EstateFormData = {
   name?: string;
@@ -61,7 +62,7 @@ export function EditEstateForm({
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(`/api/estates/${estateId}`, {
+      const response = await fetch(`/api/estates/${encodeURIComponent(estateId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -72,18 +73,21 @@ export function EditEstateForm({
         | null;
 
       if (!response.ok || !data?.ok) {
-        const message = data?.error ?? "Failed to update estate.";
+        const apiMessage = await Promise.resolve(getApiErrorMessage(response));
+        const message = data?.error || apiMessage || "Failed to update estate.";
         setError(message);
-      } else {
-        setSaved(true);
-
-        // Go back to the estate detail page
-        router.push(`/app/estates/${estateId}`);
-        router.refresh();
+        return;
       }
+
+      setSaved(true);
+
+      // Go back to the estate detail page
+      router.push(`/app/estates/${encodeURIComponent(estateId)}`);
+      router.refresh();
     } catch (err) {
       console.error(err);
-      setError("Unexpected error while updating the estate.");
+      const message = err instanceof Error ? err.message : "Unexpected error while updating the estate.";
+      setError(message);
     } finally {
       setIsSubmitting(false);
     }

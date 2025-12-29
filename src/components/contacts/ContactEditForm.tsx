@@ -59,7 +59,7 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
 
     if (saving) return;
@@ -74,12 +74,16 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
     setSaving(true);
 
     try {
+      const emailValue = email.trim();
+      const phoneValue = phone.trim();
+      const notesValue = notes.trim();
+
       const payload = {
         name: name.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
         role,
-        notes,
+        ...(emailValue ? { email: emailValue } : {}),
+        ...(phoneValue ? { phone: phoneValue } : {}),
+        ...(notesValue ? { notes: notesValue } : {}),
       };
 
       const res = await fetch(`/api/contacts/${encodeURIComponent(contactId)}`, {
@@ -111,6 +115,7 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
   return (
     <form
       onSubmit={handleSubmit}
+      aria-busy={saving}
       className="space-y-6 rounded-lg border border-slate-800 bg-slate-900/60 p-4"
     >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -128,6 +133,7 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
             type="button"
             onClick={() => router.push(`/app/contacts/${encodeURIComponent(contactId)}`)}
             disabled={saving}
+            aria-disabled={saving}
             className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:opacity-60"
           >
             Cancel
@@ -135,6 +141,7 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
           <button
             type="submit"
             disabled={saving}
+            aria-disabled={saving}
             className="rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-60"
           >
             {saving ? "Saving…" : "Save changes"}
@@ -144,6 +151,7 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
 
       {error && (
         <div
+          id="contact-name-error"
           role="alert"
           aria-live="polite"
           className="rounded-md border border-rose-500/30 bg-rose-950/40 p-3 text-xs text-rose-100"
@@ -160,8 +168,14 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
           <input
             type="text"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (error) setError(null);
+            }}
             placeholder="Full name"
+            required
+            aria-invalid={!!error && !name.trim()}
+            aria-describedby={error && !name.trim() ? "contact-name-error" : undefined}
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
         </div>
@@ -173,7 +187,10 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
           <input
             type="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (error) setError(null);
+            }}
             placeholder="name@example.com"
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
@@ -186,7 +203,10 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
           <input
             type="tel"
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            onChange={(e) => {
+              setPhone(e.target.value);
+              if (error) setError(null);
+            }}
             placeholder="(555) 555-5555"
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
@@ -198,7 +218,10 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
           </label>
           <select
             value={role}
-            onChange={(e) => setRole(normalizeRole(e.target.value))}
+            onChange={(e) => {
+              setRole(normalizeRole(e.target.value));
+              if (error) setError(null);
+            }}
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
           >
             <option value="EXECUTOR">Executor</option>
@@ -218,7 +241,10 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
         </label>
         <textarea
           value={notes}
-          onChange={(e) => setNotes(e.target.value)}
+          onChange={(e) => {
+            setNotes(e.target.value);
+            if (error) setError(null);
+          }}
           rows={3}
           placeholder="Relationship to the estate, important details, etc."
           className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"

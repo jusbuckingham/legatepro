@@ -82,6 +82,29 @@ export function PropertyForm({
       return;
     }
 
+    const estimatedValueNumber = form.estimatedValue.trim()
+      ? Number(form.estimatedValue)
+      : undefined;
+
+    if (estimatedValueNumber != null && Number.isNaN(estimatedValueNumber)) {
+      setError("Estimated value must be a valid number.");
+      return;
+    }
+
+    const ownershipNumber = form.ownershipPercentage.trim()
+      ? Number(form.ownershipPercentage)
+      : undefined;
+
+    if (ownershipNumber != null && Number.isNaN(ownershipNumber)) {
+      setError("Ownership percentage must be a valid number.");
+      return;
+    }
+
+    if (ownershipNumber != null && (ownershipNumber < 0 || ownershipNumber > 100)) {
+      setError("Ownership percentage must be between 0 and 100.");
+      return;
+    }
+
     setError(null);
     setIsSubmitting(true);
 
@@ -94,12 +117,8 @@ export function PropertyForm({
         state: form.state.trim(),
         postalCode: form.postalCode.trim(),
         country: form.country.trim(),
-        estimatedValue: form.estimatedValue
-          ? Number(form.estimatedValue)
-          : undefined,
-        ownershipPercentage: form.ownershipPercentage
-          ? Number(form.ownershipPercentage)
-          : undefined,
+        estimatedValue: estimatedValueNumber,
+        ownershipPercentage: ownershipNumber,
         notes: form.notes.trim()
       };
 
@@ -129,6 +148,8 @@ export function PropertyForm({
         const fallback = isEdit
           ? "Failed to update property."
           : "Failed to create property.";
+
+        // `getApiErrorMessage` may return either a string or a Promise<string> depending on implementation.
         const apiMessage = await Promise.resolve(getApiErrorMessage(response));
         setError(data?.error || apiMessage || fallback);
         return;
@@ -138,7 +159,8 @@ export function PropertyForm({
       router.refresh();
     } catch (err) {
       console.error(err);
-      setError("Unexpected error while saving property.");
+      const message = err instanceof Error ? err.message : "Unexpected error while saving property.";
+      setError(message || "Unexpected error while saving property.");
     } finally {
       setIsSubmitting(false);
     }

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { getApiErrorMessage } from "@/lib/utils";
 
-type ApiResponse = { ok?: boolean; error?: string };
+type ApiResponse = { ok: boolean; error?: string };
 
 type ContactRole =
   | "EXECUTOR"
@@ -62,7 +62,7 @@ export function NewContactForm() {
         email: email.trim() || undefined,
         phone: phone.trim() || undefined,
         role,
-        notes: notes.trim() || undefined,
+        notes: notes.trim() ? notes.trim() : undefined,
       };
 
       const res = await fetch("/api/contacts", {
@@ -73,9 +73,9 @@ export function NewContactForm() {
         body: JSON.stringify(payload),
       });
 
-      const data = (await res.json().catch(() => null)) as ApiResponse | null;
+      const data = (await res.json().catch(() => null)) as Partial<ApiResponse> | null;
 
-      if (!res.ok || data?.ok === false) {
+      if (!res.ok || data?.ok !== true) {
         const msg = data?.error || (await getApiErrorMessage(res));
         setError(msg || "Failed to create contact.");
         return;
@@ -85,7 +85,7 @@ export function NewContactForm() {
       router.refresh();
     } catch (err) {
       // basic error handling is fine here; no eslint disable needed
-      console.error(err);
+      console.error("[NewContactForm] submit error:", err);
       setError("Something went wrong while saving. Please try again.");
     } finally {
       setSaving(false);
@@ -95,6 +95,7 @@ export function NewContactForm() {
   return (
     <form
       onSubmit={handleSubmit}
+      aria-busy={saving}
       className="space-y-6 rounded-lg border border-slate-800 bg-slate-900/60 p-4"
     >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -111,13 +112,15 @@ export function NewContactForm() {
           <button
             type="button"
             onClick={() => router.push("/app/contacts")}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
+            disabled={saving}
+            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:opacity-60"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={saving}
+            aria-disabled={saving}
             className="rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-60"
           >
             {saving ? "Saving…" : "Save contact"}
@@ -145,6 +148,7 @@ export function NewContactForm() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Full name"
+            disabled={saving}
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
         </div>
@@ -158,6 +162,7 @@ export function NewContactForm() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="name@example.com"
+            disabled={saving}
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
         </div>
@@ -171,6 +176,7 @@ export function NewContactForm() {
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             placeholder="(555) 555-5555"
+            disabled={saving}
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
         </div>
@@ -182,6 +188,7 @@ export function NewContactForm() {
           <select
             value={role}
             onChange={(e) => setRole(normalizeRole(e.target.value))}
+            disabled={saving}
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
           >
             <option value="EXECUTOR">Executor</option>
@@ -204,6 +211,7 @@ export function NewContactForm() {
           onChange={(e) => setNotes(e.target.value)}
           rows={3}
           placeholder="Relationship to the estate, important details, etc."
+          disabled={saving}
           className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
         />
       </div>

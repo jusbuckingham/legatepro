@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { FormEvent } from "react";
 
 import { getApiErrorMessage } from "@/lib/utils";
 
@@ -11,6 +12,8 @@ const invoiceTermsOptions: { value: string; label: string }[] = [
   { value: "NET_45", label: "Net 45" },
   { value: "NET_60", label: "Net 60" },
 ];
+
+type ApiResponse = { ok: boolean; error?: string };
 
 type WorkspaceSettingsFormProps = {
   initial: {
@@ -61,15 +64,33 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
 
   const isSaving = status === "saving";
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  const resetFeedback = (): void => {
+    if (status !== "idle") setStatus("idle");
+    if (errorMessage) setErrorMessage(null);
+  };
+
+  async function handleSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
     setStatus("saving");
     setErrorMessage(null);
+
+    const trimmedCurrency = defaultCurrency.trim().toUpperCase();
+    if (trimmedCurrency.length !== 3) {
+      setStatus("error");
+      setErrorMessage("Currency must be a 3-letter ISO code (e.g., USD).");
+      return;
+    }
 
     const rateNumber =
       defaultHourlyRate.trim().length > 0
         ? Number.parseFloat(defaultHourlyRate)
         : null;
+
+    if (rateNumber != null && !Number.isFinite(rateNumber)) {
+      setStatus("error");
+      setErrorMessage("Hourly rate must be a valid number.");
+      return;
+    }
 
     const payload = {
       firmName: firmName.trim() || null,
@@ -84,7 +105,7 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
           ? Math.round(rateNumber * 100)
           : null,
       defaultInvoiceTerms,
-      defaultCurrency,
+      defaultCurrency: trimmedCurrency,
     };
 
     try {
@@ -96,9 +117,9 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
         body: JSON.stringify(payload),
       });
 
-      const data: { ok?: boolean; error?: string } = await res.json();
+      const data = (await res.json().catch(() => null)) as ApiResponse | null;
 
-      if (!res.ok || data?.ok === false) {
+      if (!res.ok || !data?.ok) {
         const msg = data?.error || (await getApiErrorMessage(res));
         setStatus("error");
         setErrorMessage(msg || "Failed to save settings.");
@@ -106,7 +127,8 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
       }
 
       setStatus("saved");
-    } catch {
+    } catch (err) {
+      console.error("[WorkspaceSettingsForm] save error:", err);
       setStatus("error");
       setErrorMessage("Network error while saving settings.");
     }
@@ -115,6 +137,7 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
   return (
     <form
       onSubmit={handleSubmit}
+      aria-busy={isSaving}
       className="space-y-8 rounded-lg border border-slate-800 bg-slate-900/60 p-4"
     >
       <div className="space-y-4">
@@ -129,7 +152,11 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
             <input
               type="text"
               value={firmName}
-              onChange={(e) => setFirmName(e.target.value)}
+              disabled={isSaving}
+              onChange={(e) => {
+                resetFeedback();
+                setFirmName(e.target.value);
+              }}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
               placeholder="Kofa Legal"
             />
@@ -142,7 +169,11 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
             <input
               type="text"
               value={firmAddressLine1}
-              onChange={(e) => setFirmAddressLine1(e.target.value)}
+              disabled={isSaving}
+              onChange={(e) => {
+                resetFeedback();
+                setFirmAddressLine1(e.target.value);
+              }}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
               placeholder="123 Main St"
             />
@@ -155,7 +186,11 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
             <input
               type="text"
               value={firmAddressLine2}
-              onChange={(e) => setFirmAddressLine2(e.target.value)}
+              disabled={isSaving}
+              onChange={(e) => {
+                resetFeedback();
+                setFirmAddressLine2(e.target.value);
+              }}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
               placeholder="Suite 400"
             />
@@ -168,7 +203,11 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
             <input
               type="text"
               value={firmCity}
-              onChange={(e) => setFirmCity(e.target.value)}
+              disabled={isSaving}
+              onChange={(e) => {
+                resetFeedback();
+                setFirmCity(e.target.value);
+              }}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
               placeholder="Los Angeles"
             />
@@ -181,7 +220,11 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
             <input
               type="text"
               value={firmState}
-              onChange={(e) => setFirmState(e.target.value)}
+              disabled={isSaving}
+              onChange={(e) => {
+                resetFeedback();
+                setFirmState(e.target.value);
+              }}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
               placeholder="CA"
             />
@@ -194,7 +237,11 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
             <input
               type="text"
               value={firmPostalCode}
-              onChange={(e) => setFirmPostalCode(e.target.value)}
+              disabled={isSaving}
+              onChange={(e) => {
+                resetFeedback();
+                setFirmPostalCode(e.target.value);
+              }}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
               placeholder="90001"
             />
@@ -207,7 +254,11 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
             <input
               type="text"
               value={firmCountry}
-              onChange={(e) => setFirmCountry(e.target.value)}
+              disabled={isSaving}
+              onChange={(e) => {
+                resetFeedback();
+                setFirmCountry(e.target.value);
+              }}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
               placeholder="United States"
             />
@@ -229,7 +280,11 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
               min={0}
               step="0.01"
               value={defaultHourlyRate}
-              onChange={(e) => setDefaultHourlyRate(e.target.value)}
+              disabled={isSaving}
+              onChange={(e) => {
+                resetFeedback();
+                setDefaultHourlyRate(e.target.value);
+              }}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
               placeholder="250"
             />
@@ -241,7 +296,11 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
             </label>
             <select
               value={defaultInvoiceTerms}
-              onChange={(e) => setDefaultInvoiceTerms(e.target.value)}
+              disabled={isSaving}
+              onChange={(e) => {
+                resetFeedback();
+                setDefaultInvoiceTerms(e.target.value);
+              }}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
             >
               {invoiceTermsOptions.map((opt) => (
@@ -259,7 +318,11 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
             <input
               type="text"
               value={defaultCurrency}
-              onChange={(e) => setDefaultCurrency(e.target.value.toUpperCase())}
+              disabled={isSaving}
+              onChange={(e) => {
+                resetFeedback();
+                setDefaultCurrency(e.target.value.toUpperCase());
+              }}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
               placeholder="USD"
             />
@@ -269,14 +332,16 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
 
       <div className="flex items-center justify-between gap-3">
         <div className="text-xs text-slate-500">
-          {status === "saved" && (
-            <span className="text-emerald-400">
-              Settings saved successfully.
-            </span>
-          )}
-          {status === "error" && errorMessage && (
-            <span className="text-red-400">{errorMessage}</span>
-          )}
+          <div role="status" aria-live="polite" className="text-xs">
+            {status === "saved" && (
+              <span className="text-emerald-400">
+                Settings saved successfully.
+              </span>
+            )}
+            {status === "error" && errorMessage && (
+              <span role="alert" className="text-red-400">{errorMessage}</span>
+            )}
+          </div>
         </div>
         <button
           type="submit"

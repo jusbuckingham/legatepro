@@ -65,6 +65,10 @@ export function ExpenseEditForm({
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const resetFeedback = (): void => {
+    if (errorMsg) setErrorMsg(null);
+  };
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (isSaving) return;
@@ -109,13 +113,15 @@ export function ExpenseEditForm({
       const data = (await res.json().catch(() => null)) as ApiResponse | null;
 
       if (!res.ok || data?.ok !== true) {
-        const msg = data?.error || (await getApiErrorMessage(res));
-        setErrorMsg(msg || "Failed to save expense. Please try again.");
+        const apiMessage = data?.error;
+        const fallbackMessage = await Promise.resolve(getApiErrorMessage(res));
+        const msg = apiMessage || fallbackMessage || "Failed to save expense. Please try again.";
+        setErrorMsg(msg);
         return;
       }
 
       // On success, go back to estate expenses list
-      router.push(`/app/estates/${estateId}/expenses`);
+      router.push(`/app/estates/${encodeURIComponent(estateId)}/expenses`);
       router.refresh();
     } catch (err) {
       console.error("Error saving expense", err);
@@ -129,6 +135,7 @@ export function ExpenseEditForm({
     <form
       onSubmit={handleSubmit}
       className="space-y-4 rounded-lg border border-slate-800 bg-slate-900/70 p-4"
+      aria-busy={isSaving}
     >
       <div className="grid gap-4 md:grid-cols-2">
         <div className="flex flex-col gap-1">
@@ -141,7 +148,11 @@ export function ExpenseEditForm({
           <input
             id="description"
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => {
+              resetFeedback();
+              setDescription(e.target.value);
+            }}
+            disabled={isSaving}
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
             placeholder="e.g. Filing fee, appraisal, travel"
           />
@@ -157,7 +168,11 @@ export function ExpenseEditForm({
           <input
             id="category"
             value={category}
-            onChange={(e) => setCategory(e.target.value)}
+            onChange={(e) => {
+              resetFeedback();
+              setCategory(e.target.value);
+            }}
+            disabled={isSaving}
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
             placeholder="Court costs, travel, professional services..."
           />
@@ -178,7 +193,11 @@ export function ExpenseEditForm({
             min="0"
             step="0.01"
             value={amountDollars}
-            onChange={(e) => setAmountDollars(e.target.value)}
+            onChange={(e) => {
+              resetFeedback();
+              setAmountDollars(e.target.value);
+            }}
+            disabled={isSaving}
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
             placeholder="e.g. 125.00"
           />
@@ -195,7 +214,11 @@ export function ExpenseEditForm({
             id="incurredAt"
             type="date"
             value={incurredAt}
-            onChange={(e) => setIncurredAt(e.target.value)}
+            onChange={(e) => {
+              resetFeedback();
+              setIncurredAt(e.target.value);
+            }}
+            disabled={isSaving}
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
         </div>
@@ -210,7 +233,11 @@ export function ExpenseEditForm({
           <select
             id="status"
             value={status}
-            onChange={(e) => setStatus(e.target.value)}
+            onChange={(e) => {
+              resetFeedback();
+              setStatus(e.target.value);
+            }}
+            disabled={isSaving}
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
           >
             <option value="PENDING">Pending</option>
@@ -232,7 +259,11 @@ export function ExpenseEditForm({
           <input
             id="payee"
             value={payee}
-            onChange={(e) => setPayee(e.target.value)}
+            onChange={(e) => {
+              resetFeedback();
+              setPayee(e.target.value);
+            }}
+            disabled={isSaving}
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
             placeholder="Who was paid (or will be paid)?"
           />
@@ -242,7 +273,11 @@ export function ExpenseEditForm({
           <input
             type="checkbox"
             checked={reimbursable}
-            onChange={(e) => setReimbursable(e.target.checked)}
+            onChange={(e) => {
+              resetFeedback();
+              setReimbursable(e.target.checked);
+            }}
+            disabled={isSaving}
             className="h-3 w-3 rounded border-slate-600 bg-slate-900 text-sky-500 focus:ring-sky-500"
           />
           Mark as reimbursable to the personal representative
@@ -259,7 +294,11 @@ export function ExpenseEditForm({
         <input
           id="receiptUrl"
           value={receiptUrl}
-          onChange={(e) => setReceiptUrl(e.target.value)}
+          onChange={(e) => {
+            resetFeedback();
+            setReceiptUrl(e.target.value);
+          }}
+          disabled={isSaving}
           className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
           placeholder="Link to a PDF or image of the receipt"
         />
@@ -280,7 +319,11 @@ export function ExpenseEditForm({
           id="notes"
           rows={3}
           value={notes}
-          onChange={(e) => setNotes(e.target.value)}
+          onChange={(e) => {
+            resetFeedback();
+            setNotes(e.target.value);
+          }}
+          disabled={isSaving}
           className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
           placeholder="Anything you want to remember about this expense."
         />
@@ -296,6 +339,7 @@ export function ExpenseEditForm({
         <button
           type="button"
           onClick={() => router.back()}
+          disabled={isSaving}
           className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800"
         >
           Cancel

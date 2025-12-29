@@ -121,8 +121,7 @@ export function InvoiceEditForm({
   useEffect(() => {
     // Any edit clears prior banners (but don't auto-clear immediately after setting an error).
     if (saveError) setSaveError(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, issueDate, dueDate, notes, currency, lineItems]);
+  }, [status, issueDate, dueDate, notes, currency, lineItems, saveError]);
 
   const handleLineItemChange = <K extends keyof InvoiceEditLineItem>(
     index: number,
@@ -196,6 +195,11 @@ export function InvoiceEditForm({
     event.preventDefault();
     if (isSaving) return;
 
+    if (!hasAtLeastOneMeaningfulLine) {
+      setSaveError("Add at least one line item (label or amount) before saving.");
+      return;
+    }
+
     setSaveError(null);
     setIsSaving(true);
 
@@ -209,20 +213,22 @@ export function InvoiceEditForm({
         amountCents: typeof item.amountCents === "number" && Number.isFinite(item.amountCents) ? item.amountCents : 0,
       }));
 
-      const response = await fetch(`/api/invoices/${invoiceId}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
+      const response = await fetch(`/api/invoices/${invoiceId}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            status,
+            issueDate: issueDate || undefined,
+            dueDate: dueDate || undefined,
+            notes: notes || undefined,
+            currency: currency || undefined,
+            lineItems: normalizedLineItems,
+          }),
         },
-        body: JSON.stringify({
-          status,
-          issueDate: issueDate || undefined,
-          dueDate: dueDate || undefined,
-          notes: notes || undefined,
-          currency: currency || undefined,
-          lineItems: normalizedLineItems,
-        }),
-      });
+      );
 
       // Clone before reading the body so we can safely extract a detailed error message.
       const responseForError = response.clone();

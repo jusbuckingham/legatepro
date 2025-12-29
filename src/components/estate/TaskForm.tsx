@@ -85,8 +85,8 @@ export function TaskForm({
         },
         body: JSON.stringify({
           subject: values.subject.trim(),
-          description: values.description,
-          notes: values.notes,
+          description: values.description?.trim() || "",
+          notes: values.notes?.trim() || "",
           status: values.status,
           priority: values.priority,
           date: values.date || null,
@@ -98,7 +98,7 @@ export function TaskForm({
         .catch(() => null)) as { ok?: boolean; error?: string } | null;
 
       if (!res.ok || data?.ok !== true) {
-        const apiMessage = await Promise.resolve(getApiErrorMessage(res));
+        const apiMessage = await getApiErrorMessage(res);
         const message = data?.error || apiMessage || "Failed to save task";
         setError(message);
         return;
@@ -117,7 +117,7 @@ export function TaskForm({
   };
 
   const handleCancel = () => {
-    router.push(`/app/estates/${estateId}/tasks`);
+    router.push(`/app/estates/${encodeURIComponent(estateId)}/tasks`);
   };
 
   return (
