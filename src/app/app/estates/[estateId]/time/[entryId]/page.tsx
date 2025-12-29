@@ -1,6 +1,13 @@
 "use client";
 
-import { use as usePromise, useEffect, useRef, useState, FormEvent } from "react";
+import {
+  use as usePromise,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  FormEvent,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -65,14 +72,15 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
   const [notes, setNotes] = useState<string>("");
   const [isBillable, setIsBillable] = useState<boolean>(true);
 
-  // Load the entry once
-  useEffect(() => {
-    const loadKey = `${estateId}:${entryId}`;
-    if (lastLoadedKeyRef.current === loadKey) return;
-    lastLoadedKeyRef.current = loadKey;
-    async function loadEntry() {
+  const loadEntry = useCallback(
+    async (force = false) => {
+      const loadKey = `${estateId}:${entryId}`;
+      if (!force && lastLoadedKeyRef.current === loadKey) return;
+      lastLoadedKeyRef.current = loadKey;
+
       setLoading(true);
       setError(null);
+      setSuccess(null);
       setMissingKind(null);
       let localMissingKind: "unauthorized" | "not_found" | "error" | null = null;
 
@@ -114,15 +122,10 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
             ? (data as { entry: Record<string, unknown> }).entry
             : ({} as Record<string, unknown>);
 
-        const minutes =
-          typeof rawEntry.minutes === "number"
-            ? rawEntry.minutes
-            : 0;
+        const minutes = typeof rawEntry.minutes === "number" ? rawEntry.minutes : 0;
 
         const hoursValue =
-          typeof rawEntry.hours === "number"
-            ? rawEntry.hours
-            : minutes / 60;
+          typeof rawEntry.hours === "number" ? rawEntry.hours : minutes / 60;
 
         const normalized: TimeEntry = {
           _id: String(rawEntry._id ?? entryId),
@@ -132,14 +135,9 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
               ? new Date(rawEntry.date).toISOString().slice(0, 10)
               : new Date().toISOString().slice(0, 10),
           hours: Number.isFinite(hoursValue) ? hoursValue : 0,
-          description:
-            typeof rawEntry.description === "string"
-              ? rawEntry.description
-              : "",
-          notes:
-            typeof rawEntry.notes === "string" ? rawEntry.notes : "",
-          isBillable:
-            rawEntry.isBillable === false ? false : true,
+          description: typeof rawEntry.description === "string" ? rawEntry.description : "",
+          notes: typeof rawEntry.notes === "string" ? rawEntry.notes : "",
+          isBillable: rawEntry.isBillable === false ? false : true,
         };
 
         setEntry(normalized);
@@ -160,10 +158,14 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
       } finally {
         setLoading(false);
       }
-    }
+    },
+    [estateId, entryId]
+  );
 
-    void loadEntry();
-  }, [estateId, entryId, missingKind]);
+  // Load the entry on mount / param change
+  useEffect(() => {
+    void loadEntry(false);
+  }, [loadEntry]);
 
   async function handleSave(e: FormEvent) {
     e.preventDefault();
@@ -411,10 +413,11 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
               {missingKind === "error" && (
                 <button
                   type="button"
-                  onClick={() => window.location.reload()}
-                  className="inline-flex items-center rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+                  onClick={() => void loadEntry(true)}
+                  className="inline-flex items-center rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={loading}
                 >
-                  Retry
+                  {loading ? "Retrying…" : "Retry"}
                 </button>
               )}
             </div>

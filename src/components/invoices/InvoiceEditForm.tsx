@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type InvoiceStatus = "DRAFT" | "SENT" | "UNPAID" | "PARTIAL" | "PAID" | "VOID";
@@ -41,6 +41,42 @@ function parseDollarsToCents(value: string): number | null {
   return Math.round(parsed * 100);
 }
 
+function formatDateForInput(value?: string | null): string {
+  if (!value) return "";
+  return value.slice(0, 10);
+}
+
+function clampNonNegativeNumber(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return value < 0 ? 0 : value;
+}
+
+async function readApiErrorMessage(response: Response): Promise<string | null> {
+  if (response.ok) return null;
+
+  const fallback = `Request failed (status ${response.status})`;
+
+  // Prefer JSON error payloads ({ ok:false, error }) but gracefully handle text/HTML.
+  try {
+    const contentType = response.headers.get("content-type") || "";
+
+    if (contentType.includes("application/json")) {
+      const data = (await response.json().catch(() => null)) as
+        | { ok?: boolean; error?: string }
+        | null;
+      if (data?.error) return data.error;
+      return fallback;
+    }
+
+    const text = await response.text().catch(() => "");
+    const trimmed = text.trim();
+    if (trimmed) return trimmed.length > 180 ? `${trimmed.slice(0, 180)}…` : trimmed;
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export function InvoiceEditForm({
   invoiceId,
   estateId,
@@ -55,10 +91,10 @@ export function InvoiceEditForm({
 
   const [status, setStatus] = useState<InvoiceStatus>(initialStatus);
   const [issueDate, setIssueDate] = useState<string>(
-    initialIssueDate ? initialIssueDate.slice(0, 10) : "",
+    formatDateForInput(initialIssueDate),
   );
   const [dueDate, setDueDate] = useState<string>(
-    initialDueDate ? initialDueDate.slice(0, 10) : "",
+    formatDateForInput(initialDueDate),
   );
   const [notes, setNotes] = useState<string>(initialNotes ?? "");
   const [currency, setCurrency] = useState<string>(initialCurrency ?? "USD");
@@ -78,7 +114,7 @@ export function InvoiceEditForm({
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
 
   const subtotalCents = useMemo(() => {
     return lineItems.reduce((acc, item) => {
@@ -92,6 +128,13 @@ export function InvoiceEditForm({
     [subtotalCents],
   );
 
+  useEffect(() => {
+    // Any edit clears prior banners.
+    if (saveError) setSaveError(null);
+    if (saveSuccess) setSaveSuccess(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, issueDate, dueDate, notes, currency, lineItems]);
+
   const handleLineItemChange = <K extends keyof InvoiceEditLineItem>(
     index: number,
     field: K,
@@ -100,6 +143,21 @@ export function InvoiceEditForm({
     setLineItems((prev) => {
       const next = [...prev];
       next[index] = { ...next[index], [field]: value };
+      const updated = next[index];
+      const qty = typeof updated.quantity === "number" ? updated.quantity : null;
+      const rate = typeof updated.rateCents === "number" ? updated.rateCents : null;
+      const amt = typeof updated.amountCents === "number" ? updated.amountCents : null;
+
+      // If quantity+rate are set and amount isn't, derive it.
+      if (
+        (field === "quantity" || field === "rateCents") &&
+        qty !== null &&
+        rate !== null &&
+        (amt === null || Number.isNaN(amt))
+      ) {
+        const derived = Math.round(clampNonNegativeNumber(qty) * clampNonNegativeNumber(rate));
+        next[index] = { ...updated, amountCents: derived };
+      }
       return next;
     });
   };
@@ -149,9 +207,10 @@ export function InvoiceEditForm({
     event,
   ) => {
     event.preventDefault();
+    if (isSaving) return;
 
     setSaveError(null);
-    setSaveSuccess(false);
+    setSaveSuccess(null);
     setIsSaving(true);
 
     try {
@@ -189,20 +248,13 @@ export function InvoiceEditForm({
           lineItems: normalizedLineItems,
         }),
       });
-
-      const data = (await response.json().catch(() => null)) as
-        | { ok?: boolean; error?: string }
-        | null;
-
-      if (!response.ok || data?.ok === false) {
-        const message =
-          data?.error || `Unable to save invoice (status ${response.status})`;
-        setSaveError(message);
+      const apiError = await readApiErrorMessage(response);
+      if (apiError) {
+        setSaveError(apiError);
         return;
       }
 
-      setSaveSuccess(true);
-
+      setSaveSuccess("Invoice saved.");
       // Redirect back to invoice detail page inside the app
       router.push(`/app/estates/${estateId}/invoices/${invoiceId}`);
       router.refresh();
@@ -212,6 +264,14 @@ export function InvoiceEditForm({
       setIsSaving(false);
     }
   };
+
+  const hasAtLeastOneMeaningfulLine = lineItems.some((li) => {
+    const labelOk = li.label.trim().length > 0;
+    const amt = typeof li.amountCents === "number" ? li.amountCents : 0;
+    return labelOk || amt > 0;
+  });
+
+  const canSubmit = !isSaving && hasAtLeastOneMeaningfulLine;
 
   return (
     <form
@@ -225,9 +285,8 @@ export function InvoiceEditForm({
       )}
 
       {saveSuccess && !saveError && (
-        <div className="rounded-md border border-emerald-500/60 bg-emerald-900/30 px-3 py-2 text-xs text-emerald-100">
-          Invoice saved successfully. Redirecting back to the invoice detail
-          view.
+        <div className="rounded-md border border-emerald-500/40 bg-emerald-900/20 px-3 py-2 text-xs text-emerald-100">
+          {saveSuccess}
         </div>
       )}
 
@@ -246,6 +305,7 @@ export function InvoiceEditForm({
               setStatus(event.target.value as InvoiceStatus)
             }
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            disabled={isSaving}
           >
             <option value="DRAFT">Draft</option>
             <option value="SENT">Sent</option>
@@ -269,6 +329,7 @@ export function InvoiceEditForm({
             value={issueDate}
             onChange={(event) => setIssueDate(event.target.value)}
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            disabled={isSaving}
           />
         </div>
 
@@ -285,6 +346,7 @@ export function InvoiceEditForm({
             value={dueDate}
             onChange={(event) => setDueDate(event.target.value)}
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            disabled={isSaving}
           />
           <p className="mt-1 text-[11px] text-slate-500">
             If left blank, your workspace invoice terms (for example, NET 30)
@@ -306,6 +368,7 @@ export function InvoiceEditForm({
           value={currency}
           onChange={(event) => setCurrency(event.target.value.toUpperCase())}
           className="max-w-[120px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          disabled={isSaving}
         />
         <p className="text-[11px] text-slate-500">
           Typically USD, but you can set another currency if needed.
@@ -320,7 +383,8 @@ export function InvoiceEditForm({
           <button
             type="button"
             onClick={addLineItem}
-            className="inline-flex items-center rounded-md border border-slate-700 px-2 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800"
+          className="inline-flex items-center rounded-md border border-slate-700 px-2 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isSaving}
           >
             + Add line item
           </button>
@@ -345,6 +409,7 @@ export function InvoiceEditForm({
                     }
                     className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
                     placeholder="For example, probate hearing preparation, rent collection, filing fee"
+                    disabled={isSaving}
                   />
                 </div>
 
@@ -362,6 +427,7 @@ export function InvoiceEditForm({
                       )
                     }
                     className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                    disabled={isSaving}
                   >
                     <option value="FEE">Fee</option>
                     <option value="TIME">Time</option>
@@ -398,6 +464,7 @@ export function InvoiceEditForm({
                     }
                     className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
                     placeholder="For example, 1, 2.5, 10"
+                    disabled={isSaving}
                   />
                   <p className="text-[10px] text-slate-500">
                     Hours, units, or quantity depending on the item type.
@@ -418,6 +485,7 @@ export function InvoiceEditForm({
                     }
                     className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
                     placeholder="For example, 250.00"
+                    disabled={isSaving}
                   />
                   <p className="text-[10px] text-slate-500">
                     Optional. If set along with quantity, the amount can be
@@ -440,11 +508,13 @@ export function InvoiceEditForm({
                       }
                       className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
                       placeholder="For example, 500.00"
+                      disabled={isSaving}
                     />
                     <button
                       type="button"
                       onClick={() => removeLineItem(index)}
-                      className="inline-flex items-center rounded-md border border-red-700 px-2 py-1 text-[11px] text-red-200 hover:bg-red-900/40"
+                      className="inline-flex items-center rounded-md border border-red-700 px-2 py-1 text-[11px] text-red-200 hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={isSaving}
                     >
                       Remove
                     </button>
@@ -479,6 +549,7 @@ export function InvoiceEditForm({
           onChange={(event) => setNotes(event.target.value)}
           className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
           placeholder="Describe the work performed, services rendered, or the purpose of this invoice."
+          disabled={isSaving}
         />
         <p className="text-[11px] text-slate-500">
           This appears on the invoice and helps you quickly recognize what was
@@ -489,8 +560,9 @@ export function InvoiceEditForm({
       <div className="flex items-center justify-end gap-2 pt-2">
         <button
           type="submit"
-          disabled={isSaving}
+          disabled={!canSubmit}
           className="inline-flex items-center rounded-md bg-sky-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+          aria-busy={isSaving}
         >
           {isSaving ? "Saving…" : "Save invoice"}
         </button>

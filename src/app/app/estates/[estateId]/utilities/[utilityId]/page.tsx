@@ -1,7 +1,10 @@
 // src/app/app/estates/[estateId]/utilities/[utilityId]/page.tsx
 
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { redirect } from "next/navigation";
+import PageHeader from "@/components/layout/PageHeader";
+import { auth } from "@/lib/auth";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import { revalidatePath } from "next/cache";
 
 import { connectToDatabase } from "../../../../../../lib/db";
@@ -9,6 +12,13 @@ import { UtilityAccount } from "../../../../../../models/UtilityAccount";
 import { EstateProperty } from "../../../../../../models/EstateProperty";
 
 export const dynamic = "force-dynamic";
+
+type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
+
+function roleAtLeast(role: EstateRole, minRole: EstateRole): boolean {
+  const order: Record<EstateRole, number> = { OWNER: 3, EDITOR: 2, VIEWER: 1 };
+  return order[role] >= order[minRole];
+}
 
 interface PageProps {
   params: {
@@ -136,6 +146,21 @@ export async function updateUtility(formData: FormData): Promise<void> {
     return;
   }
 
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect(`/login?callbackUrl=/app/estates/${estateId}/utilities/${utilityId}`);
+  }
+
+  // Throws if user has no access; viewers cannot edit.
+  const access = (await requireEstateEditAccess({
+    estateId,
+    userId: session.user.id,
+  })) as { role: EstateRole };
+
+  if (!roleAtLeast(access.role, "EDITOR")) {
+    redirect(`/app/estates/${estateId}/utilities/${utilityId}?forbidden=1`);
+  }
+
   await connectToDatabase();
 
   const update: Record<string, unknown> = {
@@ -159,10 +184,137 @@ export async function updateUtility(formData: FormData): Promise<void> {
 export default async function UtilityDetailPage({ params }: PageProps) {
   const { estateId, utilityId } = params;
 
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect(`/login?callbackUrl=/app/estates/${estateId}/utilities/${utilityId}`);
+  }
+
+  let role: EstateRole = "VIEWER";
+  try {
+    const access = (await requireEstateAccess({
+      estateId,
+      userId: session.user.id,
+    })) as { role: EstateRole };
+    role = access?.role ?? "VIEWER";
+  } catch {
+    return (
+      <div className="space-y-8 p-6">
+        <PageHeader
+          eyebrow={
+            <nav className="text-xs text-slate-500">
+              <Link href="/app/estates" className="text-slate-400 hover:text-slate-200 hover:underline">
+                Estates
+              </Link>
+              <span className="mx-1 text-slate-600">/</span>
+              <span className="truncate text-rose-200">Unauthorized</span>
+            </nav>
+          }
+          title="Unauthorized"
+          description="You don’t have access to this estate (or your session expired)."
+          actions={
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Link
+                href="/app/estates"
+                className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+              >
+                Back to estates
+              </Link>
+            </div>
+          }
+        />
+
+        <section className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm">
+          <p className="text-sm font-semibold text-slate-50">We can’t show this utility account.</p>
+          <p className="mt-1 text-sm text-slate-300">
+            If you think you should have access, ask an estate OWNER to add you as a collaborator.
+          </p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <Link
+              href="/app/estates"
+              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+            >
+              Return to estates
+            </Link>
+            <Link
+              href={`/login?callbackUrl=/app/estates/${estateId}/utilities/${utilityId}`}
+              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+            >
+              Re-authenticate
+            </Link>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  const canEdit = roleAtLeast(role, "EDITOR");
+
   const utility = await getUtilityDetail(estateId, utilityId);
 
   if (!utility) {
-    notFound();
+    return (
+      <div className="space-y-8 p-6">
+        <PageHeader
+          eyebrow={
+            <nav className="text-xs text-slate-500">
+              <Link href="/app/estates" className="text-slate-400 hover:text-slate-200 hover:underline">
+                Estates
+              </Link>
+              <span className="mx-1 text-slate-600">/</span>
+              <Link
+                href={`/app/estates/${estateId}`}
+                className="text-slate-400 hover:text-slate-200 hover:underline"
+              >
+                Overview
+              </Link>
+              <span className="mx-1 text-slate-600">/</span>
+              <Link
+                href={`/app/estates/${estateId}/utilities`}
+                className="text-slate-400 hover:text-slate-200 hover:underline"
+              >
+                Utilities
+              </Link>
+              <span className="mx-1 text-slate-600">/</span>
+              <span className="truncate text-rose-200">Not found</span>
+            </nav>
+          }
+          title="Utility account not found"
+          description="This utility record doesn’t exist (or was removed)."
+          actions={
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-200">
+                {role}
+              </span>
+              <Link
+                href={`/app/estates/${estateId}/utilities`}
+                className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+              >
+                Back to utilities
+              </Link>
+            </div>
+          }
+        />
+
+        <section className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm">
+          <p className="text-sm font-semibold text-slate-50">We couldn’t find this utility account.</p>
+          <p className="mt-1 text-sm text-slate-300">It may have been deleted, or the link might be incorrect.</p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <Link
+              href={`/app/estates/${estateId}/utilities`}
+              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+            >
+              Return to utilities
+            </Link>
+            <Link
+              href={`/app/estates/${estateId}`}
+              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+            >
+              Back to overview
+            </Link>
+          </div>
+        </section>
+      </div>
+    );
   }
 
   const autopayLabel = utility.isAutoPay ? "Autopay enabled" : "Autopay off";
@@ -194,6 +346,9 @@ export default async function UtilityDetailPage({ params }: PageProps) {
         </div>
 
         <div className="flex flex-col items-end gap-2">
+          <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-200">
+            {role}
+          </span>
           <div className="flex gap-2">
             <span
               className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -353,131 +508,148 @@ export default async function UtilityDetailPage({ params }: PageProps) {
       </section>
 
       {/* Quick edit */}
-      <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
-            Update this account
-          </h2>
-          <span className="text-xs text-slate-500">
-            Small changes you make here will refresh this page and the estate
-            utilities list.
-          </span>
-        </div>
-
-        <form action={updateUtility} className="space-y-4">
-          <input type="hidden" name="estateId" value={estateId} />
-          <input type="hidden" name="utilityId" value={utility.id} />
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-400">
-                Provider
-              </label>
-              <input
-                name="provider"
-                defaultValue={utility.provider}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-400">
-                Billing name
-              </label>
-              <input
-                name="billingName"
-                defaultValue={utility.billingName}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-400">
-                Utility type
-              </label>
-              <input
-                name="type"
-                defaultValue={utility.type}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
-                placeholder="electric, gas, water..."
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-400">
-                Status
-              </label>
-              <input
-                name="status"
-                defaultValue={utility.status}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
-                placeholder="active, closed..."
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-400">
-                Phone
-              </label>
-              <input
-                name="phone"
-                defaultValue={utility.phone}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-400">
-                Email
-              </label>
-              <input
-                name="email"
-                defaultValue={utility.email}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
-              />
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-medium text-slate-400">
-                Online portal URL
-              </label>
-              <input
-                name="onlinePortalUrl"
-                defaultValue={utility.onlinePortalUrl}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
-                placeholder="https://"
-              />
-            </div>
+      {canEdit ? (
+        <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
+              Update this account
+            </h2>
+            <span className="text-xs text-slate-500">
+              Small changes you make here will refresh this page and the estate
+              utilities list.
+            </span>
           </div>
 
-          <div className="flex items-center justify-between gap-4">
-            <label className="inline-flex items-center gap-2 text-xs text-slate-300">
-              <input
-                type="checkbox"
-                name="isAutoPay"
-                defaultChecked={utility.isAutoPay}
-                className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-rose-500"
+          <form action={updateUtility} className="space-y-4">
+            <input type="hidden" name="estateId" value={estateId} />
+            <input type="hidden" name="utilityId" value={utility.id} />
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-400">
+                  Provider
+                </label>
+                <input
+                  name="provider"
+                  defaultValue={utility.provider}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-400">
+                  Billing name
+                </label>
+                <input
+                  name="billingName"
+                  defaultValue={utility.billingName}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-400">
+                  Utility type
+                </label>
+                <input
+                  name="type"
+                  defaultValue={utility.type}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
+                  placeholder="electric, gas, water..."
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-400">
+                  Status
+                </label>
+                <input
+                  name="status"
+                  defaultValue={utility.status}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
+                  placeholder="active, closed..."
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-400">
+                  Phone
+                </label>
+                <input
+                  name="phone"
+                  defaultValue={utility.phone}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-400">
+                  Email
+                </label>
+                <input
+                  name="email"
+                  defaultValue={utility.email}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
+                />
+              </div>
+              <div className="space-y-1 md:col-span-2">
+                <label className="text-xs font-medium text-slate-400">
+                  Online portal URL
+                </label>
+                <input
+                  name="onlinePortalUrl"
+                  defaultValue={utility.onlinePortalUrl}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
+                  placeholder="https://"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <label className="inline-flex items-center gap-2 text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  name="isAutoPay"
+                  defaultChecked={utility.isAutoPay}
+                  className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-rose-500"
+                />
+                Autopay enabled
+              </label>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-400">
+                Internal notes
+              </label>
+              <textarea
+                name="notes"
+                defaultValue={utility.notes}
+                className="min-h-[80px] w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
+                placeholder="Court reference numbers, hardship program notes, attorney guidance..."
               />
-              Autopay enabled
-            </label>
-          </div>
+            </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-400">
-              Internal notes
-            </label>
-            <textarea
-              name="notes"
-              defaultValue={utility.notes}
-              className="min-h-[80px] w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
-              placeholder="Court reference numbers, hardship program notes, attorney guidance..."
-            />
-          </div>
-
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              className="inline-flex items-center rounded-md bg-rose-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-400"
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                className="inline-flex items-center rounded-md bg-rose-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-400"
+              >
+                Save changes
+              </button>
+            </div>
+          </form>
+        </section>
+      ) : (
+        <section className="rounded-xl border border-amber-500/30 bg-amber-950/30 p-4">
+          <p className="text-sm font-semibold text-amber-100">View-only</p>
+          <p className="mt-1 text-sm text-amber-200/90">
+            Your role is <span className="font-semibold">{role}</span>. You can view this utility account, but editing requires EDITOR access.
+          </p>
+          <div className="mt-3">
+            <Link
+              href={`/app/estates/${estateId}/collaborators?${new URLSearchParams({ request: "EDITOR", from: "utility", utilityId }).toString()}`}
+              className="inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-100 hover:bg-amber-500/20"
             >
-              Save changes
-            </button>
+              Request editor access
+            </Link>
           </div>
-        </form>
-      </section>
+        </section>
+      )}
     </div>
   );
 }

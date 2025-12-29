@@ -93,34 +93,78 @@ export default function CollaboratorsManager({
 
   const fetchInvites = useCallback(async () => {
     if (!isOwner) return;
-    setInvitesLoading(true);
-    setInvitesError(null);
 
-    const res = await fetch(`/api/estates/${estateId}/invites`, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-    });
+    let isMounted = true;
+    try {
+      setInvitesLoading(true);
+      setInvitesError(null);
 
-    setInvitesLoading(false);
+      const res = await fetch(`/api/estates/${estateId}/invites`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
 
-    const data = (await safeJson<ApiResponse<{ invites?: Invite[] }>>(res)) ?? null;
+      const data = (await safeJson<ApiResponse<{ invites?: Invite[] }>>(res)) ?? null;
 
-    if (!res.ok || !data || data.ok === false) {
-      const msg =
-        data && data.ok === false
-          ? data.error
-          : await Promise.resolve(getApiErrorMessage(res));
-      setInvitesError(msg || "Failed to load invites");
-      return;
+      if (!res.ok || !data || data.ok === false) {
+        const msg =
+          data && data.ok === false
+            ? data.error
+            : await Promise.resolve(getApiErrorMessage(res));
+        if (isMounted) setInvitesError(msg || "Failed to load invites");
+        return;
+      }
+
+      if (isMounted) setInvites(Array.isArray(data.invites) ? data.invites : []);
+    } finally {
+      if (isMounted) setInvitesLoading(false);
     }
 
-    setInvites(Array.isArray(data.invites) ? data.invites : []);
+    return () => {
+      isMounted = false;
+    };
   }, [estateId, isOwner]);
 
   useEffect(() => {
-    // Schedule in a microtask so we don't trigger the `set-state-in-effect` rule.
-    void Promise.resolve().then(() => fetchInvites());
-  }, [fetchInvites]);
+    if (!isOwner) return;
+
+    let cancelled = false;
+
+    async function loadInvitesOnMount() {
+      try {
+        setInvitesLoading(true);
+        setInvitesError(null);
+
+        const res = await fetch(`/api/estates/${estateId}/invites`, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        });
+
+        const data = (await safeJson<ApiResponse<{ invites?: Invite[] }>>(res)) ?? null;
+
+        if (cancelled) return;
+
+        if (!res.ok || !data || data.ok === false) {
+          const msg =
+            data && data.ok === false
+              ? data.error
+              : await Promise.resolve(getApiErrorMessage(res));
+          setInvitesError(msg || "Failed to load invites");
+          return;
+        }
+
+        setInvites(Array.isArray(data.invites) ? data.invites : []);
+      } finally {
+        if (!cancelled) setInvitesLoading(false);
+      }
+    }
+
+    void loadInvitesOnMount();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [estateId, isOwner]);
 
   async function createInvite() {
     const email = inviteEmail.trim().toLowerCase();
@@ -422,7 +466,9 @@ export default function CollaboratorsManager({
               <div className="text-xs font-medium text-gray-700">Recent invites</div>
               <button
                 type="button"
-                onClick={fetchInvites}
+                onClick={() => {
+                  void fetchInvites();
+                }}
                 disabled={invitesLoading}
                 className="text-xs text-blue-700 hover:underline disabled:opacity-50"
               >

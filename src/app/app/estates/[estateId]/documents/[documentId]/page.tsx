@@ -30,6 +30,11 @@ interface EstateDocumentLean {
   tags?: string[];
   notes?: string;
   isSensitive?: boolean;
+  fileName?: string;
+  fileType?: string;
+  fileSizeBytes?: number;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
 }
 
 const SUBJECT_LABELS: Record<string, string> = {
@@ -64,8 +69,14 @@ async function deleteDocument(formData: FormData): Promise<void> {
     redirect(`/login?callbackUrl=/app/estates/${estateId}/documents/${documentId}`);
   }
 
-  const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
-  if (access.role === "VIEWER") {
+  let access: { role: EstateRole } | null = null;
+  try {
+    access = (await requireEstateEditAccess({ estateId, userId: session.user.id })) as { role: EstateRole };
+  } catch {
+    redirect(`/login?callbackUrl=/app/estates/${estateId}/documents/${documentId}`);
+  }
+
+  if (!access || access.role === "VIEWER") {
     redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
   }
 
@@ -101,6 +112,9 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
 
   const forbidden = forbiddenRaw === "1" || forbiddenRaw.toLowerCase() === "true";
   const confirmNeeded = confirmRaw === "1" || confirmRaw.toLowerCase() === "true";
+
+  // Treat forbidden redirects as read-only mode (even if user is normally an EDITOR/OWNER)
+  const isReadOnly = forbidden;
 
   const requestAccessHref = `/app/estates/${estateId}/collaborators?${
     new URLSearchParams({
@@ -171,7 +185,8 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
     );
   }
 
-  const canEdit = roleAtLeast(access.role, "EDITOR");
+  const role = access?.role ?? "VIEWER";
+  const canEdit = roleAtLeast(role, "EDITOR") && !isReadOnly;
 
   await connectToDatabase();
 
@@ -192,10 +207,7 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
                 Estates
               </Link>
               <span className="mx-1 text-slate-600">/</span>
-              <Link
-                href={`/app/estates/${estateId}`}
-                className="text-slate-400 hover:text-slate-200 hover:underline"
-              >
+              <Link href={`/app/estates/${estateId}`} className="text-slate-400 hover:text-slate-200 hover:underline">
                 Overview
               </Link>
               <span className="mx-1 text-slate-600">/</span>
@@ -214,7 +226,7 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
           actions={
             <div className="flex flex-wrap items-center justify-end gap-2">
               <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-200">
-                {access?.role ?? "VIEWER"}
+                {role}
               </span>
               <Link
                 href={`/app/estates/${estateId}/documents`}
@@ -228,9 +240,7 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
 
         <section className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm">
           <p className="text-sm font-semibold text-slate-50">We couldn’t find this document.</p>
-          <p className="mt-1 text-sm text-slate-300">
-            It may have been deleted, or the link might be incorrect.
-          </p>
+          <p className="mt-1 text-sm text-slate-300">It may have been deleted, or the link might be incorrect.</p>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             <Link
               href={`/app/estates/${estateId}/documents`}
@@ -251,6 +261,13 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
   }
 
   const tagsArray = Array.isArray(doc.tags) ? doc.tags : [];
+  const docId = doc._id?.toString?.() ?? String(doc._id);
+  const createdAtText = doc.createdAt ? new Date(doc.createdAt).toLocaleString() : "—";
+  const updatedAtText = doc.updatedAt ? new Date(doc.updatedAt).toLocaleString() : "—";
+  const fileSizeText =
+    typeof doc.fileSizeBytes === "number"
+      ? `${(doc.fileSizeBytes / 1024).toFixed(doc.fileSizeBytes >= 1024 * 1024 ? 1 : 0)} KB`
+      : "—";
 
   return (
     <div className="space-y-8 p-6">
@@ -261,10 +278,7 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
               Estates
             </Link>
             <span className="mx-1 text-slate-600">/</span>
-            <Link
-              href={`/app/estates/${estateId}`}
-              className="text-slate-400 hover:text-slate-200 hover:underline"
-            >
+            <Link href={`/app/estates/${estateId}`} className="text-slate-400 hover:text-slate-200 hover:underline">
               Overview
             </Link>
             <span className="mx-1 text-slate-600">/</span>
@@ -283,13 +297,15 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
         actions={
           <div className="flex flex-wrap items-center justify-end gap-2">
             <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-200">
-              {access?.role ?? "VIEWER"}
+              {role}
             </span>
+
             {(!canEdit || forbidden) && (
               <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-950/50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-100">
                 View-only
               </span>
             )}
+
             {doc.isSensitive && (
               <span className="inline-flex items-center rounded-full border border-rose-500/30 bg-rose-950/50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-100">
                 Sensitive
@@ -303,7 +319,7 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
               Back
             </Link>
 
-            {canEdit && !forbidden && (
+            {canEdit && (
               <Link
                 href={`/app/estates/${estateId}/documents/${documentId}/edit`}
                 className="inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20"
@@ -363,7 +379,7 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
             <p className="mt-0.5 text-xs text-amber-200/90">
               {forbidden
                 ? "This action requires EDITOR access."
-                : `Your role is ${access.role}. Ask an OWNER to grant EDITOR access if you need to make changes.`}
+                : `Your role is ${role}. Ask an OWNER to grant EDITOR access if you need to make changes.`}
             </p>
             <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <Link
@@ -372,9 +388,7 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
               >
                 Request editor access
               </Link>
-              <p className="text-[11px] text-amber-200/80">
-                Tip: If you’re the OWNER, invite yourself from Collaborators.
-              </p>
+              <p className="text-[11px] text-amber-200/80">Tip: If you’re the OWNER, invite yourself from Collaborators.</p>
             </div>
           </div>
         )}
@@ -399,6 +413,23 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
         <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Document label</p>
           <p className="mt-1 text-sm font-medium text-slate-50">{doc.label || "—"}</p>
+        </div>
+
+        {/* File metadata and record info */}
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">File</p>
+            <p className="mt-1 text-sm font-medium text-slate-50">{doc.fileName || "—"}</p>
+            <p className="mt-0.5 text-xs text-slate-400">
+              {doc.fileType || "—"} • {fileSizeText}
+            </p>
+          </div>
+          <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Record</p>
+            <p className="mt-1 text-sm font-medium text-slate-50">{docId}</p>
+            <p className="mt-0.5 text-xs text-slate-400">Created: {createdAtText}</p>
+            <p className="mt-0.5 text-xs text-slate-400">Updated: {updatedAtText}</p>
+          </div>
         </div>
 
         <div className="grid gap-3 md:grid-cols-2">
@@ -445,6 +476,23 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
             <p className="mt-1 text-sm font-medium text-slate-50">—</p>
           )}
         </div>
+
+        {/* Raw record inspector */}
+        <details className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+          <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-slate-300">
+            Raw record
+          </summary>
+          <pre className="mt-3 max-h-80 overflow-auto rounded-md border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-200">
+            {JSON.stringify(
+              {
+                ...doc,
+                _id: docId,
+              },
+              null,
+              2
+            )}
+          </pre>
+        </details>
 
         <div className="flex flex-col gap-3 border-t border-slate-800 pt-3 text-xs sm:flex-row sm:items-center sm:justify-between">
           <Link
@@ -496,7 +544,8 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
                 className="mt-0.5 h-4 w-4 rounded border-rose-500/40 bg-slate-950 text-rose-400 focus:ring-rose-400"
               />
               <span>
-                I understand this will remove the document index entry for <span className="font-semibold">{doc.label || "this document"}</span>.
+                I understand this will remove the document index entry for{" "}
+                <span className="font-semibold">{doc.label || "this document"}</span>.
               </span>
             </label>
 
@@ -508,14 +557,11 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
                 Delete index entry
               </button>
 
-              <p className="text-[11px] text-rose-200/70">
-                Tip: if you only need to change label/subject, use Edit instead.
-              </p>
+              <p className="text-[11px] text-rose-200/70">Tip: if you only need to change label/subject, use Edit instead.</p>
             </div>
           </form>
         </section>
       ) : null}
-
     </div>
   );
 }

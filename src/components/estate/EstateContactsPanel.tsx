@@ -57,14 +57,16 @@ export function EstateContactsPanel({
   const [availableContacts, setAvailableContacts] =
     useState<AvailableContact[]>(initialAvailable);
   const [selectedContactId, setSelectedContactId] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [linking, setLinking] = useState(false);
   const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const busy = linking || unlinkingId !== null;
 
   const handleLink = async () => {
     if (!selectedContactId) return;
 
-    setBusy(true);
+    setLinking(true);
     setError(null);
 
     try {
@@ -114,12 +116,11 @@ export function EstateContactsPanel({
       console.error(err);
       setError("Something went wrong while linking. Please try again.");
     } finally {
-      setBusy(false);
+      setLinking(false);
     }
   };
 
   const handleUnlink = async (contactId: string) => {
-    setBusy(true);
     setUnlinkingId(contactId);
     setError(null);
 
@@ -168,7 +169,6 @@ export function EstateContactsPanel({
       setError("Something went wrong while unlinking. Please try again.");
     } finally {
       setUnlinkingId(null);
-      setBusy(false);
     }
   };
 
@@ -204,6 +204,7 @@ export function EstateContactsPanel({
           <select
             value={selectedContactId}
             onChange={(e) => setSelectedContactId(e.target.value)}
+            disabled={busy}
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
           >
             <option value="">
@@ -225,7 +226,7 @@ export function EstateContactsPanel({
           onClick={handleLink}
           className="rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-60"
         >
-          {busy ? "Linking…" : "Link contact"}
+          {linking ? "Linking…" : "Link contact"}
         </button>
       </div>
 
@@ -263,7 +264,7 @@ export function EstateContactsPanel({
                 </div>
                 <button
                   type="button"
-                  disabled={busy && unlinkingId === c._id}
+                  disabled={unlinkingId === c._id}
                   onClick={() => handleUnlink(c._id)}
                   className="text-[11px] text-slate-400 hover:text-red-400 disabled:opacity-60"
                 >
