@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { getApiErrorMessage } from "@/lib/utils";
 
 type PropertyFormState = {
   name: string;
@@ -72,12 +73,21 @@ export function PropertyForm({
     event: FormEvent<HTMLFormElement>
   ): Promise<void> => {
     event.preventDefault();
+    if (isSubmitting) return;
+
+    // Basic client validation
+    const trimmedName = form.name.trim();
+    if (!trimmedName) {
+      setError("Property name is required.");
+      return;
+    }
+
     setError(null);
     setIsSubmitting(true);
 
     try {
       const payload = {
-        name: form.name.trim(),
+        name: trimmedName,
         type: form.type,
         address: form.address.trim(),
         city: form.city.trim(),
@@ -119,7 +129,8 @@ export function PropertyForm({
         const fallback = isEdit
           ? "Failed to update property."
           : "Failed to create property.";
-        setError(data?.error || fallback);
+        const apiMessage = await Promise.resolve(getApiErrorMessage(response));
+        setError(data?.error || apiMessage || fallback);
         return;
       }
 
@@ -309,18 +320,27 @@ export function PropertyForm({
           </button>
           <button
             type="button"
+            disabled={isSubmitting}
             onClick={() =>
               router.push(
                 `/app/estates/${encodeURIComponent(estateId)}/properties`
               )
             }
-            className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-800"
+            className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-800 disabled:opacity-60"
           >
             Cancel
           </button>
         </div>
 
-        {error && <p className="text-xs text-rose-400">{error}</p>}
+        {error && (
+          <div
+            role="alert"
+            aria-live="polite"
+            className="rounded-lg border border-rose-500/30 bg-rose-950/40 px-3 py-2 text-xs text-rose-100"
+          >
+            {error}
+          </div>
+        )}
       </div>
     </form>
   );

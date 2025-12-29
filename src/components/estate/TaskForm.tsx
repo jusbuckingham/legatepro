@@ -53,10 +53,7 @@ export function TaskForm({
 
   const isEdit = mode === "edit";
 
-  const handleChange = (
-    field: keyof TaskFormInitialValues,
-    value: string
-  ) => {
+  const handleChange = (field: keyof TaskFormInitialValues, value: string) => {
     setValues((prev) => ({
       ...prev,
       [field]: value,
@@ -65,13 +62,19 @@ export function TaskForm({
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    if (isSubmitting) return;
+
     setIsSubmitting(true);
     setError(null);
 
+    const safeEstateId = encodeURIComponent(estateId);
+    const safeTaskId = taskId ? encodeURIComponent(taskId) : null;
+
     try {
-      const endpoint = isEdit && taskId
-        ? `/api/estates/${estateId}/tasks/${taskId}`
-        : `/api/estates/${estateId}/tasks`;
+      const endpoint = isEdit && safeTaskId
+        ? `/api/estates/${safeEstateId}/tasks/${safeTaskId}`
+        : `/api/estates/${safeEstateId}/tasks`;
 
       const method = isEdit ? "PATCH" : "POST";
 
@@ -81,7 +84,7 @@ export function TaskForm({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          subject: values.subject,
+          subject: values.subject.trim(),
           description: values.description,
           notes: values.notes,
           status: values.status,
@@ -90,17 +93,18 @@ export function TaskForm({
         }),
       });
 
-      const data = await res.json().catch(() => null);
+      const data = (await res
+        .json()
+        .catch(() => null)) as { ok?: boolean; error?: string } | null;
 
       if (!res.ok || data?.ok !== true) {
-        const msg =
-          data?.error ||
-          (await getApiErrorMessage(res)) ||
-          "Failed to save task";
-        throw new Error(msg);
+        const apiMessage = await Promise.resolve(getApiErrorMessage(res));
+        const message = data?.error || apiMessage || "Failed to save task";
+        setError(message);
+        return;
       }
 
-      router.push(`/app/estates/${estateId}/tasks`);
+      router.push(`/app/estates/${safeEstateId}/tasks`);
       router.refresh();
     } catch (err) {
       console.error("[TaskForm] submit error:", err);

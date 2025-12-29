@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 
 import { getApiErrorMessage } from "@/lib/utils";
 
+type ApiResponse = { ok?: boolean; error?: string };
+
 type ContactRole =
   | "EXECUTOR"
   | "ADMINISTRATOR"
@@ -44,6 +46,8 @@ export function NewContactForm() {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
+    if (saving) return;
+
     if (!name.trim()) {
       setError("Name is required.");
       return;
@@ -69,22 +73,21 @@ export function NewContactForm() {
         body: JSON.stringify(payload),
       });
 
-      type ApiResponse = { ok?: boolean; error?: string };
       const data = (await res.json().catch(() => null)) as ApiResponse | null;
 
       if (!res.ok || data?.ok === false) {
         const msg = data?.error || (await getApiErrorMessage(res));
         setError(msg || "Failed to create contact.");
-        setSaving(false);
         return;
       }
 
-      setSaving(false);
       router.push("/app/contacts");
+      router.refresh();
     } catch (err) {
       // basic error handling is fine here; no eslint disable needed
       console.error(err);
       setError("Something went wrong while saving. Please try again.");
+    } finally {
       setSaving(false);
     }
   };
@@ -123,9 +126,13 @@ export function NewContactForm() {
       </div>
 
       {error && (
-        <p className="text-xs text-red-400">
+        <div
+          role="alert"
+          aria-live="polite"
+          className="rounded-md border border-rose-500/30 bg-rose-950/40 p-3 text-xs text-rose-100"
+        >
           {error}
-        </p>
+        </div>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">

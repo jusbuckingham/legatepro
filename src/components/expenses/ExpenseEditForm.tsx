@@ -68,7 +68,6 @@ export function ExpenseEditForm({
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (isSaving) return;
-    setIsSaving(true);
     setErrorMsg(null);
 
     let parsedAmountCents: number | undefined;
@@ -84,6 +83,8 @@ export function ExpenseEditForm({
       parsedAmountCents = Math.round(asNumber * 100);
     }
 
+    setIsSaving(true);
+
     const payload = {
       description: description.trim(),
       category: category.trim(),
@@ -97,31 +98,28 @@ export function ExpenseEditForm({
     };
 
     try {
-      try {
-        const res = await fetch(`/api/expenses/${expenseId}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        });
+      const res = await fetch(`/api/expenses/${expenseId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
 
-        const data = (await res.json().catch(() => null)) as ApiResponse | null;
+      const data = (await res.json().catch(() => null)) as ApiResponse | null;
 
-        if (!res.ok || data?.ok !== true) {
-          const msg = data?.error || (await getApiErrorMessage(res));
-          setErrorMsg(msg || "Failed to save expense. Please try again.");
-          return;
-        }
-
-        // On success, go back to estate expenses list
-        router.push(`/app/estates/${estateId}/expenses`);
-        router.refresh();
-      } catch (err) {
-        console.error("Error saving expense", err);
-        setErrorMsg("Unexpected error while saving. Please try again.");
+      if (!res.ok || data?.ok !== true) {
+        const msg = data?.error || (await getApiErrorMessage(res));
+        setErrorMsg(msg || "Failed to save expense. Please try again.");
         return;
       }
+
+      // On success, go back to estate expenses list
+      router.push(`/app/estates/${estateId}/expenses`);
+      router.refresh();
+    } catch (err) {
+      console.error("Error saving expense", err);
+      setErrorMsg("Unexpected error while saving. Please try again.");
     } finally {
       setIsSaving(false);
     }

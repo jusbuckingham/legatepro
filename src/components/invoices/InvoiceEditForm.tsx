@@ -25,9 +25,7 @@ type InvoiceEditFormProps = {
   initialLineItems: InvoiceEditLineItem[];
 };
 
-function formatCentsToDollarsDisplay(
-  cents: number | null | undefined,
-): string {
+function formatCentsToDollarsDisplay(cents: number | null | undefined): string {
   if (typeof cents !== "number" || Number.isNaN(cents)) return "";
   return (cents / 100).toFixed(2);
 }
@@ -90,12 +88,8 @@ export function InvoiceEditForm({
   const router = useRouter();
 
   const [status, setStatus] = useState<InvoiceStatus>(initialStatus);
-  const [issueDate, setIssueDate] = useState<string>(
-    formatDateForInput(initialIssueDate),
-  );
-  const [dueDate, setDueDate] = useState<string>(
-    formatDateForInput(initialDueDate),
-  );
+  const [issueDate, setIssueDate] = useState<string>(formatDateForInput(initialIssueDate));
+  const [dueDate, setDueDate] = useState<string>(formatDateForInput(initialDueDate));
   const [notes, setNotes] = useState<string>(initialNotes ?? "");
   const [currency, setCurrency] = useState<string>(initialCurrency ?? "USD");
   const [lineItems, setLineItems] = useState<InvoiceEditLineItem[]>(
@@ -114,7 +108,6 @@ export function InvoiceEditForm({
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
 
   const subtotalCents = useMemo(() => {
     return lineItems.reduce((acc, item) => {
@@ -123,15 +116,11 @@ export function InvoiceEditForm({
     }, 0);
   }, [lineItems]);
 
-  const subtotalDisplay = useMemo(
-    () => formatCentsToDollarsDisplay(subtotalCents),
-    [subtotalCents],
-  );
+  const subtotalDisplay = useMemo(() => formatCentsToDollarsDisplay(subtotalCents), [subtotalCents]);
 
   useEffect(() => {
-    // Any edit clears prior banners.
+    // Any edit clears prior banners (but don't auto-clear immediately after setting an error).
     if (saveError) setSaveError(null);
-    if (saveSuccess) setSaveSuccess(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, issueDate, dueDate, notes, currency, lineItems]);
 
@@ -203,14 +192,11 @@ export function InvoiceEditForm({
     });
   };
 
-  const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (
-    event,
-  ) => {
+  const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault();
     if (isSaving) return;
 
     setSaveError(null);
-    setSaveSuccess(null);
     setIsSaving(true);
 
     try {
@@ -218,20 +204,9 @@ export function InvoiceEditForm({
         id: item.id,
         label: item.label,
         type: item.type,
-        quantity:
-          typeof item.quantity === "number" && Number.isFinite(item.quantity)
-            ? item.quantity
-            : 0,
-        rateCents:
-          typeof item.rateCents === "number" &&
-          Number.isFinite(item.rateCents)
-            ? item.rateCents
-            : 0,
-        amountCents:
-          typeof item.amountCents === "number" &&
-          Number.isFinite(item.amountCents)
-            ? item.amountCents
-            : 0,
+        quantity: typeof item.quantity === "number" && Number.isFinite(item.quantity) ? item.quantity : 0,
+        rateCents: typeof item.rateCents === "number" && Number.isFinite(item.rateCents) ? item.rateCents : 0,
+        amountCents: typeof item.amountCents === "number" && Number.isFinite(item.amountCents) ? item.amountCents : 0,
       }));
 
       const response = await fetch(`/api/invoices/${invoiceId}`, {
@@ -248,17 +223,32 @@ export function InvoiceEditForm({
           lineItems: normalizedLineItems,
         }),
       });
-      const apiError = await readApiErrorMessage(response);
-      if (apiError) {
+
+      // Clone before reading the body so we can safely extract a detailed error message.
+      const responseForError = response.clone();
+
+      const contentType = response.headers.get("content-type") || "";
+      const json = contentType.includes("application/json")
+        ? ((await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null)
+        : null;
+
+      // Handle non-2xx errors and also 2xx responses that return { ok:false, error }
+      if (!response.ok) {
+        const apiError = json?.error ?? (await readApiErrorMessage(responseForError)) ?? "Request failed.";
         setSaveError(apiError);
         return;
       }
 
-      setSaveSuccess("Invoice saved.");
+      if (json && json.ok === false) {
+        setSaveError(json.error || "Request failed.");
+        return;
+      }
+
       // Redirect back to invoice detail page inside the app
       router.push(`/app/estates/${estateId}/invoices/${invoiceId}`);
       router.refresh();
-    } catch {
+    } catch (err) {
+      console.error("[InvoiceEditForm] save error:", err);
       setSaveError("Unexpected error while saving invoice.");
     } finally {
       setIsSaving(false);
@@ -274,36 +264,22 @@ export function InvoiceEditForm({
   const canSubmit = !isSaving && hasAtLeastOneMeaningfulLine;
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="space-y-4 rounded-lg border border-slate-800 bg-slate-900/70 p-4"
-    >
+    <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border border-slate-800 bg-slate-900/70 p-4">
       {saveError && (
         <div className="rounded-md border border-red-500/60 bg-red-900/30 px-3 py-2 text-xs text-red-100">
           {saveError}
         </div>
       )}
 
-      {saveSuccess && !saveError && (
-        <div className="rounded-md border border-emerald-500/40 bg-emerald-900/20 px-3 py-2 text-xs text-emerald-100">
-          {saveSuccess}
-        </div>
-      )}
-
       <div className="grid gap-4 md:grid-cols-3">
         <div className="flex flex-col gap-1">
-          <label
-            htmlFor="status"
-            className="text-xs font-medium text-slate-300"
-          >
+          <label htmlFor="status" className="text-xs font-medium text-slate-300">
             Status
           </label>
           <select
             id="status"
             value={status}
-            onChange={(event) =>
-              setStatus(event.target.value as InvoiceStatus)
-            }
+            onChange={(event) => setStatus(event.target.value as InvoiceStatus)}
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
             disabled={isSaving}
           >
@@ -317,10 +293,7 @@ export function InvoiceEditForm({
         </div>
 
         <div className="flex flex-col gap-1">
-          <label
-            htmlFor="issueDate"
-            className="text-xs font-medium text-slate-300"
-          >
+          <label htmlFor="issueDate" className="text-xs font-medium text-slate-300">
             Issue date
           </label>
           <input
@@ -334,10 +307,7 @@ export function InvoiceEditForm({
         </div>
 
         <div className="flex flex-col gap-1">
-          <label
-            htmlFor="dueDate"
-            className="text-xs font-medium text-slate-300"
-          >
+          <label htmlFor="dueDate" className="text-xs font-medium text-slate-300">
             Due date
           </label>
           <input
@@ -349,42 +319,35 @@ export function InvoiceEditForm({
             disabled={isSaving}
           />
           <p className="mt-1 text-[11px] text-slate-500">
-            If left blank, your workspace invoice terms (for example, NET 30)
-            will be applied automatically where possible.
+            If left blank, your workspace invoice terms (for example, NET 30) will be applied automatically where
+            possible.
           </p>
         </div>
       </div>
 
       <div className="flex flex-col gap-1">
-        <label
-          htmlFor="currency"
-          className="text-xs font-medium text-slate-300"
-        >
+        <label htmlFor="currency" className="text-xs font-medium text-slate-300">
           Currency
         </label>
         <input
           id="currency"
           type="text"
           value={currency}
-          onChange={(event) => setCurrency(event.target.value.toUpperCase())}
+          onChange={(event) => setCurrency(event.target.value.toUpperCase().slice(0, 3))}
           className="max-w-[120px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
           disabled={isSaving}
         />
-        <p className="text-[11px] text-slate-500">
-          Typically USD, but you can set another currency if needed.
-        </p>
+        <p className="text-[11px] text-slate-500">Typically USD, but you can set another currency if needed.</p>
       </div>
 
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Line items
-          </h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Line items</h2>
           <button
             type="button"
             onClick={addLineItem}
-          className="inline-flex items-center rounded-md border border-slate-700 px-2 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={isSaving}
+            className="inline-flex items-center rounded-md border border-slate-700 px-2 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={isSaving}
           >
             + Add line item
           </button>
@@ -398,15 +361,11 @@ export function InvoiceEditForm({
             >
               <div className="flex items-start gap-3">
                 <div className="flex-1 space-y-1">
-                  <label className="text-[11px] font-medium text-slate-300">
-                    Label
-                  </label>
+                  <label className="text-[11px] font-medium text-slate-300">Label</label>
                   <input
                     type="text"
                     value={item.label}
-                    onChange={(event) =>
-                      handleLineItemChange(index, "label", event.target.value)
-                    }
+                    onChange={(event) => handleLineItemChange(index, "label", event.target.value)}
                     className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
                     placeholder="For example, probate hearing preparation, rent collection, filing fee"
                     disabled={isSaving}
@@ -414,17 +373,11 @@ export function InvoiceEditForm({
                 </div>
 
                 <div className="w-32 space-y-1">
-                  <label className="text-[11px] font-medium text-slate-300">
-                    Type
-                  </label>
+                  <label className="text-[11px] font-medium text-slate-300">Type</label>
                   <select
                     value={item.type}
                     onChange={(event) =>
-                      handleLineItemChange(
-                        index,
-                        "type",
-                        event.target.value as InvoiceEditLineItem["type"],
-                      )
+                      handleLineItemChange(index, "type", event.target.value as InvoiceEditLineItem["type"])
                     }
                     className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
                     disabled={isSaving}
@@ -439,73 +392,52 @@ export function InvoiceEditForm({
 
               <div className="grid gap-2 md:grid-cols-3">
                 <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-slate-300">
-                    Quantity
-                  </label>
+                  <label className="text-[11px] font-medium text-slate-300">Quantity</label>
                   <input
                     type="number"
                     min="0"
                     step="0.25"
-                    value={
-                      typeof item.quantity === "number"
-                        ? item.quantity
-                        : item.quantity === null
-                        ? ""
-                        : ""
-                    }
+                    value={typeof item.quantity === "number" ? item.quantity : item.quantity === null ? "" : ""}
                     onChange={(event) =>
                       handleLineItemChange(
                         index,
                         "quantity",
-                        event.target.value === ""
-                          ? null
-                          : Number.parseFloat(event.target.value),
+                        event.target.value === "" ? null : Number.parseFloat(event.target.value),
                       )
                     }
                     className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
                     placeholder="For example, 1, 2.5, 10"
                     disabled={isSaving}
                   />
-                  <p className="text-[10px] text-slate-500">
-                    Hours, units, or quantity depending on the item type.
-                  </p>
+                  <p className="text-[10px] text-slate-500">Hours, units, or quantity depending on the item type.</p>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-slate-300">
-                    Rate
-                  </label>
+                  <label className="text-[11px] font-medium text-slate-300">Rate</label>
                   <input
                     type="number"
                     min="0"
                     step="0.01"
                     value={formatCentsToDollarsDisplay(item.rateCents)}
-                    onChange={(event) =>
-                      handleLineItemRateChange(index, event.target.value)
-                    }
+                    onChange={(event) => handleLineItemRateChange(index, event.target.value)}
                     className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
                     placeholder="For example, 250.00"
                     disabled={isSaving}
                   />
                   <p className="text-[10px] text-slate-500">
-                    Optional. If set along with quantity, the amount can be
-                    derived automatically.
+                    Optional. If set along with quantity, the amount can be derived automatically.
                   </p>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-slate-300">
-                    Amount
-                  </label>
+                  <label className="text-[11px] font-medium text-slate-300">Amount</label>
                   <div className="flex items-center gap-2">
                     <input
                       type="number"
                       min="0"
                       step="0.01"
                       value={formatCentsToDollarsDisplay(item.amountCents)}
-                      onChange={(event) =>
-                        handleLineItemAmountChange(index, event.target.value)
-                      }
+                      onChange={(event) => handleLineItemAmountChange(index, event.target.value)}
                       className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
                       placeholder="For example, 500.00"
                       disabled={isSaving}
@@ -519,9 +451,7 @@ export function InvoiceEditForm({
                       Remove
                     </button>
                   </div>
-                  <p className="text-[10px] text-slate-500">
-                    Total for this line item, in {currency}.
-                  </p>
+                  <p className="text-[10px] text-slate-500">Total for this line item, in {currency}.</p>
                 </div>
               </div>
             </div>
@@ -529,9 +459,7 @@ export function InvoiceEditForm({
         </div>
 
         <div className="flex items-center justify-between border-t border-slate-800 pt-3 text-sm">
-          <span className="text-xs uppercase tracking-wide text-slate-400">
-            Subtotal
-          </span>
+          <span className="text-xs uppercase tracking-wide text-slate-400">Subtotal</span>
           <span className="font-semibold text-slate-100">
             {currency} {subtotalDisplay || "0.00"}
           </span>
@@ -552,8 +480,7 @@ export function InvoiceEditForm({
           disabled={isSaving}
         />
         <p className="text-[11px] text-slate-500">
-          This appears on the invoice and helps you quickly recognize what was
-          billed.
+          This appears on the invoice and helps you quickly recognize what was billed.
         </p>
       </div>
 

@@ -20,6 +20,7 @@ export function DeletePropertyButton({
   const [error, setError] = useState<string | null>(null);
 
   const handleDelete = async (): Promise<void> => {
+    if (isDeleting) return;
     setError(null);
 
     const label = propertyTitle || "this property";
@@ -42,7 +43,7 @@ export function DeletePropertyButton({
       const data = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
 
       if (!response.ok || !data?.ok) {
-        const apiMessage = await Promise.resolve(getApiErrorMessage(response));
+        const apiMessage = await Promise.resolve(getApiErrorMessage(response)).catch(() => "");
         const message = data?.error || apiMessage || "Failed to delete property.";
         setError(message);
         return;

@@ -62,13 +62,16 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
+    if (saving) return;
+
     if (!name.trim()) {
       setError("Name is required.");
       return;
     }
 
-    setSaving(true);
     setError(null);
+
+    setSaving(true);
 
     try {
       const payload = {
@@ -79,7 +82,7 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
         notes,
       };
 
-      const res = await fetch(`/api/contacts/${contactId}`, {
+      const res = await fetch(`/api/contacts/${encodeURIComponent(contactId)}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -95,7 +98,8 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
         return;
       }
 
-      router.push(`/app/contacts/${contactId}`);
+      router.push(`/app/contacts/${encodeURIComponent(contactId)}`);
+      router.refresh();
     } catch (err) {
       console.error(err);
       setError("Something went wrong while saving. Please try again.");
@@ -122,8 +126,9 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => router.push(`/app/contacts/${contactId}`)}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
+            onClick={() => router.push(`/app/contacts/${encodeURIComponent(contactId)}`)}
+            disabled={saving}
+            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:opacity-60"
           >
             Cancel
           </button>
@@ -138,9 +143,13 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
       </div>
 
       {error && (
-        <p className="text-xs text-red-400">
+        <div
+          role="alert"
+          aria-live="polite"
+          className="rounded-md border border-rose-500/30 bg-rose-950/40 p-3 text-xs text-rose-100"
+        >
           {error}
-        </p>
+        </div>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">

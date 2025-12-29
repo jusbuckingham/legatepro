@@ -1,4 +1,3 @@
-// src/components/estate/EditEstateForm.tsx
 "use client";
 
 import { FormEvent, useState } from "react";
@@ -43,44 +42,45 @@ export function EditEstateForm({
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  type ApiResponse = { ok: boolean; error?: string };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     setError(null);
     setSaved(false);
+
+    const payload: EstateFormData = {
+      name: form.name ?? "",
+      caseNumber: form.caseNumber ?? "",
+      county: form.county ?? "",
+      decedentName: form.decedentName ?? "",
+      status: form.status ?? "Draft",
+      decedentDateOfDeath: form.decedentDateOfDeath ?? "",
+      notes: form.notes ?? ""
+    };
+
     setIsSubmitting(true);
 
     try {
-      const payload: EstateFormData = {
-        name: form.name ?? "",
-        caseNumber: form.caseNumber ?? "",
-        county: form.county ?? "",
-        decedentName: form.decedentName ?? "",
-        status: form.status ?? "Draft",
-        decedentDateOfDeath: form.decedentDateOfDeath ?? "",
-        notes: form.notes ?? ""
-      };
-
       const response = await fetch(`/api/estates/${estateId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
 
-      const data = (await response.json().catch(() => null)) as ApiResponse | null;
+      const data = (await response.json().catch(() => null)) as
+        | { ok?: boolean; error?: string }
+        | null;
 
       if (!response.ok || !data?.ok) {
         const message = data?.error ?? "Failed to update estate.";
         setError(message);
-        return;
+      } else {
+        setSaved(true);
+
+        // Go back to the estate detail page
+        router.push(`/app/estates/${estateId}`);
+        router.refresh();
       }
-
-      setSaved(true);
-
-      // Go back to the estate detail page
-      router.push(`/app/estates/${estateId}`);
-      router.refresh();
     } catch (err) {
       console.error(err);
       setError("Unexpected error while updating the estate.");

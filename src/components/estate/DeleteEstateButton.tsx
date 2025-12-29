@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { getApiErrorMessage } from "@/lib/utils";
 
 interface DeleteEstateButtonProps {
   estateId: string;
@@ -17,6 +18,8 @@ export function DeleteEstateButton({
   const [error, setError] = useState<string | null>(null);
 
   const handleDelete = async (): Promise<void> => {
+    if (isDeleting) return;
+
     setError(null);
 
     const label = estateTitle || "this estate";
@@ -29,16 +32,19 @@ export function DeleteEstateButton({
     setIsDeleting(true);
 
     try {
-      const response = await fetch(`/api/estates/${estateId}`, {
-        method: "DELETE"
+      const response = await fetch(`/api/estates/${encodeURIComponent(estateId)}`, {
+        method: "DELETE",
       });
 
+      const responseClone = response.clone();
       const data = (await response.json().catch(() => null)) as
         | { ok?: boolean; error?: string }
         | null;
 
-      if (!response.ok || data?.ok === false) {
-        setError(data?.error || "Failed to delete estate.");
+      if (!response.ok || !data?.ok) {
+        const apiMessage = await Promise.resolve(getApiErrorMessage(responseClone));
+        const message = data?.error || apiMessage || "Failed to delete estate.";
+        setError(message);
         return;
       }
 
