@@ -211,30 +211,17 @@ export function InvoiceEditForm({
         }),
       });
 
-      // Prefer JSON contract ({ ok:true, ... } / { ok:false, error }) but fall back to readable text.
+      // Prefer JSON contract ({ ok:true, ... } / { ok:false, error }) and fall back to readable text.
       const responseForError = response.clone();
-      const contentType = response.headers.get("content-type") || "";
 
-      const json: { ok?: boolean; error?: string } | null = contentType.includes("application/json")
-        ? ((await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null)
-        : null;
+      type ApiResponse = { ok?: boolean; error?: string };
+      const data = (await response.json().catch(() => null)) as ApiResponse | null;
 
       // Standard contract: all handlers respond with { ok: true, ... } or { ok:false, error }
-      if (!response.ok || json?.ok === false) {
+      if (!response.ok || data?.ok !== true) {
         const apiMessage = await Promise.resolve(getApiErrorMessage(responseForError));
-        const message = json?.error || apiMessage || "Request failed.";
+        const message = data?.error || apiMessage || "Failed to save invoice.";
         setSaveError(message);
-        return;
-      }
-
-      // Some successful routes may return a non-JSON body; treat that as unexpected.
-      if (!json) {
-        setSaveError("Unexpected response from server.");
-        return;
-      }
-
-      if (json.ok !== true) {
-        setSaveError(json.error || "Request failed.");
         return;
       }
 

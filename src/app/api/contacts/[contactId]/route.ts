@@ -20,7 +20,7 @@ type UpdatePayload = {
   name?: string;
   email?: string;
   phone?: string;
-  role?: ContactRole;
+  role?: string;
   notes?: string;
 };
 
@@ -54,7 +54,7 @@ function normalizeRole(raw?: string | null): ContactRole | undefined {
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<RouteParams> },
-) {
+): Promise<NextResponse> {
   const { contactId } = await params;
 
   const session = await auth();
@@ -64,35 +64,39 @@ export async function GET(
 
   await connectToDatabase();
 
-  const contact = (await Contact.findOne({
+  const contact = await Contact.findOne({
     _id: contactId,
     ownerId: session.user.id,
   })
     .select("_id name email phone role notes estates")
-    .lean()) as ContactLeanDoc | null;
+    .lean<ContactLeanDoc>()
+    .exec();
 
   if (!contact) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
-  return NextResponse.json({
-    ok: true,
-    contact: {
-      _id: contact._id,
-      name: contact.name ?? "",
-      email: contact.email ?? "",
-      phone: contact.phone ?? "",
-      role: contact.role ?? "OTHER",
-      notes: contact.notes ?? "",
-      estates: contact.estates ?? [],
+  return NextResponse.json(
+    {
+      ok: true,
+      contact: {
+        _id: contact._id,
+        name: contact.name ?? "",
+        email: contact.email ?? "",
+        phone: contact.phone ?? "",
+        role: normalizeRole(contact.role) ?? "OTHER",
+        notes: contact.notes ?? "",
+        estates: contact.estates ?? [],
+      },
     },
-  }, { status: 200 });
+    { status: 200 },
+  );
 }
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<RouteParams> },
-) {
+): Promise<NextResponse> {
   const { contactId } = await params;
 
   const session = await auth();
@@ -109,7 +113,13 @@ export async function PATCH(
     return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
 
-  const update: UpdatePayload = {};
+  const update: {
+    name?: string;
+    email?: string;
+    phone?: string;
+    role?: ContactRole;
+    notes?: string;
+  } = {};
 
   if (typeof body.name === "string") {
     const trimmed = body.name.trim();
@@ -133,7 +143,8 @@ export async function PATCH(
   }
 
   if (typeof body.role === "string") {
-    update.role = normalizeRole(body.role);
+    const normalized = normalizeRole(body.role);
+    if (normalized) update.role = normalized;
   }
 
   if (typeof body.notes === "string") {
@@ -141,28 +152,32 @@ export async function PATCH(
     update.notes = trimmed || undefined;
   }
 
-  const updated = (await Contact.findOneAndUpdate(
+  const updated = await Contact.findOneAndUpdate(
     { _id: contactId, ownerId: session.user.id },
     { $set: update },
     { new: true },
   )
     .select("_id name email phone role notes estates")
-    .lean()) as ContactLeanDoc | null;
+    .lean<ContactLeanDoc>()
+    .exec();
 
   if (!updated) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
-  return NextResponse.json({
-    ok: true,
-    contact: {
-      _id: updated._id,
-      name: updated.name ?? "",
-      email: updated.email ?? "",
-      phone: updated.phone ?? "",
-      role: updated.role ?? "OTHER",
-      notes: updated.notes ?? "",
-      estates: updated.estates ?? [],
+  return NextResponse.json(
+    {
+      ok: true,
+      contact: {
+        _id: updated._id,
+        name: updated.name ?? "",
+        email: updated.email ?? "",
+        phone: updated.phone ?? "",
+        role: normalizeRole(updated.role) ?? "OTHER",
+        notes: updated.notes ?? "",
+        estates: updated.estates ?? [],
+      },
     },
-  }, { status: 200 });
+    { status: 200 },
+  );
 }

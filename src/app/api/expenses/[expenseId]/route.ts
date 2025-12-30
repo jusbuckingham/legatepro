@@ -10,7 +10,6 @@ type RouteContext = {
 };
 
 type UpdateExpensePayload = {
-  estateId?: string;
   description?: string;
   category?: string;
   status?: string;
@@ -23,8 +22,8 @@ type UpdateExpensePayload = {
 };
 
 type LeanExpenseShape = {
-  _id?: unknown;
-  estateId?: unknown;
+  _id: unknown;
+  estateId: unknown;
   description?: string;
   category?: string;
   status?: string;
@@ -33,7 +32,7 @@ type LeanExpenseShape = {
   reimbursable?: boolean;
   incurredAt?: Date | null;
   amountCents?: number;
-  receiptUrl?: string;
+  receiptUrl?: string | null;
   createdAt?: Date | null;
   updatedAt?: Date | null;
 };
@@ -57,31 +56,9 @@ function normalizeAmountCents(raw: unknown): number | undefined {
   return undefined;
 }
 
-export async function GET(req: NextRequest, { params }: RouteContext) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { expenseId } = await params;
-
-  await connectToDatabase();
-
-  const expenseDoc = await Expense.findOne({
-    _id: expenseId,
-    ownerId: session.user.id,
-  })
-    .lean()
-    .exec();
-
-  if (!expenseDoc) {
-    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
-  }
-
-  const expense = expenseDoc as unknown as LeanExpenseShape;
-
-  return NextResponse.json({
-    ok: true,
+function serializeExpense(expense: LeanExpenseShape) {
+  return {
+    ok: true as const,
     id: String(expense._id),
     estateId: String(expense.estateId),
     description: expense.description ?? "",
@@ -95,7 +72,31 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
     receiptUrl: expense.receiptUrl ?? "",
     createdAt: expense.createdAt ?? null,
     updatedAt: expense.updatedAt ?? null,
-  });
+  };
+}
+
+export async function GET(_req: NextRequest, { params }: RouteContext) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { expenseId } = await params;
+
+  await connectToDatabase();
+
+  const expense = await Expense.findOne({
+    _id: expenseId,
+    ownerId: session.user.id,
+  })
+    .lean<LeanExpenseShape | null>()
+    .exec();
+
+  if (!expense) {
+    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+  }
+
+  return NextResponse.json(serializeExpense(expense), { status: 200 });
 }
 
 export async function PUT(req: NextRequest, { params }: RouteContext) {
@@ -143,14 +144,13 @@ export async function PUT(req: NextRequest, { params }: RouteContext) {
 
   if (typeof body.receiptUrl === "string") {
     const trimmed = body.receiptUrl.trim();
-    updateDoc.receiptUrl = trimmed || undefined;
+    updateDoc.receiptUrl = trimmed.length ? trimmed : null;
   }
 
-  if (body.incurredAt) {
-    const asDate =
-      body.incurredAt instanceof Date
-        ? body.incurredAt
-        : new Date(body.incurredAt);
+  if (body.incurredAt === null) {
+    updateDoc.incurredAt = null;
+  } else if (body.incurredAt) {
+    const asDate = body.incurredAt instanceof Date ? body.incurredAt : new Date(body.incurredAt);
     if (!Number.isNaN(asDate.getTime())) {
       updateDoc.incurredAt = asDate;
     }
@@ -162,7 +162,7 @@ export async function PUT(req: NextRequest, { params }: RouteContext) {
   }
 
   try {
-    const updatedDoc = await Expense.findOneAndUpdate(
+    const updated = await Expense.findOneAndUpdate(
       {
         _id: expenseId,
         ownerId: session.user.id,
@@ -170,31 +170,14 @@ export async function PUT(req: NextRequest, { params }: RouteContext) {
       { $set: updateDoc },
       { new: true },
     )
-      .lean()
+      .lean<LeanExpenseShape | null>()
       .exec();
 
-    if (!updatedDoc) {
+    if (!updated) {
       return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
     }
 
-    const updated = updatedDoc as unknown as LeanExpenseShape;
-
-    return NextResponse.json({
-      ok: true,
-      id: String(updated._id),
-      estateId: String(updated.estateId),
-      description: updated.description ?? "",
-      category: updated.category ?? "",
-      status: updated.status ?? "PENDING",
-      payee: updated.payee ?? "",
-      notes: updated.notes ?? "",
-      reimbursable: Boolean(updated.reimbursable),
-      incurredAt: updated.incurredAt ?? null,
-      amountCents: typeof updated.amountCents === "number" ? updated.amountCents : 0,
-      receiptUrl: updated.receiptUrl ?? "",
-      createdAt: updated.createdAt ?? null,
-      updatedAt: updated.updatedAt ?? null,
-    });
+    return NextResponse.json(serializeExpense(updated), { status: 200 });
   } catch (err) {
     console.error("Error updating expense", err);
     return NextResponse.json(
