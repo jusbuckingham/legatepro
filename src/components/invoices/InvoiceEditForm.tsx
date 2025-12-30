@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { getApiErrorMessage } from "@/lib/utils";
 
 type InvoiceStatus = "DRAFT" | "SENT" | "UNPAID" | "PARTIAL" | "PAID" | "VOID";
 
@@ -49,31 +50,6 @@ function clampNonNegativeNumber(value: number): number {
   return value < 0 ? 0 : value;
 }
 
-async function readApiErrorMessage(response: Response): Promise<string | null> {
-  if (response.ok) return null;
-
-  const fallback = `Request failed (status ${response.status})`;
-
-  // Prefer JSON error payloads ({ ok:false, error }) but gracefully handle text/HTML.
-  try {
-    const contentType = response.headers.get("content-type") || "";
-
-    if (contentType.includes("application/json")) {
-      const data = (await response.json().catch(() => null)) as
-        | { ok?: boolean; error?: string }
-        | null;
-      if (data?.error) return data.error;
-      return fallback;
-    }
-
-    const text = await response.text().catch(() => "");
-    const trimmed = text.trim();
-    if (trimmed) return trimmed.length > 180 ? `${trimmed.slice(0, 180)}…` : trimmed;
-    return fallback;
-  } catch {
-    return fallback;
-  }
-}
 
 export function InvoiceEditForm({
   invoiceId,
@@ -220,7 +196,7 @@ export function InvoiceEditForm({
         amountCents: typeof item.amountCents === "number" && Number.isFinite(item.amountCents) ? item.amountCents : 0,
       }));
 
-      const response = await fetch(`/api/invoices/${invoiceId}`, {
+      const response: Response = await fetch(`/api/invoices/${invoiceId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -235,21 +211,23 @@ export function InvoiceEditForm({
         }),
       });
 
-      // Clone before reading the body so we can safely extract a detailed error message.
+      // Prefer JSON contract ({ ok:true, ... } / { ok:false, error }) but fall back to readable text.
       const responseForError = response.clone();
-
       const contentType = response.headers.get("content-type") || "";
-      const json = contentType.includes("application/json")
+
+      const json: { ok?: boolean; error?: string } | null = contentType.includes("application/json")
         ? ((await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null)
         : null;
 
       // Standard contract: all handlers respond with { ok: true, ... } or { ok:false, error }
-      if (!response.ok) {
-        const apiError = json?.error ?? (await readApiErrorMessage(responseForError)) ?? "Request failed.";
-        setSaveError(apiError);
+      if (!response.ok || json?.ok === false) {
+        const apiMessage = await Promise.resolve(getApiErrorMessage(responseForError));
+        const message = json?.error || apiMessage || "Request failed.";
+        setSaveError(message);
         return;
       }
 
+      // Some successful routes may return a non-JSON body; treat that as unexpected.
       if (!json) {
         setSaveError("Unexpected response from server.");
         return;
@@ -264,7 +242,7 @@ export function InvoiceEditForm({
       router.push(`/app/estates/${estateId}/invoices/${invoiceId}`);
       router.refresh();
     } catch (err) {
-      console.error("[InvoiceEditForm] save error:", err);
+      console.error(err);
       setSaveError("Unexpected error while saving invoice.");
     } finally {
       setIsSaving(false);
@@ -274,9 +252,17 @@ export function InvoiceEditForm({
   const canSubmit = !isSaving && hasAtLeastOneMeaningfulLine;
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border border-slate-800 bg-slate-900/70 p-4">
+    <form
+      onSubmit={handleSubmit}
+      aria-busy={isSaving}
+      className="space-y-4 rounded-lg border border-slate-800 bg-slate-900/70 p-4"
+    >
       {saveError && (
-        <div className="rounded-md border border-red-500/60 bg-red-900/30 px-3 py-2 text-xs text-red-100">
+        <div
+          role="alert"
+          aria-live="polite"
+          className="rounded-md border border-red-500/60 bg-red-900/30 px-3 py-2 text-xs text-red-100"
+        >
           {saveError}
         </div>
       )}

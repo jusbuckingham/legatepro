@@ -114,8 +114,11 @@ export function ExpenseEditForm({
 
       if (!res.ok || data?.ok !== true) {
         const apiMessage = data?.error;
-        const fallbackMessage = await Promise.resolve(getApiErrorMessage(res));
-        const msg = apiMessage || fallbackMessage || "Failed to save expense. Please try again.";
+        const fallbackMessage = await getApiErrorMessage(res);
+        const msg =
+          apiMessage ||
+          fallbackMessage ||
+          "Failed to save expense. Please try again.";
         setErrorMsg(msg);
         return;
       }

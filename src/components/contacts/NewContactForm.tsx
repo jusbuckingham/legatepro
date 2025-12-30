@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { getApiErrorMessage } from "@/lib/utils";
@@ -32,7 +32,7 @@ function normalizeRole(value: string): ContactRole {
   return "OTHER";
 }
 
-export function ContactEditForm({ contactId }: { contactId: string }) {
+export function NewContactForm() {
   const router = useRouter();
 
   const [name, setName] = useState("");
@@ -42,33 +42,6 @@ export function ContactEditForm({ contactId }: { contactId: string }) {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function loadContact() {
-      try {
-        const res = await fetch(`/api/contacts/${contactId}`);
-        if (!res.ok) {
-          const apiMessage = await Promise.resolve(getApiErrorMessage(res));
-          setError(apiMessage || "Failed to load contact.");
-          setLoading(false);
-          return;
-        }
-        const data = await res.json();
-        setName(data.name || "");
-        setEmail(data.email || "");
-        setPhone(data.phone || "");
-        setRole(normalizeRole(data.role || "OTHER"));
-        setNotes(data.notes || "");
-      } catch (err) {
-        console.error("[ContactEditForm] load error:", err);
-        setError("Something went wrong while loading. Please try again.");
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadContact();
-  }, [contactId]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -92,8 +65,8 @@ export function ContactEditForm({ contactId }: { contactId: string }) {
         notes: notes.trim() ? notes.trim() : undefined,
       };
 
-      const res = await fetch(`/api/contacts/${contactId}`, {
-        method: "PUT",
+      const res = await fetch("/api/contacts", {
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
@@ -105,57 +78,18 @@ export function ContactEditForm({ contactId }: { contactId: string }) {
       if (!res.ok || data?.ok !== true) {
         const apiMessage = await Promise.resolve(getApiErrorMessage(res));
         const msg = data?.error || apiMessage;
-        setError(msg || "Failed to update contact.");
+        setError(msg || "Failed to create contact.");
         return;
       }
 
       router.push("/app/contacts");
       router.refresh();
-    } catch (err) {
-      console.error("[ContactEditForm] submit error:", err);
+    } catch {
       setError("Something went wrong while saving. Please try again.");
     } finally {
       setSaving(false);
     }
   };
-
-  const handleDelete = async () => {
-    if (saving) return;
-
-    if (!confirm("Are you sure you want to delete this contact?")) {
-      return;
-    }
-
-    setSaving(true);
-    setError(null);
-
-    try {
-      const res = await fetch(`/api/contacts/${contactId}`, {
-        method: "DELETE",
-      });
-
-      const data = (await res.json().catch(() => null)) as Partial<ApiResponse> | null;
-
-      if (!res.ok || data?.ok !== true) {
-        const apiMessage = await Promise.resolve(getApiErrorMessage(res));
-        const msg = data?.error || apiMessage;
-        setError(msg || "Failed to delete contact.");
-        return;
-      }
-
-      router.push("/app/contacts");
-      router.refresh();
-    } catch (err) {
-      console.error("[ContactEditForm] delete error:", err);
-      setError("Something went wrong while deleting. Please try again.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) {
-    return <p>Loading contact...</p>;
-  }
 
   return (
     <form
@@ -165,10 +99,8 @@ export function ContactEditForm({ contactId }: { contactId: string }) {
     >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-slate-50">Edit contact</h1>
-          <p className="text-xs text-slate-400">
-            Update information for this contact.
-          </p>
+          <h1 className="text-lg font-semibold text-slate-50">New contact</h1>
+          <p className="text-xs text-slate-400">Add a contact to your workspace.</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -180,20 +112,12 @@ export function ContactEditForm({ contactId }: { contactId: string }) {
             Cancel
           </button>
           <button
-            type="button"
-            onClick={handleDelete}
-            disabled={saving}
-            className="rounded-md border border-rose-600 px-3 py-1.5 text-xs font-medium text-rose-400 hover:bg-rose-800 disabled:opacity-60"
-          >
-            Delete
-          </button>
-          <button
             type="submit"
             disabled={saving}
             aria-disabled={saving}
             className="rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-60"
           >
-            {saving ? "Saving…" : "Save changes"}
+            {saving ? "Saving…" : "Create"}
           </button>
         </div>
       </div>
@@ -288,3 +212,5 @@ export function ContactEditForm({ contactId }: { contactId: string }) {
     </form>
   );
 }
+
+export default NewContactForm;

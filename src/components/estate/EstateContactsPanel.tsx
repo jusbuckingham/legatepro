@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { getApiErrorMessage } from "@/lib/utils";
 
@@ -63,6 +63,14 @@ export function EstateContactsPanel({
 
   const busy = linking || unlinkingId !== null;
 
+  const estateIdEncoded = useMemo(() => encodeURIComponent(estateId), [estateId]);
+
+  const parseResponse = async (
+    res: Response,
+  ): Promise<{ ok: boolean; error?: string } | null> => {
+    return (await res.json().catch(() => null)) as { ok: boolean; error?: string } | null;
+  };
+
   const handleLink = async () => {
     if (!selectedContactId) return;
 
@@ -70,18 +78,13 @@ export function EstateContactsPanel({
     setError(null);
 
     try {
-      const res = await fetch(`/api/estates/${estateId}/contacts`, {
+      const res = await fetch(`/api/estates/${estateIdEncoded}/contacts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ contactId: selectedContactId }),
       });
 
-      const data = (await res.json().catch(() => null)) as
-        | {
-            ok: boolean;
-            error?: string;
-          }
-        | null;
+      const data = await parseResponse(res);
 
       if (!res.ok || !data?.ok) {
         const msg = data?.error || (await getApiErrorMessage(res));
@@ -112,8 +115,7 @@ export function EstateContactsPanel({
       ]);
 
       setSelectedContactId("");
-    } catch (err) {
-      console.error(err);
+    } catch {
       setError("Something went wrong while linking. Please try again.");
     } finally {
       setLinking(false);
@@ -126,7 +128,7 @@ export function EstateContactsPanel({
 
     try {
       const res = await fetch(
-        `/api/estates/${estateId}/contacts?contactId=${encodeURIComponent(
+        `/api/estates/${estateIdEncoded}/contacts?contactId=${encodeURIComponent(
           contactId,
         )}`,
         {
@@ -134,12 +136,7 @@ export function EstateContactsPanel({
         },
       );
 
-      const data = (await res.json().catch(() => null)) as
-        | {
-            ok: boolean;
-            error?: string;
-          }
-        | null;
+      const data = await parseResponse(res);
 
       if (!res.ok || !data?.ok) {
         const msg = data?.error || (await getApiErrorMessage(res));
@@ -164,8 +161,7 @@ export function EstateContactsPanel({
           role: contactToUnlink.role,
         },
       ]);
-    } catch (err) {
-      console.error(err);
+    } catch {
       setError("Something went wrong while unlinking. Please try again.");
     } finally {
       setUnlinkingId(null);
@@ -203,7 +199,10 @@ export function EstateContactsPanel({
           </label>
           <select
             value={selectedContactId}
-            onChange={(e) => setSelectedContactId(e.target.value)}
+            onChange={(e) => {
+              setError(null);
+              setSelectedContactId(e.target.value);
+            }}
             disabled={busy}
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
           >
@@ -264,11 +263,11 @@ export function EstateContactsPanel({
                 </div>
                 <button
                   type="button"
-                  disabled={unlinkingId === c._id}
+                  disabled={busy}
                   onClick={() => handleUnlink(c._id)}
                   className="text-[11px] text-slate-400 hover:text-red-400 disabled:opacity-60"
                 >
-                  {busy && unlinkingId === c._id ? "Removing…" : "Remove"}
+                  {unlinkingId === c._id ? "Removing…" : "Remove"}
                 </button>
               </li>
             ))}

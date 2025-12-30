@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getApiErrorMessage } from "@/lib/utils";
 
@@ -13,6 +13,8 @@ type EstateFormData = {
   decedentDateOfDeath?: string;
   notes?: string;
 };
+
+type ApiResponse = { ok?: boolean; error?: string };
 
 interface EditEstateFormProps {
   estateId: string;
@@ -39,15 +41,22 @@ export function EditEstateForm({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  const handleChange = (field: keyof EstateFormData, value: string): void => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  };
+  const handleChange = useCallback(
+    (field: keyof EstateFormData, value: string): void => {
+      if (error) setError(null);
+      if (saved) setSaved(false);
+      setForm((prev) => ({ ...prev, [field]: value }));
+    },
+    [error, saved]
+  );
 
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+  const handleSubmit = async (
+    event: FormEvent<HTMLFormElement>
+  ): Promise<void> => {
     event.preventDefault();
     setError(null);
     setSaved(false);
+    setIsSubmitting(true);
 
     const payload: EstateFormData = {
       name: form.name ?? "",
@@ -59,21 +68,20 @@ export function EditEstateForm({
       notes: form.notes ?? ""
     };
 
-    setIsSubmitting(true);
-
     try {
-      const response = await fetch(`/api/estates/${encodeURIComponent(estateId)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
+      const response: Response = await fetch(
+        `/api/estates/${encodeURIComponent(estateId)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }
+      );
 
-      const data = (await response.json().catch(() => null)) as
-        | { ok?: boolean; error?: string }
-        | null;
+      const data = (await response.json().catch(() => null)) as ApiResponse | null;
 
       if (!response.ok || !data?.ok) {
-        const apiMessage = await Promise.resolve(getApiErrorMessage(response));
+        const apiMessage = await getApiErrorMessage(response);
         const message = data?.error || apiMessage || "Failed to update estate.";
         setError(message);
         return;
@@ -84,10 +92,8 @@ export function EditEstateForm({
       // Go back to the estate detail page
       router.push(`/app/estates/${encodeURIComponent(estateId)}`);
       router.refresh();
-    } catch (err) {
-      console.error(err);
-      const message = err instanceof Error ? err.message : "Unexpected error while updating the estate.";
-      setError(message);
+    } catch {
+      setError("Network error while updating the estate.");
     } finally {
       setIsSubmitting(false);
     }
@@ -110,6 +116,7 @@ export function EditEstateForm({
             onChange={(e) => handleChange("name", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
             placeholder="Example: The John Doe Estate"
+            disabled={isSubmitting}
           />
           <p className="text-[11px] text-slate-500">
             How you want to identify this estate inside LegatePro.
@@ -127,6 +134,7 @@ export function EditEstateForm({
             onChange={(e) => handleChange("caseNumber", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
             placeholder="Court case number"
+            disabled={isSubmitting}
           />
           <p className="text-[11px] text-slate-500">
             Exactly as it appears on court filings.
@@ -144,6 +152,7 @@ export function EditEstateForm({
             onChange={(e) => handleChange("county", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
             placeholder="Example: Wayne County, MI"
+            disabled={isSubmitting}
           />
         </div>
 
@@ -156,6 +165,7 @@ export function EditEstateForm({
             value={form.status ?? "Draft"}
             onChange={(e) => handleChange("status", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
+            disabled={isSubmitting}
           >
             <option value="Draft">Draft</option>
             <option value="Open">Open</option>
@@ -175,6 +185,7 @@ export function EditEstateForm({
             onChange={(e) => handleChange("decedentName", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
             placeholder="Name of the person whose estate this is"
+            disabled={isSubmitting}
           />
         </div>
 
@@ -188,6 +199,7 @@ export function EditEstateForm({
             value={form.decedentDateOfDeath ?? ""}
             onChange={(e) => handleChange("decedentDateOfDeath", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
+            disabled={isSubmitting}
           />
         </div>
       </div>
@@ -202,6 +214,7 @@ export function EditEstateForm({
           onChange={(e) => handleChange("notes", e.target.value)}
           className="min-h-[120px] w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
           placeholder="Key details, history, decisions, or anything you want to remember for this estate."
+          disabled={isSubmitting}
         />
       </div>
 
@@ -211,13 +224,13 @@ export function EditEstateForm({
           <button
             type="submit"
             disabled={isSubmitting}
-            className="inline-flex items-center rounded-lg border border-emerald-500 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-100 hover:bg-emerald-500/20 disabled:opacity-60"
+            className="inline-flex items-center rounded-lg border border-emerald-500 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-100 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSubmitting ? "Saving…" : "Save changes"}
           </button>
           <button
             type="button"
-            onClick={() => router.push(`/app/estates/${estateId}`)}
+            onClick={() => router.push(`/app/estates/${encodeURIComponent(estateId)}`)}
             className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-800"
           >
             Cancel

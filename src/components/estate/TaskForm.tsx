@@ -51,16 +51,19 @@ export function TaskForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isEdit = mode === "edit";
+  const isEdit = mode === "edit" && Boolean(taskId);
 
-  const handleChange = (field: keyof TaskFormInitialValues, value: string) => {
+  const handleChange = (field: keyof TaskFormInitialValues, value: string): void => {
+    // Clear any previous banner error as soon as the user edits again.
+    if (error) setError(null);
+
     setValues((prev) => ({
       ...prev,
       [field]: value,
     }));
   };
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
 
     if (isSubmitting) return;
@@ -76,7 +79,7 @@ export function TaskForm({
         ? `/api/estates/${safeEstateId}/tasks/${safeTaskId}`
         : `/api/estates/${safeEstateId}/tasks`;
 
-      const method = isEdit ? "PATCH" : "POST";
+      const method = isEdit && safeTaskId ? "PATCH" : "POST";
 
       const res = await fetch(endpoint, {
         method,
@@ -99,18 +102,15 @@ export function TaskForm({
 
       if (!res.ok || data?.ok !== true) {
         const apiMessage = await Promise.resolve(getApiErrorMessage(res));
-        const message = data?.error || apiMessage || "Failed to save task";
+        const message = data?.error || apiMessage || "Failed to save task.";
         setError(message);
         return;
       }
 
       router.push(`/app/estates/${safeEstateId}/tasks`);
       router.refresh();
-    } catch (err) {
-      console.error("[TaskForm] submit error:", err);
-      setError(
-        err instanceof Error ? err.message : "Something went wrong saving task"
-      );
+    } catch {
+      setError("Network error while saving task.");
     } finally {
       setIsSubmitting(false);
     }
@@ -140,6 +140,7 @@ export function TaskForm({
           placeholder="e.g. File inventory with the court"
           className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none placeholder:text-slate-500 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60"
           required
+          disabled={isSubmitting}
         />
       </div>
 
@@ -154,6 +155,7 @@ export function TaskForm({
           rows={3}
           placeholder="Add more detail about what needs to be done, steps, and context."
           className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none placeholder:text-slate-500 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60"
+          disabled={isSubmitting}
         />
       </div>
 
@@ -168,6 +170,7 @@ export function TaskForm({
           rows={2}
           placeholder="Private notes for yourself—court calls, phone logs, etc."
           className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none placeholder:text-slate-500 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60"
+          disabled={isSubmitting}
         />
       </div>
 
@@ -182,6 +185,7 @@ export function TaskForm({
             value={values.status}
             onChange={(e) => handleChange("status", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60"
+            disabled={isSubmitting}
           >
             <option value="OPEN">Open</option>
             <option value="DONE">Done</option>
@@ -197,6 +201,7 @@ export function TaskForm({
             value={values.priority}
             onChange={(e) => handleChange("priority", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60"
+            disabled={isSubmitting}
           >
             <option value="LOW">Low</option>
             <option value="MEDIUM">Medium</option>
@@ -214,6 +219,7 @@ export function TaskForm({
             value={values.date ?? ""}
             onChange={(e) => handleChange("date", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60"
+            disabled={isSubmitting}
           />
         </div>
       </div>

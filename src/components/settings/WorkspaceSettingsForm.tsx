@@ -57,9 +57,9 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
     initial.defaultCurrency || "USD",
   );
 
-  const [status, setStatus] = useState<
-    "idle" | "saving" | "saved" | "error"
-  >("idle");
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
+    "idle",
+  );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const isSaving = status === "saving";
@@ -140,9 +140,7 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
       className="space-y-8 rounded-lg border border-slate-800 bg-slate-900/60 p-4"
     >
       <div className="space-y-4">
-        <h2 className="text-sm font-semibold text-slate-100">
-          Firm branding
-        </h2>
+        <h2 className="text-sm font-semibold text-slate-100">Firm branding</h2>
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-1">
             <label className="text-xs font-medium text-slate-300">
@@ -196,9 +194,7 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-300">
-              City
-            </label>
+            <label className="text-xs font-medium text-slate-300">City</label>
             <input
               type="text"
               value={firmCity}
@@ -247,9 +243,7 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-300">
-              Country
-            </label>
+            <label className="text-xs font-medium text-slate-300">Country</label>
             <input
               type="text"
               value={firmCountry}
@@ -338,7 +332,9 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
               </span>
             )}
             {status === "error" && errorMessage && (
-              <span role="alert" className="text-red-400">{errorMessage}</span>
+              <span role="alert" className="text-red-400">
+                {errorMessage}
+              </span>
             )}
           </div>
         </div>

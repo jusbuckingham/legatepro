@@ -166,7 +166,7 @@ export function PropertyForm({
     }
   };
 
-  const isEdit = mode === "edit";
+  const isEdit = mode === "edit" && Boolean(propertyId);
 
   return (
     <form
@@ -183,6 +183,7 @@ export function PropertyForm({
           <input
             type="text"
             value={form.name}
+            disabled={isSubmitting}
             onChange={(e) => handleChange("name", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
             placeholder="Example: 4395 Dickerson - main house"
@@ -199,6 +200,7 @@ export function PropertyForm({
           </label>
           <select
             value={form.type}
+            disabled={isSubmitting}
             onChange={(e) => handleChange("type", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
           >
@@ -219,6 +221,7 @@ export function PropertyForm({
           <input
             type="text"
             value={form.address}
+            disabled={isSubmitting}
             onChange={(e) => handleChange("address", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
             placeholder="Street, unit, etc."
@@ -233,6 +236,7 @@ export function PropertyForm({
           <input
             type="text"
             value={form.city}
+            disabled={isSubmitting}
             onChange={(e) => handleChange("city", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
           />
@@ -246,6 +250,7 @@ export function PropertyForm({
           <input
             type="text"
             value={form.state}
+            disabled={isSubmitting}
             onChange={(e) => handleChange("state", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
           />
@@ -259,6 +264,7 @@ export function PropertyForm({
           <input
             type="text"
             value={form.postalCode}
+            disabled={isSubmitting}
             onChange={(e) => handleChange("postalCode", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
           />
@@ -272,6 +278,7 @@ export function PropertyForm({
           <input
             type="text"
             value={form.country}
+            disabled={isSubmitting}
             onChange={(e) => handleChange("country", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
           />
@@ -287,6 +294,7 @@ export function PropertyForm({
             min="0"
             step="0.01"
             value={form.estimatedValue}
+            disabled={isSubmitting}
             onChange={(e) => handleChange("estimatedValue", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
             placeholder="0.00"
@@ -304,6 +312,7 @@ export function PropertyForm({
             max="100"
             step="1"
             value={form.ownershipPercentage}
+            disabled={isSubmitting}
             onChange={(e) =>
               handleChange("ownershipPercentage", e.target.value)
             }
@@ -320,6 +329,7 @@ export function PropertyForm({
         </label>
         <textarea
           value={form.notes}
+          disabled={isSubmitting}
           onChange={(e) => handleChange("notes", e.target.value)}
           className="min-h-[100px] w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
           placeholder="Any details you want to remember about this property."
