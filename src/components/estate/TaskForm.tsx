@@ -98,7 +98,7 @@ export function TaskForm({
         .catch(() => null)) as { ok?: boolean; error?: string } | null;
 
       if (!res.ok || data?.ok !== true) {
-        const apiMessage = await getApiErrorMessage(res);
+        const apiMessage = await Promise.resolve(getApiErrorMessage(res));
         const message = data?.error || apiMessage || "Failed to save task";
         setError(message);
         return;

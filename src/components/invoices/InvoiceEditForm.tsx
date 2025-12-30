@@ -119,9 +119,10 @@ export function InvoiceEditForm({
   const subtotalDisplay = useMemo(() => formatCentsToDollarsDisplay(subtotalCents), [subtotalCents]);
 
   useEffect(() => {
-    // Any edit clears prior banners (but don't auto-clear immediately after setting an error).
-    if (saveError) setSaveError(null);
-  }, [status, issueDate, dueDate, notes, currency, lineItems, saveError]);
+    // Clear any prior banner only when the user changes inputs.
+    // Using the functional form avoids clearing immediately after an error is set.
+    setSaveError((prev) => (prev ? null : prev));
+  }, [status, issueDate, dueDate, notes, currency, lineItems]);
 
   const handleLineItemChange = <K extends keyof InvoiceEditLineItem>(
     index: number,
@@ -191,6 +192,12 @@ export function InvoiceEditForm({
     });
   };
 
+  const hasAtLeastOneMeaningfulLine = lineItems.some((li) => {
+    const labelOk = li.label.trim().length > 0;
+    const amt = typeof li.amountCents === "number" ? li.amountCents : 0;
+    return labelOk || amt > 0;
+  });
+
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault();
     if (isSaving) return;
@@ -213,22 +220,20 @@ export function InvoiceEditForm({
         amountCents: typeof item.amountCents === "number" && Number.isFinite(item.amountCents) ? item.amountCents : 0,
       }));
 
-      const response = await fetch(`/api/invoices/${invoiceId}`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            status,
-            issueDate: issueDate || undefined,
-            dueDate: dueDate || undefined,
-            notes: notes || undefined,
-            currency: currency || undefined,
-            lineItems: normalizedLineItems,
-          }),
+      const response = await fetch(`/api/invoices/${invoiceId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({
+          status,
+          issueDate: issueDate || undefined,
+          dueDate: dueDate || undefined,
+          notes: notes || undefined,
+          currency: currency || undefined,
+          lineItems: normalizedLineItems,
+        }),
+      });
 
       // Clone before reading the body so we can safely extract a detailed error message.
       const responseForError = response.clone();
@@ -238,14 +243,19 @@ export function InvoiceEditForm({
         ? ((await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null)
         : null;
 
-      // Handle non-2xx errors and also 2xx responses that return { ok:false, error }
+      // Standard contract: all handlers respond with { ok: true, ... } or { ok:false, error }
       if (!response.ok) {
         const apiError = json?.error ?? (await readApiErrorMessage(responseForError)) ?? "Request failed.";
         setSaveError(apiError);
         return;
       }
 
-      if (json && json.ok === false) {
+      if (!json) {
+        setSaveError("Unexpected response from server.");
+        return;
+      }
+
+      if (json.ok !== true) {
         setSaveError(json.error || "Request failed.");
         return;
       }
@@ -260,12 +270,6 @@ export function InvoiceEditForm({
       setIsSaving(false);
     }
   };
-
-  const hasAtLeastOneMeaningfulLine = lineItems.some((li) => {
-    const labelOk = li.label.trim().length > 0;
-    const amt = typeof li.amountCents === "number" ? li.amountCents : 0;
-    return labelOk || amt > 0;
-  });
 
   const canSubmit = !isSaving && hasAtLeastOneMeaningfulLine;
 

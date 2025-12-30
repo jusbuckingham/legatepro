@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 import { getApiErrorMessage } from "@/lib/utils";
@@ -32,7 +32,7 @@ function normalizeRole(value: string): ContactRole {
   return "OTHER";
 }
 
-export function NewContactForm() {
+export function ContactEditForm({ contactId }: { contactId: string }) {
   const router = useRouter();
 
   const [name, setName] = useState("");
@@ -42,6 +42,33 @@ export function NewContactForm() {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadContact() {
+      try {
+        const res = await fetch(`/api/contacts/${contactId}`);
+        if (!res.ok) {
+          const apiMessage = await Promise.resolve(getApiErrorMessage(res));
+          setError(apiMessage || "Failed to load contact.");
+          setLoading(false);
+          return;
+        }
+        const data = await res.json();
+        setName(data.name || "");
+        setEmail(data.email || "");
+        setPhone(data.phone || "");
+        setRole(normalizeRole(data.role || "OTHER"));
+        setNotes(data.notes || "");
+      } catch (err) {
+        console.error("[ContactEditForm] load error:", err);
+        setError("Something went wrong while loading. Please try again.");
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadContact();
+  }, [contactId]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -65,8 +92,8 @@ export function NewContactForm() {
         notes: notes.trim() ? notes.trim() : undefined,
       };
 
-      const res = await fetch("/api/contacts", {
-        method: "POST",
+      const res = await fetch(`/api/contacts/${contactId}`, {
+        method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
@@ -76,21 +103,59 @@ export function NewContactForm() {
       const data = (await res.json().catch(() => null)) as Partial<ApiResponse> | null;
 
       if (!res.ok || data?.ok !== true) {
-        const msg = data?.error || (await getApiErrorMessage(res));
-        setError(msg || "Failed to create contact.");
+        const apiMessage = await Promise.resolve(getApiErrorMessage(res));
+        const msg = data?.error || apiMessage;
+        setError(msg || "Failed to update contact.");
         return;
       }
 
       router.push("/app/contacts");
       router.refresh();
     } catch (err) {
-      // basic error handling is fine here; no eslint disable needed
-      console.error("[NewContactForm] submit error:", err);
+      console.error("[ContactEditForm] submit error:", err);
       setError("Something went wrong while saving. Please try again.");
     } finally {
       setSaving(false);
     }
   };
+
+  const handleDelete = async () => {
+    if (saving) return;
+
+    if (!confirm("Are you sure you want to delete this contact?")) {
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/contacts/${contactId}`, {
+        method: "DELETE",
+      });
+
+      const data = (await res.json().catch(() => null)) as Partial<ApiResponse> | null;
+
+      if (!res.ok || data?.ok !== true) {
+        const apiMessage = await Promise.resolve(getApiErrorMessage(res));
+        const msg = data?.error || apiMessage;
+        setError(msg || "Failed to delete contact.");
+        return;
+      }
+
+      router.push("/app/contacts");
+      router.refresh();
+    } catch (err) {
+      console.error("[ContactEditForm] delete error:", err);
+      setError("Something went wrong while deleting. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <p>Loading contact...</p>;
+  }
 
   return (
     <form
@@ -100,12 +165,9 @@ export function NewContactForm() {
     >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-slate-50">
-            New contact
-          </h1>
+          <h1 className="text-lg font-semibold text-slate-50">Edit contact</h1>
           <p className="text-xs text-slate-400">
-            Store key people connected to your estates so you can
-            reference them quickly.
+            Update information for this contact.
           </p>
         </div>
         <div className="flex gap-2">
@@ -118,12 +180,20 @@ export function NewContactForm() {
             Cancel
           </button>
           <button
+            type="button"
+            onClick={handleDelete}
+            disabled={saving}
+            className="rounded-md border border-rose-600 px-3 py-1.5 text-xs font-medium text-rose-400 hover:bg-rose-800 disabled:opacity-60"
+          >
+            Delete
+          </button>
+          <button
             type="submit"
             disabled={saving}
             aria-disabled={saving}
             className="rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-60"
           >
-            {saving ? "Saving…" : "Save contact"}
+            {saving ? "Saving…" : "Save changes"}
           </button>
         </div>
       </div>

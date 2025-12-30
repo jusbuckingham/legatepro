@@ -127,8 +127,7 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
       }
 
       setStatus("saved");
-    } catch (err) {
-      console.error("[WorkspaceSettingsForm] save error:", err);
+    } catch {
       setStatus("error");
       setErrorMessage("Network error while saving settings.");
     }

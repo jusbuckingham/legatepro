@@ -66,6 +66,8 @@ export function PropertyForm({
   const [error, setError] = useState<string | null>(null);
 
   const handleChange = (field: keyof PropertyFormState, value: string): void => {
+    // Clear any prior API/validation error once the user edits the form.
+    if (error) setError(null);
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -124,9 +126,7 @@ export function PropertyForm({
 
       const isEdit = mode === "edit" && propertyId;
       const endpoint = isEdit
-        ? `/api/estates/${encodeURIComponent(
-            estateId
-          )}/properties/${encodeURIComponent(propertyId as string)}`
+        ? `/api/estates/${encodeURIComponent(estateId)}/properties/${encodeURIComponent(propertyId)}`
         : `/api/estates/${encodeURIComponent(estateId)}/properties`;
       const method = isEdit ? "PATCH" : "POST";
 
@@ -171,6 +171,7 @@ export function PropertyForm({
   return (
     <form
       onSubmit={handleSubmit}
+      aria-busy={isSubmitting}
       className="space-y-6 rounded-xl border border-slate-800 bg-slate-950/60 p-4"
     >
       <div className="grid gap-4 md:grid-cols-2">

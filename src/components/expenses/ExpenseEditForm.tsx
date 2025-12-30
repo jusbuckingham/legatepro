@@ -123,8 +123,7 @@ export function ExpenseEditForm({
       // On success, go back to estate expenses list
       router.push(`/app/estates/${encodeURIComponent(estateId)}/expenses`);
       router.refresh();
-    } catch (err) {
-      console.error("Error saving expense", err);
+    } catch {
       setErrorMsg("Unexpected error while saving. Please try again.");
     } finally {
       setIsSaving(false);
