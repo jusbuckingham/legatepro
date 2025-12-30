@@ -120,7 +120,8 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
       const data = (await res.json().catch(() => null)) as ApiResponse | null;
 
       if (!res.ok || !data?.ok) {
-        const msg = data?.error || (await getApiErrorMessage(res));
+        const apiMessage = await Promise.resolve(getApiErrorMessage(res));
+        const msg = data?.error || apiMessage;
         setStatus("error");
         setErrorMessage(msg || "Failed to save settings.");
         return;

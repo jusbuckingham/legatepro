@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState } from "react";
+import type { FormEventHandler } from "react";
 import { useRouter } from "next/navigation";
 
 import { getApiErrorMessage } from "@/lib/utils";
@@ -32,6 +33,15 @@ function formatDateInput(value: string | Date | null | undefined): string {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return date.toISOString().slice(0, 10);
+}
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 export function ExpenseEditForm({
@@ -69,10 +79,22 @@ export function ExpenseEditForm({
     if (errorMsg) setErrorMsg(null);
   };
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  const handleSubmit: FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault();
     if (isSaving) return;
     setErrorMsg(null);
+
+    const trimmedDescription = description.trim();
+    if (!trimmedDescription) {
+      setErrorMsg("Description is required.");
+      return;
+    }
+
+    const trimmedReceiptUrl = receiptUrl.trim();
+    if (trimmedReceiptUrl.length > 0 && !isValidHttpUrl(trimmedReceiptUrl)) {
+      setErrorMsg("Receipt link must be a valid http(s) URL.");
+      return;
+    }
 
     let parsedAmountCents: number | undefined;
     const cleanedAmount = amountDollars.trim();
@@ -89,20 +111,31 @@ export function ExpenseEditForm({
 
     setIsSaving(true);
 
+    let incurredAtIso: string | null = null;
+    if (incurredAt) {
+      const d = new Date(incurredAt);
+      if (Number.isNaN(d.getTime())) {
+        setErrorMsg("Please enter a valid date.");
+        setIsSaving(false);
+        return;
+      }
+      incurredAtIso = d.toISOString();
+    }
+
     const payload = {
-      description: description.trim(),
+      description: trimmedDescription,
       category: category.trim(),
       status: status.trim(),
       payee: payee.trim(),
       notes: notes.trim(),
       reimbursable,
-      incurredAt: incurredAt ? new Date(incurredAt).toISOString() : null,
+      incurredAt: incurredAtIso,
       amountCents: parsedAmountCents,
-      receiptUrl: receiptUrl.trim(),
+      receiptUrl: trimmedReceiptUrl,
     };
 
     try {
-      const res = await fetch(`/api/expenses/${expenseId}`, {
+      const res = await fetch(`/api/expenses/${encodeURIComponent(expenseId)}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -110,15 +143,18 @@ export function ExpenseEditForm({
         body: JSON.stringify(payload),
       });
 
-      const data = (await res.json().catch(() => null)) as ApiResponse | null;
+      // Prefer JSON contract ({ ok:true, ... } / { ok:false, error }) but fall back to readable text.
+      const resForError = res.clone();
+      const contentType = res.headers.get("content-type") || "";
+
+      const data: ApiResponse | null = contentType.includes("application/json")
+        ? ((await res.json().catch(() => null)) as ApiResponse | null)
+        : null;
 
       if (!res.ok || data?.ok !== true) {
         const apiMessage = data?.error;
-        const fallbackMessage = await getApiErrorMessage(res);
-        const msg =
-          apiMessage ||
-          fallbackMessage ||
-          "Failed to save expense. Please try again.";
+        const fallbackMessage = await Promise.resolve(getApiErrorMessage(resForError));
+        const msg = apiMessage || fallbackMessage || "Failed to save expense. Please try again.";
         setErrorMsg(msg);
         return;
       }
@@ -131,7 +167,7 @@ export function ExpenseEditForm({
     } finally {
       setIsSaving(false);
     }
-  }
+  };
 
   return (
     <form
@@ -149,6 +185,7 @@ export function ExpenseEditForm({
           </label>
           <input
             id="description"
+            required
             value={description}
             onChange={(e) => {
               resetFeedback();
@@ -332,9 +369,12 @@ export function ExpenseEditForm({
       </div>
 
       {errorMsg && (
-        <p className="text-xs text-red-400" role="alert">
+        <div
+          role="alert"
+          className="rounded-md border border-red-500/30 bg-red-950/30 px-3 py-2 text-xs text-red-200"
+        >
           {errorMsg}
-        </p>
+        </div>
       )}
 
       <div className="flex items-center justify-end gap-2 pt-2">

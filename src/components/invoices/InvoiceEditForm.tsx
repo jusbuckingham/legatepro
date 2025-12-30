@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import type { FormEventHandler } from "react";
 import { useRouter } from "next/navigation";
 import { getApiErrorMessage } from "@/lib/utils";
 
@@ -85,6 +86,17 @@ export function InvoiceEditForm({
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const clearSaveError = (): void => {
+    if (saveError) setSaveError(null);
+  };
+
+  const fireToast = (detail: { type: "success" | "error"; message: string }): void => {
+    if (typeof window === "undefined") return;
+    // Best-effort: ToastHost in this repo listens to a window event.
+    // If no listener is present, this is a harmless no-op.
+    window.dispatchEvent(new CustomEvent("toast", { detail }));
+  };
+
   const subtotalCents = useMemo(() => {
     return lineItems.reduce((acc, item) => {
       const amount = typeof item.amountCents === "number" ? item.amountCents : 0;
@@ -94,11 +106,6 @@ export function InvoiceEditForm({
 
   const subtotalDisplay = useMemo(() => formatCentsToDollarsDisplay(subtotalCents), [subtotalCents]);
 
-  useEffect(() => {
-    // Clear any prior banner only when the user changes inputs.
-    // Using the functional form avoids clearing immediately after an error is set.
-    setSaveError((prev) => (prev ? null : prev));
-  }, [status, issueDate, dueDate, notes, currency, lineItems]);
 
   const handleLineItemChange = <K extends keyof InvoiceEditLineItem>(
     index: number,
@@ -138,6 +145,7 @@ export function InvoiceEditForm({
   };
 
   const addLineItem = () => {
+    clearSaveError();
     setLineItems((prev) => [
       ...prev,
       {
@@ -151,6 +159,7 @@ export function InvoiceEditForm({
   };
 
   const removeLineItem = (index: number) => {
+    clearSaveError();
     setLineItems((prev) => {
       if (prev.length === 1) {
         // Keep at least one row so the form is not empty
@@ -174,12 +183,30 @@ export function InvoiceEditForm({
     return labelOk || amt > 0;
   });
 
-  const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (event) => {
+  const handleSubmit: FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault();
     if (isSaving) return;
 
+    const trimmedCurrency = currency.trim().toUpperCase();
+    if (trimmedCurrency.length !== 3) {
+      const message = "Currency must be a 3-letter ISO code (e.g., USD).";
+      setSaveError(message);
+      fireToast({ type: "error", message });
+      return;
+    }
+
+    // Basic guard: if both dates exist, due date should not be before issue date.
+    if (issueDate && dueDate && dueDate < issueDate) {
+      const message = "Due date cannot be before issue date.";
+      setSaveError(message);
+      fireToast({ type: "error", message });
+      return;
+    }
+
     if (!hasAtLeastOneMeaningfulLine) {
-      setSaveError("Add at least one line item (label or amount) before saving.");
+      const message = "Add at least one line item (label or amount) before saving.";
+      setSaveError(message);
+      fireToast({ type: "error", message });
       return;
     }
 
@@ -187,14 +214,17 @@ export function InvoiceEditForm({
     setIsSaving(true);
 
     try {
-      const normalizedLineItems = lineItems.map((item) => ({
-        id: item.id,
-        label: item.label,
-        type: item.type,
-        quantity: typeof item.quantity === "number" && Number.isFinite(item.quantity) ? item.quantity : 0,
-        rateCents: typeof item.rateCents === "number" && Number.isFinite(item.rateCents) ? item.rateCents : 0,
-        amountCents: typeof item.amountCents === "number" && Number.isFinite(item.amountCents) ? item.amountCents : 0,
-      }));
+      const normalizedLineItems = lineItems
+        .map((item) => ({
+          id: item.id,
+          label: item.label,
+          type: item.type,
+          quantity: typeof item.quantity === "number" && Number.isFinite(item.quantity) ? item.quantity : 0,
+          rateCents: typeof item.rateCents === "number" && Number.isFinite(item.rateCents) ? item.rateCents : 0,
+          amountCents: typeof item.amountCents === "number" && Number.isFinite(item.amountCents) ? item.amountCents : 0,
+        }))
+        // Don’t send blank rows (keeps API clean and avoids accidentally saving empty items)
+        .filter((li) => li.label.trim().length > 0 || li.amountCents > 0);
 
       const response: Response = await fetch(`/api/invoices/${invoiceId}`, {
         method: "PUT",
@@ -206,7 +236,7 @@ export function InvoiceEditForm({
           issueDate: issueDate || undefined,
           dueDate: dueDate || undefined,
           notes: notes || undefined,
-          currency: currency || undefined,
+          currency: trimmedCurrency,
           lineItems: normalizedLineItems,
         }),
       });
@@ -222,15 +252,19 @@ export function InvoiceEditForm({
         const apiMessage = await Promise.resolve(getApiErrorMessage(responseForError));
         const message = data?.error || apiMessage || "Failed to save invoice.";
         setSaveError(message);
+        fireToast({ type: "error", message });
         return;
       }
 
       // Redirect back to invoice detail page inside the app
-      router.push(`/app/estates/${estateId}/invoices/${invoiceId}`);
+      fireToast({ type: "success", message: "Invoice saved." });
+      router.push(`/app/estates/${estateId}/invoices/${invoiceId}?saved=1`);
       router.refresh();
     } catch (err) {
       console.error(err);
-      setSaveError("Unexpected error while saving invoice.");
+      const message = "Unexpected error while saving invoice.";
+      setSaveError(message);
+      fireToast({ type: "error", message });
     } finally {
       setIsSaving(false);
     }
@@ -262,7 +296,10 @@ export function InvoiceEditForm({
           <select
             id="status"
             value={status}
-            onChange={(event) => setStatus(event.target.value as InvoiceStatus)}
+            onChange={(event) => {
+              clearSaveError();
+              setStatus(event.target.value as InvoiceStatus);
+            }}
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
             disabled={isSaving}
           >
@@ -283,7 +320,10 @@ export function InvoiceEditForm({
             id="issueDate"
             type="date"
             value={issueDate}
-            onChange={(event) => setIssueDate(event.target.value)}
+            onChange={(event) => {
+              clearSaveError();
+              setIssueDate(event.target.value);
+            }}
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
             disabled={isSaving}
           />
@@ -297,7 +337,10 @@ export function InvoiceEditForm({
             id="dueDate"
             type="date"
             value={dueDate}
-            onChange={(event) => setDueDate(event.target.value)}
+            onChange={(event) => {
+              clearSaveError();
+              setDueDate(event.target.value);
+            }}
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
             disabled={isSaving}
           />
@@ -316,7 +359,10 @@ export function InvoiceEditForm({
           id="currency"
           type="text"
           value={currency}
-          onChange={(event) => setCurrency(event.target.value.toUpperCase().slice(0, 3))}
+          onChange={(event) => {
+            clearSaveError();
+            setCurrency(event.target.value.toUpperCase().slice(0, 3));
+          }}
           className="max-w-[120px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
           disabled={isSaving}
         />
@@ -348,7 +394,10 @@ export function InvoiceEditForm({
                   <input
                     type="text"
                     value={item.label}
-                    onChange={(event) => handleLineItemChange(index, "label", event.target.value)}
+                    onChange={(event) => {
+                      clearSaveError();
+                      handleLineItemChange(index, "label", event.target.value);
+                    }}
                     className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
                     placeholder="For example, probate hearing preparation, rent collection, filing fee"
                     disabled={isSaving}
@@ -359,9 +408,10 @@ export function InvoiceEditForm({
                   <label className="text-[11px] font-medium text-slate-300">Type</label>
                   <select
                     value={item.type}
-                    onChange={(event) =>
-                      handleLineItemChange(index, "type", event.target.value as InvoiceEditLineItem["type"])
-                    }
+                    onChange={(event) => {
+                      clearSaveError();
+                      handleLineItemChange(index, "type", event.target.value as InvoiceEditLineItem["type"]);
+                    }}
                     className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
                     disabled={isSaving}
                   >
@@ -380,14 +430,15 @@ export function InvoiceEditForm({
                     type="number"
                     min="0"
                     step="0.25"
-                    value={typeof item.quantity === "number" ? item.quantity : item.quantity === null ? "" : ""}
-                    onChange={(event) =>
+                    value={typeof item.quantity === "number" ? item.quantity : ""}
+                    onChange={(event) => {
+                      clearSaveError();
                       handleLineItemChange(
                         index,
                         "quantity",
                         event.target.value === "" ? null : Number.parseFloat(event.target.value),
-                      )
-                    }
+                      );
+                    }}
                     className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
                     placeholder="For example, 1, 2.5, 10"
                     disabled={isSaving}
@@ -402,7 +453,10 @@ export function InvoiceEditForm({
                     min="0"
                     step="0.01"
                     value={formatCentsToDollarsDisplay(item.rateCents)}
-                    onChange={(event) => handleLineItemRateChange(index, event.target.value)}
+                    onChange={(event) => {
+                      clearSaveError();
+                      handleLineItemRateChange(index, event.target.value);
+                    }}
                     className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
                     placeholder="For example, 250.00"
                     disabled={isSaving}
@@ -420,7 +474,10 @@ export function InvoiceEditForm({
                       min="0"
                       step="0.01"
                       value={formatCentsToDollarsDisplay(item.amountCents)}
-                      onChange={(event) => handleLineItemAmountChange(index, event.target.value)}
+                      onChange={(event) => {
+                        clearSaveError();
+                        handleLineItemAmountChange(index, event.target.value);
+                      }}
                       className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
                       placeholder="For example, 500.00"
                       disabled={isSaving}
@@ -457,7 +514,10 @@ export function InvoiceEditForm({
           id="notes"
           rows={4}
           value={notes}
-          onChange={(event) => setNotes(event.target.value)}
+          onChange={(event) => {
+            clearSaveError();
+            setNotes(event.target.value);
+          }}
           className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
           placeholder="Describe the work performed, services rendered, or the purpose of this invoice."
           disabled={isSaving}
@@ -474,7 +534,11 @@ export function InvoiceEditForm({
           className="inline-flex items-center rounded-md bg-sky-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
           aria-busy={isSaving}
         >
-          {isSaving ? "Saving…" : "Save invoice"}
+          {isSaving
+            ? "Saving…"
+            : hasAtLeastOneMeaningfulLine
+            ? "Save invoice"
+            : "Add a line item to save"}
         </button>
       </div>
     </form>
