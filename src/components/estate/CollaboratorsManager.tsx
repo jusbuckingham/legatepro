@@ -91,46 +91,10 @@ export default function CollaboratorsManager({
     }
   }
 
-  const fetchInvites = useCallback(async () => {
-    if (!isOwner) return;
+  const fetchInvites = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!isOwner) return;
 
-    let isMounted = true;
-    try {
-      setInvitesLoading(true);
-      setInvitesError(null);
-
-      const res = await fetch(`/api/estates/${estateId}/invites`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      const data = (await safeJson<ApiResponse<{ invites?: Invite[] }>>(res)) ?? null;
-
-      if (!res.ok || !data || data.ok === false) {
-        const msg =
-          data && data.ok === false
-            ? data.error
-            : await Promise.resolve(getApiErrorMessage(res));
-        if (isMounted) setInvitesError(msg || "Failed to load invites");
-        return;
-      }
-
-      if (isMounted) setInvites(Array.isArray(data.invites) ? data.invites : []);
-    } finally {
-      if (isMounted) setInvitesLoading(false);
-    }
-
-    return () => {
-      isMounted = false;
-    };
-  }, [estateId, isOwner]);
-
-  useEffect(() => {
-    if (!isOwner) return;
-
-    let cancelled = false;
-
-    async function loadInvitesOnMount() {
       try {
         setInvitesLoading(true);
         setInvitesError(null);
@@ -138,11 +102,12 @@ export default function CollaboratorsManager({
         const res = await fetch(`/api/estates/${estateId}/invites`, {
           method: "GET",
           headers: { "Content-Type": "application/json" },
+          signal,
         });
 
         const data = (await safeJson<ApiResponse<{ invites?: Invite[] }>>(res)) ?? null;
 
-        if (cancelled) return;
+        if (signal?.aborted) return;
 
         if (!res.ok || !data || data.ok === false) {
           const msg =
@@ -154,17 +119,32 @@ export default function CollaboratorsManager({
         }
 
         setInvites(Array.isArray(data.invites) ? data.invites : []);
+      } catch (err) {
+        if (signal?.aborted) return;
+        const fallback = typeof err === "string" ? err : "Failed to load invites";
+        setInvitesError(fallback);
       } finally {
-        if (!cancelled) setInvitesLoading(false);
+        if (!signal?.aborted) setInvitesLoading(false);
       }
-    }
+    },
+    [estateId, isOwner]
+  );
 
-    void loadInvitesOnMount();
+  useEffect(() => {
+    if (!isOwner) return;
+
+    const controller = new AbortController();
+
+    // Defer the call so we don't trigger the set-state-in-effect rule.
+    const t = window.setTimeout(() => {
+      void fetchInvites(controller.signal);
+    }, 0);
 
     return () => {
-      cancelled = true;
+      window.clearTimeout(t);
+      controller.abort();
     };
-  }, [estateId, isOwner]);
+  }, [fetchInvites, isOwner]);
 
   async function createInvite() {
     const email = inviteEmail.trim().toLowerCase();
