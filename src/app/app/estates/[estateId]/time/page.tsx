@@ -1,9 +1,11 @@
 // REPLACED BY PATCH: new implementation below
 "use client";
 
-import { useCallback, useEffect, useState, FormEvent, use as usePromise } from "react";
+import { useCallback, useEffect, useState, use as usePromise } from "react";
+import type { FormEvent } from "react";
 import Link from "next/link";
 
+import PageHeader from "@/components/layout/PageHeader";
 import { safeJson } from "@/lib/utils";
 
 interface TimeEntry {
@@ -61,7 +63,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
   const { estateId } = usePromise(params);
 
   const [entries, setEntries] = useState<TimeEntry[]>([]);
-  const [loadingEntries, setLoadingEntries] = useState(false);
+  const [loadingEntries, setLoadingEntries] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -284,36 +286,76 @@ export default function EstateTimecardPage({ params }: PageProps) {
   }
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-50">Timecard</h1>
-          <p className="text-sm text-slate-400">
-            Track your personal representative time for this estate. These entries will help you
-            prepare your final time log for the court.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-xs">
-          <button
-            type="button"
-            onClick={() => handleExportCsv("all")}
-            disabled={entries.length === 0 || loadingEntries}
-            className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-slate-900/40"
-            title={loadingEntries ? "Loading entries…" : entries.length === 0 ? "No entries to export" : "Export all entries as CSV"}
-          >
-            Export all CSV
-          </button>
-          <button
-            type="button"
-            onClick={() => handleExportCsv("billable")}
-            disabled={entries.length === 0 || loadingEntries}
-            className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-slate-900/40"
-            title={loadingEntries ? "Loading entries…" : entries.length === 0 ? "No entries to export" : "Export billable entries as CSV"}
-          >
-            Export billable CSV
-          </button>
-        </div>
-      </header>
+    <div className="space-y-8 p-6">
+      <PageHeader
+        eyebrow={
+          <nav className="text-xs text-slate-500">
+            <Link href="/app/estates" className="text-slate-400 hover:text-slate-200 hover:underline">
+              Estates
+            </Link>
+            <span className="mx-1 text-slate-600">/</span>
+            <Link
+              href={`/app/estates/${encodeURIComponent(estateId)}`}
+              className="text-slate-400 hover:text-slate-200 hover:underline"
+            >
+              Overview
+            </Link>
+            <span className="mx-1 text-slate-600">/</span>
+            <span className="truncate text-rose-200">Time</span>
+          </nav>
+        }
+        title="Timecard"
+        description="Track your personal representative time for this estate. These entries help you prepare a court-ready time log."
+        actions={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Link
+              href={`/app/estates/${encodeURIComponent(estateId)}/time/new`}
+              className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white hover:bg-rose-400"
+            >
+              New entry
+            </Link>
+
+            <button
+              type="button"
+              onClick={() => handleExportCsv("all")}
+              disabled={entries.length === 0 || loadingEntries}
+              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60 disabled:cursor-not-allowed disabled:opacity-60"
+              title={
+                loadingEntries
+                  ? "Loading entries…"
+                  : entries.length === 0
+                    ? "No entries to export"
+                    : "Export all entries as CSV"
+              }
+            >
+              Export all
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleExportCsv("billable")}
+              disabled={entries.length === 0 || loadingEntries}
+              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60 disabled:cursor-not-allowed disabled:opacity-60"
+              title={
+                loadingEntries
+                  ? "Loading entries…"
+                  : entries.length === 0
+                    ? "No entries to export"
+                    : "Export billable entries as CSV"
+              }
+            >
+              Export billable
+            </button>
+
+            <Link
+              href={`/app/estates/${encodeURIComponent(estateId)}`}
+              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+            >
+              Back
+            </Link>
+          </div>
+        }
+      />
 
       {error ? (
         <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4">
@@ -342,7 +384,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
       ) : null}
 
       {/* Summary stats */}
-      <section className="grid gap-3 text-sm sm:grid-cols-3">
+      <section className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
           <p className="text-[11px] uppercase tracking-wide text-slate-500">Total hours</p>
           <p className="mt-1 text-lg font-semibold text-slate-50">{totalHours.toFixed(2)}</p>
@@ -367,7 +409,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
             step="1"
             value={hourlyRate}
             onChange={(e) => setHourlyRate(e.target.value)}
-            className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-right text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
+            className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-right text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-500"
           />
           <span className="text-[11px] text-slate-500">USD per hour (for exports)</span>
         </div>
@@ -452,7 +494,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
               disabled={submitting}
               className="inline-flex items-center justify-center rounded-md bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {submitting ? "Saving..." : "Save entry"}
+              {submitting ? "Saving…" : "Save entry"}
             </button>
           </div>
         </form>
@@ -463,11 +505,16 @@ export default function EstateTimecardPage({ params }: PageProps) {
       </section>
 
       <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-slate-100">Recent entries</h2>
-          <p className="text-xs text-slate-400">
-            {entries.length} entr{entries.length === 1 ? "y" : "ies"}
-          </p>
+          <div className="flex items-center gap-3 text-xs text-slate-400">
+            {loadingEntries ? (
+              <span className="text-[11px] text-slate-500">Loading…</span>
+            ) : null}
+            <p>
+              {entries.length} entr{entries.length === 1 ? "y" : "ies"}
+            </p>
+          </div>
         </div>
 
         {loadingEntries && entries.length === 0 ? (

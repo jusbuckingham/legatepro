@@ -51,6 +51,9 @@ export function ExpenseEditForm({
 }: ExpenseEditFormProps) {
   const router = useRouter();
 
+  const estateIdEncoded = encodeURIComponent(estateId);
+  const expenseIdEncoded = encodeURIComponent(expenseId);
+
   const [description, setDescription] = useState(
     initialExpense.description ?? "",
   );
@@ -135,7 +138,7 @@ export function ExpenseEditForm({
     };
 
     try {
-      const res = await fetch(`/api/expenses/${encodeURIComponent(expenseId)}`, {
+      const res = await fetch(`/api/expenses/${expenseIdEncoded}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -160,7 +163,7 @@ export function ExpenseEditForm({
       }
 
       // On success, go back to estate expenses list
-      router.push(`/app/estates/${encodeURIComponent(estateId)}/expenses`);
+      router.push(`/app/estates/${estateIdEncoded}/expenses`);
       router.refresh();
     } catch {
       setErrorMsg("Unexpected error while saving. Please try again.");

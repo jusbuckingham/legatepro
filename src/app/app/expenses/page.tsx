@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ChangeEvent } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PageHeader from "@/components/layout/PageHeader";
-import { getApiErrorMessage, safeJson } from "@/lib/utils";
+import { getApiErrorMessage } from "@/lib/utils";
 
 interface RawEstate {
   _id: string | { toString(): string };
@@ -73,12 +73,13 @@ async function fetchExpensesForUser(): Promise<NormalizedExpenseRow[]> {
     credentials: "include",
     cache: "no-store",
   });
+
   if (!res.ok) {
     const msg = await getApiErrorMessage(res);
     throw new Error(msg || "Failed to fetch expenses");
   }
 
-  const data = (await safeJson(res)) as
+  const data = (await res.json().catch(() => null)) as
     | { ok: true; expenses?: RawExpense[] }
     | { ok: false; error?: string }
     | { expenses?: RawExpense[] }
@@ -154,12 +155,37 @@ function formatDate(iso?: string): string {
   });
 }
 
+const CATEGORY_LABELS: Record<string, string> = {
+  REPAIRS_MAINTENANCE: "Repairs & Maintenance",
+  PROPERTY_TAXES: "Property taxes",
+  INSURANCE: "Insurance",
+  UTILITIES: "Utilities",
+  LEGAL_FEES: "Legal fees",
+  ADMINISTRATIVE: "Administrative",
+  TRAVEL: "Travel",
+  PROFESSIONAL_FEES: "Professional fees",
+  MORTGAGE: "Mortgage",
+  MISCELLANEOUS: "Miscellaneous",
+  UNCATEGORIZED: "Uncategorized",
+};
+
+function formatCategoryLabel(value: string): string {
+  return CATEGORY_LABELS[value] ?? value;
+}
+
 export default function GlobalExpensesPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
   const [rows, setRows] = useState<NormalizedExpenseRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+
+  const [categoryFilter, setCategoryFilter] = useState<string>(() => {
+    const initial = searchParams?.get("category");
+    return initial && initial.trim().length > 0 ? initial : "all";
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -169,7 +195,8 @@ export default function GlobalExpensesPage() {
       const data = await fetchExpensesForUser();
       setRows(data);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unable to load expenses right now.";
+      const message =
+        err instanceof Error ? err.message : "Unable to load expenses right now.";
       setError(message || "Unable to load expenses right now.");
     } finally {
       setLoading(false);
@@ -180,15 +207,18 @@ export default function GlobalExpensesPage() {
     void load();
   }, [load]);
 
-  const filteredRows = useMemo(() => {
+  // Keep local state aligned if URL query changes (back/forward navigation)
+  useEffect(() => {
     const categoryParam = searchParams?.get("category");
-    const activeCategory =
-      categoryFilter === "all" ? categoryParam : categoryFilter;
+    const nextValue =
+      categoryParam && categoryParam.trim().length > 0 ? categoryParam : "all";
+    setCategoryFilter((prev) => (prev === nextValue ? prev : nextValue));
+  }, [searchParams]);
 
-    if (!activeCategory || activeCategory === "all") return rows;
-
-    return rows.filter((row) => row.category === activeCategory);
-  }, [rows, categoryFilter, searchParams]);
+  const filteredRows = useMemo(() => {
+    if (!categoryFilter || categoryFilter === "all") return rows;
+    return rows.filter((row) => row.category === categoryFilter);
+  }, [rows, categoryFilter]);
 
   const totalSpent = useMemo(
     () => filteredRows.reduce((sum, row) => sum + (row.amount ?? 0), 0),
@@ -196,16 +226,55 @@ export default function GlobalExpensesPage() {
   );
 
   const handleCategoryChange = (event: ChangeEvent<HTMLSelectElement>) => {
-    setCategoryFilter(event.target.value);
+    const next = event.target.value;
+    setCategoryFilter(next);
+
+    const params = new URLSearchParams(searchParams?.toString());
+    if (!next || next === "all") params.delete("category");
+    else params.set("category", next);
+
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname);
   };
 
   if (loading) {
     return (
       <div className="space-y-8 p-6">
-        <div className="space-y-3">
-          <div className="h-6 w-44 rounded bg-slate-900/60" />
-          <div className="h-4 w-80 rounded bg-slate-900/60" />
-        </div>
+        <PageHeader
+          eyebrow="Overview"
+          title="All expenses"
+          description="Cross-estate view of every expense you’ve logged."
+          actions={
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <Link
+                href="/app/expenses/new"
+                className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-400"
+              >
+                Add expense
+              </Link>
+
+              <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-4 py-2">
+                <div className="text-[11px] uppercase tracking-wide text-slate-500">Total (filtered)</div>
+                <div className="font-semibold text-slate-50">—</div>
+              </div>
+
+              <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                <label htmlFor="category-filter" className="text-[11px] text-slate-400">
+                  Category
+                </label>
+                <select
+                  id="category-filter"
+                  value={categoryFilter}
+                  onChange={handleCategoryChange}
+                  disabled
+                  className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-rose-500 disabled:opacity-60"
+                >
+                  <option value="all">All</option>
+                </select>
+              </div>
+            </div>
+          }
+        />
 
         <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/80">
           <div className="grid grid-cols-12 border-b border-slate-800 bg-slate-900/60 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
@@ -249,30 +318,32 @@ export default function GlobalExpensesPage() {
   if (error) {
     return (
       <div className="space-y-4 p-6">
-        <div>
-          <h1 className="text-base font-semibold text-slate-50">All expenses</h1>
-          <p className="mt-1 text-xs text-slate-400">Cross-estate view of every expense you’ve logged.</p>
-        </div>
+        <PageHeader
+          eyebrow="Overview"
+          title="All expenses"
+          description="Cross-estate view of every expense you’ve logged."
+          actions={
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => void load()}
+                className="inline-flex items-center justify-center rounded-md bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-900 hover:bg-white"
+              >
+                Retry
+              </button>
+              <Link
+                href="/app/estates"
+                className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-900"
+              >
+                Back to estates
+              </Link>
+            </div>
+          }
+        />
 
         <div className="rounded-xl border border-red-900/40 bg-red-950/40 p-4">
           <div className="text-sm font-semibold text-red-200">Couldn’t load expenses</div>
           <div className="mt-1 text-xs text-red-200/80">{error}</div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void load()}
-              className="inline-flex items-center justify-center rounded-md bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-900 hover:bg-white"
-            >
-              Retry
-            </button>
-            <Link
-              href="/app/estates"
-              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-900"
-            >
-              Back to estates
-            </Link>
-          </div>
         </div>
       </div>
     );
@@ -286,6 +357,13 @@ export default function GlobalExpensesPage() {
         description="Cross-estate view of every expense you’ve logged."
         actions={
           <div className="flex flex-wrap items-center justify-end gap-3">
+            <Link
+              href="/app/expenses/new"
+              className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-400"
+            >
+              Add expense
+            </Link>
+
             <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-4 py-2">
               <div className="text-[11px] uppercase tracking-wide text-slate-500">
                 Total (filtered)
@@ -296,10 +374,7 @@ export default function GlobalExpensesPage() {
             </div>
 
             <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
-              <label
-                htmlFor="category-filter"
-                className="text-[11px] text-slate-400"
-              >
+              <label htmlFor="category-filter" className="text-[11px] text-slate-400">
                 Category
               </label>
               <select
@@ -309,9 +384,7 @@ export default function GlobalExpensesPage() {
                 className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-rose-500"
               >
                 <option value="all">All</option>
-                <option value="REPAIRS_MAINTENANCE">
-                  Repairs &amp; Maintenance
-                </option>
+                <option value="REPAIRS_MAINTENANCE">Repairs &amp; Maintenance</option>
                 <option value="PROPERTY_TAXES">Property taxes</option>
                 <option value="INSURANCE">Insurance</option>
                 <option value="UTILITIES">Utilities</option>
@@ -358,10 +431,17 @@ export default function GlobalExpensesPage() {
                 >
                   Go to an estate
                 </Link>
-                {categoryFilter !== "all" || searchParams?.get("category") ? (
+
+                {categoryFilter !== "all" ? (
                   <button
                     type="button"
-                    onClick={() => setCategoryFilter("all")}
+                    onClick={() => {
+                      setCategoryFilter("all");
+                      const params = new URLSearchParams(searchParams?.toString());
+                      params.delete("category");
+                      const qs = params.toString();
+                      router.replace(qs ? `${pathname}?${qs}` : pathname);
+                    }}
                     className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-900"
                   >
                     Clear filters
@@ -377,9 +457,7 @@ export default function GlobalExpensesPage() {
                 key={row.id}
                 className="grid grid-cols-12 items-center px-4 py-2 hover:bg-slate-900/60"
               >
-                <div className="col-span-2 text-slate-200">
-                  {formatDate(row.incurredAt)}
-                </div>
+                <div className="col-span-2 text-slate-200">{formatDate(row.incurredAt)}</div>
                 <div className="col-span-3 text-slate-100">
                   {row.estateId ? (
                     <Link
@@ -389,15 +467,11 @@ export default function GlobalExpensesPage() {
                       {row.estateLabel}
                     </Link>
                   ) : (
-                    <span className="truncate text-[11px] text-slate-300">
-                      {row.estateLabel}
-                    </span>
+                    <span className="truncate text-[11px] text-slate-300">{row.estateLabel}</span>
                   )}
                 </div>
-                <div className="col-span-2 text-slate-200">{row.category}</div>
-                <div className="col-span-2 text-slate-300">
-                  {row.payee ?? "—"}
-                </div>
+                <div className="col-span-2 text-slate-200">{formatCategoryLabel(row.category)}</div>
+                <div className="col-span-2 text-slate-300">{row.payee ?? "—"}</div>
                 <div className="col-span-2 text-right font-medium text-slate-50">
                   {formatCurrency(row.amount)}
                 </div>

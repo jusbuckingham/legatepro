@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { FormEventHandler } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getApiErrorMessage } from "@/lib/utils";
 
@@ -87,7 +88,7 @@ export function InvoiceEditForm({
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const clearSaveError = (): void => {
-    if (saveError) setSaveError(null);
+    setSaveError(null);
   };
 
   const fireToast = (detail: { type: "success" | "error"; message: string }): void => {
@@ -177,11 +178,13 @@ export function InvoiceEditForm({
     });
   };
 
-  const hasAtLeastOneMeaningfulLine = lineItems.some((li) => {
-    const labelOk = li.label.trim().length > 0;
-    const amt = typeof li.amountCents === "number" ? li.amountCents : 0;
-    return labelOk || amt > 0;
-  });
+  const hasAtLeastOneMeaningfulLine = useMemo(() => {
+    return lineItems.some((li) => {
+      const labelOk = li.label.trim().length > 0;
+      const amt = typeof li.amountCents === "number" ? li.amountCents : 0;
+      return labelOk || amt > 0;
+    });
+  }, [lineItems]);
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault();
@@ -225,6 +228,13 @@ export function InvoiceEditForm({
         }))
         // Don’t send blank rows (keeps API clean and avoids accidentally saving empty items)
         .filter((li) => li.label.trim().length > 0 || li.amountCents > 0);
+
+      if (normalizedLineItems.length === 0) {
+        const message = "Add at least one line item (label or amount) before saving.";
+        setSaveError(message);
+        fireToast({ type: "error", message });
+        return;
+      }
 
       const response: Response = await fetch(`/api/invoices/${invoiceId}`, {
         method: "PUT",
@@ -282,9 +292,17 @@ export function InvoiceEditForm({
         <div
           role="alert"
           aria-live="polite"
-          className="rounded-md border border-red-500/60 bg-red-900/30 px-3 py-2 text-xs text-red-100"
+          className="flex items-start justify-between gap-3 rounded-md border border-red-500/60 bg-red-900/30 px-3 py-2 text-xs text-red-100"
         >
-          {saveError}
+          <span>{saveError}</span>
+          <button
+            type="button"
+            onClick={clearSaveError}
+            className="shrink-0 rounded-md border border-red-400/40 bg-red-950/20 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-red-100 hover:bg-red-950/35"
+            aria-label="Dismiss error"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
@@ -486,7 +504,7 @@ export function InvoiceEditForm({
                       type="button"
                       onClick={() => removeLineItem(index)}
                       className="inline-flex items-center rounded-md border border-red-700 px-2 py-1 text-[11px] text-red-200 hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={isSaving}
+                      disabled={isSaving || lineItems.length <= 1}
                     >
                       Remove
                     </button>
@@ -527,18 +545,21 @@ export function InvoiceEditForm({
         </p>
       </div>
 
-      <div className="flex items-center justify-end gap-2 pt-2">
+      <div className="flex flex-col-reverse items-stretch justify-between gap-2 pt-2 sm:flex-row sm:items-center">
+        <Link
+          href={`/app/estates/${encodeURIComponent(estateId)}/invoices/${encodeURIComponent(invoiceId)}`}
+          className="inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-950/40 px-4 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-900/50"
+        >
+          Cancel
+        </Link>
+
         <button
           type="submit"
           disabled={!canSubmit}
-          className="inline-flex items-center rounded-md bg-sky-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex items-center justify-center rounded-md bg-sky-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
           aria-busy={isSaving}
         >
-          {isSaving
-            ? "Saving…"
-            : hasAtLeastOneMeaningfulLine
-            ? "Save invoice"
-            : "Add a line item to save"}
+          {isSaving ? "Saving…" : canSubmit ? "Save invoice" : "Add a line item to save"}
         </button>
       </div>
     </form>
