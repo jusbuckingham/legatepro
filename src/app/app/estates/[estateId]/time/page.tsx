@@ -1,7 +1,7 @@
 // REPLACED BY PATCH: new implementation below
 "use client";
 
-import { useCallback, useEffect, useState, use as usePromise } from "react";
+import { useCallback, useEffect, useMemo, useState, use as usePromise } from "react";
 import type { FormEvent } from "react";
 import Link from "next/link";
 
@@ -61,6 +61,7 @@ function isValidObjectId(id: unknown): id is string {
 
 export default function EstateTimecardPage({ params }: PageProps) {
   const { estateId } = usePromise(params);
+  const estateIdEncoded = encodeURIComponent(estateId);
 
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
@@ -79,7 +80,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
       setLoadingEntries(true);
       setError(null);
 
-      const res = await fetch(`/api/estates/${encodeURIComponent(estateId)}/time`, {
+      const res = await fetch(`/api/estates/${estateIdEncoded}/time`, {
         method: "GET",
         credentials: "include",
         cache: "no-store",
@@ -198,7 +199,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
     try {
       setSubmitting(true);
 
-      const res = await fetch(`/api/estates/${encodeURIComponent(estateId)}/time`, {
+      const res = await fetch(`/api/estates/${estateIdEncoded}/time`, {
         method: "POST",
         credentials: "include",
         cache: "no-store",
@@ -237,15 +238,25 @@ export default function EstateTimecardPage({ params }: PageProps) {
     }
   }
 
-  const totalHours = entries.reduce((sum, entry) => sum + (entry.hours || 0), 0);
-  const billableHours = entries.reduce(
-    (sum, entry) => (entry.isBillable === false ? sum : sum + (entry.hours || 0)),
-    0
-  );
-  const nonBillableHours = totalHours - billableHours;
+  const totalHours = useMemo(() => entries.reduce((sum, entry) => sum + (entry.hours || 0), 0), [entries]);
 
-  const rateNumber = Number(hourlyRate) || 0;
-  const billableTotalAmount = billableHours * rateNumber;
+  const billableHours = useMemo(
+    () =>
+      entries.reduce(
+        (sum, entry) => (entry.isBillable === false ? sum : sum + (entry.hours || 0)),
+        0
+      ),
+    [entries]
+  );
+
+  const nonBillableHours = useMemo(() => totalHours - billableHours, [totalHours, billableHours]);
+
+  const rateNumber = useMemo(() => {
+    const parsed = Number.parseFloat(hourlyRate);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }, [hourlyRate]);
+
+  const billableTotalAmount = useMemo(() => billableHours * rateNumber, [billableHours, rateNumber]);
 
   function handleExportCsv(mode: "all" | "billable" = "all") {
     if (!entries.length) return;
@@ -295,7 +306,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
             </Link>
             <span className="mx-1 text-slate-600">/</span>
             <Link
-              href={`/app/estates/${encodeURIComponent(estateId)}`}
+              href={`/app/estates/${estateIdEncoded}`}
               className="text-slate-400 hover:text-slate-200 hover:underline"
             >
               Overview
@@ -309,7 +320,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
         actions={
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Link
-              href={`/app/estates/${encodeURIComponent(estateId)}/time/new`}
+              href={`/app/estates/${estateIdEncoded}/time/new`}
               className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white hover:bg-rose-400"
             >
               New entry
@@ -348,7 +359,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
             </button>
 
             <Link
-              href={`/app/estates/${encodeURIComponent(estateId)}`}
+              href={`/app/estates/${estateIdEncoded}`}
               className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
             >
               Back
@@ -373,7 +384,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
                 Retry
               </button>
               <Link
-                href={`/app/estates/${estateId}`}
+                href={`/app/estates/${estateIdEncoded}`}
                 className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-900/50"
               >
                 Back to overview
@@ -406,7 +417,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
           <input
             type="number"
             min="0"
-            step="1"
+            step="0.01"
             value={hourlyRate}
             onChange={(e) => setHourlyRate(e.target.value)}
             className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-right text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-500"
@@ -491,7 +502,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
 
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || loadingEntries}
               className="inline-flex items-center justify-center rounded-md bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "Saving…" : "Save entry"}
@@ -593,7 +604,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
                       <td className="py-2 pl-2 pr-0 align-top text-right">
                         {hasValidId ? (
                           <Link
-                            href={`/app/estates/${estateId}/time/${entry._id}`}
+                            href={`/app/estates/${estateIdEncoded}/time/${entry._id}`}
                             className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800"
                           >
                             View / edit

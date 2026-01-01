@@ -1,3 +1,4 @@
+// Replaced file contents as requested.
 "use client";
 
 import Link from "next/link";

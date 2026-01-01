@@ -60,6 +60,7 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const isBusy = saving || deleting;
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -170,6 +171,7 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
   async function handleSave(e: FormEvent) {
     e.preventDefault();
     if (!entry) return;
+    if (deleting) return;
 
     setError(null);
     setSuccess(null);
@@ -268,6 +270,7 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
 
   async function handleDelete() {
     if (!entry) return;
+    if (saving) return;
 
     const confirmed = window.confirm(
       "Delete this time entry? This cannot be undone."
@@ -338,7 +341,7 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
           <button
             type="button"
             onClick={handleDelete}
-            disabled={deleting}
+            disabled={isBusy}
             className="inline-flex items-center justify-center rounded-md border border-red-800/60 bg-red-950/40 px-3 py-1.5 text-xs font-medium text-red-200 hover:bg-red-900/50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {deleting ? "Deleting…" : "Delete entry"}
@@ -425,6 +428,7 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
         ) : (
           <form
             onSubmit={handleSave}
+            aria-busy={isBusy}
             className="grid gap-4 md:grid-cols-2 md:items-start"
           >
             <div className="space-y-3">
@@ -436,7 +440,9 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
                   id="date"
                   type="date"
                   value={date}
+                  disabled={isBusy}
                   onChange={(e) => {
+                    setError(null);
                     setSuccess(null);
                     setDate(e.target.value);
                   }}
@@ -454,7 +460,9 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
                   step="0.25"
                   min="0"
                   value={hours}
+                  disabled={isBusy}
                   onChange={(e) => {
+                    setError(null);
                     setSuccess(null);
                     setHours(e.target.value);
                   }}
@@ -470,7 +478,9 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
                 <input
                   type="checkbox"
                   checked={isBillable}
+                  disabled={isBusy}
                   onChange={(e) => {
+                    setError(null);
                     setSuccess(null);
                     setIsBillable(e.target.checked);
                   }}
@@ -489,7 +499,9 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
                   id="description"
                   type="text"
                   value={description}
+                  disabled={isBusy}
                   onChange={(e) => {
+                    setError(null);
                     setSuccess(null);
                     setDescription(e.target.value);
                   }}
@@ -505,7 +517,9 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
                 <textarea
                   id="notes"
                   value={notes}
+                  disabled={isBusy}
                   onChange={(e) => {
+                    setError(null);
                     setSuccess(null);
                     setNotes(e.target.value);
                   }}
@@ -520,13 +534,14 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
                   onClick={() =>
                     router.push(`/app/estates/${estateId}/time`)
                   }
-                  className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
+                  disabled={isBusy}
+                  className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={saving}
+                  disabled={isBusy}
                   className="rounded-md bg-red-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {saving ? "Saving…" : "Save changes"}
