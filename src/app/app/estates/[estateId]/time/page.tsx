@@ -1,9 +1,16 @@
-// REPLACED BY PATCH: new implementation below
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, use as usePromise } from "react";
-import type { FormEvent } from "react";
+import {
+  use as usePromise,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { ChangeEvent, FormEvent } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import PageHeader from "@/components/layout/PageHeader";
 import { safeJson } from "@/lib/utils";
@@ -24,12 +31,6 @@ interface PageProps {
     estateId: string;
   }>;
 }
-
-type ApiErrorPayload = { ok: false; error: string };
-
-type ApiSuccessPayload<T extends object> = { ok: true } & T;
-
-type ApiPayload<T extends object> = ApiErrorPayload | ApiSuccessPayload<T>;
 
 function getErrorFromApiPayload(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== "object") return fallback;
@@ -55,18 +56,40 @@ function formatDisplayDate(isoLike: string): string {
   return d.toLocaleDateString();
 }
 
-function isValidObjectId(id: unknown): id is string {
-  return typeof id === "string" && /^[0-9a-fA-F]{24}$/.test(id);
+function formatUsd(amount: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function getEntryId(entry: TimeEntry): string | null {
+  const candidate =
+    typeof entry._id === "string"
+      ? entry._id
+      : typeof entry.id === "string"
+        ? entry.id
+        : null;
+
+  return candidate && candidate.trim().length > 0 ? candidate : null;
 }
 
 export default function EstateTimecardPage({ params }: PageProps) {
   const { estateId } = usePromise(params);
   const estateIdEncoded = encodeURIComponent(estateId);
 
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const clearSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [date, setDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [hours, setHours] = useState<string>("1.0");
@@ -88,14 +111,16 @@ export default function EstateTimecardPage({ params }: PageProps) {
 
       const data: unknown = await safeJson(res);
 
-      // Avoid double-reading the response body by deriving the message from the parsed payload.
       if (!res.ok) {
         const msg = getErrorFromApiPayload(data, "Failed to load time entries");
-        console.error("Failed to load time entries:", res.status, res.statusText, data);
         throw new Error(msg);
       }
 
-      const payload = (data ?? {}) as ApiPayload<{
+      if (data && typeof data === "object" && (data as { ok?: unknown }).ok === false) {
+        throw new Error(getErrorFromApiPayload(data, "Failed to load time entries"));
+      }
+
+      const payload = (data ?? {}) as {
         entries?: Array<{
           id?: string;
           _id?: string;
@@ -108,34 +133,17 @@ export default function EstateTimecardPage({ params }: PageProps) {
           note?: string;
           isBillable?: boolean;
         }>;
-      }>;
+      };
 
-      if (payload && typeof payload === "object" && (payload as ApiErrorPayload).ok === false) {
-        throw new Error(getErrorFromApiPayload(payload, "Failed to load time entries"));
-      }
-
-      const loadedEntriesRaw = Array.isArray((payload as { entries?: unknown }).entries)
-        ? ((payload as { entries: unknown[] }).entries as Array<{
-            id?: string;
-            _id?: string;
-            estateId?: string;
-            date?: string;
-            minutes?: number;
-            hours?: number;
-            description?: string;
-            notes?: string;
-            note?: string;
-            isBillable?: boolean;
-          }>)
-        : [];
+      const loadedEntriesRaw = Array.isArray(payload.entries) ? payload.entries : [];
 
       const loadedEntries: TimeEntry[] = loadedEntriesRaw.map((raw) => {
         const id =
           typeof raw.id === "string"
             ? raw.id
             : typeof raw._id === "string"
-            ? raw._id
-            : undefined;
+              ? raw._id
+              : undefined;
 
         const minutesValue =
           typeof raw.minutes === "number" ? raw.minutes : Number(raw.minutes ?? 0) || 0;
@@ -152,8 +160,8 @@ export default function EstateTimecardPage({ params }: PageProps) {
           typeof raw.notes === "string" && raw.notes.trim().length > 0
             ? raw.notes
             : typeof raw.note === "string" && raw.note.trim().length > 0
-            ? raw.note
-            : "";
+              ? raw.note
+              : "";
 
         return {
           _id: id,
@@ -170,16 +178,45 @@ export default function EstateTimecardPage({ params }: PageProps) {
       loadedEntries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setEntries(loadedEntries);
     } catch (err) {
-      console.error(err);
       setError(err instanceof Error ? err.message : "Unable to load time entries.");
     } finally {
       setLoadingEntries(false);
     }
-  }, [estateId]);
+  }, [estateId, estateIdEncoded]);
 
   useEffect(() => {
     void loadEntries();
   }, [loadEntries]);
+
+  const setSuccessWithAutoClear = useCallback((message: string) => {
+    setSuccess(message);
+    if (clearSuccessTimerRef.current) clearTimeout(clearSuccessTimerRef.current);
+    clearSuccessTimerRef.current = setTimeout(() => {
+      setSuccess(null);
+    }, 3500);
+  }, []);
+
+  // If we arrive here from the "new" page, allow a query flag to show a one-time success message.
+  useEffect(() => {
+    const created = searchParams?.get("created");
+    if (created !== "1") return;
+
+    setSuccessWithAutoClear("Time entry saved.");
+
+    const params = new URLSearchParams(searchParams?.toString());
+    params.delete("created");
+    const qs = params.toString();
+    const nextUrl = qs ? `${pathname}?${qs}` : pathname;
+    router.replace(nextUrl);
+  }, [searchParams, router, pathname, setSuccessWithAutoClear]);
+
+  useEffect(() => {
+    return () => {
+      const timer = clearSuccessTimerRef.current;
+      if (timer) clearTimeout(timer);
+      clearSuccessTimerRef.current = null;
+    };
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -221,7 +258,6 @@ export default function EstateTimecardPage({ params }: PageProps) {
         throw new Error(msg);
       }
 
-      // If the API returns `{ ok: false }` while still sending a 2xx, treat as error.
       if (data && typeof data === "object" && (data as { ok?: unknown }).ok === false) {
         throw new Error(getErrorFromApiPayload(data, "Failed to create time entry."));
       }
@@ -229,16 +265,19 @@ export default function EstateTimecardPage({ params }: PageProps) {
       setDescription("");
       setNotes("");
       setHours("1.0");
+      setSuccessWithAutoClear("Time entry saved.");
       await loadEntries();
     } catch (err) {
-      console.error(err);
       setError(err instanceof Error ? err.message : "Unable to create time entry.");
     } finally {
       setSubmitting(false);
     }
   }
 
-  const totalHours = useMemo(() => entries.reduce((sum, entry) => sum + (entry.hours || 0), 0), [entries]);
+  const totalHours = useMemo(
+    () => entries.reduce((sum, entry) => sum + (entry.hours || 0), 0),
+    [entries]
+  );
 
   const billableHours = useMemo(
     () =>
@@ -267,7 +306,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
       mode === "billable" ? entries.filter((entry) => entry.isBillable !== false) : entries;
 
     const rows = filtered.map((entry) => {
-      const date = new Date(entry.date).toISOString().slice(0, 10);
+      const dateStr = new Date(entry.date).toISOString().slice(0, 10);
       const hoursStr = entry.hours.toFixed(2);
       const billableStr = entry.isBillable === false ? "No" : "Yes";
       const desc = entry.description ?? "";
@@ -278,11 +317,10 @@ export default function EstateTimecardPage({ params }: PageProps) {
 
       const esc = (value: string) => `"${value.replace(/"/g, '""')}"`;
 
-      return [date, hoursStr, billableStr, esc(desc), esc(notesStr), rateStr, amountStr].join(",");
+      return [dateStr, hoursStr, billableStr, esc(desc), esc(notesStr), rateStr, amountStr].join(",");
     });
 
     const csvContent = [header.join(","), ...rows].join("\n");
-
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
 
@@ -296,12 +334,17 @@ export default function EstateTimecardPage({ params }: PageProps) {
     URL.revokeObjectURL(url);
   }
 
+  const isBusy = loadingEntries || submitting;
+
   return (
-    <div className="space-y-8 p-6">
+    <div className="space-y-8 p-6" aria-busy={isBusy}>
       <PageHeader
         eyebrow={
           <nav className="text-xs text-slate-500">
-            <Link href="/app/estates" className="text-slate-400 hover:text-slate-200 hover:underline">
+            <Link
+              href="/app/estates"
+              className="text-slate-400 hover:text-slate-200 hover:underline"
+            >
               Estates
             </Link>
             <span className="mx-1 text-slate-600">/</span>
@@ -368,6 +411,24 @@ export default function EstateTimecardPage({ params }: PageProps) {
         }
       />
 
+      {success ? (
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-emerald-100">Saved</div>
+              <div className="mt-1 text-xs text-emerald-100/80">{success}</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSuccess(null)}
+              className="inline-flex items-center justify-center rounded-md border border-emerald-500/30 bg-slate-950/60 px-3 py-1.5 text-xs font-semibold text-emerald-100 hover:bg-slate-900/50"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {error ? (
         <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -394,7 +455,6 @@ export default function EstateTimecardPage({ params }: PageProps) {
         </div>
       ) : null}
 
-      {/* Summary stats */}
       <section className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
           <p className="text-[11px] uppercase tracking-wide text-slate-500">Total hours</p>
@@ -410,7 +470,6 @@ export default function EstateTimecardPage({ params }: PageProps) {
         </div>
       </section>
 
-      {/* Rate + estimated total */}
       <section className="flex flex-col gap-2 text-xs sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
           <span className="text-slate-400">Hourly rate</span>
@@ -419,14 +478,18 @@ export default function EstateTimecardPage({ params }: PageProps) {
             min="0"
             step="0.01"
             value={hourlyRate}
-            onChange={(e) => setHourlyRate(e.target.value)}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => {
+              if (error) setError(null);
+              if (success) setSuccess(null);
+              setHourlyRate(e.target.value);
+            }}
             className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-right text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-500"
           />
           <span className="text-[11px] text-slate-500">USD per hour (for exports)</span>
         </div>
         <div className="text-[11px] text-slate-400">
           Estimated billable total:{" "}
-          <span className="font-semibold text-slate-100">${billableTotalAmount.toFixed(2)}</span>
+          <span className="font-semibold text-slate-100">{formatUsd(billableTotalAmount)}</span>
         </div>
       </section>
 
@@ -442,8 +505,13 @@ export default function EstateTimecardPage({ params }: PageProps) {
               id="date"
               type="date"
               value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
+              disabled={isBusy}
+              onChange={(e) => {
+                if (error) setError(null);
+                if (success) setSuccess(null);
+                setDate(e.target.value);
+              }}
+              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-500"
             />
           </div>
 
@@ -457,8 +525,13 @@ export default function EstateTimecardPage({ params }: PageProps) {
               step="0.25"
               min="0"
               value={hours}
-              onChange={(e) => setHours(e.target.value)}
-              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
+              disabled={isBusy}
+              onChange={(e) => {
+                if (error) setError(null);
+                if (success) setSuccess(null);
+                setHours(e.target.value);
+              }}
+              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-500"
             />
           </div>
 
@@ -470,9 +543,14 @@ export default function EstateTimecardPage({ params }: PageProps) {
               id="description"
               type="text"
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              disabled={isBusy}
+              onChange={(e) => {
+                if (error) setError(null);
+                if (success) setSuccess(null);
+                setDescription(e.target.value);
+              }}
               placeholder="Reviewed bank statements, called attorney, etc."
-              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
+              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-500"
             />
           </div>
 
@@ -483,9 +561,14 @@ export default function EstateTimecardPage({ params }: PageProps) {
             <textarea
               id="notes"
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              disabled={isBusy}
+              onChange={(e) => {
+                if (error) setError(null);
+                if (success) setSuccess(null);
+                setNotes(e.target.value);
+              }}
               rows={2}
-              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
+              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-500"
             />
           </div>
 
@@ -494,23 +577,28 @@ export default function EstateTimecardPage({ params }: PageProps) {
               <input
                 type="checkbox"
                 checked={isBillable}
-                onChange={(e) => setIsBillable(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-red-500 focus:ring-red-500"
+                disabled={isBusy}
+                onChange={(e) => {
+                  if (error) setError(null);
+                  if (success) setSuccess(null);
+                  setIsBillable(e.target.checked);
+                }}
+                className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-rose-500 focus:ring-rose-500"
               />
               Billable to estate
             </label>
 
             <button
               type="submit"
-              disabled={submitting || loadingEntries}
-              className="inline-flex items-center justify-center rounded-md bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isBusy}
+              className="inline-flex items-center justify-center rounded-md bg-rose-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "Saving…" : "Save entry"}
             </button>
           </div>
         </form>
 
-        <div aria-live="polite" className="sr-only">
+        <div aria-live="polite" className="sr-only" role="status">
           {error ?? ""}
         </div>
       </section>
@@ -519,9 +607,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-slate-100">Recent entries</h2>
           <div className="flex items-center gap-3 text-xs text-slate-400">
-            {loadingEntries ? (
-              <span className="text-[11px] text-slate-500">Loading…</span>
-            ) : null}
+            {loadingEntries ? <span className="text-[11px] text-slate-500">Loading…</span> : null}
             <p>
               {entries.length} entr{entries.length === 1 ? "y" : "ies"}
             </p>
@@ -546,8 +632,8 @@ export default function EstateTimecardPage({ params }: PageProps) {
           <div className="rounded-xl border border-dashed border-slate-800 bg-slate-950/40 p-6">
             <div className="text-sm font-semibold text-slate-100">No time entries yet</div>
             <div className="mt-1 text-xs text-slate-400">
-              Start with the first 3–5 things you’ve already done: bank calls, court filings,
-              property visits, or document review.
+              Start with the first 3–5 things you’ve already done: bank calls, court filings, property
+              visits, or document review.
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
               <button
@@ -584,15 +670,13 @@ export default function EstateTimecardPage({ params }: PageProps) {
               </thead>
               <tbody>
                 {entries.map((entry, index) => {
-                  const hasValidId = isValidObjectId(entry._id);
+                  const entryId = getEntryId(entry);
                   return (
                     <tr
-                      key={hasValidId ? entry._id : `${entry.date}-${index}`}
+                      key={entryId ?? `${entry.date}-${index}`}
                       className="border-b border-slate-800/60 last:border-b-0"
                     >
-                      <td className="py-2 pr-4 align-top text-slate-100">
-                        {formatDisplayDate(entry.date)}
-                      </td>
+                      <td className="py-2 pr-4 align-top text-slate-100">{formatDisplayDate(entry.date)}</td>
                       <td className="py-2 pr-4 align-top text-slate-100">{entry.description}</td>
                       <td className="py-2 pr-4 align-top text-right text-slate-100">
                         {Number.isFinite(entry.hours) ? entry.hours.toFixed(2) : "0.00"}
@@ -602,9 +686,9 @@ export default function EstateTimecardPage({ params }: PageProps) {
                         {entry.isBillable ? "Yes" : "No"}
                       </td>
                       <td className="py-2 pl-2 pr-0 align-top text-right">
-                        {hasValidId ? (
+                        {entryId ? (
                           <Link
-                            href={`/app/estates/${estateIdEncoded}/time/${entry._id}`}
+                            href={`/app/estates/${estateIdEncoded}/time/${encodeURIComponent(entryId)}`}
                             className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800"
                           >
                             View / edit
