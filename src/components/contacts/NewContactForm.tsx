@@ -1,12 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { getApiErrorMessage } from "@/lib/utils";
 
 type ApiResponse = { ok: boolean; error?: string };
+
+type FieldErrors = {
+  name?: string;
+  email?: string;
+  phone?: string;
+};
+
+const PHONE_DIGITS_REGEX = /\d/g;
+
+function isValidPhone(input: string): boolean {
+  const digits = (input.match(PHONE_DIGITS_REGEX) ?? []).join("");
+  return digits.length >= 7;
+}
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -38,6 +51,10 @@ function normalizeRole(value: string): ContactRole {
 export function NewContactForm() {
   const router = useRouter();
 
+  const nameRef = useRef<HTMLInputElement | null>(null);
+  const emailRef = useRef<HTMLInputElement | null>(null);
+  const phoneRef = useRef<HTMLInputElement | null>(null);
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -45,12 +62,13 @@ export function NewContactForm() {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const [success, setSuccess] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   const resetFeedback = (): void => {
     if (error) setError(null);
     if (success) setSuccess(null);
+    if (Object.keys(fieldErrors).length > 0) setFieldErrors({});
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -63,21 +81,35 @@ export function NewContactForm() {
     const trimmedPhone = phone.trim();
     const trimmedNotes = notes.trim();
 
+    const nextErrors: FieldErrors = {};
+
+    if (!trimmedName) nextErrors.name = "Name is required.";
+
     if (trimmedEmail && !EMAIL_REGEX.test(trimmedEmail)) {
-      setError("Please enter a valid email address.");
+      nextErrors.email = "Please enter a valid email address.";
+    }
+
+    if (trimmedPhone && !isValidPhone(trimmedPhone)) {
+      nextErrors.phone = "Please enter a valid phone number.";
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors);
+      setSuccess(null);
+      setError("Fix the highlighted fields.");
+
+      if (nextErrors.name) {
+        nameRef.current?.focus();
+      } else if (nextErrors.email) {
+        emailRef.current?.focus();
+      } else if (nextErrors.phone) {
+        phoneRef.current?.focus();
+      }
+
       return;
     }
 
-    if (trimmedPhone && trimmedPhone.length < 7) {
-      setError("Please enter a valid phone number.");
-      return;
-    }
-
-    if (!trimmedName) {
-      setError("Name is required.");
-      return;
-    }
-
+    setFieldErrors({});
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -112,7 +144,8 @@ export function NewContactForm() {
       router.push("/app/contacts");
       router.refresh();
     } catch (err) {
-      console.error(err);
+      console.error("[NewContactForm] submit error:", err);
+      setFieldErrors({});
       setSuccess(null);
       setError("Something went wrong while saving. Please try again.");
     } finally {
@@ -176,8 +209,10 @@ export function NewContactForm() {
           <input
             type="text"
             value={name}
+            ref={nameRef}
             required
-            aria-invalid={!!error && name.trim().length === 0}
+            aria-invalid={!!fieldErrors.name}
+            aria-describedby={fieldErrors.name ? "contact-name-error" : undefined}
             onChange={(e) => {
               resetFeedback();
               setName(e.target.value);
@@ -187,6 +222,11 @@ export function NewContactForm() {
             autoComplete="name"
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
+          {fieldErrors.name && (
+            <p id="contact-name-error" className="mt-1 text-[11px] text-rose-300">
+              {fieldErrors.name}
+            </p>
+          )}
         </div>
 
         <div>
@@ -196,7 +236,13 @@ export function NewContactForm() {
           <input
             type="email"
             value={email}
-            aria-invalid={!!error && email.trim().length > 0 && !EMAIL_REGEX.test(email.trim())}
+            ref={emailRef}
+            onBlur={() => {
+              const trimmed = email.trim();
+              if (trimmed !== email) setEmail(trimmed);
+            }}
+            aria-invalid={!!fieldErrors.email}
+            aria-describedby={fieldErrors.email ? "contact-email-error" : undefined}
             onChange={(e) => {
               resetFeedback();
               setEmail(e.target.value);
@@ -207,6 +253,11 @@ export function NewContactForm() {
             inputMode="email"
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
+          {fieldErrors.email && (
+            <p id="contact-email-error" className="mt-1 text-[11px] text-rose-300">
+              {fieldErrors.email}
+            </p>
+          )}
         </div>
 
         <div>
@@ -216,7 +267,13 @@ export function NewContactForm() {
           <input
             type="tel"
             value={phone}
-            aria-invalid={!!error && phone.trim().length > 0 && phone.trim().length < 7}
+            ref={phoneRef}
+            onBlur={() => {
+              const trimmed = phone.trim();
+              if (trimmed !== phone) setPhone(trimmed);
+            }}
+            aria-invalid={!!fieldErrors.phone}
+            aria-describedby={fieldErrors.phone ? "contact-phone-error" : undefined}
             onChange={(e) => {
               resetFeedback();
               setPhone(e.target.value);
@@ -227,6 +284,11 @@ export function NewContactForm() {
             inputMode="tel"
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
+          {fieldErrors.phone && (
+            <p id="contact-phone-error" className="mt-1 text-[11px] text-rose-300">
+              {fieldErrors.phone}
+            </p>
+          )}
         </div>
 
         <div>

@@ -28,6 +28,10 @@ type ExpenseEditFormProps = {
   };
 };
 
+type FieldKey = "description" | "amount" | "incurredAt" | "receiptUrl";
+
+type FieldErrors = Partial<Record<FieldKey, string>>;
+
 function formatDateInput(value: string | Date | null | undefined): string {
   if (!value) return "";
   const date = value instanceof Date ? value : new Date(value);
@@ -78,51 +82,84 @@ export function ExpenseEditForm({
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   const resetFeedback = (): void => {
     if (errorMsg) setErrorMsg(null);
     if (successMsg) setSuccessMsg(null);
+    if (Object.keys(fieldErrors).length > 0) setFieldErrors({});
   };
 
-  const handleBlurTrim = (value: string, setter: (next: string) => void): void => {
+  const handleBlurTrim = (
+    value: string,
+    setter: (next: string) => void
+  ): void => {
     const trimmed = value.trim();
     if (trimmed !== value) setter(trimmed);
   };
+
+  function setFieldError(key: FieldKey, message: string): void {
+    setFieldErrors((prev) => ({ ...prev, [key]: message }));
+  }
+
+  function clearFieldError(key: FieldKey): void {
+    setFieldErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }
+
+  function parseAmountToCents(input: string): { cents?: number; error?: string } {
+    const raw = input.trim();
+    if (!raw) return {};
+
+    // Remove currency symbols/commas/spaces
+    const cleaned = raw.replace(/[^0-9.\-]/g, "");
+    const asNumber = Number.parseFloat(cleaned);
+
+    if (!Number.isFinite(asNumber)) return { error: "Please enter a valid amount." };
+    if (asNumber < 0) return { error: "Amount cannot be negative." };
+
+    return { cents: Math.round(asNumber * 100) };
+  }
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault();
     if (isSaving) return;
     setErrorMsg(null);
     setSuccessMsg(null);
+    setFieldErrors({});
 
     const trimmedDescription = description.trim();
     if (!trimmedDescription) {
-      setErrorMsg("Description is required.");
+      setFieldError("description", "Description is required.");
+      setErrorMsg("Fix the highlighted fields.");
       return;
     }
 
     const trimmedReceiptUrl = receiptUrl.trim();
     if (trimmedReceiptUrl.length > 0 && !isValidHttpUrl(trimmedReceiptUrl)) {
-      setErrorMsg("Receipt link must be a valid http(s) URL.");
+      setFieldError("receiptUrl", "Receipt link must be a valid http(s) URL.");
+      setErrorMsg("Fix the highlighted fields.");
       return;
     }
 
-    let parsedAmountCents: number | undefined;
     const cleanedAmount = amountDollars.trim();
 
     if (cleanedAmount !== amountDollars) {
       setAmountDollars(cleanedAmount);
     }
 
-    if (cleanedAmount) {
-      const cleaned = cleanedAmount.replace(/[,$]/g, "");
-      const asNumber = Number.parseFloat(cleaned);
-      if (!Number.isFinite(asNumber) || asNumber < 0) {
-        setErrorMsg("Please enter a valid amount.");
-        return;
-      }
-      parsedAmountCents = Math.round(asNumber * 100);
+    const parsed = parseAmountToCents(cleanedAmount);
+    if (parsed.error) {
+      setFieldError("amount", parsed.error);
+      setErrorMsg("Fix the highlighted fields.");
+      return;
     }
+
+    const parsedAmountCents = parsed.cents;
 
     setIsSaving(true);
 
@@ -130,7 +167,8 @@ export function ExpenseEditForm({
     if (incurredAt) {
       const d = new Date(incurredAt);
       if (Number.isNaN(d.getTime())) {
-        setErrorMsg("Please enter a valid date.");
+        setFieldError("incurredAt", "Please enter a valid date.");
+        setErrorMsg("Fix the highlighted fields.");
         setIsSaving(false);
         return;
       }
@@ -191,6 +229,8 @@ export function ExpenseEditForm({
     }
   };
 
+  const isSubmitDisabled = isSaving || Object.keys(fieldErrors).length > 0;
+
   return (
     <form
       onSubmit={handleSubmit}
@@ -211,13 +251,20 @@ export function ExpenseEditForm({
             value={description}
             onChange={(e) => {
               resetFeedback();
+              clearFieldError("description");
               setDescription(e.target.value);
             }}
             onBlur={() => handleBlurTrim(description, setDescription)}
             disabled={isSaving}
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            aria-invalid={Boolean(fieldErrors.description)}
+            className={`rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 ${
+              fieldErrors.description ? "focus:ring-red-500" : "focus:ring-sky-500"
+            }`}
             placeholder="e.g. Filing fee, appraisal, travel"
           />
+          {fieldErrors.description ? (
+            <p className="text-[11px] text-red-300">{fieldErrors.description}</p>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-1">
@@ -258,13 +305,20 @@ export function ExpenseEditForm({
             value={amountDollars}
             onChange={(e) => {
               resetFeedback();
+              clearFieldError("amount");
               setAmountDollars(e.target.value);
             }}
             onBlur={() => handleBlurTrim(amountDollars, setAmountDollars)}
             disabled={isSaving}
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            aria-invalid={Boolean(fieldErrors.amount)}
+            className={`rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 ${
+              fieldErrors.amount ? "focus:ring-red-500" : "focus:ring-sky-500"
+            }`}
             placeholder="e.g. 125.00"
           />
+          {fieldErrors.amount ? (
+            <p className="text-[11px] text-red-300">{fieldErrors.amount}</p>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-1">
@@ -280,11 +334,18 @@ export function ExpenseEditForm({
             value={incurredAt}
             onChange={(e) => {
               resetFeedback();
+              clearFieldError("incurredAt");
               setIncurredAt(e.target.value);
             }}
             disabled={isSaving}
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            aria-invalid={Boolean(fieldErrors.incurredAt)}
+            className={`rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 ${
+              fieldErrors.incurredAt ? "focus:ring-red-500" : "focus:ring-sky-500"
+            }`}
           />
+          {fieldErrors.incurredAt ? (
+            <p className="text-[11px] text-red-300">{fieldErrors.incurredAt}</p>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-1">
@@ -361,13 +422,20 @@ export function ExpenseEditForm({
           value={receiptUrl}
           onChange={(e) => {
             resetFeedback();
+            clearFieldError("receiptUrl");
             setReceiptUrl(e.target.value);
           }}
           onBlur={() => handleBlurTrim(receiptUrl, setReceiptUrl)}
           disabled={isSaving}
-          className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          aria-invalid={Boolean(fieldErrors.receiptUrl)}
+          className={`rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 ${
+            fieldErrors.receiptUrl ? "focus:ring-red-500" : "focus:ring-sky-500"
+          }`}
           placeholder="Link to a PDF or image of the receipt"
         />
+        {fieldErrors.receiptUrl ? (
+          <p className="text-[11px] text-red-300">{fieldErrors.receiptUrl}</p>
+        ) : null}
         {(() => {
           const url = receiptUrl.trim();
           if (!url) return null;
@@ -420,7 +488,7 @@ export function ExpenseEditForm({
           aria-live="assertive"
           className="rounded-md border border-red-500/30 bg-red-950/30 px-3 py-2 text-xs text-red-200"
         >
-          <span className="font-semibold">Couldn’t save.</span> {errorMsg}
+          <span className="font-semibold">Couldn’t save.</span> {errorMsg || "Please try again."}
         </div>
       )}
 
@@ -445,8 +513,8 @@ export function ExpenseEditForm({
         </button>
         <button
           type="submit"
-          disabled={isSaving}
-          aria-disabled={isSaving}
+          disabled={isSubmitDisabled}
+          aria-disabled={isSubmitDisabled}
           className="inline-flex items-center rounded-md bg-sky-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60"
         >
           {isSaving ? "Saving…" : "Save expense"}

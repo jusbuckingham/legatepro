@@ -15,6 +15,11 @@ type InvoiceEditLineItem = {
   quantity?: number | null;
   rateCents?: number | null;
   amountCents?: number | null;
+  /**
+   * UX-only flag: if true, we will not overwrite amountCents when quantity/rate changes.
+   * Never send this to the API.
+   */
+  _isAmountManual?: boolean;
 };
 
 type InvoiceEditFormProps = {
@@ -36,10 +41,14 @@ function formatCentsToDollarsDisplay(cents: number | null | undefined): string {
 function parseDollarsToCents(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
-  const cleaned = trimmed.replace(/[,$]/g, "");
+
+  // Allow common user input: "$1,234.56" or "1 234.56".
+  const cleaned = trimmed.replace(/[^0-9.-]/g, "");
   const parsed = Number.parseFloat(cleaned);
   if (!Number.isFinite(parsed)) return null;
-  return Math.round(parsed * 100);
+
+  // Clamp negatives to 0 for safety.
+  return Math.max(0, Math.round(parsed * 100));
 }
 
 function formatDateForInput(value?: string | null): string {
@@ -87,8 +96,17 @@ export function InvoiceEditForm({
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const [currencyError, setCurrencyError] = useState<string | null>(null);
+  const [dateError, setDateError] = useState<string | null>(null);
+
+  const resetFieldErrors = (): void => {
+    if (currencyError) setCurrencyError(null);
+    if (dateError) setDateError(null);
+  };
+
   const clearSaveError = (): void => {
-    setSaveError(null);
+    if (saveError) setSaveError(null);
+    resetFieldErrors();
   };
 
   const fireToast = (detail: { type: "success" | "error"; message: string }): void => {
@@ -119,16 +137,17 @@ export function InvoiceEditForm({
       const updated = next[index];
       const qty = typeof updated.quantity === "number" ? updated.quantity : null;
       const rate = typeof updated.rateCents === "number" ? updated.rateCents : null;
-      const amt = typeof updated.amountCents === "number" ? updated.amountCents : null;
 
-      // If quantity+rate are set and amount isn't, derive it.
+      // If the user hasn't manually set the amount, derive it from quantity + rate.
       if (
         (field === "quantity" || field === "rateCents") &&
+        updated._isAmountManual !== true &&
         qty !== null &&
-        rate !== null &&
-        (amt === null || Number.isNaN(amt))
+        rate !== null
       ) {
-        const derived = Math.round(clampNonNegativeNumber(qty) * clampNonNegativeNumber(rate));
+        const derived = Math.round(
+          clampNonNegativeNumber(qty) * clampNonNegativeNumber(rate)
+        );
         next[index] = { ...updated, amountCents: derived };
       }
       return next;
@@ -137,7 +156,18 @@ export function InvoiceEditForm({
 
   const handleLineItemAmountChange = (index: number, value: string) => {
     const cents = parseDollarsToCents(value);
-    handleLineItemChange(index, "amountCents", cents);
+    // Mark manual if user typed anything (including clearing to blank).
+    setLineItems((prev) => {
+      const next = [...prev];
+      const current = next[index];
+      if (!current) return prev;
+      next[index] = {
+        ...current,
+        amountCents: cents,
+        _isAmountManual: true,
+      };
+      return next;
+    });
   };
 
   const handleLineItemRateChange = (index: number, value: string) => {
@@ -155,6 +185,7 @@ export function InvoiceEditForm({
         quantity: 1,
         rateCents: null,
         amountCents: null,
+        _isAmountManual: false,
       },
     ]);
   };
@@ -171,6 +202,7 @@ export function InvoiceEditForm({
             quantity: 1,
             rateCents: null,
             amountCents: null,
+            _isAmountManual: false,
           },
         ];
       }
@@ -190,9 +222,13 @@ export function InvoiceEditForm({
     event.preventDefault();
     if (isSaving) return;
 
+    // Reset field-level feedback on each submit attempt.
+    resetFieldErrors();
+
     const trimmedCurrency = currency.trim().toUpperCase();
     if (trimmedCurrency.length !== 3) {
       const message = "Currency must be a 3-letter ISO code (e.g., USD).";
+      setCurrencyError(message);
       setSaveError(message);
       fireToast({ type: "error", message });
       return;
@@ -201,6 +237,7 @@ export function InvoiceEditForm({
     // Basic guard: if both dates exist, due date should not be before issue date.
     if (issueDate && dueDate && dueDate < issueDate) {
       const message = "Due date cannot be before issue date.";
+      setDateError(message);
       setSaveError(message);
       fireToast({ type: "error", message });
       return;
@@ -350,6 +387,7 @@ export function InvoiceEditForm({
             value={issueDate}
             onChange={(event) => {
               clearSaveError();
+              if (dateError) setDateError(null);
               setIssueDate(event.target.value);
             }}
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
@@ -367,6 +405,7 @@ export function InvoiceEditForm({
             value={dueDate}
             onChange={(event) => {
               clearSaveError();
+              if (dateError) setDateError(null);
               setDueDate(event.target.value);
             }}
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
@@ -376,6 +415,11 @@ export function InvoiceEditForm({
             If left blank, your workspace invoice terms (for example, NET 30) will be applied automatically where
             possible.
           </p>
+          {dateError && (
+            <p className="text-[11px] text-red-300" role="alert">
+              {dateError}
+            </p>
+          )}
         </div>
       </div>
 
@@ -389,14 +433,22 @@ export function InvoiceEditForm({
           value={currency}
           onChange={(event) => {
             clearSaveError();
+            if (currencyError) setCurrencyError(null);
             setCurrency(event.target.value.toUpperCase().slice(0, 3));
           }}
           className="max-w-[120px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
           disabled={isSaving}
           inputMode="text"
           autoComplete="off"
+          maxLength={3}
+          aria-invalid={currencyError ? true : undefined}
         />
         <p className="text-[11px] text-slate-500">Typically USD, but you can set another currency if needed.</p>
+        {currencyError && (
+          <p className="text-[11px] text-red-300" role="alert">
+            {currencyError}
+          </p>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -534,7 +586,7 @@ export function InvoiceEditForm({
         <div className="flex items-center justify-between border-t border-slate-800 pt-3 text-sm">
           <span className="text-xs uppercase tracking-wide text-slate-400">Subtotal</span>
           <span className="font-semibold text-slate-100">
-            {currency} {subtotalDisplay || "0.00"}
+            {currency.trim().toUpperCase()} {subtotalDisplay || "0.00"}
           </span>
         </div>
       </div>
