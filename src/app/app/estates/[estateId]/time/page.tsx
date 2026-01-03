@@ -53,7 +53,11 @@ function formatDisplayDate(isoLike: string): string {
   if (!isoLike) return "";
   const d = new Date(isoLike);
   if (Number.isNaN(d.getTime())) return isoLike;
-  return d.toLocaleDateString();
+  return d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function formatUsd(amount: number): string {
@@ -300,10 +304,12 @@ export default function EstateTimecardPage({ params }: PageProps) {
   function handleExportCsv(mode: "all" | "billable" = "all") {
     if (!entries.length) return;
 
-    const header = ["Date", "Hours", "Billable", "Description", "Notes", "Rate", "Amount"];
-
     const filtered =
       mode === "billable" ? entries.filter((entry) => entry.isBillable !== false) : entries;
+
+    if (filtered.length === 0) return;
+
+    const header = ["Date", "Hours", "Billable", "Description", "Notes", "Rate", "Amount"];
 
     const rows = filtered.map((entry) => {
       const dateStr = new Date(entry.date).toISOString().slice(0, 10);
@@ -335,9 +341,11 @@ export default function EstateTimecardPage({ params }: PageProps) {
   }
 
   const isBusy = loadingEntries || submitting;
+  const canExport = entries.length > 0 && !loadingEntries;
+  const hasBillableEntries = entries.some((entry) => entry.isBillable !== false);
 
   return (
-    <div className="space-y-8 p-6" aria-busy={isBusy}>
+    <div className="space-y-8 p-6" aria-busy={isBusy} aria-live="polite">
       <PageHeader
         eyebrow={
           <nav className="text-xs text-slate-500">
@@ -372,12 +380,12 @@ export default function EstateTimecardPage({ params }: PageProps) {
             <button
               type="button"
               onClick={() => handleExportCsv("all")}
-              disabled={entries.length === 0 || loadingEntries}
+              disabled={!canExport}
               className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60 disabled:cursor-not-allowed disabled:opacity-60"
               title={
                 loadingEntries
                   ? "Loading entries…"
-                  : entries.length === 0
+                  : !canExport
                     ? "No entries to export"
                     : "Export all entries as CSV"
               }
@@ -388,13 +396,13 @@ export default function EstateTimecardPage({ params }: PageProps) {
             <button
               type="button"
               onClick={() => handleExportCsv("billable")}
-              disabled={entries.length === 0 || loadingEntries}
+              disabled={!canExport || !hasBillableEntries}
               className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60 disabled:cursor-not-allowed disabled:opacity-60"
               title={
                 loadingEntries
                   ? "Loading entries…"
-                  : entries.length === 0
-                    ? "No entries to export"
+                  : !hasBillableEntries
+                    ? "No billable entries to export"
                     : "Export billable entries as CSV"
               }
             >

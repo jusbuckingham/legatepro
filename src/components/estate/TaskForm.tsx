@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { getApiErrorMessage } from "@/lib/utils";
@@ -53,6 +53,9 @@ export function TaskForm({
 
   const isEdit = mode === "edit" && Boolean(taskId);
 
+  const subjectTrimmed = useMemo(() => values.subject.trim(), [values.subject]);
+  const canSubmit = !isSubmitting && subjectTrimmed.length > 0;
+
   const handleChange = (field: keyof TaskFormInitialValues, value: string): void => {
     // Clear any previous banner error as soon as the user edits again.
     if (error) setError(null);
@@ -67,6 +70,11 @@ export function TaskForm({
     e.preventDefault();
 
     if (isSubmitting) return;
+
+    if (!subjectTrimmed) {
+      setError("Task subject is required.");
+      return;
+    }
 
     setIsSubmitting(true);
     setError(null);
@@ -87,7 +95,7 @@ export function TaskForm({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          subject: values.subject.trim(),
+          subject: subjectTrimmed,
           description: values.description?.trim() || "",
           notes: values.notes?.trim() || "",
           status: values.status,
@@ -109,8 +117,10 @@ export function TaskForm({
 
       router.push(`/app/estates/${safeEstateId}/tasks`);
       router.refresh();
-    } catch {
-      setError("Network error while saving task.");
+    } catch (err) {
+      // Avoid noisy console output in production; show a friendly message.
+      const message = err instanceof Error ? err.message : "Network error while saving task.";
+      setError(message || "Network error while saving task.");
     } finally {
       setIsSubmitting(false);
     }
@@ -121,35 +131,54 @@ export function TaskForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 text-sm">
+    <form onSubmit={handleSubmit} aria-busy={isSubmitting} className="space-y-6 text-sm">
       {error && (
-        <div className="rounded-lg border border-red-500/60 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+        <div
+          role="alert"
+          aria-live="polite"
+          className="rounded-lg border border-red-500/60 bg-red-500/10 px-3 py-2 text-xs text-red-200"
+        >
           {error}
         </div>
       )}
 
       {/* Subject */}
       <div className="space-y-1.5">
-        <label className="block text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+        <label
+          htmlFor="task-subject"
+          className="block text-xs font-medium uppercase tracking-[0.16em] text-slate-400"
+        >
           Task subject <span className="text-red-400">*</span>
         </label>
         <input
+          id="task-subject"
+          name="subject"
           type="text"
           value={values.subject}
           onChange={(e) => handleChange("subject", e.target.value)}
+          onBlur={() => {
+            // Normalize accidental whitespace-only subjects
+            if (values.subject !== subjectTrimmed) handleChange("subject", subjectTrimmed);
+          }}
           placeholder="e.g. File inventory with the court"
           className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none placeholder:text-slate-500 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60"
           required
+          aria-invalid={Boolean(error) && subjectTrimmed.length === 0}
           disabled={isSubmitting}
         />
       </div>
 
       {/* Description */}
       <div className="space-y-1.5">
-        <label className="block text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+        <label
+          htmlFor="task-description"
+          className="block text-xs font-medium uppercase tracking-[0.16em] text-slate-400"
+        >
           Description
         </label>
         <textarea
+          id="task-description"
+          name="description"
           value={values.description}
           onChange={(e) => handleChange("description", e.target.value)}
           rows={3}
@@ -161,10 +190,15 @@ export function TaskForm({
 
       {/* Notes */}
       <div className="space-y-1.5">
-        <label className="block text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+        <label
+          htmlFor="task-notes"
+          className="block text-xs font-medium uppercase tracking-[0.16em] text-slate-400"
+        >
           Internal notes
         </label>
         <textarea
+          id="task-notes"
+          name="notes"
           value={values.notes}
           onChange={(e) => handleChange("notes", e.target.value)}
           rows={2}
@@ -178,10 +212,15 @@ export function TaskForm({
       <div className="grid gap-4 sm:grid-cols-3">
         {/* Status */}
         <div className="space-y-1.5">
-          <label className="block text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+          <label
+            htmlFor="task-status"
+            className="block text-xs font-medium uppercase tracking-[0.16em] text-slate-400"
+          >
             Status
           </label>
           <select
+            id="task-status"
+            name="status"
             value={values.status}
             onChange={(e) => handleChange("status", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60"
@@ -194,10 +233,15 @@ export function TaskForm({
 
         {/* Priority */}
         <div className="space-y-1.5">
-          <label className="block text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+          <label
+            htmlFor="task-priority"
+            className="block text-xs font-medium uppercase tracking-[0.16em] text-slate-400"
+          >
             Priority
           </label>
           <select
+            id="task-priority"
+            name="priority"
             value={values.priority}
             onChange={(e) => handleChange("priority", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60"
@@ -211,11 +255,16 @@ export function TaskForm({
 
         {/* Date */}
         <div className="space-y-1.5">
-          <label className="block text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+          <label
+            htmlFor="task-date"
+            className="block text-xs font-medium uppercase tracking-[0.16em] text-slate-400"
+          >
             Due date
           </label>
           <input
             type="date"
+            id="task-date"
+            name="date"
             value={values.date ?? ""}
             onChange={(e) => handleChange("date", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60"
@@ -237,12 +286,12 @@ export function TaskForm({
         <button
           type="submit"
           className="inline-flex items-center rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-emerald-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-70"
-          disabled={isSubmitting}
+          disabled={!canSubmit}
         >
           {isSubmitting
             ? isEdit
-              ? "Saving..."
-              : "Creating..."
+              ? "Saving…"
+              : "Creating…"
             : isEdit
             ? "Save changes"
             : "Create task"}

@@ -77,15 +77,23 @@ export function ExpenseEditForm({
 
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const resetFeedback = (): void => {
     if (errorMsg) setErrorMsg(null);
+    if (successMsg) setSuccessMsg(null);
+  };
+
+  const handleBlurTrim = (value: string, setter: (next: string) => void): void => {
+    const trimmed = value.trim();
+    if (trimmed !== value) setter(trimmed);
   };
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault();
     if (isSaving) return;
     setErrorMsg(null);
+    setSuccessMsg(null);
 
     const trimmedDescription = description.trim();
     if (!trimmedDescription) {
@@ -101,6 +109,10 @@ export function ExpenseEditForm({
 
     let parsedAmountCents: number | undefined;
     const cleanedAmount = amountDollars.trim();
+
+    if (cleanedAmount !== amountDollars) {
+      setAmountDollars(cleanedAmount);
+    }
 
     if (cleanedAmount) {
       const cleaned = cleanedAmount.replace(/[,$]/g, "");
@@ -125,16 +137,21 @@ export function ExpenseEditForm({
       incurredAtIso = d.toISOString();
     }
 
+    const trimmedCategory = category.trim();
+    const trimmedStatus = status.trim();
+    const trimmedPayee = payee.trim();
+    const trimmedNotes = notes.trim();
+
     const payload = {
       description: trimmedDescription,
-      category: category.trim(),
-      status: status.trim(),
-      payee: payee.trim(),
-      notes: notes.trim(),
+      category: trimmedCategory.length > 0 ? trimmedCategory : undefined,
+      status: trimmedStatus.length > 0 ? trimmedStatus : undefined,
+      payee: trimmedPayee.length > 0 ? trimmedPayee : undefined,
+      notes: trimmedNotes.length > 0 ? trimmedNotes : undefined,
       reimbursable,
       incurredAt: incurredAtIso,
       amountCents: parsedAmountCents,
-      receiptUrl: trimmedReceiptUrl,
+      receiptUrl: trimmedReceiptUrl.length > 0 ? trimmedReceiptUrl : undefined,
     };
 
     try {
@@ -161,6 +178,8 @@ export function ExpenseEditForm({
         setErrorMsg(msg);
         return;
       }
+
+      setSuccessMsg("Expense saved.");
 
       // On success, go back to estate expenses list
       router.push(`/app/estates/${estateIdEncoded}/expenses`);
@@ -194,6 +213,7 @@ export function ExpenseEditForm({
               resetFeedback();
               setDescription(e.target.value);
             }}
+            onBlur={() => handleBlurTrim(description, setDescription)}
             disabled={isSaving}
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
             placeholder="e.g. Filing fee, appraisal, travel"
@@ -214,6 +234,7 @@ export function ExpenseEditForm({
               resetFeedback();
               setCategory(e.target.value);
             }}
+            onBlur={() => handleBlurTrim(category, setCategory)}
             disabled={isSaving}
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
             placeholder="Court costs, travel, professional services..."
@@ -239,6 +260,7 @@ export function ExpenseEditForm({
               resetFeedback();
               setAmountDollars(e.target.value);
             }}
+            onBlur={() => handleBlurTrim(amountDollars, setAmountDollars)}
             disabled={isSaving}
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
             placeholder="e.g. 125.00"
@@ -305,6 +327,7 @@ export function ExpenseEditForm({
               resetFeedback();
               setPayee(e.target.value);
             }}
+            onBlur={() => handleBlurTrim(payee, setPayee)}
             disabled={isSaving}
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
             placeholder="Who was paid (or will be paid)?"
@@ -340,10 +363,29 @@ export function ExpenseEditForm({
             resetFeedback();
             setReceiptUrl(e.target.value);
           }}
+          onBlur={() => handleBlurTrim(receiptUrl, setReceiptUrl)}
           disabled={isSaving}
           className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
           placeholder="Link to a PDF or image of the receipt"
         />
+        {(() => {
+          const url = receiptUrl.trim();
+          if (!url) return null;
+          if (!isValidHttpUrl(url)) return null;
+
+          return (
+            <div className="mt-1">
+              <a
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] font-medium text-sky-300 hover:text-sky-200"
+              >
+                Open receipt ↗
+              </a>
+            </div>
+          );
+        })()}
         <p className="text-[11px] text-slate-500">
           For now, paste a link to a stored receipt (e.g., Google Drive,
           Dropbox). We can wire direct file uploads later.
@@ -365,6 +407,7 @@ export function ExpenseEditForm({
             resetFeedback();
             setNotes(e.target.value);
           }}
+          onBlur={() => handleBlurTrim(notes, setNotes)}
           disabled={isSaving}
           className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
           placeholder="Anything you want to remember about this expense."
@@ -374,9 +417,20 @@ export function ExpenseEditForm({
       {errorMsg && (
         <div
           role="alert"
+          aria-live="assertive"
           className="rounded-md border border-red-500/30 bg-red-950/30 px-3 py-2 text-xs text-red-200"
         >
-          {errorMsg}
+          <span className="font-semibold">Couldn’t save.</span> {errorMsg}
+        </div>
+      )}
+
+      {successMsg && !errorMsg && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="rounded-md border border-emerald-500/30 bg-emerald-950/30 px-3 py-2 text-xs text-emerald-200"
+        >
+          {successMsg}
         </div>
       )}
 
@@ -392,6 +446,7 @@ export function ExpenseEditForm({
         <button
           type="submit"
           disabled={isSaving}
+          aria-disabled={isSaving}
           className="inline-flex items-center rounded-md bg-sky-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60"
         >
           {isSaving ? "Saving…" : "Save expense"}

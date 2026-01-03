@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { getApiErrorMessage } from "@/lib/utils";
@@ -46,6 +46,17 @@ function normalizeRole(value: string): ContactRole {
   return "OTHER";
 }
 
+function isValidEmail(value: string): boolean {
+  // keep it lightweight — browser will also validate for type="email"
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function isValidPhone(value: string): boolean {
+  // Accepts phone numbers with at least 7 digits after stripping non-digits
+  const digits = value.replace(/\D/g, "");
+  return digits.length >= 7;
+}
+
 export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
   const router = useRouter();
 
@@ -53,64 +64,105 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
   const [email, setEmail] = useState(initial.email ?? "");
   const [phone, setPhone] = useState(initial.phone ?? "");
   const [role, setRole] = useState<ContactRole>(
-    normalizeRole(initial.role ?? "OTHER"),
+    normalizeRole(initial.role ?? "OTHER")
   );
   const [notes, setNotes] = useState(initial.notes ?? "");
+
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
+  // Separate: field validation vs API/network errors
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const roleInitial = useMemo(() => normalizeRole(initial.role ?? "OTHER"), [initial.role]);
+  const isDirty = useMemo(() => {
+    return (
+      name !== (initial.name ?? "") ||
+      email !== (initial.email ?? "") ||
+      phone !== (initial.phone ?? "") ||
+      role !== roleInitial ||
+      notes !== (initial.notes ?? "")
+    );
+  }, [name, email, phone, role, notes, initial, roleInitial]);
+
+  const resetFeedback = (): void => {
+    if (fieldError) setFieldError(null);
+    if (saveError) setSaveError(null);
+    if (success) setSuccess(null);
+  };
+
+  const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault();
-
     if (saving) return;
 
-    if (!name.trim()) {
-      setError("Name is required.");
+    resetFeedback();
+
+    const nameValue = name.trim();
+    if (!nameValue) {
+      setFieldError("Name is required.");
       return;
     }
 
-    setError(null);
+    const emailValue = email.trim();
+    if (emailValue && !isValidEmail(emailValue)) {
+      setFieldError("Please enter a valid email address.");
+      return;
+    }
+
+    const phoneValue = phone.trim();
+    if (phoneValue && !isValidPhone(phoneValue)) {
+      setFieldError("Please enter a valid phone number.");
+      return;
+    }
+    const notesValue = notes.trim();
+
+    const payload = {
+      name: nameValue,
+      role,
+      ...(emailValue ? { email: emailValue } : {}),
+      ...(phoneValue ? { phone: phoneValue } : {}),
+      ...(notesValue ? { notes: notesValue } : {}),
+    };
 
     setSaving(true);
 
     try {
-      const emailValue = email.trim();
-      const phoneValue = phone.trim();
-      const notesValue = notes.trim();
-
-      const payload = {
-        name: name.trim(),
-        role,
-        ...(emailValue ? { email: emailValue } : {}),
-        ...(phoneValue ? { phone: phoneValue } : {}),
-        ...(notesValue ? { notes: notesValue } : {}),
-      };
-
       const res = await fetch(`/api/contacts/${encodeURIComponent(contactId)}`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
       const data = (await res.json().catch(() => null)) as ApiResponse | null;
 
       if (!res.ok || !data || data.ok !== true) {
-        const msg = data?.error || (await getApiErrorMessage(res)) || "Failed to update contact.";
-        setError(msg);
+        const msg =
+          data?.error ||
+          (await getApiErrorMessage(res)) ||
+          "Failed to update contact.";
+        setSaveError(msg);
         return;
       }
 
-      router.push(`/app/contacts/${encodeURIComponent(contactId)}`);
-      router.refresh();
+      setSuccess("Saved.");
+      // Ensure feedback is visible before navigation/refresh
+      setTimeout(() => {
+        router.refresh();
+        router.push(`/app/contacts/${encodeURIComponent(contactId)}`);
+      }, 100); // Short delay to allow success message to render
     } catch (err) {
       console.error(err);
-      setError("Something went wrong while saving. Please try again.");
+      setSaveError("Something went wrong while saving. Please try again.");
     } finally {
       setSaving(false);
     }
   };
+
+  // Used for aria-invalid/aria-describedby on fields
+  const emailHasError = fieldError === "Please enter a valid email address.";
+  const phoneHasError = fieldError === "Please enter a valid phone number.";
+  const nameHasError = fieldError === "Name is required.";
 
   return (
     <form
@@ -120,28 +172,30 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
     >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-slate-50">
-            Edit contact
-          </h1>
+          <h1 className="text-lg font-semibold text-slate-50">Edit contact</h1>
           <p className="text-xs text-slate-400">
-            Update details for this person. Changes will reflect anywhere
-            they are linked.
+            Update details for this person. Changes will reflect anywhere they
+            are linked.
           </p>
         </div>
+
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => router.push(`/app/contacts/${encodeURIComponent(contactId)}`)}
+            onClick={() =>
+              router.push(`/app/contacts/${encodeURIComponent(contactId)}`)
+            }
             disabled={saving}
             aria-disabled={saving}
             className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:opacity-60"
           >
             Cancel
           </button>
+
           <button
             type="submit"
-            disabled={saving}
-            aria-disabled={saving}
+            disabled={saving || !isDirty}
+            aria-disabled={saving || !isDirty}
             className="rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-60"
           >
             {saving ? "Saving…" : "Save changes"}
@@ -149,14 +203,34 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
         </div>
       </div>
 
-      {error && (
-        <div
-          id="contact-name-error"
-          role="alert"
-          aria-live="polite"
-          className="rounded-md border border-rose-500/30 bg-rose-950/40 p-3 text-xs text-rose-100"
-        >
-          {error}
+      {(fieldError || saveError || success) && (
+        <div aria-live="polite" className="space-y-2">
+          {fieldError && (
+            <div
+              id="contact-form-field-error"
+              role="alert"
+              className="rounded-md border border-rose-500/30 bg-rose-950/40 p-3 text-xs text-rose-100"
+            >
+              {fieldError}
+            </div>
+          )}
+          {saveError && (
+            <div
+              id="contact-form-save-error"
+              role="alert"
+              className="rounded-md border border-rose-500/30 bg-rose-950/40 p-3 text-xs text-rose-100"
+            >
+              {saveError}
+            </div>
+          )}
+          {success && (
+            <div
+              role="status"
+              className="rounded-md border border-emerald-500/20 bg-emerald-950/30 p-3 text-xs text-emerald-100"
+            >
+              {success}
+            </div>
+          )}
         </div>
       )}
 
@@ -168,15 +242,17 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
           <input
             type="text"
             value={name}
+            disabled={saving}
             onChange={(e) => {
               setName(e.target.value);
-              if (error) setError(null);
+              resetFeedback();
             }}
             placeholder="Full name"
             required
-            aria-invalid={!!error && !name.trim()}
-            aria-describedby={error && !name.trim() ? "contact-name-error" : undefined}
-            className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            autoComplete="name"
+            aria-invalid={nameHasError}
+            aria-describedby={nameHasError ? "contact-form-field-error" : undefined}
+            className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-60"
           />
         </div>
 
@@ -187,12 +263,16 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
           <input
             type="email"
             value={email}
+            disabled={saving}
             onChange={(e) => {
               setEmail(e.target.value);
-              if (error) setError(null);
+              resetFeedback();
             }}
             placeholder="name@example.com"
-            className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            autoComplete="email"
+            aria-invalid={emailHasError}
+            aria-describedby={emailHasError ? "contact-form-field-error" : undefined}
+            className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-60"
           />
         </div>
 
@@ -203,12 +283,17 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
           <input
             type="tel"
             value={phone}
+            disabled={saving}
             onChange={(e) => {
               setPhone(e.target.value);
-              if (error) setError(null);
+              resetFeedback();
             }}
             placeholder="(555) 555-5555"
-            className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            autoComplete="tel"
+            inputMode="tel"
+            aria-invalid={phoneHasError}
+            aria-describedby={phoneHasError ? "contact-form-field-error" : undefined}
+            className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-60"
           />
         </div>
 
@@ -218,11 +303,12 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
           </label>
           <select
             value={role}
+            disabled={saving}
             onChange={(e) => {
               setRole(normalizeRole(e.target.value));
-              if (error) setError(null);
+              resetFeedback();
             }}
-            className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-60"
           >
             <option value="EXECUTOR">Executor</option>
             <option value="ADMINISTRATOR">Administrator</option>
@@ -241,13 +327,14 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
         </label>
         <textarea
           value={notes}
+          disabled={saving}
           onChange={(e) => {
             setNotes(e.target.value);
-            if (error) setError(null);
+            resetFeedback();
           }}
           rows={3}
           placeholder="Relationship to the estate, important details, etc."
-          className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-60"
         />
       </div>
     </form>

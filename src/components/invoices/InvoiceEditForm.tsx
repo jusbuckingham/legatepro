@@ -29,7 +29,7 @@ type InvoiceEditFormProps = {
 };
 
 function formatCentsToDollarsDisplay(cents: number | null | undefined): string {
-  if (typeof cents !== "number" || Number.isNaN(cents)) return "";
+  if (typeof cents !== "number" || !Number.isFinite(cents)) return "";
   return (cents / 100).toFixed(2);
 }
 
@@ -218,14 +218,24 @@ export function InvoiceEditForm({
 
     try {
       const normalizedLineItems = lineItems
-        .map((item) => ({
-          id: item.id,
-          label: item.label,
-          type: item.type,
-          quantity: typeof item.quantity === "number" && Number.isFinite(item.quantity) ? item.quantity : 0,
-          rateCents: typeof item.rateCents === "number" && Number.isFinite(item.rateCents) ? item.rateCents : 0,
-          amountCents: typeof item.amountCents === "number" && Number.isFinite(item.amountCents) ? item.amountCents : 0,
-        }))
+        .map((item) => {
+          const quantityRaw = typeof item.quantity === "number" && Number.isFinite(item.quantity) ? item.quantity : 0;
+          const rateRaw = typeof item.rateCents === "number" && Number.isFinite(item.rateCents) ? item.rateCents : 0;
+          const amountRaw = typeof item.amountCents === "number" && Number.isFinite(item.amountCents) ? item.amountCents : 0;
+
+          const quantity = clampNonNegativeNumber(quantityRaw);
+          const rateCents = clampNonNegativeNumber(rateRaw);
+          const amountCents = clampNonNegativeNumber(amountRaw);
+
+          return {
+            id: item.id,
+            label: item.label.trim(),
+            type: item.type,
+            quantity,
+            rateCents,
+            amountCents,
+          };
+        })
         // Don’t send blank rows (keeps API clean and avoids accidentally saving empty items)
         .filter((li) => li.label.trim().length > 0 || li.amountCents > 0);
 
@@ -245,7 +255,7 @@ export function InvoiceEditForm({
           status,
           issueDate: issueDate || undefined,
           dueDate: dueDate || undefined,
-          notes: notes || undefined,
+          notes: notes.trim() || undefined,
           currency: trimmedCurrency,
           lineItems: normalizedLineItems,
         }),
@@ -291,7 +301,7 @@ export function InvoiceEditForm({
       {saveError && (
         <div
           role="alert"
-          aria-live="polite"
+          aria-live="assertive"
           className="flex items-start justify-between gap-3 rounded-md border border-red-500/60 bg-red-900/30 px-3 py-2 text-xs text-red-100"
         >
           <span>{saveError}</span>
@@ -383,6 +393,8 @@ export function InvoiceEditForm({
           }}
           className="max-w-[120px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
           disabled={isSaving}
+          inputMode="text"
+          autoComplete="off"
         />
         <p className="text-[11px] text-slate-500">Typically USD, but you can set another currency if needed.</p>
       </div>
@@ -460,6 +472,7 @@ export function InvoiceEditForm({
                     className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
                     placeholder="For example, 1, 2.5, 10"
                     disabled={isSaving}
+                    inputMode="decimal"
                   />
                   <p className="text-[10px] text-slate-500">Hours, units, or quantity depending on the item type.</p>
                 </div>
@@ -478,6 +491,7 @@ export function InvoiceEditForm({
                     className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
                     placeholder="For example, 250.00"
                     disabled={isSaving}
+                    inputMode="decimal"
                   />
                   <p className="text-[10px] text-slate-500">
                     Optional. If set along with quantity, the amount can be derived automatically.
@@ -499,6 +513,7 @@ export function InvoiceEditForm({
                       className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
                       placeholder="For example, 500.00"
                       disabled={isSaving}
+                      inputMode="decimal"
                     />
                     <button
                       type="button"

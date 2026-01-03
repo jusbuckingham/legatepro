@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { FormEvent } from "react";
 
 import { getApiErrorMessage } from "@/lib/utils";
@@ -68,6 +68,22 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
     if (status !== "idle") setStatus("idle");
     if (errorMessage) setErrorMessage(null);
   };
+
+  const trimOnBlur = useCallback(
+    (value: string, setter: (next: string) => void) => {
+      const trimmed = value.trim();
+      if (trimmed !== value) setter(trimmed);
+    },
+    []
+  );
+
+  const trimUpperOnBlur = useCallback(
+    (value: string, setter: (next: string) => void) => {
+      const next = value.trim().toUpperCase();
+      if (next !== value) setter(next);
+    },
+    []
+  );
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
@@ -155,6 +171,7 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
                 resetFeedback();
                 setFirmName(e.target.value);
               }}
+              onBlur={() => trimOnBlur(firmName, setFirmName)}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
               placeholder="Kofa Legal"
             />
@@ -172,6 +189,7 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
                 resetFeedback();
                 setFirmAddressLine1(e.target.value);
               }}
+              onBlur={() => trimOnBlur(firmAddressLine1, setFirmAddressLine1)}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
               placeholder="123 Main St"
             />
@@ -189,6 +207,7 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
                 resetFeedback();
                 setFirmAddressLine2(e.target.value);
               }}
+              onBlur={() => trimOnBlur(firmAddressLine2, setFirmAddressLine2)}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
               placeholder="Suite 400"
             />
@@ -204,6 +223,7 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
                 resetFeedback();
                 setFirmCity(e.target.value);
               }}
+              onBlur={() => trimOnBlur(firmCity, setFirmCity)}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
               placeholder="Los Angeles"
             />
@@ -221,6 +241,7 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
                 resetFeedback();
                 setFirmState(e.target.value);
               }}
+              onBlur={() => trimOnBlur(firmState, setFirmState)}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
               placeholder="CA"
             />
@@ -238,6 +259,7 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
                 resetFeedback();
                 setFirmPostalCode(e.target.value);
               }}
+              onBlur={() => trimOnBlur(firmPostalCode, setFirmPostalCode)}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
               placeholder="90001"
             />
@@ -253,6 +275,7 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
                 resetFeedback();
                 setFirmCountry(e.target.value);
               }}
+              onBlur={() => trimOnBlur(firmCountry, setFirmCountry)}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
               placeholder="United States"
             />
@@ -279,6 +302,7 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
                 resetFeedback();
                 setDefaultHourlyRate(e.target.value);
               }}
+              onBlur={() => trimOnBlur(defaultHourlyRate, setDefaultHourlyRate)}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
               placeholder="250"
             />
@@ -315,8 +339,9 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
               disabled={isSaving}
               onChange={(e) => {
                 resetFeedback();
-                setDefaultCurrency(e.target.value.toUpperCase());
+                setDefaultCurrency(e.target.value);
               }}
+              onBlur={() => trimUpperOnBlur(defaultCurrency, setDefaultCurrency)}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
               placeholder="USD"
             />
@@ -326,14 +351,14 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
 
       <div className="flex items-center justify-between gap-3">
         <div className="text-xs text-slate-500">
-          <div role="status" aria-live="polite" className="text-xs">
+          <div className="text-xs">
             {status === "saved" && (
-              <span className="text-emerald-400">
+              <span role="status" aria-live="polite" className="text-emerald-400">
                 Settings saved successfully.
               </span>
             )}
             {status === "error" && errorMessage && (
-              <span role="alert" className="text-red-400">
+              <span role="alert" aria-live="assertive" className="text-red-400">
                 {errorMessage}
               </span>
             )}

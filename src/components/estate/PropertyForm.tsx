@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getApiErrorMessage } from "@/lib/utils";
 
@@ -16,6 +16,8 @@ type PropertyFormState = {
   ownershipPercentage: string;
   notes: string;
 };
+
+type FieldErrors = Partial<Record<keyof PropertyFormState, string>>;
 
 interface PropertyFormProps {
   estateId: string;
@@ -64,12 +66,42 @@ export function PropertyForm({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   const handleChange = (field: keyof PropertyFormState, value: string): void => {
     // Clear any prior API/validation error once the user edits the form.
     if (error) setError(null);
+    if (fieldErrors[field]) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      });
+    }
     setForm((prev) => ({ ...prev, [field]: value }));
   };
+
+  const handleBlur = (field: keyof PropertyFormState): void => {
+    // Trim common text inputs on blur so what we save matches what we show.
+    // (We intentionally do not auto-trim numeric fields while typing.)
+    if (
+      field === "estimatedValue" ||
+      field === "ownershipPercentage"
+    ) {
+      return;
+    }
+
+    setForm((prev) => {
+      const current = prev[field];
+      if (typeof current !== "string") return prev;
+      const trimmed = current.trim();
+      if (trimmed === current) return prev;
+      return { ...prev, [field]: trimmed };
+    });
+  };
+
+  const trimmedName = useMemo(() => form.name.trim(), [form.name]);
+  const canSubmit = !isSubmitting && trimmedName.length > 0;
 
   const handleSubmit = async (
     event: FormEvent<HTMLFormElement>
@@ -78,10 +110,10 @@ export function PropertyForm({
     if (isSubmitting) return;
 
     // Basic client validation
-    const trimmedName = form.name.trim();
+    const nextFieldErrors: FieldErrors = {};
+
     if (!trimmedName) {
-      setError("Property name is required.");
-      return;
+      nextFieldErrors.name = "Property name is required.";
     }
 
     const estimatedValueNumber = form.estimatedValue.trim()
@@ -89,8 +121,9 @@ export function PropertyForm({
       : undefined;
 
     if (estimatedValueNumber != null && Number.isNaN(estimatedValueNumber)) {
-      setError("Estimated value must be a valid number.");
-      return;
+      nextFieldErrors.estimatedValue = "Estimated value must be a valid number.";
+    } else if (estimatedValueNumber != null && estimatedValueNumber < 0) {
+      nextFieldErrors.estimatedValue = "Estimated value cannot be negative.";
     }
 
     const ownershipNumber = form.ownershipPercentage.trim()
@@ -98,22 +131,25 @@ export function PropertyForm({
       : undefined;
 
     if (ownershipNumber != null && Number.isNaN(ownershipNumber)) {
-      setError("Ownership percentage must be a valid number.");
+      nextFieldErrors.ownershipPercentage = "Ownership percentage must be a valid number.";
+    } else if (ownershipNumber != null && (ownershipNumber < 0 || ownershipNumber > 100)) {
+      nextFieldErrors.ownershipPercentage = "Ownership percentage must be between 0 and 100.";
+    }
+
+    if (Object.keys(nextFieldErrors).length > 0) {
+      setFieldErrors(nextFieldErrors);
+      setError(null);
       return;
     }
 
-    if (ownershipNumber != null && (ownershipNumber < 0 || ownershipNumber > 100)) {
-      setError("Ownership percentage must be between 0 and 100.");
-      return;
-    }
-
+    setFieldErrors({});
     setError(null);
     setIsSubmitting(true);
 
     try {
       const payload = {
         name: trimmedName,
-        type: form.type,
+        type: form.type.trim(),
         address: form.address.trim(),
         city: form.city.trim(),
         state: form.state.trim(),
@@ -121,7 +157,7 @@ export function PropertyForm({
         country: form.country.trim(),
         estimatedValue: estimatedValueNumber,
         ownershipPercentage: ownershipNumber,
-        notes: form.notes.trim()
+        notes: form.notes.trim() || undefined
       };
 
       const isEdit = mode === "edit" && propertyId;
@@ -177,31 +213,45 @@ export function PropertyForm({
       <div className="grid gap-4 md:grid-cols-2">
         {/* Name */}
         <div className="space-y-1">
-          <label className="block text-xs font-medium text-slate-200">
+          <label htmlFor="property-name" className="block text-xs font-medium text-slate-200">
             Property name
           </label>
           <input
+            id="property-name"
+            name="name"
             type="text"
             value={form.name}
             disabled={isSubmitting}
+            required
+            aria-invalid={Boolean(fieldErrors.name)}
+            aria-describedby="property-name-help"
             onChange={(e) => handleChange("name", e.target.value)}
+            onBlur={() => handleBlur("name")}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
             placeholder="Example: 4395 Dickerson - main house"
           />
-          <p className="text-[11px] text-slate-500">
+          <p id="property-name-help" className="text-[11px] text-slate-500">
             How you want to identify this property in the estate.
           </p>
+          {fieldErrors.name && (
+            <p className="text-[11px] text-rose-400" role="alert">
+              {fieldErrors.name}
+            </p>
+          )}
         </div>
 
         {/* Type */}
         <div className="space-y-1">
-          <label className="block text-xs font-medium text-slate-200">
+          <label htmlFor="property-type" className="block text-xs font-medium text-slate-200">
             Type
           </label>
           <select
+            id="property-type"
+            name="type"
             value={form.type}
             disabled={isSubmitting}
             onChange={(e) => handleChange("type", e.target.value)}
+            onBlur={() => handleBlur("type")}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
           >
             <option value="Real estate">Real estate</option>
@@ -215,14 +265,18 @@ export function PropertyForm({
 
         {/* Address */}
         <div className="space-y-1 md:col-span-2">
-          <label className="block text-xs font-medium text-slate-200">
+          <label htmlFor="street-address" className="block text-xs font-medium text-slate-200">
             Street address
           </label>
           <input
+            id="street-address"
+            name="address"
+            autoComplete="street-address"
             type="text"
             value={form.address}
             disabled={isSubmitting}
             onChange={(e) => handleChange("address", e.target.value)}
+            onBlur={() => handleBlur("address")}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
             placeholder="Street, unit, etc."
           />
@@ -230,107 +284,144 @@ export function PropertyForm({
 
         {/* City */}
         <div className="space-y-1">
-          <label className="block text-xs font-medium text-slate-200">
+          <label htmlFor="address-city" className="block text-xs font-medium text-slate-200">
             City
           </label>
           <input
+            id="address-city"
+            name="city"
+            autoComplete="address-level2"
             type="text"
             value={form.city}
             disabled={isSubmitting}
             onChange={(e) => handleChange("city", e.target.value)}
+            onBlur={() => handleBlur("city")}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
           />
         </div>
 
         {/* State */}
         <div className="space-y-1">
-          <label className="block text-xs font-medium text-slate-200">
+          <label htmlFor="address-state" className="block text-xs font-medium text-slate-200">
             State / region
           </label>
           <input
+            id="address-state"
+            name="state"
+            autoComplete="address-level1"
             type="text"
             value={form.state}
             disabled={isSubmitting}
             onChange={(e) => handleChange("state", e.target.value)}
+            onBlur={() => handleBlur("state")}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
           />
         </div>
 
         {/* Postal code */}
         <div className="space-y-1">
-          <label className="block text-xs font-medium text-slate-200">
+          <label htmlFor="postal-code" className="block text-xs font-medium text-slate-200">
             Postal code
           </label>
           <input
+            id="postal-code"
+            name="postalCode"
+            autoComplete="postal-code"
             type="text"
             value={form.postalCode}
             disabled={isSubmitting}
             onChange={(e) => handleChange("postalCode", e.target.value)}
+            onBlur={() => handleBlur("postalCode")}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
           />
         </div>
 
         {/* Country */}
         <div className="space-y-1">
-          <label className="block text-xs font-medium text-slate-200">
+          <label htmlFor="country" className="block text-xs font-medium text-slate-200">
             Country
           </label>
           <input
+            id="country"
+            name="country"
+            autoComplete="country-name"
             type="text"
             value={form.country}
             disabled={isSubmitting}
             onChange={(e) => handleChange("country", e.target.value)}
+            onBlur={() => handleBlur("country")}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
           />
         </div>
 
         {/* Estimated value */}
         <div className="space-y-1">
-          <label className="block text-xs font-medium text-slate-200">
+          <label htmlFor="estimated-value" className="block text-xs font-medium text-slate-200">
             Estimated value
           </label>
           <input
+            id="estimated-value"
+            name="estimatedValue"
             type="number"
+            inputMode="decimal"
             min="0"
             step="0.01"
             value={form.estimatedValue}
             disabled={isSubmitting}
+            aria-invalid={Boolean(fieldErrors.estimatedValue)}
             onChange={(e) => handleChange("estimatedValue", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
             placeholder="0.00"
           />
+          {fieldErrors.estimatedValue && (
+            <p className="text-[11px] text-rose-400" role="alert">
+              {fieldErrors.estimatedValue}
+            </p>
+          )}
         </div>
 
         {/* Ownership percentage */}
         <div className="space-y-1">
-          <label className="block text-xs font-medium text-slate-200">
+          <label htmlFor="ownership-percentage" className="block text-xs font-medium text-slate-200">
             Ownership %
           </label>
           <input
+            id="ownership-percentage"
+            name="ownershipPercentage"
             type="number"
+            inputMode="numeric"
             min="0"
             max="100"
             step="1"
             value={form.ownershipPercentage}
             disabled={isSubmitting}
+            aria-invalid={Boolean(fieldErrors.ownershipPercentage)}
             onChange={(e) =>
               handleChange("ownershipPercentage", e.target.value)
             }
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
             placeholder="100"
           />
+          {fieldErrors.ownershipPercentage && (
+            <p className="text-[11px] text-rose-400" role="alert">
+              {fieldErrors.ownershipPercentage}
+            </p>
+          )}
         </div>
       </div>
 
       {/* Notes */}
       <div className="space-y-1">
-        <label className="block text-xs font-medium text-slate-200">
+        <label htmlFor="property-notes" className="block text-xs font-medium text-slate-200">
           Notes
         </label>
         <textarea
+          id="property-notes"
+          name="notes"
           value={form.notes}
           disabled={isSubmitting}
           onChange={(e) => handleChange("notes", e.target.value)}
+          onBlur={() => handleBlur("notes")}
           className="min-h-[100px] w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
           placeholder="Any details you want to remember about this property."
         />
@@ -340,7 +431,8 @@ export function PropertyForm({
         <div className="flex items-center gap-3">
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={!canSubmit}
+            title={!canSubmit ? "Add a property name to save." : undefined}
             className="inline-flex items-center rounded-lg border border-emerald-500 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-100 hover:bg-emerald-500/20 disabled:opacity-60"
           >
             {isSubmitting
@@ -371,7 +463,7 @@ export function PropertyForm({
             aria-live="polite"
             className="rounded-lg border border-rose-500/30 bg-rose-950/40 px-3 py-2 text-xs text-rose-100"
           >
-            {error}
+            <span className="font-semibold">Couldn’t save.</span> {error}
           </div>
         )}
       </div>

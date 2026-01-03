@@ -1,11 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState } from "react";
+import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { getApiErrorMessage } from "@/lib/utils";
 
 type ApiResponse = { ok: boolean; error?: string };
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type ContactRole =
   | "EXECUTOR"
@@ -43,26 +46,49 @@ export function NewContactForm() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const resetFeedback = (): void => {
+    if (error) setError(null);
+    if (success) setSuccess(null);
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (saving) return;
 
-    if (!name.trim()) {
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim();
+    const trimmedPhone = phone.trim();
+    const trimmedNotes = notes.trim();
+
+    if (trimmedEmail && !EMAIL_REGEX.test(trimmedEmail)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+
+    if (trimmedPhone && trimmedPhone.length < 7) {
+      setError("Please enter a valid phone number.");
+      return;
+    }
+
+    if (!trimmedName) {
       setError("Name is required.");
       return;
     }
 
     setSaving(true);
     setError(null);
+    setSuccess(null);
 
     try {
       const payload = {
-        name: name.trim(),
-        email: email.trim() || undefined,
-        phone: phone.trim() || undefined,
+        name: trimmedName,
+        email: trimmedEmail || undefined,
+        phone: trimmedPhone || undefined,
         role,
-        notes: notes.trim() ? notes.trim() : undefined,
+        notes: trimmedNotes || undefined,
       };
 
       const res = await fetch("/api/contacts", {
@@ -82,9 +108,12 @@ export function NewContactForm() {
         return;
       }
 
+      setSuccess("Contact created.");
       router.push("/app/contacts");
       router.refresh();
-    } catch {
+    } catch (err) {
+      console.error(err);
+      setSuccess(null);
       setError("Something went wrong while saving. Please try again.");
     } finally {
       setSaving(false);
@@ -105,9 +134,12 @@ export function NewContactForm() {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => router.push("/app/contacts")}
+            onClick={() => {
+              resetFeedback();
+              router.push("/app/contacts");
+            }}
             disabled={saving}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+            className="rounded-md border border-slate-700 bg-slate-950/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Cancel
           </button>
@@ -115,20 +147,24 @@ export function NewContactForm() {
             type="submit"
             disabled={saving}
             aria-disabled={saving}
-            className="rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-60"
+            className="rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {saving ? "Saving…" : "Create"}
           </button>
         </div>
       </div>
 
-      {error && (
+      {(error || success) && (
         <div
-          role="alert"
-          aria-live="polite"
-          className="rounded-md border border-rose-500/30 bg-rose-950/40 p-3 text-xs text-rose-100"
+          role={error ? "alert" : "status"}
+          aria-live={error ? "assertive" : "polite"}
+          className={`rounded-md border p-3 text-xs ${
+            error
+              ? "border-rose-500/30 bg-rose-950/40 text-rose-100"
+              : "border-emerald-500/30 bg-emerald-950/40 text-emerald-100"
+          }`}
         >
-          {error}
+          {error || success}
         </div>
       )}
 
@@ -140,9 +176,15 @@ export function NewContactForm() {
           <input
             type="text"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            required
+            aria-invalid={!!error && name.trim().length === 0}
+            onChange={(e) => {
+              resetFeedback();
+              setName(e.target.value);
+            }}
             placeholder="Full name"
             disabled={saving}
+            autoComplete="name"
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
         </div>
@@ -154,9 +196,15 @@ export function NewContactForm() {
           <input
             type="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            aria-invalid={!!error && email.trim().length > 0 && !EMAIL_REGEX.test(email.trim())}
+            onChange={(e) => {
+              resetFeedback();
+              setEmail(e.target.value);
+            }}
             placeholder="name@example.com"
             disabled={saving}
+            autoComplete="email"
+            inputMode="email"
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
         </div>
@@ -168,9 +216,15 @@ export function NewContactForm() {
           <input
             type="tel"
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            aria-invalid={!!error && phone.trim().length > 0 && phone.trim().length < 7}
+            onChange={(e) => {
+              resetFeedback();
+              setPhone(e.target.value);
+            }}
             placeholder="(555) 555-5555"
             disabled={saving}
+            autoComplete="tel"
+            inputMode="tel"
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
         </div>
@@ -181,7 +235,10 @@ export function NewContactForm() {
           </label>
           <select
             value={role}
-            onChange={(e) => setRole(normalizeRole(e.target.value))}
+            onChange={(e) => {
+              resetFeedback();
+              setRole(normalizeRole(e.target.value));
+            }}
             disabled={saving}
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
           >
@@ -202,7 +259,10 @@ export function NewContactForm() {
         </label>
         <textarea
           value={notes}
-          onChange={(e) => setNotes(e.target.value)}
+          onChange={(e) => {
+            resetFeedback();
+            setNotes(e.target.value);
+          }}
           rows={3}
           placeholder="Relationship to the estate, important details, etc."
           disabled={saving}
