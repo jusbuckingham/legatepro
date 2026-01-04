@@ -81,12 +81,10 @@ export function ExpenseEditForm({
 
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   const resetFeedback = (): void => {
     if (errorMsg) setErrorMsg(null);
-    if (successMsg) setSuccessMsg(null);
     if (Object.keys(fieldErrors).length > 0) setFieldErrors({});
   };
 
@@ -129,7 +127,6 @@ export function ExpenseEditForm({
     e.preventDefault();
     if (isSaving) return;
     setErrorMsg(null);
-    setSuccessMsg(null);
     setFieldErrors({});
 
     const trimmedDescription = description.trim();
@@ -161,19 +158,18 @@ export function ExpenseEditForm({
 
     const parsedAmountCents = parsed.cents;
 
-    setIsSaving(true);
-
     let incurredAtIso: string | null = null;
     if (incurredAt) {
       const d = new Date(incurredAt);
       if (Number.isNaN(d.getTime())) {
         setFieldError("incurredAt", "Please enter a valid date.");
         setErrorMsg("Fix the highlighted fields.");
-        setIsSaving(false);
         return;
       }
       incurredAtIso = d.toISOString();
     }
+
+    setIsSaving(true);
 
     const trimmedCategory = category.trim();
     const trimmedStatus = status.trim();
@@ -195,6 +191,7 @@ export function ExpenseEditForm({
     try {
       const res = await fetch(`/api/expenses/${expenseIdEncoded}`, {
         method: "PUT",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -217,7 +214,6 @@ export function ExpenseEditForm({
         return;
       }
 
-      setSuccessMsg("Expense saved.");
 
       // On success, go back to estate expenses list
       router.push(`/app/estates/${estateIdEncoded}/expenses`);
@@ -489,16 +485,6 @@ export function ExpenseEditForm({
           className="rounded-md border border-red-500/30 bg-red-950/30 px-3 py-2 text-xs text-red-200"
         >
           <span className="font-semibold">Couldn’t save.</span> {errorMsg || "Please try again."}
-        </div>
-      )}
-
-      {successMsg && !errorMsg && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="rounded-md border border-emerald-500/30 bg-emerald-950/30 px-3 py-2 text-xs text-emerald-200"
-        >
-          {successMsg}
         </div>
       )}
 

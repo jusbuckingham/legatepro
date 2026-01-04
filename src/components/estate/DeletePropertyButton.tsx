@@ -7,13 +7,13 @@ import { getApiErrorMessage } from "@/lib/utils";
 interface DeletePropertyButtonProps {
   estateId: string;
   propertyId: string;
-  propertyTitle?: string;
+  propertyTitle?: string,
 }
 
 export function DeletePropertyButton({
   estateId,
   propertyId,
-  propertyTitle
+  propertyTitle,
 }: DeletePropertyButtonProps) {
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
@@ -33,17 +33,25 @@ export function DeletePropertyButton({
     setIsDeleting(true);
 
     try {
-      const response = await fetch(
-        `/api/estates/${encodeURIComponent(
-          estateId
-        )}/properties/${encodeURIComponent(propertyId)}`,
-        { method: "DELETE" }
+      const response: Response = await fetch(
+        `/api/estates/${encodeURIComponent(estateId)}/properties/${encodeURIComponent(propertyId)}`,
+        {
+          method: "DELETE",
+          credentials: "include",
+          cache: "no-store",
+        }
       );
 
-      const data = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      // Clone before consuming the body so error helpers can still read it.
+      const responseForError = response.clone();
+      const data = (await response.json().catch(() => null)) as
+        | { ok?: boolean; error?: string }
+        | null;
 
       if (!response.ok || !data?.ok) {
-        const apiMessage = await Promise.resolve(getApiErrorMessage(response)).catch(() => "");
+        const apiMessage = await Promise.resolve(
+          getApiErrorMessage(responseForError)
+        ).catch(() => "");
         const message = data?.error || apiMessage || "Failed to delete property.";
         setError(message);
         return;
@@ -60,7 +68,7 @@ export function DeletePropertyButton({
   };
 
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className="flex flex-col items-end gap-1" aria-busy={isDeleting}>
       <button
         type="button"
         onClick={handleDelete}
@@ -70,7 +78,7 @@ export function DeletePropertyButton({
         {isDeleting ? "Deleting…" : "Delete"}
       </button>
       {error && (
-        <span className="max-w-xs text-[10px] text-rose-400">{error}</span>
+        <span className="max-w-xs text-[10px] text-rose-400" role="alert" aria-live="polite">{error}</span>
       )}
     </div>
   );

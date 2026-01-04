@@ -73,7 +73,6 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
   // Separate: field validation vs API/network errors
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
   const roleInitial = useMemo(() => normalizeRole(initial.role ?? "OTHER"), [initial.role]);
   const isDirty = useMemo(() => {
@@ -89,7 +88,6 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
   const resetFeedback = (): void => {
     if (fieldError) setFieldError(null);
     if (saveError) setSaveError(null);
-    if (success) setSuccess(null);
   };
 
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (event) => {
@@ -130,29 +128,27 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
     try {
       const res = await fetch(`/api/contacts/${encodeURIComponent(contactId)}`, {
         method: "PATCH",
+        credentials: "include",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
+      // Clone before consuming the body so we can still derive a readable error message.
+      const resForError = res.clone();
       const data = (await res.json().catch(() => null)) as ApiResponse | null;
 
       if (!res.ok || !data || data.ok !== true) {
-        const msg =
-          data?.error ||
-          (await getApiErrorMessage(res)) ||
-          "Failed to update contact.";
+        const apiMessage = await Promise.resolve(getApiErrorMessage(resForError));
+        const msg = data?.error || apiMessage || "Failed to update contact.";
         setSaveError(msg);
         return;
       }
 
-      setSuccess("Saved.");
-      // Ensure feedback is visible before navigation/refresh
-      setTimeout(() => {
-        router.refresh();
-        router.push(`/app/contacts/${encodeURIComponent(contactId)}`);
-      }, 100); // Short delay to allow success message to render
-    } catch (err) {
-      console.error(err);
+      // Navigate back to the contact detail page
+      router.push(`/app/contacts/${encodeURIComponent(contactId)}`);
+      router.refresh();
+    } catch {
       setSaveError("Something went wrong while saving. Please try again.");
     } finally {
       setSaving(false);
@@ -203,7 +199,7 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
         </div>
       </div>
 
-      {(fieldError || saveError || success) && (
+      {(fieldError || saveError) && (
         <div aria-live="polite" className="space-y-2">
           {fieldError && (
             <div
@@ -221,14 +217,6 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
               className="rounded-md border border-rose-500/30 bg-rose-950/40 p-3 text-xs text-rose-100"
             >
               {saveError}
-            </div>
-          )}
-          {success && (
-            <div
-              role="status"
-              className="rounded-md border border-emerald-500/20 bg-emerald-950/30 p-3 text-xs text-emerald-100"
-            >
-              {success}
             </div>
           )}
         </div>

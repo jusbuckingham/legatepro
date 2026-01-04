@@ -56,9 +56,16 @@ function formatDateForInput(value?: string | null): string {
   return value.slice(0, 10);
 }
 
+
 function clampNonNegativeNumber(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return value < 0 ? 0 : value;
+}
+
+function deriveAmountCents(quantity: number | null | undefined, rateCents: number | null | undefined): number | null {
+  if (typeof quantity !== "number" || !Number.isFinite(quantity)) return null;
+  if (typeof rateCents !== "number" || !Number.isFinite(rateCents)) return null;
+  return Math.round(clampNonNegativeNumber(quantity) * clampNonNegativeNumber(rateCents));
 }
 
 
@@ -139,16 +146,11 @@ export function InvoiceEditForm({
       const rate = typeof updated.rateCents === "number" ? updated.rateCents : null;
 
       // If the user hasn't manually set the amount, derive it from quantity + rate.
-      if (
-        (field === "quantity" || field === "rateCents") &&
-        updated._isAmountManual !== true &&
-        qty !== null &&
-        rate !== null
-      ) {
-        const derived = Math.round(
-          clampNonNegativeNumber(qty) * clampNonNegativeNumber(rate)
-        );
-        next[index] = { ...updated, amountCents: derived };
+      if ((field === "quantity" || field === "rateCents") && updated._isAmountManual !== true) {
+        const derived = deriveAmountCents(qty, rate);
+        if (derived !== null) {
+          next[index] = { ...updated, amountCents: derived };
+        }
       }
       return next;
     });
@@ -165,6 +167,27 @@ export function InvoiceEditForm({
         ...current,
         amountCents: cents,
         _isAmountManual: true,
+      };
+      return next;
+    });
+  };
+
+  const handleLineItemAutoCalc = (index: number) => {
+    clearSaveError();
+    setLineItems((prev) => {
+      const next = [...prev];
+      const current = next[index];
+      if (!current) return prev;
+
+      const qty = typeof current.quantity === "number" ? current.quantity : null;
+      const rate = typeof current.rateCents === "number" ? current.rateCents : null;
+      const derived = deriveAmountCents(qty, rate);
+      if (derived === null) return prev;
+
+      next[index] = {
+        ...current,
+        amountCents: derived,
+        _isAmountManual: false,
       };
       return next;
     });
@@ -315,7 +338,9 @@ export function InvoiceEditForm({
 
       // Redirect back to invoice detail page inside the app
       fireToast({ type: "success", message: "Invoice saved." });
-      router.push(`/app/estates/${estateId}/invoices/${invoiceId}?saved=1`);
+      router.push(
+        `/app/estates/${encodeURIComponent(estateId)}/invoices/${encodeURIComponent(invoiceId)}?saved=1`
+      );
       router.refresh();
     } catch (err) {
       console.error(err);
@@ -472,8 +497,14 @@ export function InvoiceEditForm({
             >
               <div className="flex items-start gap-3">
                 <div className="flex-1 space-y-1">
-                  <label className="text-[11px] font-medium text-slate-300">Label</label>
+                  <label
+                    htmlFor={`line-${index}-label`}
+                    className="text-[11px] font-medium text-slate-300"
+                  >
+                    Label
+                  </label>
                   <input
+                    id={`line-${index}-label`}
                     type="text"
                     value={item.label}
                     onChange={(event) => {
@@ -487,8 +518,14 @@ export function InvoiceEditForm({
                 </div>
 
                 <div className="w-32 space-y-1">
-                  <label className="text-[11px] font-medium text-slate-300">Type</label>
+                  <label
+                    htmlFor={`line-${index}-type`}
+                    className="text-[11px] font-medium text-slate-300"
+                  >
+                    Type
+                  </label>
                   <select
+                    id={`line-${index}-type`}
                     value={item.type}
                     onChange={(event) => {
                       clearSaveError();
@@ -507,8 +544,14 @@ export function InvoiceEditForm({
 
               <div className="grid gap-2 md:grid-cols-3">
                 <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-slate-300">Quantity</label>
+                  <label
+                    htmlFor={`line-${index}-quantity`}
+                    className="text-[11px] font-medium text-slate-300"
+                  >
+                    Quantity
+                  </label>
                   <input
+                    id={`line-${index}-quantity`}
                     type="number"
                     min="0"
                     step="0.25"
@@ -530,8 +573,14 @@ export function InvoiceEditForm({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-slate-300">Rate</label>
+                  <label
+                    htmlFor={`line-${index}-rate`}
+                    className="text-[11px] font-medium text-slate-300"
+                  >
+                    Rate
+                  </label>
                   <input
+                    id={`line-${index}-rate`}
                     type="number"
                     min="0"
                     step="0.01"
@@ -551,9 +600,30 @@ export function InvoiceEditForm({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-slate-300">Amount</label>
+                  <div className="flex items-center justify-between">
+                    <label
+                      htmlFor={`line-${index}-amount`}
+                      className="text-[11px] font-medium text-slate-300"
+                    >
+                      Amount
+                    </label>
+                    {item._isAmountManual === true &&
+                    typeof item.quantity === "number" &&
+                    typeof item.rateCents === "number" ? (
+                      <button
+                        type="button"
+                        onClick={() => handleLineItemAutoCalc(index)}
+                        disabled={isSaving}
+                        className="text-[10px] font-semibold text-slate-300 hover:text-slate-100 disabled:opacity-60"
+                        title="Recalculate amount from quantity × rate"
+                      >
+                        Auto-calc
+                      </button>
+                    ) : null}
+                  </div>
                   <div className="flex items-center gap-2">
                     <input
+                      id={`line-${index}-amount`}
                       type="number"
                       min="0"
                       step="0.01"
@@ -632,5 +702,3 @@ export function InvoiceEditForm({
     </form>
   );
 }
-
-export default InvoiceEditForm;

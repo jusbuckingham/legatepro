@@ -3,22 +3,41 @@
 import * as React from "react";
 import { cn } from "../../lib/utils";
 
-export type LabelBadgeVariant = "default" | "subtle" | "outline" | "alert" | "success";
+export type LabelBadgeVariant =
+  | "default"
+  | "subtle"
+  | "outline"
+  | "alert"
+  | "success";
+
+export type LabelBadgeSize = "sm" | "md";
 
 export interface LabelBadgeProps
   extends React.HTMLAttributes<HTMLSpanElement> {
   variant?: LabelBadgeVariant;
-  children: React.ReactNode;
+  size?: LabelBadgeSize;
 }
 
-export function LabelBadge({
-  variant = "default",
-  children,
-  className,
-  ...rest
-}: LabelBadgeProps) {
+export const LabelBadge = React.forwardRef<
+  HTMLSpanElement,
+  LabelBadgeProps
+>(function LabelBadge(
+  {
+    variant = "default",
+    size = "sm",
+    className,
+    children,
+    ...rest
+  },
+  ref
+) {
   const base =
-    "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium leading-tight";
+    "inline-flex items-center rounded-full font-medium leading-tight whitespace-nowrap";
+
+  const sizeClass =
+    size === "md"
+      ? "px-2.5 py-0.5 text-xs"
+      : "px-2 py-0.5 text-[11px]";
 
   const variantClass =
     variant === "alert"
@@ -32,8 +51,16 @@ export function LabelBadge({
       : "bg-primary/10 text-primary border border-primary/20";
 
   return (
-    <span className={cn(base, variantClass, className)} {...rest}>
+    <span
+      ref={ref}
+      className={cn(base, sizeClass, variantClass, className)}
+      {...rest}
+    >
       {children}
     </span>
   );
-}
+});
+
+LabelBadge.displayName = "LabelBadge";
+
+export default LabelBadge;

@@ -1,5 +1,9 @@
 import * as React from "react";
 
+function cx(...classes: Array<string | undefined | false>) {
+  return classes.filter(Boolean).join(" ");
+}
+
 export type PageHeaderSize = "md" | "lg";
 
 export type PageHeaderProps = {
@@ -20,21 +24,19 @@ export default function PageHeader({
   size = "lg",
   className,
 }: PageHeaderProps) {
-  const titleClass =
+  const titleSizeClass =
     size === "lg"
       ? "text-2xl sm:text-3xl font-semibold tracking-tight"
       : "text-xl sm:text-2xl font-semibold tracking-tight";
 
   return (
     <header
-      className={[
+      className={cx(
         "w-full",
-        "flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between",
         "mb-6",
-        className,
-      ]
-        .filter(Boolean)
-        .join(" ")}
+        "flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between",
+        className
+      )}
     >
       <div className="min-w-0">
         {eyebrow ? (
@@ -43,7 +45,7 @@ export default function PageHeader({
           </div>
         ) : null}
 
-        <h1 className={titleClass}>{title}</h1>
+        <h1 className={titleSizeClass}>{title}</h1>
 
         {description ? (
           <p className="mt-2 max-w-4xl text-sm leading-6 text-muted-foreground">

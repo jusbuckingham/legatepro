@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getToastEventName, type ToastPayload } from "@/lib/toast";
+import { cn } from "@/lib/utils";
 
 type ToastItem = ToastPayload & { id: string };
 
@@ -35,44 +36,60 @@ export default function ToastHost() {
   if (items.length === 0) return null;
 
   return (
-    <div className="fixed right-4 top-4 z-50 flex w-[min(420px,calc(100vw-2rem))] flex-col gap-2">
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed bottom-4 right-4 z-50 flex w-[min(420px,calc(100vw-2rem))] flex-col gap-2"
+    >
       {items.map((t) => {
-        const border =
+        const tone =
           t.kind === "success"
-            ? "border-green-200"
+            ? {
+                border: "border-emerald-500/40",
+                bg: "bg-emerald-950/60",
+                title: "text-emerald-200",
+                body: "text-emerald-300",
+              }
             : t.kind === "error"
-              ? "border-red-200"
-              : "border-gray-200";
-
-        const bg =
-          t.kind === "success"
-            ? "bg-green-50"
-            : t.kind === "error"
-              ? "bg-red-50"
-              : "bg-white";
-
-        const title =
-          t.kind === "success"
-            ? "text-green-900"
-            : t.kind === "error"
-              ? "text-red-900"
-              : "text-gray-900";
-
-        const body =
-          t.kind === "success"
-            ? "text-green-800"
-            : t.kind === "error"
-              ? "text-red-800"
-              : "text-gray-700";
+            ? {
+                border: "border-red-500/40",
+                bg: "bg-red-950/60",
+                title: "text-red-200",
+                body: "text-red-300",
+              }
+            : {
+                border: "border-slate-700",
+                bg: "bg-slate-900/80",
+                title: "text-slate-100",
+                body: "text-slate-300",
+              };
 
         return (
-          <div key={t.id} className={`rounded-md border ${border} ${bg} p-3 shadow-sm`}>
-            <div className={`text-sm font-semibold ${title}`}>{t.title}</div>
-            {t.message ? <div className={`mt-1 text-sm ${body}`}>{t.message}</div> : null}
+          <div
+            key={t.id}
+            className={cn(
+              "rounded-lg border p-3 shadow-lg backdrop-blur",
+              tone.border,
+              tone.bg
+            )}
+          >
+            <div className={cn("text-sm font-semibold", tone.title)}>
+              {t.title}
+            </div>
+
+            {t.message && (
+              <div className={cn("mt-1 text-sm", tone.body)}>
+                {t.message}
+              </div>
+            )}
+
             <button
               type="button"
-              onClick={() => setItems((prev) => prev.filter((x) => x.id !== t.id))}
-              className="mt-2 text-xs font-semibold text-gray-700 hover:text-gray-900"
+              aria-label="Dismiss notification"
+              onClick={() =>
+                setItems((prev) => prev.filter((x) => x.id !== t.id))
+              }
+              className="mt-2 inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] font-medium text-slate-300 hover:bg-slate-800 hover:text-slate-100"
             >
               Dismiss
             </button>

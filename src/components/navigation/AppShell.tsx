@@ -34,12 +34,27 @@ function classNames(...classes: Array<string | false | null | undefined>) {
 export default function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
 
+  const isActiveHref = (href: string): boolean => {
+    if (!pathname) return false;
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
+
+  // TODO: wire up real user once auth context is available
+  const userLabel = "Demo User";
+  const userEmail = "demo@legatepro.test";
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex">
+    <div className="flex min-h-screen bg-slate-950 text-slate-100">
+      <a
+        href="#app-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-slate-950 focus:px-3 focus:py-2 focus:text-xs focus:font-semibold focus:text-slate-100 focus:ring-2 focus:ring-rose-500"
+      >
+        Skip to content
+      </a>
       {/* Sidebar */}
-      <aside className="hidden md:flex md:flex-col w-64 border-r border-slate-800 bg-slate-950/80">
+      <aside className="hidden w-64 flex-col border-r border-slate-800 bg-slate-950/80 md:flex">
         <div className="flex h-16 items-center gap-2 px-5 border-b border-slate-800/80">
-          <div className="h-8 w-8 rounded-md border border-red-500/60 bg-red-500/10 flex items-center justify-center text-xs font-semibold tracking-widest">
+          <div className="h-8 w-8 rounded-md border border-rose-500/60 bg-rose-500/10 flex items-center justify-center text-xs font-semibold tracking-widest">
             LP
           </div>
           <div className="flex flex-col leading-tight">
@@ -50,24 +65,25 @@ export default function AppShell({ children }: AppShellProps) {
           </div>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6 text-sm">
+        <nav aria-label="Primary" className="flex-1 space-y-6 overflow-y-auto px-3 py-4 text-sm">
           <div>
             <p className="px-2 mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               Workspace
             </p>
             <ul className="space-y-1">
               {primaryNav.map((item) => {
-                const active = pathname === item.href || pathname?.startsWith(item.href + "/");
+                const active = isActiveHref(item.href);
                 return (
                   <li key={item.href}>
                     <Link
                       href={item.href}
                       className={classNames(
-                        "flex items-center gap-2 rounded-md px-2.5 py-1.5 transition-colors",
+                        "flex items-center gap-2 rounded-md px-2.5 py-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
                         active
-                          ? "bg-red-600 text-white"
+                          ? "bg-rose-600 text-white"
                           : "text-slate-200 hover:bg-slate-800 hover:text-white"
                       )}
+                      aria-current={active ? "page" : undefined}
                     >
                       <span className="truncate">{item.label}</span>
                     </Link>
@@ -83,17 +99,18 @@ export default function AppShell({ children }: AppShellProps) {
             </p>
             <ul className="space-y-1">
               {secondaryNav.map((item) => {
-                const active = pathname === item.href || pathname?.startsWith(item.href + "/");
+                const active = isActiveHref(item.href);
                 return (
                   <li key={item.href}>
                     <Link
                       href={item.href}
                       className={classNames(
-                        "flex items-center gap-2 rounded-md px-2.5 py-1.5 transition-colors",
+                        "flex items-center gap-2 rounded-md px-2.5 py-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
                         active
                           ? "bg-slate-800 text-white"
                           : "text-slate-300 hover:bg-slate-800 hover:text-white"
                       )}
+                      aria-current={active ? "page" : undefined}
                     >
                       <span className="truncate">{item.label}</span>
                     </Link>
@@ -105,8 +122,8 @@ export default function AppShell({ children }: AppShellProps) {
         </nav>
 
         <div className="border-t border-slate-800/80 px-4 py-3 text-xs text-slate-500">
-          <p className="truncate">Signed in as Demo User</p>
-          <p className="truncate text-slate-600">demo@legatepro.test</p>
+          <p className="truncate">Signed in as {userLabel}</p>
+          <p className="truncate text-slate-600">{userEmail}</p>
         </div>
       </aside>
 
@@ -115,7 +132,7 @@ export default function AppShell({ children }: AppShellProps) {
         {/* Top bar (mobile + desktop) */}
         <header className="flex h-14 items-center border-b border-slate-800 bg-slate-950/80 px-4 md:px-6">
           <div className="flex items-center gap-2 md:hidden">
-            <div className="h-8 w-8 rounded-md border border-red-500/60 bg-red-500/10 flex items-center justify-center text-xs font-semibold tracking-widest">
+            <div className="h-8 w-8 rounded-md border border-rose-500/60 bg-rose-500/10 flex items-center justify-center text-xs font-semibold tracking-widest">
               LP
             </div>
             <span className="text-sm font-semibold">LegatePro</span>
@@ -127,7 +144,10 @@ export default function AppShell({ children }: AppShellProps) {
         </header>
 
         {/* Content */}
-        <main className="flex-1 min-w-0 px-4 py-6 md:px-8 md:py-8 bg-slate-950">
+        <main
+          id="app-content"
+          className="flex-1 min-w-0 bg-slate-950 px-4 py-6 md:px-8 md:py-8"
+        >
           <div className="mx-auto w-full max-w-6xl space-y-6">{children}</div>
         </main>
       </div>

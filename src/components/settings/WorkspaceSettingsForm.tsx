@@ -154,16 +154,18 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
     <form
       onSubmit={handleSubmit}
       aria-busy={isSaving}
+      aria-describedby="workspace-settings-feedback"
       className="space-y-8 rounded-lg border border-slate-800 bg-slate-900/60 p-4"
     >
       <div className="space-y-4">
         <h2 className="text-sm font-semibold text-slate-100">Firm branding</h2>
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-300">
+            <label htmlFor="firmName" className="text-xs font-medium text-slate-300">
               Firm name
             </label>
             <input
+              id="firmName"
               type="text"
               value={firmName}
               disabled={isSaving}
@@ -178,10 +180,12 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-300">
+            <label htmlFor="firmAddressLine1" className="text-xs font-medium text-slate-300">
               Address line 1
             </label>
             <input
+              id="firmAddressLine1"
+              autoComplete="address-line1"
               type="text"
               value={firmAddressLine1}
               disabled={isSaving}
@@ -196,10 +200,12 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-300">
+            <label htmlFor="firmAddressLine2" className="text-xs font-medium text-slate-300">
               Address line 2
             </label>
             <input
+              id="firmAddressLine2"
+              autoComplete="address-line2"
               type="text"
               value={firmAddressLine2}
               disabled={isSaving}
@@ -214,8 +220,10 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-300">City</label>
+            <label htmlFor="firmCity" className="text-xs font-medium text-slate-300">City</label>
             <input
+              id="firmCity"
+              autoComplete="address-level2"
               type="text"
               value={firmCity}
               disabled={isSaving}
@@ -230,10 +238,12 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-300">
+            <label htmlFor="firmState" className="text-xs font-medium text-slate-300">
               State / Province
             </label>
             <input
+              id="firmState"
+              autoComplete="address-level1"
               type="text"
               value={firmState}
               disabled={isSaving}
@@ -248,10 +258,12 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-300">
+            <label htmlFor="firmPostalCode" className="text-xs font-medium text-slate-300">
               Postal code
             </label>
             <input
+              id="firmPostalCode"
+              autoComplete="postal-code"
               type="text"
               value={firmPostalCode}
               disabled={isSaving}
@@ -266,8 +278,10 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-300">Country</label>
+            <label htmlFor="firmCountry" className="text-xs font-medium text-slate-300">Country</label>
             <input
+              id="firmCountry"
+              autoComplete="country-name"
               type="text"
               value={firmCountry}
               disabled={isSaving}
@@ -289,10 +303,13 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
         </h2>
         <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-300">
+            <label htmlFor="defaultHourlyRate" className="text-xs font-medium text-slate-300">
               Default hourly rate (USD)
             </label>
             <input
+              id="defaultHourlyRate"
+              inputMode="decimal"
+              autoComplete="off"
               type="number"
               min={0}
               step="0.01"
@@ -309,10 +326,11 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-300">
+            <label htmlFor="defaultInvoiceTerms" className="text-xs font-medium text-slate-300">
               Default invoice terms
             </label>
             <select
+              id="defaultInvoiceTerms"
               value={defaultInvoiceTerms}
               disabled={isSaving}
               onChange={(e) => {
@@ -330,10 +348,14 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-300">
+            <label htmlFor="defaultCurrency" className="text-xs font-medium text-slate-300">
               Currency
             </label>
             <input
+              id="defaultCurrency"
+              inputMode="text"
+              autoComplete="off"
+              maxLength={3}
               type="text"
               value={defaultCurrency}
               disabled={isSaving}
@@ -351,7 +373,7 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
 
       <div className="flex items-center justify-between gap-3">
         <div className="text-xs text-slate-500">
-          <div className="text-xs">
+          <div id="workspace-settings-feedback" className="text-xs">
             {status === "saved" && (
               <span role="status" aria-live="polite" className="text-emerald-400">
                 Settings saved successfully.

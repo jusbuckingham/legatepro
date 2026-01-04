@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { getApiErrorMessage } from "@/lib/utils";
+import { getApiErrorMessage, safeJson } from "@/lib/utils";
 
 type LinkedContact = {
   _id: string;
@@ -60,50 +60,58 @@ export function EstateContactsPanel({
   const [linking, setLinking] = useState(false);
   const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const busy = linking || unlinkingId !== null;
 
   const estateIdEncoded = useMemo(() => encodeURIComponent(estateId), [estateId]);
 
-  const parseResponse = async (
-    res: Response,
-  ): Promise<{ ok: boolean; error?: string } | null> => {
-    return (await res.json().catch(() => null)) as { ok: boolean; error?: string } | null;
+  const sortedAvailableContacts = useMemo(() => {
+    return availableContacts
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [availableContacts]);
+
+  const readOkResponse = async (res: Response): Promise<{ ok?: boolean; error?: string } | null> => {
+    return (await safeJson(res)) as { ok?: boolean; error?: string } | null;
   };
 
   const handleLink = async () => {
-    if (!selectedContactId) return;
+    if (!selectedContactId) {
+      setError("Select a contact to link.");
+      return;
+    }
 
     setLinking(true);
     setError(null);
+    setSuccess(null);
 
     try {
       const res = await fetch(`/api/estates/${estateIdEncoded}/contacts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ contactId: selectedContactId }),
+        credentials: "include",
+        cache: "no-store",
       });
 
-      const data = await parseResponse(res);
+      const resForError = res.clone();
+      const data = await readOkResponse(res);
 
-      if (!res.ok || !data?.ok) {
-        const msg = data?.error || (await getApiErrorMessage(res));
+      if (!res.ok || data?.ok !== true) {
+        const msg = data?.error || (await getApiErrorMessage(resForError));
         setError(msg || "Failed to link contact.");
         return;
       }
 
-      const contactToLink = availableContacts.find(
-        (c) => c._id === selectedContactId,
-      );
+      const contactToLink = availableContacts.find((c) => c._id === selectedContactId);
 
       if (!contactToLink) {
         setError("Selected contact is no longer available.");
         return;
       }
 
-      setAvailableContacts((prev) =>
-        prev.filter((c) => c._id !== selectedContactId),
-      );
+      setAvailableContacts((prev) => prev.filter((c) => c._id !== selectedContactId));
 
       setLinkedContacts((prev) => [
         ...prev,
@@ -115,6 +123,7 @@ export function EstateContactsPanel({
       ]);
 
       setSelectedContactId("");
+      setSuccess("Contact linked.");
     } catch {
       setError("Something went wrong while linking. Please try again.");
     } finally {
@@ -125,21 +134,23 @@ export function EstateContactsPanel({
   const handleUnlink = async (contactId: string) => {
     setUnlinkingId(contactId);
     setError(null);
+    setSuccess(null);
 
     try {
       const res = await fetch(
-        `/api/estates/${estateIdEncoded}/contacts?contactId=${encodeURIComponent(
-          contactId,
-        )}`,
+        `/api/estates/${estateIdEncoded}/contacts?contactId=${encodeURIComponent(contactId)}`,
         {
           method: "DELETE",
-        },
+          credentials: "include",
+          cache: "no-store",
+        }
       );
 
-      const data = await parseResponse(res);
+      const resForError = res.clone();
+      const data = await readOkResponse(res);
 
-      if (!res.ok || !data?.ok) {
-        const msg = data?.error || (await getApiErrorMessage(res));
+      if (!res.ok || data?.ok !== true) {
+        const msg = data?.error || (await getApiErrorMessage(resForError));
         setError(msg || "Failed to unlink contact.");
         return;
       }
@@ -161,6 +172,7 @@ export function EstateContactsPanel({
           role: contactToUnlink.role,
         },
       ]);
+      setSuccess("Contact removed.");
     } catch {
       setError("Something went wrong while unlinking. Please try again.");
     } finally {
@@ -169,7 +181,10 @@ export function EstateContactsPanel({
   };
 
   return (
-    <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+    <section
+      className="space-y-3 rounded-lg border border-slate-800 bg-slate-900/60 p-4"
+      aria-busy={busy}
+    >
       <div className="flex items-center justify-between gap-2">
         <div>
           <h2 className="text-sm font-semibold text-slate-100">
@@ -191,6 +206,12 @@ export function EstateContactsPanel({
         </p>
       )}
 
+      {success && !error && (
+        <p className="text-xs text-emerald-400" role="status" aria-live="polite">
+          {success}
+        </p>
+      )}
+
       {/* Link existing contact */}
       <div className="flex flex-wrap items-end gap-2 border-b border-slate-800 pb-3">
         <div className="min-w-[200px] flex-1">
@@ -201,6 +222,7 @@ export function EstateContactsPanel({
             value={selectedContactId}
             onChange={(e) => {
               setError(null);
+              if (success) setSuccess(null);
               setSelectedContactId(e.target.value);
             }}
             disabled={busy}
@@ -211,7 +233,7 @@ export function EstateContactsPanel({
                 ? "No more contacts to link"
                 : "Select a contact…"}
             </option>
-            {availableContacts.map((c) => (
+            {sortedAvailableContacts.map((c) => (
               <option key={c._id} value={c._id}>
                 {c.name}
                 {c.role ? ` — ${formatRole(c.role)}` : ""}
@@ -221,7 +243,7 @@ export function EstateContactsPanel({
         </div>
         <button
           type="button"
-          disabled={!selectedContactId || busy}
+          disabled={!selectedContactId || busy || availableContacts.length === 0}
           onClick={handleLink}
           className="rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-60"
         >

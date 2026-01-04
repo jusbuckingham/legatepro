@@ -5,26 +5,47 @@ import * as React from "react";
 type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   confirmTitle?: string;
   confirmText?: string;
+  confirmButtonText?: string;
+  cancelButtonText?: string;
 };
+
+import { useCallback } from "react";
 
 export default function ConfirmActionButton({
   confirmTitle = "Are you sure?",
   confirmText = "This action can’t be undone.",
+  confirmButtonText = "OK",
+  cancelButtonText = "Cancel",
   onClick,
   ...props
 }: Props) {
+  const handleClick = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
+      if (props.disabled) return;
+      const ok = window.confirm(
+        `${confirmTitle}\n\n${confirmText}\n\n[${confirmButtonText} / ${cancelButtonText}]`
+      );
+      if (!ok) {
+        e.preventDefault();
+        return;
+      }
+      onClick?.(e);
+    },
+    [
+      props.disabled,
+      confirmTitle,
+      confirmText,
+      confirmButtonText,
+      cancelButtonText,
+      onClick,
+    ]
+  );
   return (
     <button
       {...props}
-      onClick={(e) => {
-        if (props.disabled) return;
-        const ok = window.confirm(`${confirmTitle}\n\n${confirmText}`);
-        if (!ok) {
-          e.preventDefault();
-          return;
-        }
-        onClick?.(e);
-      }}
+      type={props.type ?? "button"}
+      aria-disabled={props.disabled ? "true" : undefined}
+      onClick={handleClick}
     />
   );
 }

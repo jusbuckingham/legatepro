@@ -12,12 +12,22 @@ export default function PageContainer({
   className,
   size = "default",
 }: PageContainerProps) {
-  const width =
+  const maxWidthClass =
     size === "narrow" ? "max-w-3xl" : "max-w-6xl";
 
+  const containerClassName = [
+    "w-full",
+    "mx-auto",
+    maxWidthClass,
+    "px-4 sm:px-6",
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div className={["w-full", "mx-auto", width, "px-4 sm:px-6", className].filter(Boolean).join(" ")}>
-      <div className="py-6 sm:py-8 space-y-6">{children}</div>
+    <div className={containerClassName}>
+      <div className="space-y-6 py-6 sm:py-8">{children}</div>
     </div>
   );
 }

@@ -84,10 +84,7 @@ export function PropertyForm({
   const handleBlur = (field: keyof PropertyFormState): void => {
     // Trim common text inputs on blur so what we save matches what we show.
     // (We intentionally do not auto-trim numeric fields while typing.)
-    if (
-      field === "estimatedValue" ||
-      field === "ownershipPercentage"
-    ) {
+    if (field === "estimatedValue" || field === "ownershipPercentage") {
       return;
     }
 
@@ -116,24 +113,28 @@ export function PropertyForm({
       nextFieldErrors.name = "Property name is required.";
     }
 
-    const estimatedValueNumber = form.estimatedValue.trim()
-      ? Number(form.estimatedValue)
-      : undefined;
+    const estimatedValueNumber =
+      form.estimatedValue.trim().length > 0
+        ? Number.parseFloat(form.estimatedValue)
+        : undefined;
 
-    if (estimatedValueNumber != null && Number.isNaN(estimatedValueNumber)) {
+    if (estimatedValueNumber != null && !Number.isFinite(estimatedValueNumber)) {
       nextFieldErrors.estimatedValue = "Estimated value must be a valid number.";
     } else if (estimatedValueNumber != null && estimatedValueNumber < 0) {
       nextFieldErrors.estimatedValue = "Estimated value cannot be negative.";
     }
 
-    const ownershipNumber = form.ownershipPercentage.trim()
-      ? Number(form.ownershipPercentage)
-      : undefined;
+    const ownershipNumber =
+      form.ownershipPercentage.trim().length > 0
+        ? Number.parseFloat(form.ownershipPercentage)
+        : undefined;
 
-    if (ownershipNumber != null && Number.isNaN(ownershipNumber)) {
-      nextFieldErrors.ownershipPercentage = "Ownership percentage must be a valid number.";
+    if (ownershipNumber != null && !Number.isFinite(ownershipNumber)) {
+      nextFieldErrors.ownershipPercentage =
+        "Ownership percentage must be a valid number.";
     } else if (ownershipNumber != null && (ownershipNumber < 0 || ownershipNumber > 100)) {
-      nextFieldErrors.ownershipPercentage = "Ownership percentage must be between 0 and 100.";
+      nextFieldErrors.ownershipPercentage =
+        "Ownership percentage must be between 0 and 100.";
     }
 
     if (Object.keys(nextFieldErrors).length > 0) {
@@ -150,11 +151,11 @@ export function PropertyForm({
       const payload = {
         name: trimmedName,
         type: form.type.trim(),
-        address: form.address.trim(),
-        city: form.city.trim(),
-        state: form.state.trim(),
-        postalCode: form.postalCode.trim(),
-        country: form.country.trim(),
+        address: form.address.trim() || undefined,
+        city: form.city.trim() || undefined,
+        state: form.state.trim() || undefined,
+        postalCode: form.postalCode.trim() || undefined,
+        country: form.country.trim() || undefined,
         estimatedValue: estimatedValueNumber,
         ownershipPercentage: ownershipNumber,
         notes: form.notes.trim() || undefined
@@ -185,7 +186,6 @@ export function PropertyForm({
           ? "Failed to update property."
           : "Failed to create property.";
 
-        // `getApiErrorMessage` may return either a string or a Promise<string> depending on implementation.
         const apiMessage = await Promise.resolve(getApiErrorMessage(response));
         setError(data?.error || apiMessage || fallback);
         return;
@@ -195,7 +195,8 @@ export function PropertyForm({
       router.refresh();
     } catch (err) {
       console.error(err);
-      const message = err instanceof Error ? err.message : "Unexpected error while saving property.";
+      const message =
+        err instanceof Error ? err.message : "Unexpected error while saving property.";
       setError(message || "Unexpected error while saving property.");
     } finally {
       setIsSubmitting(false);
@@ -224,7 +225,7 @@ export function PropertyForm({
             disabled={isSubmitting}
             required
             aria-invalid={Boolean(fieldErrors.name)}
-            aria-describedby="property-name-help"
+            aria-describedby={fieldErrors.name ? "property-name-error" : "property-name-help"}
             onChange={(e) => handleChange("name", e.target.value)}
             onBlur={() => handleBlur("name")}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
@@ -234,7 +235,7 @@ export function PropertyForm({
             How you want to identify this property in the estate.
           </p>
           {fieldErrors.name && (
-            <p className="text-[11px] text-rose-400" role="alert">
+            <p id="property-name-error" className="text-[11px] text-rose-400" role="alert">
               {fieldErrors.name}
             </p>
           )}
@@ -369,12 +370,13 @@ export function PropertyForm({
             value={form.estimatedValue}
             disabled={isSubmitting}
             aria-invalid={Boolean(fieldErrors.estimatedValue)}
+            aria-describedby={fieldErrors.estimatedValue ? "estimated-value-error" : undefined}
             onChange={(e) => handleChange("estimatedValue", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
             placeholder="0.00"
           />
           {fieldErrors.estimatedValue && (
-            <p className="text-[11px] text-rose-400" role="alert">
+            <p id="estimated-value-error" className="text-[11px] text-rose-400" role="alert">
               {fieldErrors.estimatedValue}
             </p>
           )}
@@ -396,14 +398,17 @@ export function PropertyForm({
             value={form.ownershipPercentage}
             disabled={isSubmitting}
             aria-invalid={Boolean(fieldErrors.ownershipPercentage)}
-            onChange={(e) =>
-              handleChange("ownershipPercentage", e.target.value)
-            }
+            aria-describedby={fieldErrors.ownershipPercentage ? "ownership-percentage-error" : undefined}
+            onChange={(e) => handleChange("ownershipPercentage", e.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
             placeholder="100"
           />
           {fieldErrors.ownershipPercentage && (
-            <p className="text-[11px] text-rose-400" role="alert">
+            <p
+              id="ownership-percentage-error"
+              className="text-[11px] text-rose-400"
+              role="alert"
+            >
               {fieldErrors.ownershipPercentage}
             </p>
           )}
@@ -446,10 +451,9 @@ export function PropertyForm({
           <button
             type="button"
             disabled={isSubmitting}
+            title={isSubmitting ? "Please wait…" : undefined}
             onClick={() =>
-              router.push(
-                `/app/estates/${encodeURIComponent(estateId)}/properties`
-              )
+              router.push(`/app/estates/${encodeURIComponent(estateId)}/properties`)
             }
             className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-800 disabled:opacity-60"
           >

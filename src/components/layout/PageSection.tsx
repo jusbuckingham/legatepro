@@ -1,6 +1,7 @@
 import * as React from "react";
 
 export type PageSectionProps = {
+  id?: string;
   title?: string;
   description?: React.ReactNode;
   actions?: React.ReactNode;
@@ -13,6 +14,7 @@ export type PageSectionProps = {
  * Use for vertical rhythm: header (optional) + content.
  */
 export default function PageSection({
+  id,
   title,
   description,
   actions,
@@ -20,16 +22,19 @@ export default function PageSection({
   className,
 }: PageSectionProps) {
   const hasHeader = Boolean(title || description || actions);
+  const sectionClassName = ["w-full", "space-y-6", className].filter(Boolean).join(" ");
+  const titleId = id && title ? `${id}-title` : undefined;
 
   return (
-    <section
-      className={["w-full", "space-y-6", className].filter(Boolean).join(" ")}
-    >
+    <section id={id} aria-labelledby={titleId} className={sectionClassName}>
       {hasHeader ? (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             {title ? (
-              <h2 className="text-base sm:text-lg font-semibold tracking-tight leading-tight">
+              <h2
+                id={titleId}
+                className="text-base font-semibold leading-tight tracking-tight sm:text-lg"
+              >
                 {title}
               </h2>
             ) : null}

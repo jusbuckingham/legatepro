@@ -43,11 +43,11 @@ export function EditEstateForm({
 
   const handleChange = useCallback(
     (field: keyof EstateFormData, value: string): void => {
-      if (error) setError(null);
-      if (saved) setSaved(false);
+      setError((prev) => (prev ? null : prev));
+      setSaved(false);
       setForm((prev) => ({ ...prev, [field]: value }));
     },
-    [error, saved]
+    []
   );
 
   const handleSubmit = async (
@@ -73,15 +73,18 @@ export function EditEstateForm({
         `/api/estates/${encodeURIComponent(estateId)}`,
         {
           method: "PATCH",
+          credentials: "include",
+          cache: "no-store",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         }
       );
 
+      const responseForError = response.clone();
       const data = (await response.json().catch(() => null)) as ApiResponse | null;
 
-      if (!response.ok || !data?.ok) {
-        const apiMessage = await getApiErrorMessage(response);
+      if (!response.ok || data?.ok !== true) {
+        const apiMessage = await Promise.resolve(getApiErrorMessage(responseForError));
         const message = data?.error || apiMessage || "Failed to update estate.";
         setError(message);
         return;
@@ -102,6 +105,7 @@ export function EditEstateForm({
   return (
     <form
       onSubmit={handleSubmit}
+      aria-busy={isSubmitting}
       className="space-y-6 rounded-xl border border-slate-800 bg-slate-950/60 p-4"
     >
       <div className="grid gap-4 md:grid-cols-2">
@@ -230,17 +234,24 @@ export function EditEstateForm({
           </button>
           <button
             type="button"
+            disabled={isSubmitting}
             onClick={() => router.push(`/app/estates/${encodeURIComponent(estateId)}`)}
-            className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-800"
+            className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Cancel
           </button>
         </div>
 
         <div className="text-xs">
-          {error && <p className="text-rose-400">{error}</p>}
+          {error && (
+            <p role="alert" aria-live="polite" className="text-rose-400">
+              {error}
+            </p>
+          )}
           {saved && !error && (
-            <p className="text-emerald-400">Changes saved.</p>
+            <p role="status" aria-live="polite" className="text-emerald-400">
+              Changes saved.
+            </p>
           )}
         </div>
       </div>

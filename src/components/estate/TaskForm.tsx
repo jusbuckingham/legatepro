@@ -50,6 +50,7 @@ export function TaskForm({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ subject?: string }>({});
 
   const isEdit = mode === "edit" && Boolean(taskId);
 
@@ -59,6 +60,14 @@ export function TaskForm({
   const handleChange = (field: keyof TaskFormInitialValues, value: string): void => {
     // Clear any previous banner error as soon as the user edits again.
     if (error) setError(null);
+
+    // Clear field-level error once the user edits the field.
+    setFieldErrors((prev) => {
+      if (!prev[field as "subject"]) return prev;
+      const next = { ...prev };
+      delete next[field as "subject"];
+      return next;
+    });
 
     setValues((prev) => ({
       ...prev,
@@ -72,12 +81,14 @@ export function TaskForm({
     if (isSubmitting) return;
 
     if (!subjectTrimmed) {
+      setFieldErrors({ subject: "Task subject is required." });
       setError("Task subject is required.");
       return;
     }
 
     setIsSubmitting(true);
     setError(null);
+    setFieldErrors({});
 
     const safeEstateId = encodeURIComponent(estateId);
     const safeTaskId = taskId ? encodeURIComponent(taskId) : null;
@@ -96,8 +107,8 @@ export function TaskForm({
         },
         body: JSON.stringify({
           subject: subjectTrimmed,
-          description: values.description?.trim() || "",
-          notes: values.notes?.trim() || "",
+          description: values.description?.trim() || undefined,
+          notes: values.notes?.trim() || undefined,
           status: values.status,
           priority: values.priority,
           date: values.date || null,
@@ -127,7 +138,8 @@ export function TaskForm({
   };
 
   const handleCancel = () => {
-    router.push(`/app/estates/${encodeURIComponent(estateId)}/tasks`);
+    const safeEstateId = encodeURIComponent(estateId);
+    router.push(`/app/estates/${safeEstateId}/tasks`);
   };
 
   return (
@@ -163,9 +175,18 @@ export function TaskForm({
           placeholder="e.g. File inventory with the court"
           className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none placeholder:text-slate-500 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60"
           required
-          aria-invalid={Boolean(error) && subjectTrimmed.length === 0}
+          aria-invalid={Boolean(fieldErrors.subject)}
+          aria-describedby={fieldErrors.subject ? "task-subject-error" : "task-subject-help"}
           disabled={isSubmitting}
         />
+        <p id="task-subject-help" className="text-[11px] text-slate-500">
+          Short and specific is best (e.g. “Call probate clerk to confirm filing”).
+        </p>
+        {fieldErrors.subject && (
+          <p id="task-subject-error" className="text-[11px] text-red-300" role="alert">
+            {fieldErrors.subject}
+          </p>
+        )}
       </div>
 
       {/* Description */}

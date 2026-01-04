@@ -34,6 +34,8 @@ export function DeleteEstateButton({
     try {
       const response = await fetch(`/api/estates/${encodeURIComponent(estateId)}`, {
         method: "DELETE",
+        credentials: "include",
+        cache: "no-store",
       });
 
       const responseClone = response.clone();
@@ -60,7 +62,7 @@ export function DeleteEstateButton({
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2" aria-busy={isDeleting}>
       <button
         type="button"
         onClick={handleDelete}
@@ -70,7 +72,9 @@ export function DeleteEstateButton({
         {isDeleting ? "Deleting…" : "Delete"}
       </button>
       {error && (
-        <span className="text-[11px] text-rose-400 max-w-xs">{error}</span>
+        <span role="alert" className="max-w-xs text-[11px] text-rose-400">
+          {error}
+        </span>
       )}
     </div>
   );

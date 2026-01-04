@@ -62,16 +62,14 @@ export function NewContactForm() {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   const resetFeedback = (): void => {
     if (error) setError(null);
-    if (success) setSuccess(null);
     if (Object.keys(fieldErrors).length > 0) setFieldErrors({});
   };
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
 
     if (saving) return;
@@ -95,7 +93,6 @@ export function NewContactForm() {
 
     if (Object.keys(nextErrors).length > 0) {
       setFieldErrors(nextErrors);
-      setSuccess(null);
       setError("Fix the highlighted fields.");
 
       if (nextErrors.name) {
@@ -112,7 +109,6 @@ export function NewContactForm() {
     setFieldErrors({});
     setSaving(true);
     setError(null);
-    setSuccess(null);
 
     try {
       const payload = {
@@ -125,6 +121,7 @@ export function NewContactForm() {
 
       const res = await fetch("/api/contacts", {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -140,13 +137,11 @@ export function NewContactForm() {
         return;
       }
 
-      setSuccess("Contact created.");
       router.push("/app/contacts");
       router.refresh();
     } catch (err) {
       console.error("[NewContactForm] submit error:", err);
       setFieldErrors({});
-      setSuccess(null);
       setError("Something went wrong while saving. Please try again.");
     } finally {
       setSaving(false);
@@ -187,17 +182,13 @@ export function NewContactForm() {
         </div>
       </div>
 
-      {(error || success) && (
+      {error && (
         <div
-          role={error ? "alert" : "status"}
-          aria-live={error ? "assertive" : "polite"}
-          className={`rounded-md border p-3 text-xs ${
-            error
-              ? "border-rose-500/30 bg-rose-950/40 text-rose-100"
-              : "border-emerald-500/30 bg-emerald-950/40 text-emerald-100"
-          }`}
+          role="alert"
+          aria-live="assertive"
+          className="rounded-md border border-rose-500/30 bg-rose-950/40 p-3 text-xs text-rose-100"
         >
-          {error || success}
+          {error}
         </div>
       )}
 
@@ -220,6 +211,7 @@ export function NewContactForm() {
             placeholder="Full name"
             disabled={saving}
             autoComplete="name"
+            autoFocus
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
           {fieldErrors.name && (
@@ -334,5 +326,3 @@ export function NewContactForm() {
     </form>
   );
 }
-
-export default NewContactForm;

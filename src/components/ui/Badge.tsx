@@ -9,7 +9,7 @@ export type BadgeVariant =
   | "destructive"
   | "success";
 
-export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement> {
+export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   variant?: BadgeVariant;
 }
 
@@ -35,13 +35,16 @@ export function Badge({
   children,
   ...props
 }: BadgeProps) {
+  const liveRegion =
+    variant === "success" || variant === "destructive" ? "polite" : undefined;
   return (
-    <div
+    <span
       className={cn(baseClasses, variantClasses[variant], className)}
+      aria-live={liveRegion}
       {...props}
     >
       {children}
-    </div>
+    </span>
   );
 }
 
