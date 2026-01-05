@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
+import { Estate } from "@/models/Estate";
 import { auth } from "@/lib/auth";
 import { logEstateEvent } from "@/lib/estateEvents";
 import { WorkspaceSettings } from "@/models/WorkspaceSettings";
@@ -48,34 +49,86 @@ function toObjectId(id: string) {
     : null;
 }
 
+function idToString(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") return value;
+  if (value instanceof mongoose.Types.ObjectId) return value.toString();
+
+  // Fallback for other id-like objects
+  try {
+    const str = String(value);
+    return str.length > 0 ? str : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-
-  const ownerObjectId = toObjectId(session.user.id);
-  if (!ownerObjectId) {
-    return NextResponse.json({ ok: false, error: "Invalid user id" }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "Unauthorized" },
+      { status: 401 },
+    );
   }
 
   await connectToDatabase();
+
+  const userObjectId = toObjectId(session.user.id);
+
+  const estateAccessOr: Record<string, unknown>[] = [
+    { ownerId: session.user.id },
+    ...(userObjectId ? [{ ownerId: userObjectId }] : []),
+
+    // Common collaborator/member patterns (safe even if fields don't exist)
+    { collaboratorIds: session.user.id },
+    ...(userObjectId ? [{ collaboratorIds: userObjectId }] : []),
+    { collaborators: session.user.id },
+    ...(userObjectId ? [{ collaborators: userObjectId }] : []),
+    { memberIds: session.user.id },
+    ...(userObjectId ? [{ memberIds: userObjectId }] : []),
+    { members: session.user.id },
+    ...(userObjectId ? [{ members: userObjectId }] : []),
+    { userIds: session.user.id },
+    ...(userObjectId ? [{ userIds: userObjectId }] : []),
+  ];
+
+  const accessibleEstates = await Estate.find({ $or: estateAccessOr })
+    .select("_id")
+    .lean()
+    .exec();
+
+  const allowedEstateIds = accessibleEstates
+    .map((e) => idToString((e as { _id?: unknown })._id))
+    .filter((v): v is string => Boolean(v));
+
+  if (allowedEstateIds.length === 0) {
+    return NextResponse.json({ ok: true, invoices: [] }, { status: 200 });
+  }
+
+  const allowedEstateObjectIds = allowedEstateIds
+    .map((id) => toObjectId(id))
+    .filter((v): v is mongoose.Types.ObjectId => Boolean(v));
+
+  const query: Record<string, unknown> = {
+    estateId: { $in: [...allowedEstateIds, ...allowedEstateObjectIds] },
+  };
 
   const { searchParams } = new URL(req.url);
   const estateId = searchParams.get("estateId");
   const statusFilter = searchParams.get("status");
   const sort = searchParams.get("sort") ?? "issueDateDesc";
 
-  const query: Record<string, unknown> = {
-    ownerId: ownerObjectId,
-  };
-
   if (estateId) {
     const estateObjectId = toObjectId(estateId);
-    if (!estateObjectId) {
-      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
+    const candidates = [estateId, estateObjectId].filter(Boolean);
+
+    const canAccess = allowedEstateIds.includes(estateId);
+    if (!canAccess) {
+      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
-    query.estateId = estateObjectId;
+
+    query.estateId = { $in: candidates };
   }
 
   if (statusFilter && statusFilter !== "ALL") {
@@ -98,10 +151,7 @@ export async function GET(req: NextRequest) {
     sortOption.issueDate = -1;
   }
 
-  const invoices = await Invoice.find(query)
-    .sort(sortOption)
-    .lean()
-    .exec();
+  const invoices = await Invoice.find(query).sort(sortOption).lean().exec();
 
   const rows: InvoiceListRow[] = invoices.map((inv) => ({
     id: String(inv._id),
@@ -121,12 +171,10 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-
-  const ownerObjectId = toObjectId(session.user.id);
-  if (!ownerObjectId) {
-    return NextResponse.json({ ok: false, error: "Invalid user id" }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "Unauthorized" },
+      { status: 401 },
+    );
   }
 
   await connectToDatabase();
@@ -226,17 +274,69 @@ export async function POST(req: NextRequest) {
   } = body;
 
   if (!estateId) {
-    return NextResponse.json({ ok: false, error: "estateId is required" }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "estateId is required" },
+      { status: 400 },
+    );
   }
 
   const estateObjectId = toObjectId(estateId);
   if (!estateObjectId) {
-    return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "Invalid estateId" },
+      { status: 400 },
+    );
+  }
+
+  const userObjectId = toObjectId(session.user.id);
+
+  const estateAccessOr: Record<string, unknown>[] = [
+    { ownerId: session.user.id },
+    ...(userObjectId ? [{ ownerId: userObjectId }] : []),
+
+    { collaboratorIds: session.user.id },
+    ...(userObjectId ? [{ collaboratorIds: userObjectId }] : []),
+    { collaborators: session.user.id },
+    ...(userObjectId ? [{ collaborators: userObjectId }] : []),
+    { memberIds: session.user.id },
+    ...(userObjectId ? [{ memberIds: userObjectId }] : []),
+    { members: session.user.id },
+    ...(userObjectId ? [{ members: userObjectId }] : []),
+    { userIds: session.user.id },
+    ...(userObjectId ? [{ userIds: userObjectId }] : []),
+  ];
+
+  const estateDoc = await Estate.findOne({
+    _id: estateObjectId,
+    $or: estateAccessOr,
+  })
+    .select("_id ownerId")
+    .lean()
+    .exec();
+
+  if (!estateDoc) {
+    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+  }
+
+  const ownerIdString = idToString((estateDoc as { ownerId?: unknown }).ownerId);
+  if (!ownerIdString) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid estate owner" },
+      { status: 400 },
+    );
+  }
+
+  const ownerObjectId = toObjectId(ownerIdString);
+  if (!ownerObjectId) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid estate owner" },
+      { status: 400 },
+    );
   }
 
   // Load workspace settings for defaults (WorkspaceSettings.ownerId is a string in this project)
   const settings = await WorkspaceSettings.findOne({
-    ownerId: session.user.id,
+    ownerId: ownerIdString,
   })
     .lean()
     .catch(() => null as unknown as null);
@@ -265,16 +365,16 @@ export async function POST(req: NextRequest) {
           terms === "NET_15"
             ? 15
             : terms === "NET_45"
-            ? 45
-            : terms === "NET_60"
-            ? 60
-            : terms === "DUE_ON_RECEIPT"
-            ? 0
-            : 30;
+              ? 45
+              : terms === "NET_60"
+                ? 60
+                : terms === "DUE_ON_RECEIPT"
+                  ? 0
+                  : 30;
 
         if (days > 0) {
           resolvedDueDate = new Date(
-            base.getTime() + days * 24 * 60 * 60 * 1000
+            base.getTime() + days * 24 * 60 * 60 * 1000,
           );
         } else {
           resolvedDueDate = base;
@@ -304,10 +404,10 @@ export async function POST(req: NextRequest) {
           amountCentsField > 0
             ? amountCentsField
             : amountField > 0
-            ? amountField > 10_000
-              ? Math.round(amountField)
-              : Math.round(amountField * 100)
-            : 0;
+              ? amountField > 10_000
+                ? Math.round(amountField)
+                : Math.round(amountField * 100)
+              : 0;
 
         let effectiveUnit = 0;
 
@@ -383,7 +483,7 @@ export async function POST(req: NextRequest) {
   try {
     await logEstateEvent({
       estateId: String(estateObjectId),
-      ownerId: session.user.id,
+      ownerId: ownerIdString,
       type: "INVOICE_CREATED",
       summary: "Invoice created",
     });
@@ -414,6 +514,6 @@ export async function POST(req: NextRequest) {
         invoiceNumber: invoiceDoc.invoiceNumber ?? invoiceNumber ?? null,
       },
     },
-    { status: 201 }
+    { status: 201 },
   );
 }

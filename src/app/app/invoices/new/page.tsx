@@ -6,6 +6,7 @@ import { getServerSession } from "next-auth";
 
 import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
+import mongoose from "mongoose";
 import { Estate } from "@/models/Estate";
 
 type EstateListItem = {
@@ -46,9 +47,31 @@ export default async function GlobalNewInvoicePage({ searchParams }: PageProps) 
 
   await connectToDatabase();
 
-  // Load the estates that belong to this user
+  // Load estates this user can access (owner OR collaborator/member).
+  // Support legacy ObjectId storage by querying both string ids and ObjectIds.
+  const userObjectId = mongoose.Types.ObjectId.isValid(session.user.id)
+    ? new mongoose.Types.ObjectId(session.user.id)
+    : null;
+
+  const estateAccessOr: Record<string, unknown>[] = [
+    { ownerId: session.user.id },
+    ...(userObjectId ? [{ ownerId: userObjectId }] : []),
+
+    // Common collaborator/member patterns (safe even if fields don't exist)
+    { collaboratorIds: session.user.id },
+    ...(userObjectId ? [{ collaboratorIds: userObjectId }] : []),
+    { collaborators: session.user.id },
+    ...(userObjectId ? [{ collaborators: userObjectId }] : []),
+    { memberIds: session.user.id },
+    ...(userObjectId ? [{ memberIds: userObjectId }] : []),
+    { members: session.user.id },
+    ...(userObjectId ? [{ members: userObjectId }] : []),
+    { userIds: session.user.id },
+    ...(userObjectId ? [{ userIds: userObjectId }] : []),
+  ];
+
   const estatesRaw = (await Estate.find({
-    ownerId: session.user.id,
+    $or: estateAccessOr,
   })
     .select("_id displayName caseName caseNumber")
     .sort({ createdAt: -1 })
@@ -61,10 +84,16 @@ export default async function GlobalNewInvoicePage({ searchParams }: PageProps) 
     caseNumber: e.caseNumber,
   }));
 
-  // If an estateId is already provided in the query string, jump straight
-  // into the estate-specific invoice creation flow.
+  // If an estateId is already provided in the query string, only redirect
+  // if it's an estate the user can access.
   if (preselectedEstateId) {
-    return redirect(`/app/estates/${preselectedEstateId}/invoices/new`);
+    const normalized = preselectedEstateId.toString();
+    const canAccess = estates.some((e) => e._id === normalized);
+
+    if (canAccess) {
+      return redirect(`/app/estates/${normalized}/invoices/new`);
+    }
+    // If not accessible, fall through to the picker/empty-state UX.
   }
 
   // If there is exactly one estate, we can skip the picker UX

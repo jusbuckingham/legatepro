@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
+import mongoose from "mongoose";
 import { Estate } from "@/models/Estate";
 import { Invoice } from "@/models/Invoice";
 
@@ -84,12 +85,49 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
 
   await connectToDatabase();
 
+  const estateObjectId = mongoose.Types.ObjectId.isValid(estateId)
+    ? new mongoose.Types.ObjectId(estateId)
+    : null;
+
+  const invoiceObjectId = mongoose.Types.ObjectId.isValid(invoiceId)
+    ? new mongoose.Types.ObjectId(invoiceId)
+    : null;
+
+  const userObjectId = mongoose.Types.ObjectId.isValid(session.user.id)
+    ? new mongoose.Types.ObjectId(session.user.id)
+    : null;
+
+  const estateIdCandidates = [estateId, estateObjectId].filter(Boolean);
+
+  const estateAccessOr: Record<string, unknown>[] = [
+    { ownerId: session.user.id },
+    ...(userObjectId ? [{ ownerId: userObjectId }] : []),
+
+    // Common collaborator/member patterns (harmless if fields don't exist)
+    { collaboratorIds: session.user.id },
+    ...(userObjectId ? [{ collaboratorIds: userObjectId }] : []),
+    { collaborators: session.user.id },
+    ...(userObjectId ? [{ collaborators: userObjectId }] : []),
+    { memberIds: session.user.id },
+    ...(userObjectId ? [{ memberIds: userObjectId }] : []),
+    { members: session.user.id },
+    ...(userObjectId ? [{ members: userObjectId }] : []),
+    { userIds: session.user.id },
+    ...(userObjectId ? [{ userIds: userObjectId }] : []),
+  ];
+
   const [estateDoc, invoiceDoc] = await Promise.all([
-    Estate.findOne({ _id: estateId, ownerId: session.user.id })
+    Estate.findOne({
+      _id: estateObjectId ?? estateId,
+      $or: estateAccessOr,
+    })
       .lean()
       .exec() as Promise<EstateLean | null>,
     Invoice.findOne(
-      { _id: invoiceId, estateId, ownerId: session.user.id },
+      {
+        _id: invoiceObjectId ?? invoiceId,
+        estateId: { $in: estateIdCandidates },
+      },
       {
         invoiceNumber: 1,
         description: 1,
