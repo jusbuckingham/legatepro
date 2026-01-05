@@ -1,10 +1,48 @@
 import { redirect, notFound } from "next/navigation";
+import Link from "next/link";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 import type { EstateInvite, InviteRole } from "@/models/Estate";
 import { logEstateEvent } from "@/lib/estateEvents";
+
+const ROLE_LABELS: Record<string, string> = {
+  OWNER: "Owner",
+  ADMIN: "Admin",
+  EDITOR: "Editor",
+  VIEWER: "Viewer",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  PENDING: "Pending",
+  ACCEPTED: "Accepted",
+  REVOKED: "Revoked",
+  EXPIRED: "Expired",
+};
+
+function formatRoleLabel(role: string): string {
+  return ROLE_LABELS[role] ?? role;
+}
+
+function formatStatusLabel(status: string): string {
+  return STATUS_LABELS[status] ?? status;
+}
+
+function getStatusBadgeClasses(status: string): string {
+  switch (status) {
+    case "PENDING":
+      return "border-sky-900/40 bg-sky-950/40 text-sky-200";
+    case "ACCEPTED":
+      return "border-emerald-900/40 bg-emerald-950/40 text-emerald-200";
+    case "REVOKED":
+      return "border-slate-800 bg-slate-900/60 text-slate-200";
+    case "EXPIRED":
+      return "border-amber-900/40 bg-amber-950/40 text-amber-200";
+    default:
+      return "border-slate-800 bg-slate-900/60 text-slate-200";
+  }
+}
 
 function isExpired(invite: Pick<EstateInvite, "status" | "expiresAt">): boolean {
   if (invite.status !== "PENDING") return false;
@@ -87,6 +125,8 @@ export default async function InviteAcceptPage({
     notFound();
   }
   const role = invite.role as InviteRole;
+  const roleLabel = formatRoleLabel(String(role));
+  const statusLabel = formatStatusLabel(String(status));
 
   async function acceptInviteAction() {
     "use server";
@@ -187,66 +227,82 @@ export default async function InviteAcceptPage({
 
   return (
     <div className="mx-auto w-full max-w-xl p-6">
-      <div className="rounded-lg border border-gray-200 bg-white p-6">
+      <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-6">
         {errorMessage ? (
-          <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+          <div className="mb-4 rounded-md border border-red-900/40 bg-red-950/40 p-3 text-sm text-red-200">
             {errorMessage}
           </div>
         ) : null}
 
-        <h1 className="text-xl font-semibold">Accept collaborator invite</h1>
-        <p className="mt-2 text-sm text-gray-600">
-          You’ve been invited to collaborate on <span className="font-medium">{estateName}</span>.
+        <h1 className="text-xl font-semibold text-slate-50">Accept collaborator invite</h1>
+        <p className="mt-2 text-sm text-slate-400">
+          You’ve been invited to collaborate on <span className="font-medium text-slate-200">{estateName}</span>.
         </p>
 
-        <div className="mt-4 rounded-md bg-gray-50 p-4 text-sm">
+        <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900/50 p-4 text-sm">
           <div className="flex items-center justify-between">
-            <span className="text-gray-600">Invited email</span>
-            <span className="font-medium">{inviteEmail}</span>
+            <span className="text-slate-400">Invited email</span>
+            <span className="font-medium text-slate-100">{inviteEmail}</span>
           </div>
           <div className="mt-2 flex items-center justify-between">
-            <span className="text-gray-600">Role</span>
-            <span className="font-medium">{role}</span>
+            <span className="text-slate-400">Role</span>
+            <span className="font-medium text-slate-100">{roleLabel}</span>
           </div>
           <div className="mt-2 flex items-center justify-between">
-            <span className="text-gray-600">Status</span>
-            <span className="font-medium">{status}</span>
+            <span className="text-slate-400">Status</span>
+            <span
+              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${getStatusBadgeClasses(
+                String(status)
+              )}`}
+            >
+              {statusLabel}
+            </span>
           </div>
         </div>
 
         {!session?.user?.id ? (
           <div className="mt-4">
-            <p className="text-sm text-gray-700">
-              Please sign in to accept this invite.
-            </p>
-            <a
+            <p className="text-sm text-slate-300">Please sign in to accept this invite.</p>
+            <Link
               href={`/login?callbackUrl=${encodeURIComponent(`/app/invites/${token}`)}`}
-              className="mt-3 inline-flex items-center rounded-md bg-black px-4 py-2 text-sm font-medium text-white"
+              className="mt-3 inline-flex w-full items-center justify-center rounded-md bg-slate-100 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-white"
             >
               Sign in to accept
-            </a>
+            </Link>
           </div>
         ) : signedInEmail !== inviteEmail ? (
-          <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            You’re signed in as <span className="font-medium">{signedInEmail ?? ""}</span>, but this invite is for <span className="font-medium">{inviteEmail}</span>.
-            <div className="mt-2 text-amber-900/80">
-              Sign in with the invited email to accept.
+          <div className="mt-4 rounded-md border border-amber-900/40 bg-amber-950/40 p-3 text-sm text-amber-200">
+            <div className="space-y-2">
+              <div>
+                You’re signed in as{" "}
+                <span className="font-medium text-amber-100">
+                  {signedInEmail ?? ""}
+                </span>
+                , but this invite is for{" "}
+                <span className="font-medium text-amber-100">
+                  {inviteEmail}
+                </span>
+                .
+              </div>
+              <div className="text-amber-200/80">
+                Sign in with the invited email to accept.
+              </div>
             </div>
           </div>
         ) : status !== "PENDING" ? (
-          <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
-            This invite can’t be accepted because its status is <span className="font-medium">{status}</span>.
+          <div className="mt-4 rounded-md border border-slate-800 bg-slate-900/50 p-3 text-sm text-slate-300">
+            This invite can’t be accepted because its status is <span className="font-medium text-slate-100">{statusLabel}</span>.
           </div>
         ) : (
           <form action={acceptInviteAction} className="mt-5">
             <button
               type="submit"
-              className="inline-flex w-full items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              className="inline-flex w-full items-center justify-center rounded-md bg-rose-500 px-4 py-2 text-sm font-medium text-white hover:bg-rose-400"
             >
               Accept invite
             </button>
-            <p className="mt-2 text-xs text-gray-500">
-              After accepting, you’ll be taken to the estate overview.
+            <p className="mt-2 text-xs text-slate-500">
+              After accepting, you’ll be taken to the estate overview. You must be signed in with the invited email.
             </p>
           </form>
         )}

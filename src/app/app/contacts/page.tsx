@@ -11,7 +11,7 @@ type PageSearchParams = {
 };
 
 type PageProps = {
-  searchParams: Promise<PageSearchParams>;
+  searchParams?: PageSearchParams;
 };
 
 type ContactLean = {
@@ -32,8 +32,12 @@ type ContactListItem = {
   estatesCount: number;
 };
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export default async function ContactsPage({ searchParams }: PageProps) {
-  const { q: qRaw, role: roleRaw } = await searchParams;
+  const { q: qRaw, role: roleRaw } = searchParams ?? {};
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -50,10 +54,11 @@ export default async function ContactsPage({ searchParams }: PageProps) {
   };
 
   if (q.length > 0) {
+    const pattern = new RegExp(escapeRegex(q), "i");
     mongoQuery.$or = [
-      { name: { $regex: q, $options: "i" } },
-      { email: { $regex: q, $options: "i" } },
-      { phone: { $regex: q, $options: "i" } },
+      { name: pattern },
+      { email: pattern },
+      { phone: pattern },
     ];
   }
 
@@ -94,7 +99,7 @@ export default async function ContactsPage({ searchParams }: PageProps) {
         actions={
           <Link
             href="/app/contacts/new"
-            className="inline-flex items-center rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400"
+            className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-400"
           >
             New contact
           </Link>
@@ -113,7 +118,7 @@ export default async function ContactsPage({ searchParams }: PageProps) {
               name="q"
               defaultValue={q}
               placeholder="Name, email, phone…"
-              className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
             />
           </div>
 
@@ -124,7 +129,7 @@ export default async function ContactsPage({ searchParams }: PageProps) {
             <select
               name="role"
               defaultValue={roleFilter}
-              className="mt-1 rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              className="mt-1 rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-500"
             >
               <option value="ALL">All roles</option>
               <option value="EXECUTOR">Executor</option>
@@ -137,12 +142,23 @@ export default async function ContactsPage({ searchParams }: PageProps) {
             </select>
           </div>
 
-          <button
-            type="submit"
-            className="inline-flex items-center rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-white"
-          >
-            Apply filters
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              className="inline-flex items-center rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-white"
+            >
+              Apply filters
+            </button>
+
+            {(q.length > 0 || roleFilter !== "ALL") && (
+              <Link
+                href="/app/contacts"
+                className="inline-flex items-center rounded-md border border-slate-700 bg-slate-950/50 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-950"
+              >
+                Clear
+              </Link>
+            )}
+          </div>
         </form>
       </section>
 
@@ -157,7 +173,9 @@ export default async function ContactsPage({ searchParams }: PageProps) {
         {contacts.length === 0 ? (
           <div className="flex flex-col gap-2">
             <p className="text-xs text-slate-500">
-              You don&apos;t have any contacts yet. Create your first contact to start linking people to estates.
+              {q.length > 0 || roleFilter !== "ALL"
+                ? "No contacts match your current filters. Try clearing filters or adjusting your search."
+                : "You don\u2019t have any contacts yet. Create your first contact to start linking people to estates."}
             </p>
             <div>
               <Link
@@ -186,12 +204,12 @@ export default async function ContactsPage({ searchParams }: PageProps) {
                 {contacts.map((contact) => (
                   <tr
                     key={contact._id}
-                    className="border-b border-slate-800/60 last:border-0"
+                    className="border-b border-slate-800/60 last:border-0 hover:bg-slate-900/50"
                   >
                     <td className="py-2 pr-4">
                       <Link
                         href={`/app/contacts/${contact._id}`}
-                        className="text-sky-400 hover:text-sky-300"
+                        className="text-rose-300 hover:text-rose-200"
                       >
                         {contact.name}
                       </Link>

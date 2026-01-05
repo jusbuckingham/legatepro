@@ -11,8 +11,8 @@ import InvoiceStatusButtons from "./InvoiceStatusButtons";
 import { requireEstateAccess } from "@/lib/estateAccess";
 
 type PageProps = {
-  params: Promise<{ estateId: string }>;
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+  params: { estateId: string };
+  searchParams?: Record<string, string | string[] | undefined>;
 };
 
 type InvoiceLean = {
@@ -137,7 +137,7 @@ async function getInvoices(
 }
 
 export default async function InvoicesPage({ params, searchParams }: PageProps) {
-  const { estateId } = await params;
+  const { estateId } = params;
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -159,7 +159,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
   let statusFilter = "";
   let overdueOnly = false;
   if (searchParams) {
-    const sp = await searchParams;
+    const sp = searchParams;
     if (sp?.q && typeof sp.q === "string") searchQuery = sp.q.trim();
     if (sp?.status && typeof sp.status === "string") statusFilter = sp.status.toLowerCase();
     if (sp?.overdue && (sp.overdue === "1" || sp.overdue === "true")) overdueOnly = true;
@@ -202,10 +202,11 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
       (inv.description || "").toLowerCase().includes(q)
     );
   }
-function invoiceTitle(desc: string): string {
-  const t = (desc || "").trim();
-  return t.length > 0 ? t : "Untitled invoice";
-}
+
+  function invoiceTitle(desc: string): string {
+    const t = (desc || "").trim();
+    return t.length > 0 ? t : "Untitled invoice";
+  }
 
   // Summary stats
   const totalAmount = computedInvoices.reduce((sum, inv) => sum + inv.amount, 0);

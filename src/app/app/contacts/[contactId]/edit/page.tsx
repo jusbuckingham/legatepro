@@ -5,9 +5,9 @@ import { Contact } from "@/models/Contact";
 import { ContactEditForm } from "@/components/contacts/ContactEditForm";
 
 type PageProps = {
-  params: Promise<{
+  params: {
     contactId: string;
-  }>;
+  };
 };
 
 type ContactDoc = {
@@ -21,7 +21,7 @@ type ContactDoc = {
 };
 
 export default async function EditContactPage({ params }: PageProps) {
-  const { contactId } = await params;
+  const { contactId } = params;
 
   const session = await auth();
   if (!session?.user?.id) {

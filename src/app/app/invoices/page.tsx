@@ -20,7 +20,7 @@ type PageSearchParams = {
 };
 
 type PageProps = {
-  searchParams: Promise<PageSearchParams>;
+  searchParams?: PageSearchParams;
 };
 
 type PopulatedEstate = {
@@ -133,6 +133,11 @@ function normalizeDate(value?: Date | string): Date | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d;
 }
 
+// Escape user input for MongoDB regex
+function escapeRegex(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export default async function InvoicesPage({ searchParams }: PageProps) {
   const {
     status: statusRaw,
@@ -141,7 +146,7 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
     estateId: estateIdRaw,
     sortBy: sortByRaw,
     invoiceNumber: invoiceNumberRaw,
-  } = await searchParams;
+  } = searchParams ?? {};
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -165,47 +170,102 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
   const sortBy = sortByRaw ?? "recent";
   const invoiceNumberFilter = (invoiceNumberRaw ?? "").trim();
 
-  const userObjectId = toObjectId(session.user.id);
+  // Constrain invoices to estates this user can access (owner OR collaborator).
+  // Invoices may store `estateId` as an ObjectId; we include both string ids and ObjectIds
+  // to be resilient across legacy data.
+  const allowedEstateIds = estateDocs
+    .map((e) => (typeof e._id === "string" ? e._id : e._id.toString()))
+    .filter(Boolean);
 
-  const mongoQuery: { [key: string]: unknown } = {
-    $or: [
-      { ownerId: session.user.id },
-      ...(userObjectId ? [{ ownerId: userObjectId }] : []),
-    ],
-  };
+  const allowedEstateObjectIds = allowedEstateIds
+    .map((id) => toObjectId(id))
+    .filter((v): v is mongoose.Types.ObjectId => Boolean(v));
+
+  const andClauses: Record<string, unknown>[] = [
+    {
+      estateId: {
+        $in: [...allowedEstateIds, ...allowedEstateObjectIds],
+      },
+    },
+  ];
+
+  if (allowedEstateIds.length === 0) {
+    return (
+      <div className="space-y-8">
+        <PageHeader
+          eyebrow="Billing"
+          title="Invoices"
+          description="Track all invoices across your firm. Filter by status, timeframe, or search by notes and invoice number."
+          actions={
+            <Link
+              href="/app/invoices/new"
+              className="inline-flex items-center rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400"
+            >
+              New invoice
+            </Link>
+          }
+        />
+
+        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+          <p className="text-sm font-medium text-slate-100">No estates yet</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Create an estate first to start generating and tracking invoices.
+          </p>
+          <div className="mt-3">
+            <Link
+              href="/app/estates/new"
+              className="inline-flex items-center rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-white"
+            >
+              Create an estate
+            </Link>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   // Status filter
   if (statusFilter === "UNPAID") {
     // Treat "Unpaid" as a group of statuses
-    mongoQuery.status = {
-      $in: ["DRAFT", "SENT", "UNPAID", "PARTIAL"],
-    };
+    andClauses.push({
+      status: {
+        $in: ["DRAFT", "SENT", "UNPAID", "PARTIAL"],
+      },
+    });
   } else if (statusFilter !== "ALL") {
-    mongoQuery.status = statusFilter as InvoiceStatus;
+    andClauses.push({ status: statusFilter as InvoiceStatus });
   }
 
   // Estate filter
   if (estateFilter) {
     const estateObjectId = toObjectId(estateFilter);
-    mongoQuery.estateId = estateObjectId
-      ? { $in: [estateFilter, estateObjectId] }
-      : estateFilter;
+    andClauses.push({
+      estateId: estateObjectId
+        ? { $in: [estateFilter, estateObjectId] }
+        : estateFilter,
+    });
   }
 
   // Invoice number filter (more exact than the generic q search)
   if (invoiceNumberFilter.length > 0) {
-    mongoQuery.invoiceNumber = {
-      $regex: invoiceNumberFilter,
-      $options: "i",
-    };
+    const safeInvoiceNumber = escapeRegex(invoiceNumberFilter);
+    andClauses.push({
+      invoiceNumber: {
+        $regex: safeInvoiceNumber,
+        $options: "i",
+      },
+    });
   }
 
   // Text search (notes + invoiceNumber)
   if (q.length > 0) {
-    mongoQuery.$or = [
-      { notes: { $regex: q, $options: "i" } },
-      { invoiceNumber: { $regex: q, $options: "i" } },
-    ];
+    const safeQ = escapeRegex(q);
+    andClauses.push({
+      $or: [
+        { notes: { $regex: safeQ, $options: "i" } },
+        { invoiceNumber: { $regex: safeQ, $options: "i" } },
+      ],
+    });
   }
 
   // Timeframe filter
@@ -213,11 +273,14 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
   if (timeframe === "30d") {
     const past30 = new Date(now);
     past30.setDate(now.getDate() - 30);
-    mongoQuery.issueDate = { $gte: past30 };
+    andClauses.push({ issueDate: { $gte: past30 } });
   } else if (timeframe === "this-month") {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    mongoQuery.issueDate = { $gte: startOfMonth };
+    andClauses.push({ issueDate: { $gte: startOfMonth } });
   }
+
+  const mongoQuery: Record<string, unknown> =
+    andClauses.length === 1 ? andClauses[0] : { $and: andClauses };
 
   // Sorting: recent by default, or by invoice number
   const sortOption: Record<string, 1 | -1> = {};
@@ -300,6 +363,16 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
       (inv.status !== "PAID" && inv.status !== "VOID" ? inv.total : 0)
     );
   }, 0);
+
+  const hasActiveFilters =
+    q.length > 0 ||
+    invoiceNumberFilter.length > 0 ||
+    statusFilter !== "ALL" ||
+    timeframe !== "all" ||
+    estateFilter.length > 0 ||
+    sortBy !== "recent";
+
+  const clearHref = "/app/invoices";
 
   return (
     <div className="space-y-8">
@@ -443,13 +516,26 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
             </select>
           </div>
 
-          <button
-            type="submit"
-            className="inline-flex items-center rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-white"
-          >
-            Apply filters
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              className="inline-flex items-center rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-white"
+            >
+              Apply filters
+            </button>
+            {hasActiveFilters ? (
+              <Link
+                href={clearHref}
+                className="inline-flex items-center rounded-md border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-900"
+              >
+                Clear
+              </Link>
+            ) : null}
+          </div>
         </form>
+        <p className="mt-3 text-[11px] text-slate-500">
+          Tip: Search matches invoice notes and invoice number. Use the Invoice # field for a more exact match.
+        </p>
       </section>
 
       {/* Summary cards */}

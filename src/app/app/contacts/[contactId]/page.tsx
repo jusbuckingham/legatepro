@@ -5,9 +5,9 @@ import { connectToDatabase } from "@/lib/db";
 import { Contact } from "@/models/Contact";
 
 type PageProps = {
-  params: Promise<{
+  params: {
     contactId: string;
-  }>;
+  };
 };
 
 type EstateRef = {
@@ -53,7 +53,7 @@ function formatRole(role?: string): string {
 }
 
 export default async function ContactDetailPage({ params }: PageProps) {
-  const { contactId } = await params;
+  const { contactId } = params;
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -70,14 +70,15 @@ export default async function ContactDetailPage({ params }: PageProps) {
   if (!contact) {
     notFound();
   }
-
+  const contactIdValue = String(contact._id ?? contactId);
+  const contactIdEncoded = encodeURIComponent(contactIdValue);
 
   const name = contact.name?.trim() || "Unnamed contact";
 
   const estates = (contact.estates ?? []).map((est, index) => {
     // If not populated, `est` may be a string id.
     if (typeof est === "string") {
-      const estId = est;
+      const estId = String(est);
       return {
         _id: estId,
         label: `Estate …${estId.slice(-6) || index + 1}`,
@@ -119,7 +120,7 @@ export default async function ContactDetailPage({ params }: PageProps) {
             Back to contacts
           </Link>
           <Link
-            href={`/app/contacts/${contactId}/edit`}
+            href={`/app/contacts/${contactIdEncoded}/edit`}
             className="rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400"
           >
             Edit contact
@@ -133,7 +134,16 @@ export default async function ContactDetailPage({ params }: PageProps) {
             Email
           </h2>
           <p className="mt-1 text-sm text-slate-100">
-            {contact.email || "—"}
+            {contact.email ? (
+              <a
+                href={`mailto:${contact.email}`}
+                className="text-sky-300 hover:text-sky-200"
+              >
+                {contact.email}
+              </a>
+            ) : (
+              "—"
+            )}
           </p>
         </div>
         <div>
@@ -141,7 +151,16 @@ export default async function ContactDetailPage({ params }: PageProps) {
             Phone
           </h2>
           <p className="mt-1 text-sm text-slate-100">
-            {contact.phone || "—"}
+            {contact.phone ? (
+              <a
+                href={`tel:${contact.phone}`}
+                className="text-sky-300 hover:text-sky-200"
+              >
+                {contact.phone}
+              </a>
+            ) : (
+              "—"
+            )}
           </p>
         </div>
         <div className="sm:col-span-2">
@@ -171,7 +190,7 @@ export default async function ContactDetailPage({ params }: PageProps) {
             {estates.map((est) => (
               <li key={est._id} className="flex items-center justify-between">
                 <Link
-                  href={`/app/estates/${est._id}`}
+                  href={`/app/estates/${encodeURIComponent(est._id)}`}
                   className="text-sky-400 hover:text-sky-300"
                 >
                   {est.label}
