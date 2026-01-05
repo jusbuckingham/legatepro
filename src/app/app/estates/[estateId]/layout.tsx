@@ -11,6 +11,9 @@ interface EstateLayoutProps {
 function getNavItems(estateId: string) {
   return [
     { label: "Overview", href: `/app/estates/${estateId}` },
+    { label: "Activity", href: `/app/estates/${estateId}/activity` },
+    { label: "Timeline", href: `/app/estates/${estateId}/timeline` },
+    { label: "__DIVIDER__", href: "#" },
     { label: "Tasks", href: `/app/estates/${estateId}/tasks` },
     { label: "Properties", href: `/app/estates/${estateId}/properties` },
     { label: "Documents", href: `/app/estates/${estateId}/documents` },
@@ -20,8 +23,6 @@ function getNavItems(estateId: string) {
     { label: "Rent", href: `/app/estates/${estateId}/rent` },
     { label: "Timecard", href: `/app/estates/${estateId}/time` },
     { label: "Invoices", href: `/app/estates/${estateId}/invoices` },
-    { label: "Activity", href: `/app/estates/${estateId}/activity` },
-    { label: "Timeline", href: `/app/estates/${estateId}/timeline` },
   ];
 }
 
@@ -44,6 +45,15 @@ export default function EstateLayout({ children }: EstateLayoutProps) {
 
           <nav className="mt-3 space-y-1 text-sm">
             {navItems.map((item) => {
+              if (item.label === "__DIVIDER__") {
+                return (
+                  <div
+                    key="divider"
+                    className="my-2 border-t border-slate-700/60"
+                  />
+                );
+              }
+
               const isActive =
                 pathname === item.href || pathname.startsWith(item.href + "/");
 

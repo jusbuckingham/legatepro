@@ -1,8 +1,7 @@
-
-
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 type EstateEvent = {
   id: string;
@@ -11,8 +10,8 @@ type EstateEvent = {
   type: string;
   summary: string;
   detail?: string | null;
-  meta?: Record<string, unknown>;
-  createdAt?: string | Date;
+  meta?: Record<string, unknown> | null;
+  createdAt?: string | Date | null;
 };
 
 type ActivityResponse = {
@@ -48,6 +47,38 @@ const TYPE_LABELS: Record<string, string> = {
   COLLABORATOR_REMOVED: "Collaborator removed",
   COLLABORATOR_ROLE_CHANGED: "Collaborator role changed",
 };
+
+function getMetaString(meta: Record<string, unknown> | null | undefined, key: string): string | null {
+  if (!meta) return null;
+  const v = meta[key];
+  if (typeof v === "string" && v.trim().length > 0) return v;
+  return null;
+}
+
+function buildEventHref(estateId: string, ev: EstateEvent): string | null {
+  const meta = ev.meta ?? null;
+
+  // Prefer explicit ids if present
+  const invoiceId = getMetaString(meta, "invoiceId") ?? getMetaString(meta, "entityId");
+  const taskId = getMetaString(meta, "taskId") ?? getMetaString(meta, "entityId");
+  const documentId = getMetaString(meta, "documentId") ?? getMetaString(meta, "entityId");
+  const noteId = getMetaString(meta, "noteId") ?? getMetaString(meta, "entityId");
+
+  const kind = (getMetaString(meta, "kind") ?? getMetaString(meta, "entityType") ?? "").toLowerCase();
+
+  if (kind === "invoice" && invoiceId) return `/app/estates/${estateId}/invoices/${encodeURIComponent(invoiceId)}`;
+  if (kind === "task" && taskId) return `/app/estates/${estateId}/tasks/${encodeURIComponent(taskId)}`;
+  if (kind === "document" && documentId) return `/app/estates/${estateId}/documents/${encodeURIComponent(documentId)}`;
+  if (kind === "note" && noteId) return `/app/estates/${estateId}/notes#${encodeURIComponent(noteId)}`;
+
+  // Type-based fallbacks
+  if (ev.type.startsWith("INVOICE_") && invoiceId) return `/app/estates/${estateId}/invoices/${encodeURIComponent(invoiceId)}`;
+  if (ev.type.startsWith("TASK_") && taskId) return `/app/estates/${estateId}/tasks/${encodeURIComponent(taskId)}`;
+  if (ev.type.startsWith("DOCUMENT_") && documentId) return `/app/estates/${estateId}/documents/${encodeURIComponent(documentId)}`;
+
+  // No link
+  return null;
+}
 
 export default function EstateActivityPage({
   params,
@@ -190,11 +221,6 @@ export default function EstateActivityPage({
     void fetchFirstPage();
   }, [fetchFirstPage]);
 
-  // Refetch when the filter changes
-  useEffect(() => {
-    void fetchFirstPage();
-  }, [typeFilter, fetchFirstPage]);
-
   const availableTypes = useMemo(() => {
     const set = new Set<string>();
     events.forEach((e) => set.add(e.type));
@@ -205,13 +231,24 @@ export default function EstateActivityPage({
     <div className="mx-auto w-full max-w-4xl px-4 py-8">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Activity</h1>
+          <p className="text-xs text-neutral-500">
+            <Link href={`/app/estates/${encodeURIComponent(estateId)}`} className="hover:underline">
+              ← Back to estate
+            </Link>
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold">Activity</h1>
           <p className="mt-1 text-sm text-neutral-500">
             A timeline of actions taken on this estate.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
+          <Link
+            href={`/app/estates/${encodeURIComponent(estateId)}/timeline`}
+            className="h-10 rounded-md border border-neutral-300 bg-white px-4 text-sm text-neutral-900 hover:bg-neutral-50"
+          >
+            Timeline
+          </Link>
           <label className="text-sm text-neutral-600">Filter</label>
           <select
             value={typeFilter}
@@ -292,22 +329,30 @@ export default function EstateActivityPage({
           <div className="divide-y divide-neutral-200">
             {events.map((ev) => {
               const label = TYPE_LABELS[ev.type] ?? ev.type;
-              const when = formatWhen(ev.createdAt);
+              const when = formatWhen(ev.createdAt ?? undefined);
+              const href = buildEventHref(estateId, ev);
 
               return (
                 <div key={ev.id} className="px-4 py-3">
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
-                      <div className="text-sm font-medium text-neutral-900">
-                        {label}
-                      </div>
-                      <div className="mt-0.5 text-sm text-neutral-700">
-                        {ev.summary}
-                      </div>
+                      <div className="text-sm font-medium text-neutral-900">{label}</div>
+                      <div className="mt-0.5 text-sm text-neutral-700">{ev.summary}</div>
                     </div>
-                    {when ? (
-                      <div className="shrink-0 text-xs text-neutral-500">{when}</div>
-                    ) : null}
+
+                    <div className="flex items-center gap-3">
+                      {href ? (
+                        <Link
+                          href={href}
+                          className="text-xs font-medium text-blue-600 hover:underline"
+                        >
+                          Open
+                        </Link>
+                      ) : null}
+                      {when ? (
+                        <div className="shrink-0 text-xs text-neutral-500">{when}</div>
+                      ) : null}
+                    </div>
                   </div>
 
                   {ev.detail ? (
