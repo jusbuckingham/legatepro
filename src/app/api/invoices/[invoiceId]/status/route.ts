@@ -3,6 +3,7 @@ import { Types } from "mongoose";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
+import { getEstateAccess } from "@/lib/estateAccess";
 import { Invoice, type InvoiceStatus } from "@/models/Invoice";
 import { Estate } from "@/models/Estate";
 import { logEstateEvent } from "@/lib/estateEvents";
@@ -24,9 +25,6 @@ function isValidObjectId(id: string) {
   return Types.ObjectId.isValid(id);
 }
 
-function toObjectId(id: string) {
-  return Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : null;
-}
 
 function idToString(value: unknown): string | null {
   if (value == null) return null;
@@ -101,55 +99,22 @@ export async function PATCH(req: Request, ctx: RouteContext): Promise<NextRespon
 
   await connectToDatabase();
 
-  const userObjectId = toObjectId(session.user.id);
+  const invoice = await Invoice.findById(new Types.ObjectId(invoiceId));
 
-  const estateAccessOr: Record<string, unknown>[] = [
-    { ownerId: session.user.id },
-    ...(userObjectId ? [{ ownerId: userObjectId }] : []),
-
-    // Common collaborator/member patterns (safe even if fields don't exist)
-    { collaboratorIds: session.user.id },
-    ...(userObjectId ? [{ collaboratorIds: userObjectId }] : []),
-    { collaborators: session.user.id },
-    ...(userObjectId ? [{ collaborators: userObjectId }] : []),
-    { memberIds: session.user.id },
-    ...(userObjectId ? [{ memberIds: userObjectId }] : []),
-    { members: session.user.id },
-    ...(userObjectId ? [{ members: userObjectId }] : []),
-    { userIds: session.user.id },
-    ...(userObjectId ? [{ userIds: userObjectId }] : []),
-  ];
-
-  const accessibleEstates = await Estate.find({ $or: estateAccessOr })
-    .select("_id")
-    .lean()
-    .exec();
-
-  const allowedEstateIds = accessibleEstates
-    .map((e) => idToString((e as { _id?: unknown })._id))
-    .filter((v): v is string => Boolean(v));
-
-  if (allowedEstateIds.length === 0) {
+  if (!invoice) {
     return NextResponse.json(
       { ok: false, error: "Invoice not found" },
       { status: 404, headers: NO_STORE_HEADERS }
     );
   }
 
-  const allowedEstateObjectIds = allowedEstateIds
-    .map((id) => toObjectId(id))
-    .filter((v): v is Types.ObjectId => Boolean(v));
-
-  const estateIdQuery = {
-    $in: [...allowedEstateIds, ...allowedEstateObjectIds],
-  };
-
-  const invoice = await Invoice.findOne({
-    _id: new Types.ObjectId(invoiceId),
-    estateId: estateIdQuery,
+  const access = await getEstateAccess({
+    estateId: String(invoice.estateId),
+    userId: session.user.id,
+    atLeastRole: "EDITOR",
   });
 
-  if (!invoice) {
+  if (!access || !access.canEdit) {
     return NextResponse.json(
       { ok: false, error: "Invoice not found" },
       { status: 404, headers: NO_STORE_HEADERS }

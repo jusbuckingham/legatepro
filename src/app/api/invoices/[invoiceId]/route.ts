@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
-import { Estate } from "@/models/Estate";
 import { auth } from "@/lib/auth";
+import { getEstateAccess } from "@/lib/estateAccess";
 
 type RouteParams = {
   params: Promise<{
@@ -51,65 +51,6 @@ function coerceStatus(value: unknown): InvoiceStatus | undefined {
   return undefined;
 }
 
-function toObjectId(id: string) {
-  return mongoose.Types.ObjectId.isValid(id)
-    ? new mongoose.Types.ObjectId(id)
-    : null;
-}
-
-function idToString(value: unknown): string | null {
-  if (value == null) return null;
-  if (typeof value === "string") return value;
-  if (value instanceof mongoose.Types.ObjectId) return value.toString();
-
-  try {
-    const str = String(value);
-    return str.length > 0 ? str : null;
-  } catch {
-    return null;
-  }
-}
-
-async function getAccessibleEstateIdCandidates(userId: string) {
-  const userObjectId = toObjectId(userId);
-
-  const estateAccessOr: Record<string, unknown>[] = [
-    { ownerId: userId },
-    ...(userObjectId ? [{ ownerId: userObjectId }] : []),
-
-    // Common collaborator/member patterns (safe even if fields don't exist)
-    { collaboratorIds: userId },
-    ...(userObjectId ? [{ collaboratorIds: userObjectId }] : []),
-    { collaborators: userId },
-    ...(userObjectId ? [{ collaborators: userObjectId }] : []),
-    { memberIds: userId },
-    ...(userObjectId ? [{ memberIds: userObjectId }] : []),
-    { members: userId },
-    ...(userObjectId ? [{ members: userObjectId }] : []),
-    { userIds: userId },
-    ...(userObjectId ? [{ userIds: userObjectId }] : []),
-  ];
-
-  const accessibleEstates = await Estate.find({ $or: estateAccessOr })
-    .select("_id")
-    .lean()
-    .exec();
-
-  const allowedEstateIds = accessibleEstates
-    .map((e) => idToString((e as { _id?: unknown })._id))
-    .filter((v): v is string => Boolean(v));
-
-  const allowedEstateObjectIds = allowedEstateIds
-    .map((id) => toObjectId(id))
-    .filter((v): v is mongoose.Types.ObjectId => Boolean(v));
-
-  return {
-    allowedEstateIds,
-    allowedEstateObjectIds,
-    estateIdQuery: { $in: [...allowedEstateIds, ...allowedEstateObjectIds] },
-  };
-}
-
 /**
  * GET: return a single invoice (used by edit UI / debugging)
  */
@@ -123,20 +64,27 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 
   const { invoiceId } = await params;
 
-  const { estateIdQuery } = await getAccessibleEstateIdCandidates(session.user.id);
-
   const invoiceObjectId = mongoose.Types.ObjectId.isValid(invoiceId)
     ? new mongoose.Types.ObjectId(invoiceId)
     : null;
 
   const invoice = await Invoice.findOne({
     _id: invoiceObjectId ?? invoiceId,
-    estateId: estateIdQuery,
   })
     .lean()
     .exec();
 
   if (!invoice) {
+    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+  }
+
+  const access = await getEstateAccess({
+    estateId: String(invoice.estateId),
+    userId: session.user.id,
+    atLeastRole: "VIEWER",
+  });
+
+  if (!access) {
     return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
   }
 
@@ -292,16 +240,41 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
   updateDoc.totalAmount = subtotalCents;
 
   try {
-    const { estateIdQuery } = await getAccessibleEstateIdCandidates(session.user.id);
-
     const invoiceObjectId = mongoose.Types.ObjectId.isValid(invoiceId)
       ? new mongoose.Types.ObjectId(invoiceId)
       : null;
 
+    const existing = await Invoice.findOne({
+      _id: invoiceObjectId ?? invoiceId,
+    })
+      .select("_id estateId")
+      .lean()
+      .exec();
+
+    if (!existing) {
+      return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+    }
+
+    const access = await getEstateAccess({
+      estateId: String(existing.estateId),
+      userId: session.user.id,
+      atLeastRole: "EDITOR",
+    });
+
+    if (!access || !access.canEdit) {
+      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+    }
+
+    const estateIdStr = String(existing.estateId);
+    const estateObjectId = mongoose.Types.ObjectId.isValid(estateIdStr)
+      ? new mongoose.Types.ObjectId(estateIdStr)
+      : null;
+    const estateIdCandidates = [estateIdStr, estateObjectId].filter(Boolean);
+
     const updated: unknown = await Invoice.findOneAndUpdate(
       {
         _id: invoiceObjectId ?? invoiceId,
-        estateId: estateIdQuery,
+        estateId: { $in: estateIdCandidates },
       },
       { $set: updateDoc },
       { new: true, runValidators: true },
@@ -348,15 +321,40 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
 
   const { invoiceId } = await params;
 
-  const { estateIdQuery } = await getAccessibleEstateIdCandidates(session.user.id);
-
   const invoiceObjectId = mongoose.Types.ObjectId.isValid(invoiceId)
     ? new mongoose.Types.ObjectId(invoiceId)
     : null;
 
+  const existing = await Invoice.findOne({
+    _id: invoiceObjectId ?? invoiceId,
+  })
+    .select("_id estateId")
+    .lean()
+    .exec();
+
+  if (!existing) {
+    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+  }
+
+  const access = await getEstateAccess({
+    estateId: String(existing.estateId),
+    userId: session.user.id,
+    atLeastRole: "EDITOR",
+  });
+
+  if (!access || !access.canEdit) {
+    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+  }
+
+  const estateIdStr = String(existing.estateId);
+  const estateObjectId = mongoose.Types.ObjectId.isValid(estateIdStr)
+    ? new mongoose.Types.ObjectId(estateIdStr)
+    : null;
+  const estateIdCandidates = [estateIdStr, estateObjectId].filter(Boolean);
+
   const deleted = await Invoice.findOneAndDelete({
     _id: invoiceObjectId ?? invoiceId,
-    estateId: estateIdQuery,
+    estateId: { $in: estateIdCandidates },
   })
     .lean()
     .exec();

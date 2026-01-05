@@ -4,6 +4,7 @@ import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
 import { Estate } from "@/models/Estate";
 import { auth } from "@/lib/auth";
+import { buildEstateAccessOr, getEstateAccess } from "@/lib/estateAccess";
 import { logEstateEvent } from "@/lib/estateEvents";
 import { WorkspaceSettings } from "@/models/WorkspaceSettings";
 
@@ -54,7 +55,6 @@ function idToString(value: unknown): string | null {
   if (typeof value === "string") return value;
   if (value instanceof mongoose.Types.ObjectId) return value.toString();
 
-  // Fallback for other id-like objects
   try {
     const str = String(value);
     return str.length > 0 ? str : null;
@@ -66,34 +66,14 @@ function idToString(value: unknown): string | null {
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json(
-      { ok: false, error: "Unauthorized" },
-      { status: 401 },
-    );
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   await connectToDatabase();
 
-  const userObjectId = toObjectId(session.user.id);
-
-  const estateAccessOr: Record<string, unknown>[] = [
-    { ownerId: session.user.id },
-    ...(userObjectId ? [{ ownerId: userObjectId }] : []),
-
-    // Common collaborator/member patterns (safe even if fields don't exist)
-    { collaboratorIds: session.user.id },
-    ...(userObjectId ? [{ collaboratorIds: userObjectId }] : []),
-    { collaborators: session.user.id },
-    ...(userObjectId ? [{ collaborators: userObjectId }] : []),
-    { memberIds: session.user.id },
-    ...(userObjectId ? [{ memberIds: userObjectId }] : []),
-    { members: session.user.id },
-    ...(userObjectId ? [{ members: userObjectId }] : []),
-    { userIds: session.user.id },
-    ...(userObjectId ? [{ userIds: userObjectId }] : []),
-  ];
-
-  const accessibleEstates = await Estate.find({ $or: estateAccessOr })
+  const accessibleEstates = await Estate.find({
+    $or: buildEstateAccessOr(session.user.id),
+  })
     .select("_id")
     .lean()
     .exec();
@@ -120,13 +100,18 @@ export async function GET(req: NextRequest) {
   const sort = searchParams.get("sort") ?? "issueDateDesc";
 
   if (estateId) {
-    const estateObjectId = toObjectId(estateId);
-    const candidates = [estateId, estateObjectId].filter(Boolean);
+    const access = await getEstateAccess({
+      estateId,
+      userId: session.user.id,
+      atLeastRole: "VIEWER",
+    });
 
-    const canAccess = allowedEstateIds.includes(estateId);
-    if (!canAccess) {
+    if (!access) {
       return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
+
+    const estateObjectId = toObjectId(estateId);
+    const candidates = [estateId, estateObjectId].filter(Boolean);
 
     query.estateId = { $in: candidates };
   }
@@ -136,20 +121,12 @@ export async function GET(req: NextRequest) {
   }
 
   const sortOption: Record<string, 1 | -1> = {};
-  if (sort === "issueDateAsc") {
-    sortOption.issueDate = 1;
-  } else if (sort === "dueDateAsc") {
-    sortOption.dueDate = 1;
-  } else if (sort === "dueDateDesc") {
-    sortOption.dueDate = -1;
-  } else if (sort === "invoiceNumberAsc") {
-    sortOption.invoiceNumber = 1;
-  } else if (sort === "invoiceNumberDesc") {
-    sortOption.invoiceNumber = -1;
-  } else {
-    // Default sort: newest first by issue date
-    sortOption.issueDate = -1;
-  }
+  if (sort === "issueDateAsc") sortOption.issueDate = 1;
+  else if (sort === "dueDateAsc") sortOption.dueDate = 1;
+  else if (sort === "dueDateDesc") sortOption.dueDate = -1;
+  else if (sort === "invoiceNumberAsc") sortOption.invoiceNumber = 1;
+  else if (sort === "invoiceNumberDesc") sortOption.invoiceNumber = -1;
+  else sortOption.issueDate = -1;
 
   const invoices = await Invoice.find(query).sort(sortOption).lean().exec();
 
@@ -171,27 +148,19 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json(
-      { ok: false, error: "Unauthorized" },
-      { status: 401 },
-    );
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   await connectToDatabase();
 
-  // For simple form submissions, we may only get a single "amount" value.
-  // Track it separately so we can set subtotal/totalAmount without forcing lineItems.
   let amountFromFormCents = 0;
-
   const contentType = req.headers.get("content-type") ?? "";
 
   let body: CreateInvoicePayload;
 
   if (contentType.includes("application/json")) {
-    // JSON payload – assume the editor will send proper lineItems and/or totals.
     body = (await req.json()) as CreateInvoicePayload;
   } else {
-    // Handle standard form submissions (e.g., from the estate-scoped New Invoice page)
     const form = await req.formData();
 
     const estateId = form.get("estateId")?.toString() ?? "";
@@ -207,9 +176,6 @@ export async function POST(req: NextRequest) {
       form.get("totalAmountCents")?.toString() ??
       undefined;
 
-    // For schema-backed invoices, we don't want to create partial line items here
-    // (they would fail validation because amount/rate/label/type are required).
-    // Instead, capture a single total amount in cents and let lineItems be empty.
     const lineItems: CreateInvoicePayload["lineItems"] = [];
 
     if (typeof amountRaw === "string" && amountRaw.trim().length > 0) {
@@ -220,8 +186,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Fallback: scan all form fields for something that looks like an amount
-    // whose name includes "amount" (case-insensitive).
     if (amountFromFormCents === 0) {
       for (const [key, value] of form.entries()) {
         if (!value) continue;
@@ -252,15 +216,7 @@ export async function POST(req: NextRequest) {
       status = undefined;
     }
 
-    body = {
-      estateId,
-      issueDate,
-      dueDate,
-      notes,
-      status,
-      currency,
-      lineItems,
-    };
+    body = { estateId, issueDate, dueDate, notes, status, currency, lineItems };
   }
 
   const {
@@ -274,70 +230,44 @@ export async function POST(req: NextRequest) {
   } = body;
 
   if (!estateId) {
-    return NextResponse.json(
-      { ok: false, error: "estateId is required" },
-      { status: 400 },
-    );
+    return NextResponse.json({ ok: false, error: "estateId is required" }, { status: 400 });
   }
 
   const estateObjectId = toObjectId(estateId);
   if (!estateObjectId) {
-    return NextResponse.json(
-      { ok: false, error: "Invalid estateId" },
-      { status: 400 },
-    );
+    return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
   }
 
-  const userObjectId = toObjectId(session.user.id);
+  const access = await getEstateAccess({
+    estateId,
+    userId: session.user.id,
+    atLeastRole: "EDITOR",
+  });
 
-  const estateAccessOr: Record<string, unknown>[] = [
-    { ownerId: session.user.id },
-    ...(userObjectId ? [{ ownerId: userObjectId }] : []),
+  if (!access || !access.canEdit) {
+    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+  }
 
-    { collaboratorIds: session.user.id },
-    ...(userObjectId ? [{ collaboratorIds: userObjectId }] : []),
-    { collaborators: session.user.id },
-    ...(userObjectId ? [{ collaborators: userObjectId }] : []),
-    { memberIds: session.user.id },
-    ...(userObjectId ? [{ memberIds: userObjectId }] : []),
-    { members: session.user.id },
-    ...(userObjectId ? [{ members: userObjectId }] : []),
-    { userIds: session.user.id },
-    ...(userObjectId ? [{ userIds: userObjectId }] : []),
-  ];
-
-  const estateDoc = await Estate.findOne({
-    _id: estateObjectId,
-    $or: estateAccessOr,
-  })
+  const estateDoc = await Estate.findById(estateObjectId)
     .select("_id ownerId")
     .lean()
     .exec();
 
   if (!estateDoc) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+    return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
   }
 
   const ownerIdString = idToString((estateDoc as { ownerId?: unknown }).ownerId);
   if (!ownerIdString) {
-    return NextResponse.json(
-      { ok: false, error: "Invalid estate owner" },
-      { status: 400 },
-    );
+    return NextResponse.json({ ok: false, error: "Invalid estate owner" }, { status: 400 });
   }
 
   const ownerObjectId = toObjectId(ownerIdString);
   if (!ownerObjectId) {
-    return NextResponse.json(
-      { ok: false, error: "Invalid estate owner" },
-      { status: 400 },
-    );
+    return NextResponse.json({ ok: false, error: "Invalid estate owner" }, { status: 400 });
   }
 
-  // Load workspace settings for defaults (WorkspaceSettings.ownerId is a string in this project)
-  const settings = await WorkspaceSettings.findOne({
-    ownerId: ownerIdString,
-  })
+  const settings = await WorkspaceSettings.findOne({ ownerId: ownerIdString })
     .lean()
     .catch(() => null as unknown as null);
 
@@ -347,12 +277,9 @@ export async function POST(req: NextRequest) {
       : undefined) ?? (settings?.defaultCurrency ?? "USD");
 
   const defaultRateCents =
-    typeof settings?.defaultHourlyRateCents === "number"
-      ? settings.defaultHourlyRateCents
-      : 0;
+    typeof settings?.defaultHourlyRateCents === "number" ? settings.defaultHourlyRateCents : 0;
 
-  const notesToUse =
-    typeof notes === "string" && notes.trim().length > 0 ? notes : undefined;
+  const notesToUse = typeof notes === "string" && notes.trim().length > 0 ? notes : undefined;
 
   let resolvedDueDate: Date | string | undefined = dueDate;
 
@@ -372,32 +299,20 @@ export async function POST(req: NextRequest) {
                   ? 0
                   : 30;
 
-        if (days > 0) {
-          resolvedDueDate = new Date(
-            base.getTime() + days * 24 * 60 * 60 * 1000,
-          );
-        } else {
-          resolvedDueDate = base;
-        }
+        resolvedDueDate =
+          days > 0 ? new Date(base.getTime() + days * 24 * 60 * 60 * 1000) : base;
       }
     } catch {
-      // if anything goes wrong, leave resolvedDueDate as-is
+      // leave as-is
     }
   }
 
-  // Compute subtotal/total from line items if available (supports both legacy and new editor shapes).
   const subtotalFromItems = Array.isArray(lineItems)
     ? lineItems.reduce((acc, item) => {
         const quantity = typeof item.quantity === "number" ? item.quantity : 0;
-
-        const unitPriceCents =
-          typeof item.unitPriceCents === "number" ? item.unitPriceCents : 0;
-
-        const amountCentsField =
-          typeof item.amountCents === "number" ? item.amountCents : 0;
-
+        const unitPriceCents = typeof item.unitPriceCents === "number" ? item.unitPriceCents : 0;
+        const amountCentsField = typeof item.amountCents === "number" ? item.amountCents : 0;
         const amountField = typeof item.amount === "number" ? item.amount : 0;
-
         const rateField = typeof item.rate === "number" ? item.rate : 0;
 
         const explicitAmount =
@@ -410,39 +325,22 @@ export async function POST(req: NextRequest) {
               : 0;
 
         let effectiveUnit = 0;
+        if (unitPriceCents > 0) effectiveUnit = unitPriceCents;
+        else if (rateField > 0) {
+          effectiveUnit = rateField > 10_000 ? Math.round(rateField) : Math.round(rateField * 100);
+        } else if (defaultRateCents > 0) effectiveUnit = defaultRateCents;
 
-        if (unitPriceCents > 0) {
-          effectiveUnit = unitPriceCents;
-        } else if (rateField > 0) {
-          effectiveUnit =
-            rateField > 10_000
-              ? Math.round(rateField)
-              : Math.round(rateField * 100);
-        } else if (defaultRateCents > 0) {
-          effectiveUnit = defaultRateCents;
-        }
-
-        const derived =
-          quantity > 0 && effectiveUnit > 0 ? quantity * effectiveUnit : 0;
-
+        const derived = quantity > 0 && effectiveUnit > 0 ? quantity * effectiveUnit : 0;
         return acc + (explicitAmount || derived);
       }, 0)
     : 0;
 
-  // Prefer explicit line-item-derived subtotal when available; otherwise fall back
-  // to the simple amount captured from the estate-scoped form.
   let safeAmount = subtotalFromItems;
-  if (safeAmount === 0 && amountFromFormCents > 0) {
-    safeAmount = amountFromFormCents;
-  }
+  if (safeAmount === 0 && amountFromFormCents > 0) safeAmount = amountFromFormCents;
 
-  // 🔢 Auto-generate a human-friendly invoice number per owner.
-  // Best-effort, non-transactional sequence suitable for MVP.
   let invoiceNumber: string | undefined;
   try {
-    const lastInvoiceForOwner = await Invoice.findOne({
-      ownerId: ownerObjectId,
-    })
+    const lastInvoiceForOwner = await Invoice.findOne({ ownerId: ownerObjectId })
       .sort({ createdAt: -1 })
       .lean()
       .exec();
@@ -452,17 +350,13 @@ export async function POST(req: NextRequest) {
       const match = lastInvoiceForOwner.invoiceNumber.match(/(\d+)$/);
       if (match) {
         const parsed = Number.parseInt(match[1], 10);
-        if (Number.isFinite(parsed) && parsed > 0) {
-          nextSeq = parsed + 1;
-        }
+        if (Number.isFinite(parsed) && parsed > 0) nextSeq = parsed + 1;
       }
     }
 
     invoiceNumber = `INV-${nextSeq.toString().padStart(6, "0")}`;
   } catch {
-    // Fallback: timestamp-based suffix if something goes wrong.
-    const fallback = Date.now().toString().slice(-6);
-    invoiceNumber = `INV-${fallback}`;
+    invoiceNumber = `INV-${Date.now().toString().slice(-6)}`;
   }
 
   const invoiceDoc = await Invoice.create({
@@ -479,7 +373,6 @@ export async function POST(req: NextRequest) {
     invoiceNumber,
   });
 
-  // Log estate event for the new invoice (EstateEvent.estateId is stored as a string)
   try {
     await logEstateEvent({
       estateId: String(estateObjectId),
@@ -488,10 +381,9 @@ export async function POST(req: NextRequest) {
       summary: "Invoice created",
     });
   } catch {
-    // Don't block invoice creation if event logging fails
+    // don't block
   }
 
-  // Redirect back to the app UI after create (for form submits) while preserving JSON for XHR/SPA.
   const acceptHeader = req.headers.get("accept") ?? "";
   const isHtmlRequest = acceptHeader.includes("text/html");
 

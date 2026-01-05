@@ -126,8 +126,7 @@ function arrayContainsUserId(arr: unknown[] | undefined, userId: string): boolea
   return arr.some((v) => toIdString(v) === userId);
 }
 
-function buildEstateAccessOr(userId: string): Record<string, unknown>[] {
-  const userObjectId = toObjectId(userId);
+export function buildEstateAccessOr(userId: string): Record<string, unknown>[] {  const userObjectId = toObjectId(userId);
   return [
     { ownerId: userId },
     ...(userObjectId ? [{ ownerId: userObjectId }] : []),
