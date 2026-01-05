@@ -29,7 +29,8 @@ function getNavItems(estateId: string) {
 export default function EstateLayout({ children }: EstateLayoutProps) {
   const { estateId } = useParams<{ estateId: string }>();
   const pathname = usePathname();
-  const navItems = getNavItems(estateId);
+  const safeEstateId = encodeURIComponent(estateId ?? "");
+  const navItems = getNavItems(safeEstateId);
 
   return (
     <div className="flex flex-col gap-4 md:flex-row md:gap-6">
@@ -54,8 +55,11 @@ export default function EstateLayout({ children }: EstateLayoutProps) {
                 );
               }
 
-              const isActive =
-                pathname === item.href || pathname.startsWith(item.href + "/");
+              const isOverview = item.href === `/app/estates/${safeEstateId}`;
+
+              const isActive = isOverview
+                ? pathname === item.href
+                : pathname === item.href || pathname.startsWith(item.href + "/");
 
               const baseClasses =
                 "flex items-center justify-between rounded-md px-2 py-1.5 transition-colors";

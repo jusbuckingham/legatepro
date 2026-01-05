@@ -56,6 +56,7 @@ function getMetaString(meta: Record<string, unknown> | null | undefined, key: st
 }
 
 function buildEventHref(estateId: string, ev: EstateEvent): string | null {
+  const safeEstateId = encodeURIComponent(estateId);
   const meta = ev.meta ?? null;
 
   // Prefer explicit ids if present
@@ -66,15 +67,15 @@ function buildEventHref(estateId: string, ev: EstateEvent): string | null {
 
   const kind = (getMetaString(meta, "kind") ?? getMetaString(meta, "entityType") ?? "").toLowerCase();
 
-  if (kind === "invoice" && invoiceId) return `/app/estates/${estateId}/invoices/${encodeURIComponent(invoiceId)}`;
-  if (kind === "task" && taskId) return `/app/estates/${estateId}/tasks/${encodeURIComponent(taskId)}`;
-  if (kind === "document" && documentId) return `/app/estates/${estateId}/documents/${encodeURIComponent(documentId)}`;
-  if (kind === "note" && noteId) return `/app/estates/${estateId}/notes#${encodeURIComponent(noteId)}`;
+  if (kind === "invoice" && invoiceId) return `/app/estates/${safeEstateId}/invoices/${encodeURIComponent(invoiceId)}`;
+  if (kind === "task" && taskId) return `/app/estates/${safeEstateId}/tasks/${encodeURIComponent(taskId)}`;
+  if (kind === "document" && documentId) return `/app/estates/${safeEstateId}/documents/${encodeURIComponent(documentId)}`;
+  if (kind === "note" && noteId) return `/app/estates/${safeEstateId}/notes#${encodeURIComponent(noteId)}`;
 
   // Type-based fallbacks
-  if (ev.type.startsWith("INVOICE_") && invoiceId) return `/app/estates/${estateId}/invoices/${encodeURIComponent(invoiceId)}`;
-  if (ev.type.startsWith("TASK_") && taskId) return `/app/estates/${estateId}/tasks/${encodeURIComponent(taskId)}`;
-  if (ev.type.startsWith("DOCUMENT_") && documentId) return `/app/estates/${estateId}/documents/${encodeURIComponent(documentId)}`;
+  if (ev.type.startsWith("INVOICE_") && invoiceId) return `/app/estates/${safeEstateId}/invoices/${encodeURIComponent(invoiceId)}`;
+  if (ev.type.startsWith("TASK_") && taskId) return `/app/estates/${safeEstateId}/tasks/${encodeURIComponent(taskId)}`;
+  if (ev.type.startsWith("DOCUMENT_") && documentId) return `/app/estates/${safeEstateId}/documents/${encodeURIComponent(documentId)}`;
 
   // No link
   return null;

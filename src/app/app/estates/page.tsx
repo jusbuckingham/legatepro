@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
+import { EstateEvent } from "@/models/EstateEvent";
 
 type EstateListItem = {
   _id: string | { toString(): string };
@@ -15,7 +16,21 @@ type EstateListItem = {
   createdAt?: string | Date;
   county?: string;
   jurisdiction?: string;
+  lastActivityAt?: string | Date | null;
+  lastActivitySummary?: string | null;
+  lastActivityType?: string | null;
 };
+
+function formatShortDate(value: string | Date | null | undefined): string {
+  if (!value) return "—";
+  try {
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  } catch {
+    return "—";
+  }
+}
 
 async function getEstates(userId: string): Promise<EstateListItem[]> {
   await connectToDatabase();
@@ -27,7 +42,47 @@ async function getEstates(userId: string): Promise<EstateListItem[]> {
     .sort({ createdAt: -1 })
     .lean();
 
-  return estates as EstateListItem[];
+  const estateItems = estates as EstateListItem[];
+
+  const estateIds = estateItems
+    .map((e) => (typeof e._id === "string" ? e._id : e._id?.toString?.() ?? ""))
+    .filter((id): id is string => Boolean(id));
+
+  if (estateIds.length === 0) return estateItems;
+
+  // EstateEvent.estateId is stored as a string in this project
+  const events = await EstateEvent.find(
+    { estateId: { $in: estateIds } },
+    { estateId: 1, createdAt: 1, summary: 1, type: 1 }
+  )
+    .sort({ createdAt: -1 })
+    .lean()
+    .exec();
+
+  const latestByEstateId = new Map<string, { createdAt?: string | Date | null; summary?: string | null; type?: string | null }>();
+
+  for (const ev of events) {
+    const evEstateId = typeof (ev as { estateId?: unknown }).estateId === "string" ? (ev as { estateId: string }).estateId : null;
+    if (!evEstateId) continue;
+    if (latestByEstateId.has(evEstateId)) continue;
+
+    latestByEstateId.set(evEstateId, {
+      createdAt: (ev as { createdAt?: string | Date | null }).createdAt ?? null,
+      summary: (ev as { summary?: string | null }).summary ?? null,
+      type: (ev as { type?: string | null }).type ?? null,
+    });
+  }
+
+  return estateItems.map((e) => {
+    const id = typeof e._id === "string" ? e._id : e._id?.toString?.() ?? "";
+    const latest = latestByEstateId.get(id);
+    return {
+      ...e,
+      lastActivityAt: latest?.createdAt ?? null,
+      lastActivitySummary: latest?.summary ?? null,
+      lastActivityType: latest?.type ?? null,
+    };
+  });
 }
 
 export default async function EstatesPage() {
@@ -127,21 +182,8 @@ export default async function EstatesPage() {
               const caseNumber = estate.caseNumber || estate.courtCaseNumber || "—";
               const status = estate.status || "Draft";
 
-              let createdLabel = "—";
-              if (estate.createdAt) {
-                try {
-                  const d = new Date(estate.createdAt);
-                  if (!Number.isNaN(d.getTime())) {
-                    createdLabel = d.toLocaleDateString("en-US", {
-                      year: "numeric",
-                      month: "short",
-                      day: "numeric",
-                    });
-                  }
-                } catch {
-                  // keep "—"
-                }
-              }
+              const createdLabel = formatShortDate(estate.createdAt);
+              const lastActivityLabel = formatShortDate(estate.lastActivityAt);
 
               return (
                 <div key={id} className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 shadow-sm transition hover:bg-slate-900/30">
@@ -154,6 +196,14 @@ export default async function EstatesPage() {
                       <p className="mt-1 text-xs text-slate-400">
                         <span className="text-slate-500">Created:</span> {createdLabel}
                       </p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        <span className="text-slate-500">Last activity:</span> {lastActivityLabel}
+                      </p>
+                      {estate.lastActivitySummary ? (
+                        <p className="mt-1 line-clamp-1 text-xs text-slate-500">
+                          {estate.lastActivitySummary}
+                        </p>
+                      ) : null}
                       {estate.county || estate.jurisdiction ? (
                         <p className="mt-1 text-xs text-slate-500">{estate.county || estate.jurisdiction}</p>
                       ) : null}
@@ -183,6 +233,12 @@ export default async function EstatesPage() {
                     >
                       Documents
                     </Link>
+                    <Link
+                      href={`/app/estates/${id}/activity`}
+                      className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/40"
+                    >
+                      Activity
+                    </Link>
                   </div>
                 </div>
               );
@@ -198,6 +254,7 @@ export default async function EstatesPage() {
                   <th className="px-4 py-3 font-medium">Case #</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Created</th>
+                  <th className="px-4 py-3 font-medium">Last activity</th>
                   <th className="px-4 py-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
@@ -208,21 +265,8 @@ export default async function EstatesPage() {
                   const caseNumber = estate.caseNumber || estate.courtCaseNumber || "—";
                   const status = estate.status || "Draft";
 
-                  let createdLabel = "—";
-                  if (estate.createdAt) {
-                    try {
-                      const d = new Date(estate.createdAt);
-                      if (!Number.isNaN(d.getTime())) {
-                        createdLabel = d.toLocaleDateString("en-US", {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                        });
-                      }
-                    } catch {
-                      // keep "—"
-                    }
-                  }
+                  const createdLabel = formatShortDate(estate.createdAt);
+                  const lastActivityLabel = formatShortDate(estate.lastActivityAt);
 
                   return (
                     <tr key={id} className="border-t border-slate-900/80 hover:bg-slate-900/40">
@@ -241,6 +285,16 @@ export default async function EstatesPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 align-middle text-sm text-slate-300">{createdLabel}</td>
+                      <td className="px-4 py-3 align-middle">
+                        <div className="flex flex-col">
+                          <span className="text-sm text-slate-300">{lastActivityLabel}</span>
+                          {estate.lastActivitySummary ? (
+                            <span className="mt-0.5 line-clamp-1 text-[11px] text-slate-500">
+                              {estate.lastActivitySummary}
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
                       <td className="px-4 py-3 align-middle text-right text-xs">
                         <div className="inline-flex items-center gap-2">
                           <Link
@@ -260,6 +314,12 @@ export default async function EstatesPage() {
                             className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950/40 px-3 py-1 text-[11px] font-medium text-slate-200 hover:bg-slate-900"
                           >
                             Documents
+                          </Link>
+                          <Link
+                            href={`/app/estates/${id}/activity`}
+                            className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950/40 px-3 py-1 text-[11px] font-medium text-slate-200 hover:bg-slate-900"
+                          >
+                            Activity
                           </Link>
                         </div>
                       </td>

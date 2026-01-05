@@ -38,6 +38,7 @@ async function loadEstate(estateId: string): Promise<EstateSettingsShape | null>
 
 export default async function EstateSettingsPage({ params }: PageProps) {
   const { estateId } = await params;
+  const safeEstateId = encodeURIComponent(estateId);
 
   const estate = await loadEstate(estateId);
 
@@ -123,7 +124,7 @@ export default async function EstateSettingsPage({ params }: PageProps) {
           </p>
           <div className="mt-3">
             <Link
-              href={`/app/estates/${estateId}/settings/collaborators`}
+              href={`/app/estates/${safeEstateId}/settings/collaborators`}
               className="text-sm font-medium text-foreground underline"
             >
               Collaborators
