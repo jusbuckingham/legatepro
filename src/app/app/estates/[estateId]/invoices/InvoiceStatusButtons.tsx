@@ -1,17 +1,11 @@
-'use client';
+"use client";
 
-import { useMemo, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
-async function safeJson<T>(res: Response): Promise<T | null> {
-  try {
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
-}
+import { getApiErrorMessage, safeJson } from "@/lib/utils";
 
-type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'void' | string;
+type InvoiceStatus = "draft" | "sent" | "paid" | "void" | string;
 
 type Props = {
   invoiceId: string;
@@ -23,16 +17,26 @@ type Props = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  draft: 'Draft',
-  sent: 'Sent',
-  paid: 'Paid',
-  void: 'Void',
+  draft: "Draft",
+  sent: "Sent",
+  paid: "Paid",
+  void: "Void",
 };
 
-function normalizeStatus(s: string): InvoiceStatus {
-  const v = (s || 'draft').toLowerCase();
-  return v;
+function normalizeStatus(value: string): InvoiceStatus {
+  return (value || "draft").toLowerCase();
 }
+
+function getStatusLabel(value: InvoiceStatus): string {
+  return STATUS_LABELS[String(value)] ?? String(value);
+}
+
+type OkResponse = { ok: true };
+
+type ErrorResponse = {
+  ok?: false;
+  error?: string;
+};
 
 export default function InvoiceStatusButtons({
   invoiceId,
@@ -43,15 +47,24 @@ export default function InvoiceStatusButtons({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const [status, setStatus] = useState<InvoiceStatus>(normalizeStatus(initialStatus));
+  const [status, setStatus] = useState<InvoiceStatus>(
+    normalizeStatus(initialStatus)
+  );
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [feedbackType, setFeedbackType] = useState<'success' | 'error' | null>(null);
+  const [feedbackType, setFeedbackType] = useState<
+    "success" | "error" | null
+  >(null);
 
-  const isLocked = useMemo(() => status === 'paid' || status === 'void', [status]);
+  const isLocked = useMemo(
+    () => status === "paid" || status === "void",
+    [status]
+  );
+
+  const canInteract = !(isSaving || isPending);
 
   const updateStatus = async (nextStatus: InvoiceStatus) => {
-    if (isSaving) return;
+    if (!canInteract) return;
 
     const previousStatus = status;
     setStatus(nextStatus);
@@ -60,46 +73,56 @@ export default function InvoiceStatusButtons({
     setFeedbackType(null);
 
     try {
-      const res = await fetch(`/api/invoices/${invoiceId}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: nextStatus }),
-      });
+      const res = await fetch(
+        `/api/invoices/${encodeURIComponent(invoiceId)}/status`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: nextStatus }),
+        }
+      );
 
-      const data = await safeJson<{ ok?: boolean; error?: string }>(res);
+      const data = (await safeJson(res)) as OkResponse | ErrorResponse | null;
 
       if (!res.ok || data?.ok === false) {
+        const apiMessage = await Promise.resolve(getApiErrorMessage(res));
+        const message =
+          (data && "error" in data ? data.error : undefined) ||
+          apiMessage ||
+          "Could not update invoice.";
+
         setStatus(previousStatus);
-        setFeedback(data?.error || 'Could not update invoice.');
-        setFeedbackType('error');
+        setFeedback(message);
+        setFeedbackType("error");
         return;
       }
 
       const msg =
-        nextStatus === 'paid'
-          ? 'Invoice marked as paid. (Locked)'
-          : nextStatus === 'void'
-            ? 'Invoice voided. (Locked)'
-            : nextStatus === 'sent'
-              ? 'Invoice marked as sent.'
-              : 'Invoice reverted to draft.';
+        nextStatus === "paid"
+          ? "Invoice marked as paid. (Locked)"
+          : nextStatus === "void"
+          ? "Invoice voided. (Locked)"
+          : nextStatus === "sent"
+          ? "Invoice marked as sent."
+          : "Invoice reverted to draft.";
 
       setFeedback(msg);
-      setFeedbackType('success');
+      setFeedbackType("success");
 
       startTransition(() => {
         router.refresh();
       });
-    } catch {
+    } catch (err) {
+      console.error(err);
       setStatus(previousStatus);
-      setFeedback('Network error while updating status.');
-      setFeedbackType('error');
+      setFeedback("Network error while updating status.");
+      setFeedbackType("error");
     } finally {
       setIsSaving(false);
     }
   };
 
-  const label = STATUS_LABELS[String(status)] ?? String(status);
+  const label = getStatusLabel(status);
 
   // Terminal statuses should not be editable.
   if (isLocked) {
@@ -108,9 +131,9 @@ export default function InvoiceStatusButtons({
         <span
           title={`This invoice is locked because it is ${label.toLowerCase()}.`}
           className={`rounded-full px-2.5 py-1 text-xs font-semibold uppercase border ${
-            status === 'paid'
-              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
-              : 'border-slate-500/40 bg-slate-500/10 text-slate-200'
+            status === "paid"
+              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+              : "border-slate-500/40 bg-slate-500/10 text-slate-200"
           }`}
         >
           {label}
@@ -118,7 +141,7 @@ export default function InvoiceStatusButtons({
         {feedback && (
           <p
             className={`text-[11px] ${
-              feedbackType === 'error' ? 'text-red-600' : 'text-green-600'
+              feedbackType === "error" ? "text-red-400" : "text-emerald-400"
             }`}
           >
             {feedback}
@@ -128,19 +151,21 @@ export default function InvoiceStatusButtons({
     );
   }
 
-  const canInteract = !(isSaving || isPending);
-
-  const primaryActions: Array<{ key: 'draft' | 'sent'; label: string; title: string }> =
-    status === 'draft'
-      ? [{ key: 'sent', label: 'Mark as Sent', title: 'Mark invoice as sent' }]
-      : status === 'sent'
-        ? [{ key: 'draft', label: 'Revert to Draft', title: 'Move back to draft' }]
-        : [{ key: 'draft', label: 'Set Draft', title: 'Move back to draft' }];
+  const primaryActions: Array<{
+    key: "draft" | "sent";
+    label: string;
+    title: string;
+  }> =
+    status === "draft"
+      ? [{ key: "sent", label: "Mark as Sent", title: "Mark invoice as sent" }]
+      : status === "sent"
+      ? [{ key: "draft", label: "Revert to Draft", title: "Move back to draft" }]
+      : [{ key: "draft", label: "Set Draft", title: "Move back to draft" }];
 
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between gap-2">
-        <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium capitalize">
+        <span className="rounded-full border border-slate-800 bg-slate-900/70 px-2.5 py-1 text-xs font-medium capitalize text-slate-100">
           {label}
         </span>
 
@@ -149,10 +174,10 @@ export default function InvoiceStatusButtons({
             <button
               key={a.key}
               type="button"
-              onClick={() => updateStatus(a.key)}
+              onClick={() => void updateStatus(a.key)}
               disabled={!canInteract}
               title={a.title}
-              className="flex items-center gap-1 text-xs text-blue-600 hover:underline disabled:opacity-60"
+              className="inline-flex items-center gap-1 text-xs font-medium text-rose-300 hover:text-rose-200 hover:underline disabled:opacity-60"
             >
               {(isSaving || isPending) && (
                 <span
@@ -166,23 +191,23 @@ export default function InvoiceStatusButtons({
 
           {!hideFinalize && (
             <details className="group">
-              <summary className="cursor-pointer select-none text-xs text-slate-600 hover:underline">
+              <summary className="cursor-pointer select-none text-xs font-medium text-slate-300 hover:text-slate-100 hover:underline">
                 Finalize
               </summary>
               <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   type="button"
                   disabled={!canInteract}
-                  className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold uppercase text-emerald-700 hover:bg-emerald-500/15 disabled:opacity-60"
+                  className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold uppercase text-emerald-200 hover:bg-emerald-500/15 disabled:opacity-60"
                   title="Mark paid (locks editing)"
                   onClick={() => {
                     if (confirmFinalize) {
                       const ok = window.confirm(
-                        'Mark this invoice as PAID? This will lock further edits.',
+                        "Mark this invoice as PAID? This will lock further edits."
                       );
                       if (!ok) return;
                     }
-                    void updateStatus('paid');
+                    void updateStatus("paid");
                   }}
                 >
                   Paid
@@ -191,16 +216,16 @@ export default function InvoiceStatusButtons({
                 <button
                   type="button"
                   disabled={!canInteract}
-                  className="rounded-md border border-slate-500/40 bg-slate-500/10 px-2 py-1 text-[11px] font-semibold uppercase text-slate-700 hover:bg-slate-500/15 disabled:opacity-60"
+                  className="rounded-md border border-slate-500/40 bg-slate-500/10 px-2 py-1 text-[11px] font-semibold uppercase text-slate-200 hover:bg-slate-500/15 disabled:opacity-60"
                   title="Void (locks editing)"
                   onClick={() => {
                     if (confirmFinalize) {
                       const ok = window.confirm(
-                        'VOID this invoice? This will lock further edits.',
+                        "VOID this invoice? This will lock further edits."
                       );
                       if (!ok) return;
                     }
-                    void updateStatus('void');
+                    void updateStatus("void");
                   }}
                 >
                   Void
@@ -217,8 +242,9 @@ export default function InvoiceStatusButtons({
       {feedback && (
         <p
           className={`text-[11px] ${
-            feedbackType === 'error' ? 'text-red-600' : 'text-green-600'
+            feedbackType === "error" ? "text-red-400" : "text-emerald-400"
           }`}
+          role={feedbackType === "error" ? "alert" : "status"}
         >
           {feedback}
         </p>

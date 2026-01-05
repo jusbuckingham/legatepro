@@ -199,9 +199,13 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
     filteredInvoices = filteredInvoices.filter((inv) =>
-      inv.description.toLowerCase().includes(q)
+      (inv.description || "").toLowerCase().includes(q)
     );
   }
+function invoiceTitle(desc: string): string {
+  const t = (desc || "").trim();
+  return t.length > 0 ? t : "Untitled invoice";
+}
 
   // Summary stats
   const totalAmount = computedInvoices.reduce((sum, inv) => sum + inv.amount, 0);
@@ -339,27 +343,39 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
               method="get"
               className="flex flex-col gap-2 md:flex-row md:items-end md:gap-3"
             >
-              <input
-                type="text"
-                name="q"
-                placeholder="Search description…"
-                defaultValue={searchQuery}
-                className="rounded-md border border-slate-700 bg-slate-900/70 px-2 py-1 text-slate-100 placeholder:text-slate-500 text-sm"
-                autoComplete="off"
-              />
-              <select
-                name="status"
-                defaultValue={statusFilter || "all"}
-                className="rounded-md border border-slate-700 bg-slate-900/70 px-2 py-1 text-slate-100 text-sm"
-              >
-                <option value="all">All statuses</option>
-                <option value="draft">Draft</option>
-                <option value="sent">Sent</option>
-                <option value="scheduled">Scheduled</option>
-                <option value="paid">Paid</option>
-                <option value="void">Void</option>
-                <option value="overdue">Overdue</option>
-              </select>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="invoice-search" className="sr-only">
+                  Search invoices
+                </label>
+                <input
+                  id="invoice-search"
+                  type="text"
+                  name="q"
+                  placeholder="Search description…"
+                  defaultValue={searchQuery}
+                  className="rounded-md border border-slate-700 bg-slate-900/70 px-2 py-1 text-slate-100 placeholder:text-slate-500 text-sm"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="invoice-status" className="sr-only">
+                  Filter by status
+                </label>
+                <select
+                  id="invoice-status"
+                  name="status"
+                  defaultValue={statusFilter || "all"}
+                  className="rounded-md border border-slate-700 bg-slate-900/70 px-2 py-1 text-slate-100 text-sm"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="draft">Draft</option>
+                  <option value="sent">Sent</option>
+                  <option value="scheduled">Scheduled</option>
+                  <option value="paid">Paid</option>
+                  <option value="void">Void</option>
+                  <option value="overdue">Overdue</option>
+                </select>
+              </div>
               <label className="inline-flex items-center gap-1 text-xs text-slate-400">
                 <input
                   type="checkbox"
@@ -441,7 +457,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
             <div className="mb-2 text-rose-400">No invoices match your filters.</div>
             <Link
               href={filterAction}
-              className="text-xs text-blue-400 hover:underline"
+              className="text-xs text-rose-300 hover:underline"
             >
               Clear
             </Link>
@@ -469,7 +485,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
                           href={`/app/estates/${estateId}/invoices/${inv._id}`}
                           className="text-base font-semibold text-blue-300 hover:underline"
                         >
-                          {inv.description}
+                          {invoiceTitle(inv.description)}
                         </Link>
                         <div className="text-slate-400 text-xs mt-0.5">
                           Issued: {toDateLabel(inv.issueDate)} &nbsp;|&nbsp; Due: {toDateLabel(inv.dueDate)}
@@ -553,7 +569,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
                             href={`/app/estates/${estateId}/invoices/${inv._id}`}
                             className="text-slate-100 hover:underline font-medium"
                           >
-                            {inv.description}
+                            {invoiceTitle(inv.description)}
                           </Link>
                         </td>
                         <td className="px-3 py-2 align-top text-slate-200">{formatMoney(inv.amount)}</td>

@@ -1,4 +1,3 @@
-import React from "react";
 import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { notFound, redirect } from "next/navigation";
@@ -6,7 +5,7 @@ import { notFound, redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
-import InvoiceEditForm from "@/components/invoices/InvoiceEditForm";
+import { InvoiceEditForm } from "@/components/invoices/InvoiceEditForm";
 
 export const metadata: Metadata = {
   title: "Edit Invoice | LegatePro",

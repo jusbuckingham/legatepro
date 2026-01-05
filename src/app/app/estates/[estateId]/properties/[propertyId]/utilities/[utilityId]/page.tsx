@@ -2,7 +2,16 @@ import Link from "next/link";
 
 import { cookies, headers } from "next/headers";
 
+
 import { safeJson } from "@/lib/utils";
+
+type HeaderLike = { get(name: string): string | null };
+type CookieLike = { getAll(): Array<{ name: string; value: string }> };
+
+function getCookieHeader(cookieStore: CookieLike): string {
+  const parts = cookieStore.getAll().map((c) => `${c.name}=${c.value}`);
+  return parts.join("; ");
+}
 
 
 type PageProps = {
@@ -50,26 +59,26 @@ function StateLayout({ title, description, crumbs, primaryCta, secondaryCta }: S
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-10">
       <div className="mb-6">
-        <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-zinc-500">
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-slate-400">
           {crumbs.map((c, idx) => (
             <span key={`${c.href}-${idx}`} className="flex items-center gap-2">
-              <Link href={c.href} className="hover:text-zinc-700">
+              <Link href={c.href} className="hover:text-slate-200">
                 {c.label}
               </Link>
               {idx < crumbs.length - 1 ? <span aria-hidden="true">/</span> : null}
             </span>
           ))}
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">{title}</h1>
-        <p className="mt-2 text-sm text-zinc-600">{description}</p>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-50">{title}</h1>
+        <p className="mt-2 text-sm text-slate-400">{description}</p>
       </div>
 
-      <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+      <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
         <div className="flex flex-wrap gap-2">
           {primaryCta ? (
             <Link
               href={primaryCta.href}
-              className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-zinc-800"
+              className="rounded-md bg-rose-500 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-400"
             >
               {primaryCta.label}
             </Link>
@@ -78,7 +87,7 @@ function StateLayout({ title, description, crumbs, primaryCta, secondaryCta }: S
           {secondaryCta ? (
             <Link
               href={secondaryCta.href}
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50"
+              className="rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-900"
             >
               {secondaryCta.label}
             </Link>
@@ -87,7 +96,7 @@ function StateLayout({ title, description, crumbs, primaryCta, secondaryCta }: S
           {!primaryCta && !secondaryCta ? (
             <Link
               href={"/app/estates"}
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50"
+              className="rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-900"
             >
               Back to estates
             </Link>
@@ -98,7 +107,7 @@ function StateLayout({ title, description, crumbs, primaryCta, secondaryCta }: S
   );
 }
 
-function getRequestBaseUrl(hdrs: Headers): string {
+function getRequestBaseUrl(hdrs: HeaderLike): string {
   const proto = hdrs.get("x-forwarded-proto") ?? "http";
   const host = hdrs.get("x-forwarded-host") ?? hdrs.get("host") ?? "";
   return host ? `${proto}://${host}` : "";
@@ -140,17 +149,17 @@ async function fetchUtility(utilityId: string): Promise<UtilityFetchResult> {
   const hdrs = await headers();
   const cookieStore = await cookies();
 
-  const baseUrl = getRequestBaseUrl(hdrs);
+  const baseUrl = getRequestBaseUrl(hdrs as unknown as HeaderLike);
   const url = (baseUrl ? `${baseUrl}/api/utilities/${utilityId}` : `/api/utilities/${utilityId}`).replace(/\/$/, "");
 
   const res = await fetch(url, {
     method: "GET",
     cache: "no-store",
     headers: {
-      // Forward auth cookies for server-side fetch.
-      ...(cookieStore.toString() ? { cookie: cookieStore.toString() } : {}),
-      // Forward a couple of useful request headers if present.
-      "user-agent": hdrs.get("user-agent") ?? "",
+      ...(getCookieHeader(cookieStore as unknown as CookieLike)
+        ? { cookie: getCookieHeader(cookieStore as unknown as CookieLike) }
+        : {}),
+      ...(hdrs.get("user-agent") ? { "user-agent": hdrs.get("user-agent") ?? "" } : {}),
       accept: "application/json",
     },
   });
@@ -278,41 +287,41 @@ export default async function UtilityDetailPage({ params }: PageProps) {
     <div className="mx-auto w-full max-w-5xl px-4 py-6">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-zinc-500">
-            <Link href="/app/estates" className="hover:text-zinc-700">
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-slate-400">
+            <Link href="/app/estates" className="hover:text-slate-200">
               Estates
             </Link>
             <span aria-hidden="true">/</span>
-            <Link href={`/app/estates/${estateId}`} className="hover:text-zinc-700">
+            <Link href={`/app/estates/${estateId}`} className="hover:text-slate-200">
               Overview
             </Link>
             <span aria-hidden="true">/</span>
-            <Link href={`/app/estates/${estateId}/properties/${propertyId}`} className="hover:text-zinc-700">
+            <Link href={`/app/estates/${estateId}/properties/${propertyId}`} className="hover:text-slate-200">
               Property
             </Link>
             <span aria-hidden="true">/</span>
-            <Link href={`/app/estates/${estateId}/properties/${propertyId}/utilities`} className="hover:text-zinc-700">
+            <Link href={`/app/estates/${estateId}/properties/${propertyId}/utilities`} className="hover:text-slate-200">
               Utilities
             </Link>
             <span aria-hidden="true">/</span>
-            <span className="text-zinc-700">{name}</span>
+            <span className="text-slate-200">{name}</span>
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">{name}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-50">{name}</h1>
           {provider ? (
-            <p className="mt-1 text-sm text-zinc-600">Provider: {provider}</p>
+            <p className="mt-1 text-sm text-slate-400">Provider: {provider}</p>
           ) : null}
         </div>
 
         <div className="flex flex-wrap gap-2">
           <Link
             href={`/app/estates/${estateId}/properties/${propertyId}/utilities`}
-            className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50"
+            className="rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-900"
           >
             Back
           </Link>
           <Link
             href={`/app/estates/${estateId}/properties/${propertyId}/utilities/new`}
-            className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-zinc-800"
+            className="rounded-md bg-rose-500 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-400"
           >
             Add utility
           </Link>
@@ -320,88 +329,88 @@ export default async function UtilityDetailPage({ params }: PageProps) {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <section className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
           {!provider && !accountNumber && !status && !amount && !dueDate ? (
-            <div className="mb-3 rounded-lg border border-dashed border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-600">
+            <div className="mb-3 rounded-lg border border-dashed border-slate-800 bg-slate-900/40 p-3 text-sm text-slate-300">
               This utility has very little detail yet. Add provider/account info and a balance or due date when available.
             </div>
           ) : null}
-          <h2 className="mb-3 text-sm font-semibold text-zinc-900">Details</h2>
+          <h2 className="mb-3 text-sm font-semibold text-slate-100">Details</h2>
 
           <dl className="space-y-3">
             {status ? (
               <div className="flex items-start justify-between gap-3">
-                <dt className="text-sm text-zinc-500">Status</dt>
-                <dd className="text-sm font-medium text-zinc-900">{status}</dd>
+                <dt className="text-sm text-slate-400">Status</dt>
+                <dd className="text-sm font-medium text-slate-100">{status}</dd>
               </div>
             ) : null}
 
             {amount ? (
               <div className="flex items-start justify-between gap-3">
-                <dt className="text-sm text-zinc-500">Amount</dt>
-                <dd className="text-sm font-medium text-zinc-900">{amount}</dd>
+                <dt className="text-sm text-slate-400">Amount</dt>
+                <dd className="text-sm font-medium text-slate-100">{amount}</dd>
               </div>
             ) : null}
 
             {dueDate ? (
               <div className="flex items-start justify-between gap-3">
-                <dt className="text-sm text-zinc-500">Due date</dt>
-                <dd className="text-sm font-medium text-zinc-900">{dueDate}</dd>
+                <dt className="text-sm text-slate-400">Due date</dt>
+                <dd className="text-sm font-medium text-slate-100">{dueDate}</dd>
               </div>
             ) : null}
 
             {accountNumber ? (
               <div className="flex items-start justify-between gap-3">
-                <dt className="text-sm text-zinc-500">Account</dt>
-                <dd className="text-sm font-medium text-zinc-900">{accountNumber}</dd>
+                <dt className="text-sm text-slate-400">Account</dt>
+                <dd className="text-sm font-medium text-slate-100">{accountNumber}</dd>
               </div>
             ) : null}
 
             {createdAt ? (
               <div className="flex items-start justify-between gap-3">
-                <dt className="text-sm text-zinc-500">Created</dt>
-                <dd className="text-sm text-zinc-900">{createdAt}</dd>
+                <dt className="text-sm text-slate-400">Created</dt>
+                <dd className="text-sm text-slate-100">{createdAt}</dd>
               </div>
             ) : null}
 
             {updatedAt ? (
               <div className="flex items-start justify-between gap-3">
-                <dt className="text-sm text-zinc-500">Updated</dt>
-                <dd className="text-sm text-zinc-900">{updatedAt}</dd>
+                <dt className="text-sm text-slate-400">Updated</dt>
+                <dd className="text-sm text-slate-100">{updatedAt}</dd>
               </div>
             ) : null}
           </dl>
         </section>
 
-        <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-          <h2 className="mb-3 text-sm font-semibold text-zinc-900">Notes</h2>
+        <section className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
+          <h2 className="mb-3 text-sm font-semibold text-slate-100">Notes</h2>
 
           {asString(utility.notes) || asString(utility.description) ? (
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-700">
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-200">
               {asString(utility.notes) ?? asString(utility.description)}
             </p>
           ) : (
-            <div className="rounded-lg border border-dashed border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-600">
+            <div className="rounded-lg border border-dashed border-slate-800 bg-slate-900/40 p-4 text-sm text-slate-300">
               No notes yet.
             </div>
           )}
         </section>
       </div>
 
-      <section className="mt-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+      <section className="mt-4 rounded-xl border border-slate-800 bg-slate-950/80 p-4">
         <details>
           <summary className="cursor-pointer list-none select-none">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-sm font-semibold text-zinc-900">Raw record</h2>
-                <p className="mt-0.5 text-xs text-zinc-500">Utility ID: {utilityId}</p>
+                <h2 className="text-sm font-semibold text-slate-100">Raw record</h2>
+                <p className="mt-0.5 text-xs text-slate-400">Utility ID: {utilityId}</p>
               </div>
-              <span className="text-xs font-medium text-zinc-600">Toggle</span>
+              <span className="text-xs font-medium text-slate-400">Toggle</span>
             </div>
           </summary>
 
           <div className="mt-3">
-            <pre className="max-h-[420px] overflow-auto rounded-lg bg-zinc-950 p-4 text-xs text-zinc-100">
+            <pre className="max-h-[420px] overflow-auto rounded-lg bg-slate-950 p-4 text-xs text-slate-100">
 {JSON.stringify(utility, null, 2)}
             </pre>
           </div>
