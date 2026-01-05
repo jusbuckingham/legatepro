@@ -8,6 +8,7 @@ import { Invoice } from "@/models/Invoice";
 import { EstateDocument } from "@/models/EstateDocument";
 import { EstateTask } from "@/models/EstateTask";
 import { EstateNote } from "@/models/EstateNote";
+import { EstateEvent } from "@/models/EstateEvent";
 
 type PageProps = {
   params: Promise<{
@@ -91,10 +92,27 @@ type EstateNoteLean = {
   createdAt?: Date | string | null;
 };
 
+
 type EstateNoteRow = {
   _id: string;
   body: string;
   pinned: boolean;
+  createdAt?: string | null;
+};
+
+type EstateEventLean = {
+  _id: unknown;
+  type?: string | null;
+  summary?: string | null;
+  detail?: string | null;
+  createdAt?: Date | string | null;
+};
+
+type EstateEventRow = {
+  _id: string;
+  type: string;
+  summary: string;
+  detail?: string | null;
   createdAt?: string | null;
 };
 
@@ -189,7 +207,7 @@ export default async function EstateOverviewPage({ params }: PageProps) {
     documentFilter.isSensitive = false;
   }
 
-  const [estateDoc, invoiceDocs, documentDocs, taskDocs, noteDocs] =
+  const [estateDoc, invoiceDocs, documentDocs, taskDocs, noteDocs, eventDocs] =
     (await Promise.all([
       Estate.findById(estateId).lean().exec(),
       Invoice.find(
@@ -239,12 +257,21 @@ export default async function EstateOverviewPage({ params }: PageProps) {
         .sort({ pinned: -1, createdAt: -1 })
         .lean()
         .exec(),
+      EstateEvent.find(
+        { estateId },
+        { type: 1, summary: 1, detail: 1, createdAt: 1 },
+      )
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .lean()
+        .exec(),
     ])) as [
       EstateLean | null,
       InvoiceLean[],
       EstateDocumentLean[],
       EstateTaskLean[],
       EstateNoteLean[],
+      EstateEventLean[],
     ];
 
   if (!estateDoc) {
@@ -376,6 +403,37 @@ export default async function EstateOverviewPage({ params }: PageProps) {
     };
   });
 
+  /** ACTIVITY → clean rows */
+  const recentActivity: EstateEventRow[] = (eventDocs ?? []).map((doc) => {
+    const createdAt =
+      doc.createdAt instanceof Date
+        ? doc.createdAt.toISOString()
+        : (doc.createdAt as string | null | undefined) ?? null;
+
+    const type =
+      typeof doc.type === "string" && doc.type.trim().length > 0
+        ? doc.type
+        : "EVENT";
+
+    const summary =
+      typeof doc.summary === "string" && doc.summary.trim().length > 0
+        ? doc.summary
+        : "Activity";
+
+    const detail =
+      typeof doc.detail === "string" && doc.detail.trim().length > 0
+        ? doc.detail
+        : null;
+
+    return {
+      _id: String(doc._id),
+      type,
+      summary,
+      detail,
+      createdAt,
+    };
+  });
+
   const pinnedNote = notes.find((n) => n.pinned) ?? null;
   const latestNote = notes.length > 0 ? notes[0] : null;
 
@@ -497,6 +555,12 @@ export default async function EstateOverviewPage({ params }: PageProps) {
               className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
             >
               View timeline
+            </Link>
+            <Link
+              href={`/app/estates/${estateId}/activity`}
+              className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              Activity
             </Link>
             <Link
               href={`/app/estates/${estateId}/invoices`}
@@ -708,6 +772,67 @@ export default async function EstateOverviewPage({ params }: PageProps) {
               </Link>
             )}
           </div>
+        </div>
+      </section>
+
+      {/* Recent activity */}
+      <section className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Recent activity</h2>
+          <Link
+            href={`/app/estates/${estateId}/activity`}
+            className="text-xs font-medium text-blue-600 hover:underline"
+          >
+            View all
+          </Link>
+        </div>
+
+        {recentActivity.length === 0 ? (
+          <p className="text-sm text-gray-500">No activity yet.</p>
+        ) : (
+          <div className="overflow-hidden rounded-md border border-gray-200">
+            <div className="grid grid-cols-[140px_1fr_120px] gap-2 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase text-gray-600">
+              <div>Type</div>
+              <div>Summary</div>
+              <div className="text-right">When</div>
+            </div>
+
+            {recentActivity.map((evt: EstateEventRow) => (
+              <div
+                key={evt._id}
+                className="grid grid-cols-[140px_1fr_120px] gap-2 border-t border-gray-200 px-3 py-2"
+              >
+                <div className="text-xs font-medium text-gray-700">{evt.type}</div>
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium text-gray-900">
+                    {evt.summary}
+                  </div>
+                  {evt.detail ? (
+                    <div className="mt-0.5 truncate text-xs text-gray-500">
+                      {evt.detail}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="text-right text-xs text-gray-500">
+                  {evt.createdAt ? formatDate(evt.createdAt) : "—"}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Link
+            href={`/app/estates/${estateId}/activity`}
+            className="text-xs font-medium text-blue-600 hover:underline"
+          >
+            Open activity timeline
+          </Link>
+          {canEdit && (
+            <span className="text-xs text-gray-400">
+              Tip: add quick notes from the Activity page.
+            </span>
+          )}
         </div>
       </section>
 

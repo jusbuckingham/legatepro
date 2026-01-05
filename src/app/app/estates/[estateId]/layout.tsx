@@ -20,6 +20,7 @@ function getNavItems(estateId: string) {
     { label: "Rent", href: `/app/estates/${estateId}/rent` },
     { label: "Timecard", href: `/app/estates/${estateId}/time` },
     { label: "Invoices", href: `/app/estates/${estateId}/invoices` },
+    { label: "Activity", href: `/app/estates/${estateId}/activity` },
   ];
 }
 
@@ -32,9 +33,12 @@ export default function EstateLayout({ children }: EstateLayoutProps) {
     <div className="flex flex-col gap-4 md:flex-row md:gap-6">
       <aside className="md:w-60 shrink-0">
         <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-          <h1 className="text-sm font-semibold text-slate-100">Estate workspace</h1>
+          <h1 className="text-sm font-semibold text-slate-100">
+            Estate workspace
+          </h1>
           <p className="mt-1 text-xs text-slate-400">
-            Switch between tasks, properties, documents, contacts, notes, expenses, rent, and your timecard.
+            Switch between tasks, properties, documents, contacts, notes,
+            expenses, rent, and your timecard.
           </p>
 
           <nav className="mt-3 space-y-1 text-sm">
@@ -49,7 +53,12 @@ export default function EstateLayout({ children }: EstateLayoutProps) {
                 : " text-slate-300 hover:bg-slate-800/70";
 
               return (
-                <Link key={item.href} href={item.href} className={baseClasses + activeClasses}>
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={isActive ? "page" : undefined}
+                  className={`${baseClasses} ${activeClasses}`}
+                >
                   <span>{item.label}</span>
                 </Link>
               );
