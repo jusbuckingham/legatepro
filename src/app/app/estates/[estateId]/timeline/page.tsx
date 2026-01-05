@@ -129,9 +129,18 @@ function getDayLabelFromKey(dateKey: string, todayKey: string, yesterdayKey: str
   return d.toLocaleDateString();
 }
 
-function formatCurrencyFromCents(cents: number | null | undefined): string | null {
-  if (cents == null || Number.isNaN(cents)) return null;
-  return `$${(cents / 100).toFixed(2)}`;
+function normalizeMoneyToDollars(raw: number | null | undefined): number | null {
+  if (raw == null || Number.isNaN(raw)) return null;
+  // Current schema tends to store totals as cents.
+  // Heuristic: values >= 10,000 are almost certainly cents (>= $100.00).
+  if (raw >= 10_000) return raw / 100;
+  return raw;
+}
+
+function formatCurrencySmart(raw: number | null | undefined): string | null {
+  const dollars = normalizeMoneyToDollars(raw);
+  if (dollars == null) return null;
+  return `$${dollars.toFixed(2)}`;
 }
 
 function friendlyInvoiceStatus(status: string | null | undefined): string {
@@ -454,7 +463,8 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
 
   const session = await auth();
   if (!session?.user?.id) {
-    return redirect(`/login?callbackUrl=/app/estates/${estateId}/timeline`);
+    const callbackUrl = encodeURIComponent(`/app/estates/${estateId}/timeline`);
+    redirect(`/login?callbackUrl=${callbackUrl}`);
   }
 
   const access = await requireEstateAccess({ estateId, userId: session.user.id });
@@ -462,9 +472,8 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     redirect("/app/estates");
   }
 
-  const isViewer = access.role === "VIEWER";
   const canCreate = access.canEdit;
-  const canViewSensitive = !isViewer;
+  const canViewSensitive = access.canViewSensitive;
 
   await connectToDatabase();
 
@@ -558,7 +567,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
         : String(inv._id).slice(-6);
 
     const statusLabel = friendlyInvoiceStatus(inv.status ?? "DRAFT");
-    const amt = formatCurrencyFromCents(inv.totalAmount ?? inv.subtotal ?? null);
+    const amt = formatCurrencySmart(inv.totalAmount ?? inv.subtotal ?? null);
 
     events.push({
       id: `invoice-${String(inv._id)}`,
@@ -585,7 +594,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
       title: label,
       detail: subject ? `Document · ${subject}` : "Document added",
       timestamp: ts,
-      href: `/app/estates/${estateId}/documents`,
+      href: `/app/estates/${estateId}/documents/${String(doc._id)}`,
     });
   }
 
@@ -605,7 +614,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
       title,
       detail: ["Task", status && `Status: ${status}`, dueLabel].filter(Boolean).join(" · "),
       timestamp: ts,
-      href: `/app/estates/${estateId}/tasks`,
+      href: `/app/estates/${estateId}/tasks/${String(t._id)}`,
     });
   }
 
@@ -623,7 +632,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
       title: n.pinned ? "Pinned note" : "Note",
       detail: truncate(body, 180),
       timestamp: ts,
-      href: `/app/estates/${estateId}/notes`,
+      href: `/app/estates/${estateId}/notes#${String(n._id)}`,
     });
   }
 
@@ -712,10 +721,16 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     let href: string | undefined;
     if (kind === "invoice" && entityId) {
       href = `/app/estates/${estateId}/invoices/${entityId}`;
+    } else if (kind === "task" && entityId) {
+      href = `/app/estates/${estateId}/tasks/${entityId}`;
     } else if (kind === "task") {
       href = `/app/estates/${estateId}/tasks`;
+    } else if (kind === "document" && entityId) {
+      href = `/app/estates/${estateId}/documents/${entityId}`;
     } else if (kind === "document") {
       href = `/app/estates/${estateId}/documents`;
+    } else if (kind === "note" && entityId) {
+      href = `/app/estates/${estateId}/notes#${entityId}`;
     } else if (kind === "note") {
       href = `/app/estates/${estateId}/notes`;
     }
