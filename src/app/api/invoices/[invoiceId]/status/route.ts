@@ -4,6 +4,7 @@ import { Types } from "mongoose";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice, type InvoiceStatus } from "@/models/Invoice";
+import { Estate } from "@/models/Estate";
 import { logEstateEvent } from "@/lib/estateEvents";
 import { logActivity } from "@/lib/activity";
 
@@ -21,6 +22,23 @@ type RouteContext = {
 
 function isValidObjectId(id: string) {
   return Types.ObjectId.isValid(id);
+}
+
+function toObjectId(id: string) {
+  return Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : null;
+}
+
+function idToString(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") return value;
+  if (value instanceof Types.ObjectId) return value.toString();
+
+  try {
+    const str = String(value);
+    return str.length > 0 ? str : null;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeStatus(input: unknown): InvoiceStatus | null {
@@ -83,9 +101,52 @@ export async function PATCH(req: Request, ctx: RouteContext): Promise<NextRespon
 
   await connectToDatabase();
 
+  const userObjectId = toObjectId(session.user.id);
+
+  const estateAccessOr: Record<string, unknown>[] = [
+    { ownerId: session.user.id },
+    ...(userObjectId ? [{ ownerId: userObjectId }] : []),
+
+    // Common collaborator/member patterns (safe even if fields don't exist)
+    { collaboratorIds: session.user.id },
+    ...(userObjectId ? [{ collaboratorIds: userObjectId }] : []),
+    { collaborators: session.user.id },
+    ...(userObjectId ? [{ collaborators: userObjectId }] : []),
+    { memberIds: session.user.id },
+    ...(userObjectId ? [{ memberIds: userObjectId }] : []),
+    { members: session.user.id },
+    ...(userObjectId ? [{ members: userObjectId }] : []),
+    { userIds: session.user.id },
+    ...(userObjectId ? [{ userIds: userObjectId }] : []),
+  ];
+
+  const accessibleEstates = await Estate.find({ $or: estateAccessOr })
+    .select("_id")
+    .lean()
+    .exec();
+
+  const allowedEstateIds = accessibleEstates
+    .map((e) => idToString((e as { _id?: unknown })._id))
+    .filter((v): v is string => Boolean(v));
+
+  if (allowedEstateIds.length === 0) {
+    return NextResponse.json(
+      { ok: false, error: "Invoice not found" },
+      { status: 404, headers: NO_STORE_HEADERS }
+    );
+  }
+
+  const allowedEstateObjectIds = allowedEstateIds
+    .map((id) => toObjectId(id))
+    .filter((v): v is Types.ObjectId => Boolean(v));
+
+  const estateIdQuery = {
+    $in: [...allowedEstateIds, ...allowedEstateObjectIds],
+  };
+
   const invoice = await Invoice.findOne({
     _id: new Types.ObjectId(invoiceId),
-    ownerId: new Types.ObjectId(session.user.id),
+    estateId: estateIdQuery,
   });
 
   if (!invoice) {
@@ -126,6 +187,16 @@ export async function PATCH(req: Request, ctx: RouteContext): Promise<NextRespon
   await invoice.save();
 
   const estateIdStr = String(invoice.estateId);
+
+  const estateOwnerDoc = await Estate.findById(invoice.estateId)
+    .select("ownerId")
+    .lean()
+    .exec();
+
+  const ownerIdForLogs =
+    idToString((estateOwnerDoc as { ownerId?: unknown } | null)?.ownerId) ??
+    session.user.id;
+
   const invoiceNumberLabel = invoice.invoiceNumber?.trim()
     ? invoice.invoiceNumber.trim()
     : String(invoice._id).slice(-6);
@@ -133,7 +204,7 @@ export async function PATCH(req: Request, ctx: RouteContext): Promise<NextRespon
   // Legacy estate event log (safe + backward compatible)
   try {
     await logEstateEvent({
-      ownerId: session.user.id,
+      ownerId: ownerIdForLogs,
       estateId: estateIdStr,
       type: "INVOICE_STATUS_CHANGED",
       summary: `Invoice ${invoiceNumberLabel} marked ${nextFriendly}`,
@@ -151,7 +222,7 @@ export async function PATCH(req: Request, ctx: RouteContext): Promise<NextRespon
   // New EstateActivity log (subtyped action, used by timeline enrichment)
   try {
     await logActivity({
-      ownerId: session.user.id,
+      ownerId: ownerIdForLogs,
       estateId: estateIdStr,
       kind: "INVOICE",
       action: "status_changed",

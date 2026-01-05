@@ -1,6 +1,7 @@
 // src/lib/estateAccess.ts
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
+import mongoose from "mongoose";
 import { Estate } from "@/models/Estate";
 
 export type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
@@ -88,6 +89,13 @@ export type RequireEstateAccessResult = Omit<EstateAccess, "userId"> & {
 type EstateLean = {
   ownerId: unknown;
   collaborators?: { userId: unknown; role?: unknown }[];
+
+  // Legacy/common alternate shapes (arrays of ids)
+  collaboratorIds?: unknown[];
+  collaboratorsIds?: unknown[];
+  members?: unknown[];
+  memberIds?: unknown[];
+  userIds?: unknown[];
 };
 
 function normalizeRole(value: unknown): EstateRole {
@@ -103,6 +111,43 @@ function toIdString(value: unknown): string {
     if (typeof maybe === "string") return maybe;
   }
   return "";
+}
+void toIdString;
+
+function toObjectId(id: string) {
+  return mongoose.Types.ObjectId.isValid(id)
+    ? new mongoose.Types.ObjectId(id)
+    : null;
+}
+
+
+function arrayContainsUserId(arr: unknown[] | undefined, userId: string): boolean {
+  if (!Array.isArray(arr)) return false;
+  return arr.some((v) => toIdString(v) === userId);
+}
+
+function buildEstateAccessOr(userId: string): Record<string, unknown>[] {
+  const userObjectId = toObjectId(userId);
+  return [
+    { ownerId: userId },
+    ...(userObjectId ? [{ ownerId: userObjectId }] : []),
+
+    // Primary schema (array of objects)
+    { "collaborators.userId": userId },
+    ...(userObjectId ? [{ "collaborators.userId": userObjectId }] : []),
+
+    // Common alternate/legacy shapes (arrays of ids)
+    { collaboratorIds: userId },
+    ...(userObjectId ? [{ collaboratorIds: userObjectId }] : []),
+    { collaborators: userId },
+    ...(userObjectId ? [{ collaborators: userObjectId }] : []),
+    { memberIds: userId },
+    ...(userObjectId ? [{ memberIds: userObjectId }] : []),
+    { members: userId },
+    ...(userObjectId ? [{ members: userObjectId }] : []),
+    { userIds: userId },
+    ...(userObjectId ? [{ userIds: userObjectId }] : []),
+  ];
 }
 
 function resolveRequiredRole(input: RequireEstateAccessInput): EstateRole | undefined {
@@ -123,12 +168,11 @@ export async function getEstateAccess(
 
   await connectToDatabase();
 
+  const estateObjectId = toObjectId(estateId);
+
   const estate = await Estate.findOne({
-    _id: estateId,
-    $or: [
-      { ownerId: resolvedUserId },
-      { "collaborators.userId": resolvedUserId },
-    ],
+    _id: estateObjectId ?? estateId,
+    $or: buildEstateAccessOr(resolvedUserId),
   }).lean<EstateLean>();
 
   if (!estate) return null;
@@ -155,10 +199,34 @@ export async function getEstateAccess(
     : [];
 
   const collab = collaborators.find((c) => toIdString(c.userId) === resolvedUserId);
-  if (!collab) return null;
 
-  const role = normalizeRole(collab.role);
+  // If the estate uses the primary collaborators[] object shape, respect role.
+  if (collab) {
+    const role = normalizeRole(collab.role);
+    return {
+      estateId,
+      userId: resolvedUserId,
+      isAuthenticated: true,
+      hasAccess: true,
+      role,
+      isOwner: false,
+      canEdit: hasRole({ actual: role, atLeast: "EDITOR" }),
+      canViewSensitive: role === "OWNER", // safe default (OWNER only)
+    };
+  }
 
+  // Otherwise, fall back to legacy id arrays. Default role is VIEWER.
+  const hasLegacyAccess =
+    arrayContainsUserId(estate.collaboratorIds, resolvedUserId) ||
+    arrayContainsUserId((estate as unknown as { collaborators?: unknown[] }).collaborators, resolvedUserId) ||
+    arrayContainsUserId(estate.collaboratorsIds, resolvedUserId) ||
+    arrayContainsUserId(estate.memberIds, resolvedUserId) ||
+    arrayContainsUserId(estate.members, resolvedUserId) ||
+    arrayContainsUserId(estate.userIds, resolvedUserId);
+
+  if (!hasLegacyAccess) return null;
+
+  const role: EstateRole = "VIEWER";
   return {
     estateId,
     userId: resolvedUserId,
@@ -166,8 +234,8 @@ export async function getEstateAccess(
     hasAccess: true,
     role,
     isOwner: false,
-    canEdit: hasRole({ actual: role, atLeast: "EDITOR" }),
-    canViewSensitive: role === "OWNER", // safe default (OWNER only)
+    canEdit: false,
+    canViewSensitive: false,
   };
 }
 
