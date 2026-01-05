@@ -1,6 +1,7 @@
 import { connectToDatabase } from "../../../../../lib/db";
 import { Estate } from "../../../../../models/Estate";
 import { formatDate } from "../../../../../lib/utils";
+import Link from "next/link";
 
 interface EstateSettingsShape {
   _id: unknown;
@@ -113,6 +114,21 @@ export default async function EstateSettingsPage({ params }: PageProps) {
               </div>
             )}
           </dl>
+        </div>
+
+        <div className="rounded-lg border border-border bg-card p-4">
+          <h3 className="text-sm font-medium">Access</h3>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Manage who can view or edit this estate.
+          </p>
+          <div className="mt-3">
+            <Link
+              href={`/app/estates/${estateId}/settings/collaborators`}
+              className="text-sm font-medium text-foreground underline"
+            >
+              Collaborators
+            </Link>
+          </div>
         </div>
       </div>
 

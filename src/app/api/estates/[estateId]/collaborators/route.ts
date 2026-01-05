@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { requireEstateAccess } from "@/lib/estateAccess";
+import { getEstateAccess } from "@/lib/estateAccess";
 import {
   Estate,
   type EstateCollaborator,
@@ -34,13 +34,31 @@ function toObjectId(id: string) {
     : null;
 }
 
+function toIdString(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (value instanceof mongoose.Types.ObjectId) return value.toString();
+
+  try {
+    return String(value);
+  } catch {
+    return "";
+  }
+}
+
+function idsEqual(a: unknown, b: unknown): boolean {
+  const aStr = toIdString(a);
+  const bStr = toIdString(b);
+  return aStr.length > 0 && aStr === bStr;
+}
+
 function isAssignableRole(role: unknown): role is Exclude<EstateRole, "OWNER"> {
   return role === "EDITOR" || role === "VIEWER";
 }
 
 async function loadEstateForCollaborators(estateObjectId: mongoose.Types.ObjectId) {
   return Estate.findById(estateObjectId, { ownerId: 1, collaborators: 1 })
-    .lean<{ ownerId: string; collaborators?: EstateCollaborator[] }>()
+    .lean<{ ownerId: unknown; collaborators?: EstateCollaborator[] }>()
     .exec();
 }
 
@@ -64,10 +82,17 @@ export async function GET(
     return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
-  // Permission: must be an estate member
-  await requireEstateAccess({ estateId, userId: session.user.id });
-
   await connectToDatabase();
+
+  const access = await getEstateAccess({
+    estateId,
+    userId: session.user.id,
+    atLeastRole: "VIEWER",
+  });
+
+  if (!access) {
+    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+  }
 
   const estate = await loadEstateForCollaborators(estateObjectId);
   if (!estate) {
@@ -78,7 +103,7 @@ export async function GET(
     {
       ok: true,
       estateId,
-      ownerId: estate.ownerId,
+      ownerId: toIdString(estate.ownerId),
       collaborators: estate.collaborators ?? [],
     },
     { status: 200 }
@@ -105,8 +130,13 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
-  const access = await requireEstateAccess({ estateId, userId: session.user.id });
-  if (access.role !== "OWNER") {
+  const access = await getEstateAccess({
+    estateId,
+    userId: session.user.id,
+    atLeastRole: "OWNER",
+  });
+
+  if (!access || access.role !== "OWNER") {
     return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }
 
@@ -124,14 +154,6 @@ export async function POST(
     );
   }
 
-  // Owner already has implicit access
-  if (body.userId === session.user.id) {
-    return NextResponse.json(
-      { error: "Owner already has access" },
-      { status: 400 }
-    );
-  }
-
   await connectToDatabase();
 
   const estate = await Estate.findById(estateObjectId);
@@ -139,7 +161,17 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "Estate not found" }, { status: 404 });
   }
 
-  const existing = estate.collaborators?.find((c) => c.userId === body.userId);
+  const estateOwnerId = toIdString(estate.ownerId);
+
+  // Prevent adding the owner as an explicit collaborator
+  if (estateOwnerId && body.userId === estateOwnerId) {
+    return NextResponse.json(
+      { error: "Owner already has access" },
+      { status: 400 }
+    );
+  }
+
+  const existing = estate.collaborators?.find((c) => idsEqual(c.userId, body.userId));
 
   // Upsert behavior with guardrails:
   // - New collaborator => add + log added
@@ -161,7 +193,7 @@ export async function POST(
     await estate.save();
 
     await logEstateEvent({
-      ownerId: session.user.id,
+      ownerId: estateOwnerId,
       estateId,
       type: "COLLABORATOR_ROLE_CHANGED",
       summary: "Collaborator role changed",
@@ -185,7 +217,7 @@ export async function POST(
   await estate.save();
 
   await logEstateEvent({
-    ownerId: session.user.id,
+    ownerId: estateOwnerId,
     estateId,
     type: "COLLABORATOR_ADDED",
     summary: "Collaborator added",
@@ -219,8 +251,13 @@ export async function PATCH(
     return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
-  const access = await requireEstateAccess({ estateId, userId: session.user.id });
-  if (access.role !== "OWNER") {
+  const access = await getEstateAccess({
+    estateId,
+    userId: session.user.id,
+    atLeastRole: "OWNER",
+  });
+
+  if (!access || access.role !== "OWNER") {
     return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }
 
@@ -245,7 +282,9 @@ export async function PATCH(
     return NextResponse.json({ ok: false, error: "Estate not found" }, { status: 404 });
   }
 
-  const collab = estate.collaborators?.find((c) => c.userId === body.userId);
+  const estateOwnerId = toIdString(estate.ownerId);
+
+  const collab = estate.collaborators?.find((c) => idsEqual(c.userId, body.userId));
   if (!collab) {
     return NextResponse.json(
       { error: "Collaborator not found" },
@@ -266,7 +305,7 @@ export async function PATCH(
   await estate.save();
 
   await logEstateEvent({
-    ownerId: session.user.id,
+    ownerId: estateOwnerId,
     estateId,
     type: "COLLABORATOR_ROLE_CHANGED",
     summary: "Collaborator role changed",
@@ -300,8 +339,13 @@ export async function DELETE(
     return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
-  const access = await requireEstateAccess({ estateId, userId: session.user.id });
-  if (access.role !== "OWNER") {
+  const access = await getEstateAccess({
+    estateId,
+    userId: session.user.id,
+    atLeastRole: "OWNER",
+  });
+
+  if (!access || access.role !== "OWNER") {
     return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }
 
@@ -330,19 +374,21 @@ export async function DELETE(
     return NextResponse.json({ ok: false, error: "Estate not found" }, { status: 404 });
   }
 
-  const removed = (estate.collaborators ?? []).find((c) => c.userId === body.userId);
+  const estateOwnerId = toIdString(estate.ownerId);
+
+  const removed = (estate.collaborators ?? []).find((c) => idsEqual(c.userId, body.userId));
   if (!removed) {
     return NextResponse.json({ ok: false, error: "Collaborator not found" }, { status: 404 });
   }
 
   estate.collaborators = (estate.collaborators ?? []).filter(
-    (c) => c.userId !== body.userId
+    (c) => !idsEqual(c.userId, body.userId)
   );
 
   await estate.save();
 
   await logEstateEvent({
-    ownerId: session.user.id,
+    ownerId: estateOwnerId,
     estateId,
     type: "COLLABORATOR_REMOVED",
     summary: "Collaborator removed",
