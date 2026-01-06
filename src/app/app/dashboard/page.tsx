@@ -38,8 +38,9 @@ type InvoiceLike = {
 
 type TimeEntryLike = {
   _id: unknown;
-  ownerId?: string;
-  estateId?: string | unknown;
+  // Mongoose lean() can return ObjectId-ish values here, so keep these loose.
+  ownerId?: unknown;
+  estateId?: unknown;
   description?: string;
   durationMinutes?: number;
   hourlyRateCents?: number;
