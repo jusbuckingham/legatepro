@@ -70,14 +70,14 @@ async function createNote(formData: FormData): Promise<void> {
 
   const session = await auth();
   if (!session?.user?.id) {
-    redirect("/login");
+    redirect(`/login?callbackUrl=/app/estates/${encodeURIComponent(String(estateId))}/notes`);
   }
 
   const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
   const role: EstateRole = (access?.role as EstateRole) ?? "VIEWER";
   if (!canWrite(role)) {
     // Viewers can read, but cannot create.
-    redirect(`/app/estates/${estateId}/notes?forbidden=1`);
+    redirect(`/app/estates/${encodeURIComponent(String(estateId))}/notes?forbidden=1`);
   }
 
   await connectToDatabase();
@@ -92,7 +92,9 @@ async function createNote(formData: FormData): Promise<void> {
     pinned,
   });
 
-  revalidatePath(`/app/estates/${estateId}/notes`);
+  const path = `/app/estates/${encodeURIComponent(String(estateId))}/notes`;
+  revalidatePath(path);
+  redirect(path);
 }
 
 /**
@@ -111,14 +113,14 @@ async function togglePinned(formData: FormData): Promise<void> {
 
   const session = await auth();
   if (!session?.user?.id) {
-    redirect("/login");
+    redirect(`/login?callbackUrl=/app/estates/${encodeURIComponent(String(estateId))}/notes`);
   }
 
   const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
   const role: EstateRole = (access?.role as EstateRole) ?? "VIEWER";
   if (!canWrite(role)) {
     // Viewers can read, but cannot modify.
-    redirect(`/app/estates/${estateId}/notes?forbidden=1`);
+    redirect(`/app/estates/${encodeURIComponent(String(estateId))}/notes?forbidden=1`);
   }
 
   await connectToDatabase();
@@ -131,7 +133,9 @@ async function togglePinned(formData: FormData): Promise<void> {
     { pinned: nextPinned },
   );
 
-  revalidatePath(`/app/estates/${estateId}/notes`);
+  const path = `/app/estates/${encodeURIComponent(String(estateId))}/notes`;
+  revalidatePath(path);
+  redirect(path);
 }
 
 /**
@@ -149,14 +153,14 @@ async function deleteNote(formData: FormData): Promise<void> {
 
   const session = await auth();
   if (!session?.user?.id) {
-    redirect("/login");
+    redirect(`/login?callbackUrl=/app/estates/${encodeURIComponent(String(estateId))}/notes`);
   }
 
   const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
   const role: EstateRole = (access?.role as EstateRole) ?? "VIEWER";
   if (!canWrite(role)) {
     // Viewers can read, but cannot delete.
-    redirect(`/app/estates/${estateId}/notes?forbidden=1`);
+    redirect(`/app/estates/${encodeURIComponent(String(estateId))}/notes?forbidden=1`);
   }
 
   await connectToDatabase();
@@ -166,7 +170,9 @@ async function deleteNote(formData: FormData): Promise<void> {
     estateId,
   });
 
-  revalidatePath(`/app/estates/${estateId}/notes`);
+  const path = `/app/estates/${encodeURIComponent(String(estateId))}/notes`;
+  revalidatePath(path);
+  redirect(`${path}?deleted=1`);
 }
 
 export default async function EstateNotesPage({
@@ -204,10 +210,13 @@ export default async function EstateNotesPage({
   }
 
   const forbidden = sp?.forbidden === "1";
+  const deleted = sp?.deleted === "1";
 
   const session = await auth();
   if (!session?.user?.id) {
-    redirect(`/login?callbackUrl=/app/estates/${estateId}/notes`);
+    redirect(
+      `/login?callbackUrl=${encodeURIComponent(`/app/estates/${estateId}/notes`)}`,
+    );
   }
 
   const access = await requireEstateAccess({ estateId, userId: session.user.id });
@@ -325,6 +334,24 @@ export default async function EstateNotesPage({
         </div>
       </div>
 
+      {deleted && (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+          <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-medium">Note deleted</p>
+              <p className="text-xs text-emerald-200">
+                The note was removed successfully.
+              </p>
+            </div>
+            <Link
+              href={`/app/estates/${estateId}/notes`}
+              className="mt-2 inline-flex items-center justify-center rounded-md border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-500/25 md:mt-0"
+            >
+              Dismiss
+            </Link>
+          </div>
+        </div>
+      )}
       {forbidden && (
         <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
           <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
@@ -438,6 +465,25 @@ export default async function EstateNotesPage({
 
       {/* Filters */}
       <section className="space-y-3 rounded-xl border border-slate-800 bg-slate-950/70 p-3 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-slate-500">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5">
+              Total: <span className="ml-1 text-slate-200">{notes.length}</span>
+            </span>
+            <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5">
+              Showing: <span className="ml-1 text-slate-200">{filteredNotes.length}</span>
+            </span>
+            {pinnedCount > 0 ? (
+              <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5">
+                Pinned: <span className="ml-1 text-slate-200">{pinnedCount}</span>
+              </span>
+            ) : null}
+          </div>
+
+          {hasFilters ? (
+            <span className="text-[11px] text-slate-500">Filters active</span>
+          ) : null}
+        </div>
         <form
           method="GET"
           className="flex flex-col gap-2 text-xs md:flex-row md:items-center md:justify-between"
@@ -562,10 +608,10 @@ export default async function EstateNotesPage({
                               href={`/app/estates/${estateId}/notes/${note._id}`}
                               className="text-sm font-medium text-slate-50 hover:text-emerald-300 underline-offset-2 hover:underline"
                             >
-                              {truncate(note.body, 120)}
+                              {truncate(note.body, 140)}
                             </Link>
                           </div>
-                          <p className="text-xs text-slate-400">{truncate(note.body, 240)}</p>
+                          <p className="text-xs text-slate-400">{truncate(note.body, 280)}</p>
                         </div>
                       </td>
 

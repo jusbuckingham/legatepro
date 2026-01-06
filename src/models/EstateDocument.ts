@@ -150,7 +150,7 @@ const EstateDocumentSchema = new Schema<EstateDocumentDocument>(
     // Upload metadata
     fileName: { type: String, trim: true },
     fileType: { type: String, trim: true },
-    fileSizeBytes: { type: Number },
+    fileSizeBytes: { type: Number, min: 0 },
   },
   {
     timestamps: true,
@@ -162,6 +162,7 @@ EstateDocumentSchema.index({ estateId: 1, createdAt: -1 });
 EstateDocumentSchema.index({ estateId: 1, subject: 1, createdAt: -1 });
 EstateDocumentSchema.index({ estateId: 1, isSensitive: 1, createdAt: -1 });
 EstateDocumentSchema.index({ estateId: 1, tags: 1 });
+EstateDocumentSchema.index({ estateId: 1, subject: 1, tags: 1, createdAt: -1 });
 
 EstateDocumentSchema.index(
   { label: "text", notes: "text", location: "text", url: "text", tags: "text", fileName: "text" },

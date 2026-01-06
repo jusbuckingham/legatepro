@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { logActivity } from "@/lib/activity";
+import { connectToDatabase } from "@/lib/db";
+import { logEstateEvent } from "@/lib/estateEvents";
 import { EstateNote } from "@/models/EstateNote";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 type RouteParams = {
   params: Promise<{
@@ -10,31 +14,67 @@ type RouteParams = {
   }>;
 };
 
-async function requireViewerAccess(
-  estateId: string
-): Promise<{ userId: string } | NextResponse> {
-  const session = await auth();
-  const userId = session?.user?.id;
+const MAX_NOTES_LIST = 200;
+const MAX_SUBJECT_LEN = 140;
+const MAX_BODY_LEN = 10_000;
+const MAX_CATEGORY_LEN = 32;
 
-  if (!userId) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
+const MAX_BODY_PREVIEW_LEN = 500;
 
+function previewText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return text.slice(0, max).trimEnd() + "…";
+}
+
+async function safeLogEvent(args: Parameters<typeof logEstateEvent>[0]) {
   try {
-    const input = { estateId, userId } as unknown as Parameters<typeof requireEstateAccess>[0];
-    const result = (await requireEstateAccess(input)) as unknown;
-
-    // Some implementations may return a response directly.
-    if (result instanceof NextResponse) return result;
-
-    return { userId };
+    await logEstateEvent(args);
   } catch {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    // Never block the API response if event logging fails
   }
 }
 
-async function requireEditorAccess(
-  estateId: string
+function isNonEmptyString(v: unknown): v is string {
+  return typeof v === "string" && v.trim().length > 0;
+}
+
+function isValidEstateId(estateId: unknown): estateId is string {
+  return typeof estateId === "string" && estateId.trim().length > 0 && estateId.trim().length <= 128;
+}
+
+function normalizeCategory(input: unknown): string {
+  if (!isNonEmptyString(input)) return "GENERAL";
+  const raw = input.trim().toUpperCase().slice(0, MAX_CATEGORY_LEN);
+
+  // Keep categories predictable (alnum + underscore). Fallback to GENERAL.
+  if (!/^[A-Z0-9_]+$/.test(raw)) return "GENERAL";
+  return raw;
+}
+
+function isResponseLike(value: unknown): value is Response {
+  return typeof value === "object" && value !== null && value instanceof Response;
+}
+
+function getFailureResponse(access: unknown): NextResponse | undefined {
+  if (!access || typeof access !== "object") return undefined;
+  const anyAccess = access as Record<string, unknown>;
+
+  // Support older helper shape: { ok: boolean; res: NextResponse }
+  if (anyAccess.ok === false && isResponseLike(anyAccess.res)) {
+    return anyAccess.res as NextResponse;
+  }
+
+  // Support helpers that return a Response/NextResponse on failure
+  if (isResponseLike(access)) {
+    return access as NextResponse;
+  }
+
+  return undefined;
+}
+
+async function requireAccess(
+  estateId: string,
+  mode: "view" | "edit"
 ): Promise<{ userId: string } | NextResponse> {
   const session = await auth();
   const userId = session?.user?.id;
@@ -44,23 +84,33 @@ async function requireEditorAccess(
   }
 
   try {
-    const input = { estateId, userId } as unknown as Parameters<typeof requireEstateEditAccess>[0];
-    const result = (await requireEstateEditAccess(input)) as unknown;
+    const input = { estateId, userId } as Parameters<typeof requireEstateAccess>[0];
 
-    // Some implementations may return a response directly.
-    if (result instanceof NextResponse) return result;
+    const result =
+      mode === "edit"
+        ? await (requireEstateEditAccess as unknown as (args: typeof input) => Promise<unknown>)(
+            input
+          )
+        : await (requireEstateAccess as unknown as (args: typeof input) => Promise<unknown>)(
+            input
+          );
 
+    const failure = getFailureResponse(result);
+    if (failure) return failure;
+
+    // If the helper didn't throw and didn't return a failure response, treat as authorized.
     return { userId };
   } catch {
     return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }
 }
 
-async function safeLog(input: unknown) {
+async function safeJson<T>(req: NextRequest): Promise<{ ok: true; value: T } | { ok: false }> {
   try {
-    await (logActivity as unknown as (args: unknown) => Promise<unknown>)(input);
+    const value = (await req.json()) as T;
+    return { ok: true, value };
   } catch {
-    // swallow
+    return { ok: false };
   }
 }
 
@@ -73,13 +123,44 @@ export async function GET(
   try {
     const { estateId } = await params;
 
-    const access = await requireViewerAccess(estateId);
+    if (!isValidEstateId(estateId)) {
+      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
+    }
+
+    const access = await requireAccess(estateId, "view");
     if (access instanceof NextResponse) return access;
 
-    const notes = await EstateNote.find({
-      estateId,
-    })
+    const { searchParams } = new URL(_req.url);
+    const q = searchParams.get("q")?.trim() ?? "";
+    const category = searchParams.get("category")?.trim() ?? "";
+    const pinnedParam = searchParams.get("pinned")?.trim() ?? "";
+
+    const where: Record<string, unknown> = { estateId };
+
+    if (isNonEmptyString(category)) {
+      where.category = normalizeCategory(category);
+    }
+
+    if (pinnedParam === "1" || pinnedParam === "true") {
+      where.pinned = true;
+    } else if (pinnedParam === "0" || pinnedParam === "false") {
+      where.pinned = false;
+    }
+
+    if (isNonEmptyString(q)) {
+      where.$or = [
+        { subject: { $regex: q, $options: "i" } },
+        { body: { $regex: q, $options: "i" } },
+      ];
+    }
+
+    await connectToDatabase();
+    const notes = await EstateNote.find(
+      where,
+      { subject: 1, body: 1, category: 1, pinned: 1, createdAt: 1, updatedAt: 1, ownerId: 1 }
+    )
       .sort({ pinned: -1, createdAt: -1 })
+      .limit(MAX_NOTES_LIST)
       .lean();
 
     return NextResponse.json({ ok: true, notes }, { status: 200 });
@@ -108,48 +189,69 @@ export async function POST(
   try {
     const { estateId } = await params;
 
-    const access = await requireEditorAccess(estateId);
+    if (!isValidEstateId(estateId)) {
+      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
+    }
+
+    const access = await requireAccess(estateId, "edit");
     if (access instanceof NextResponse) return access;
 
-    const json = (await req.json()) as CreateNotePayload;
-
-    if (!json.subject || !json.body) {
-      return NextResponse.json({ ok: false, error: "Subject and body are required" }, { status: 400 });
+    const parsed = await safeJson<CreateNotePayload>(req);
+    if (!parsed.ok) {
+      return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
     }
+
+    const json = parsed.value;
+
+    const subjectRaw = isNonEmptyString(json.subject) ? json.subject.trim() : "";
+    const bodyTrimmed = isNonEmptyString(json.body) ? json.body.trim() : "";
+
+    if (!subjectRaw || !bodyTrimmed) {
+      return NextResponse.json(
+        { ok: false, error: "Subject and body are required" },
+        { status: 400 }
+      );
+    }
+
+    if (subjectRaw.length > MAX_SUBJECT_LEN) {
+      return NextResponse.json(
+        { ok: false, error: `Subject is too long (max ${MAX_SUBJECT_LEN})` },
+        { status: 400 }
+      );
+    }
+
+    if (bodyTrimmed.length > MAX_BODY_LEN) {
+      return NextResponse.json(
+        { ok: false, error: `Body is too long (max ${MAX_BODY_LEN})` },
+        { status: 400 }
+      );
+    }
+
+    const categoryUpper = normalizeCategory(json.category);
+
+    await connectToDatabase();
 
     const note = await EstateNote.create({
       ownerId: access.userId,
       estateId,
-      subject: json.subject,
-      body: json.body,
-      category: json.category ?? "GENERAL",
+      subject: subjectRaw,
+      body: bodyTrimmed,
+      category: categoryUpper,
       pinned: Boolean(json.pinned),
     });
 
-    // Activity log: note created
-    const noteObj = typeof note.toObject === "function" ? (note.toObject() as unknown) : (note as unknown);
-
-    const bodyRaw = getString(noteObj, "body") ?? "";
-    const bodyText = bodyRaw.trim();
-
-    const kind = "NOTE";
-
-    const subject = getString(noteObj, "subject");
-    const category = getString(noteObj, "category");
-    const pinned = getBoolean(noteObj, "pinned");
-
-    await safeLog({
-      estateId: String(estateId),
-      kind,
-      action: "CREATED",
-      entityId: String(note._id),
-      message: "Note created",
-      snapshot: {
+    await safeLogEvent({
+      ownerId: access.userId,
+      estateId,
+      type: "NOTE_CREATED",
+      summary: "Note created",
+      detail: subjectRaw,
+      meta: {
         noteId: String(note._id),
-        subject,
-        category,
-        pinned,
-        bodyPreview: bodyText ? bodyText.slice(0, 240) : null,
+        subject: subjectRaw,
+        category: categoryUpper,
+        pinned: Boolean(json.pinned),
+        bodyPreview: previewText(bodyTrimmed, MAX_BODY_PREVIEW_LEN),
       },
     });
 
@@ -161,20 +263,4 @@ export async function POST(
       { status: 500 }
     );
   }
-}
-
-function asRecord(v: unknown): Record<string, unknown> {
-  if (v && typeof v === "object") return v as Record<string, unknown>;
-  return {};
-}
-
-function getString(obj: unknown, key: string): string | null {
-  const rec = asRecord(obj);
-  const val = rec[key];
-  return typeof val === "string" ? val : null;
-}
-
-function getBoolean(obj: unknown, key: string): boolean {
-  const rec = asRecord(obj);
-  return Boolean(rec[key]);
 }

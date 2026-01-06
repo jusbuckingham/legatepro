@@ -1,19 +1,30 @@
 import { Schema, model, models, type Document, type Model } from "mongoose";
 
-export type EstateEventType =
-  | "ESTATE_CREATED"
-  | "ESTATE_UPDATED"
-  | "ESTATE_DELETED"
-  | "INVOICE_CREATED"
-  | "INVOICE_STATUS_CHANGED"
-  | "CONTACT_LINKED"
-  | "CONTACT_UNLINKED"
-  | "COLLABORATOR_ADDED"
-  | "COLLABORATOR_ROLE_CHANGED"
-  | "COLLABORATOR_REMOVED"
-  | "COLLABORATOR_INVITE_SENT"
-  | "COLLABORATOR_INVITE_REVOKED"
-  | "COLLABORATOR_INVITE_ACCEPTED";
+export const ESTATE_EVENT_TYPES = [
+  "ESTATE_CREATED",
+  "ESTATE_UPDATED",
+  "ESTATE_DELETED",
+  "INVOICE_CREATED",
+  "INVOICE_STATUS_CHANGED",
+  "CONTACT_LINKED",
+  "CONTACT_UNLINKED",
+  "COLLABORATOR_ADDED",
+  "COLLABORATOR_ROLE_CHANGED",
+  "COLLABORATOR_REMOVED",
+  "COLLABORATOR_INVITE_SENT",
+  "COLLABORATOR_INVITE_REVOKED",
+  "COLLABORATOR_INVITE_ACCEPTED",
+  "DOCUMENT_CREATED",
+  "DOCUMENT_UPDATED",
+  "DOCUMENT_DELETED",
+  "NOTE_CREATED",
+  "NOTE_UPDATED",
+  "NOTE_PINNED",
+  "NOTE_UNPINNED",
+  "NOTE_DELETED",
+] as const;
+
+export type EstateEventType = (typeof ESTATE_EVENT_TYPES)[number];
 
 export interface EstateEventDocument extends Document {
   ownerId: Schema.Types.ObjectId | string;
@@ -41,21 +52,7 @@ const EstateEventSchema = new Schema<EstateEventDocument>(
     type: {
       type: String,
       required: true,
-      enum: [
-        "ESTATE_CREATED",
-        "ESTATE_UPDATED",
-        "ESTATE_DELETED",
-        "INVOICE_CREATED",
-        "INVOICE_STATUS_CHANGED",
-        "CONTACT_LINKED",
-        "CONTACT_UNLINKED",
-        "COLLABORATOR_ADDED",
-        "COLLABORATOR_ROLE_CHANGED",
-        "COLLABORATOR_REMOVED",
-        "COLLABORATOR_INVITE_SENT",
-        "COLLABORATOR_INVITE_REVOKED",
-        "COLLABORATOR_INVITE_ACCEPTED",
-      ],
+      enum: ESTATE_EVENT_TYPES,
     },
     summary: {
       type: String,

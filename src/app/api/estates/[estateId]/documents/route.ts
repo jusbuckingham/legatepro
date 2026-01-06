@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
+import { logEstateEvent } from "@/lib/estateEvents";
 import { EstateDocument } from "@/models/EstateDocument";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,41 @@ type RequireAccessArgs = { estateId: string; userId?: string };
 type RequireAccessFn = (args: RequireAccessArgs) => Promise<unknown>;
 
 type Role = "OWNER" | "EDITOR" | "VIEWER";
+
+const SUBJECTS = [
+  "BANKING",
+  "AUTO",
+  "MEDICAL",
+  "INCOME_TAX",
+  "PROPERTY",
+  "INSURANCE",
+  "IDENTITY",
+  "LEGAL",
+  "ESTATE_ACCOUNTING",
+  "RECEIPTS",
+  "OTHER",
+] as const;
+
+type Subject = (typeof SUBJECTS)[number];
+
+function normalizeSubject(value: string | undefined | null): Subject {
+  const v = (value ?? "").trim().toUpperCase();
+  return (SUBJECTS as readonly string[]).includes(v) ? (v as Subject) : "OTHER";
+}
+
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function clampInt(value: string | null, fallback: number, min: number, max: number): number {
+  const n = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
+function isFiniteNonNegativeNumber(n: unknown): n is number {
+  return typeof n === "number" && Number.isFinite(n) && n >= 0;
+}
 
 function isResponseLike(value: unknown): value is Response {
   return typeof value === "object" && value !== null && value instanceof Response;
@@ -77,18 +113,26 @@ export async function GET(
     const failure = getFailureResponse(access);
     if (failure) return failure;
 
-    const role = getRoleFromAccess(access);
+    const role: Role = getRoleFromAccess(access) ?? "VIEWER";
 
     const { searchParams } = new URL(request.url);
-    const q = searchParams.get("q")?.trim() ?? "";
-    const subject = searchParams.get("subject")?.trim() ?? "";
-    const tag = searchParams.get("tag")?.trim() ?? "";
-    const sensitiveOnly =
-      searchParams.get("sensitive") === "1" || searchParams.get("sensitive") === "true";
+
+    const qRaw = searchParams.get("q") ?? "";
+    const q = qRaw.trim().slice(0, 200);
+
+    const subject = normalizeSubject(searchParams.get("subject"));
+
+    const tagRaw = (searchParams.get("tag") ?? "").trim();
+    const tag = tagRaw ? tagRaw.toLowerCase() : "";
+
+    const sensitiveParam = searchParams.get("sensitive");
+    const sensitiveOnly = sensitiveParam === "1" || sensitiveParam === "true" || sensitiveParam === "on";
+
+    const limit = clampInt(searchParams.get("limit"), 250, 1, 500);
 
     const where: Record<string, unknown> = { estateId };
 
-    if (subject) where.subject = subject;
+    if (searchParams.get("subject")) where.subject = subject;
 
     if (tag) {
       // Store/search tags as lowercase for predictable filtering
@@ -96,11 +140,12 @@ export async function GET(
     }
 
     if (q) {
+      const safe = escapeRegExp(q);
       where.$or = [
-        { label: { $regex: q, $options: "i" } },
-        { notes: { $regex: q, $options: "i" } },
-        { location: { $regex: q, $options: "i" } },
-        { fileName: { $regex: q, $options: "i" } },
+        { label: { $regex: safe, $options: "i" } },
+        { notes: { $regex: safe, $options: "i" } },
+        { location: { $regex: safe, $options: "i" } },
+        { fileName: { $regex: safe, $options: "i" } },
       ];
     }
 
@@ -113,7 +158,7 @@ export async function GET(
 
     const documents = await EstateDocument.find(where)
       .sort({ createdAt: -1 })
-      .limit(250)
+      .limit(limit)
       .lean<Record<string, unknown>[]>()
       .exec();
 
@@ -145,6 +190,8 @@ export async function POST(
     const failure = getFailureResponse(access);
     if (failure) return failure;
 
+    const role: Role = getRoleFromAccess(access) ?? "VIEWER";
+
     const parsed = await safeJson(request);
     if (!parsed.ok) {
       return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
@@ -158,15 +205,19 @@ export async function POST(
     const b = body as Record<string, unknown>;
 
     const label = typeof b.label === "string" ? b.label.trim() : "";
-    const subject = typeof b.subject === "string" ? b.subject.trim() : "OTHER";
+    const subject = normalizeSubject(typeof b.subject === "string" ? b.subject : undefined);
     const notes = typeof b.notes === "string" ? b.notes.trim() : "";
     const location = typeof b.location === "string" ? b.location.trim() : "";
     const url = typeof b.url === "string" ? b.url.trim() : "";
     const isSensitive = Boolean(b.isSensitive);
 
+    if (role === "VIEWER") {
+      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+    }
+
     const fileName = typeof b.fileName === "string" ? b.fileName.trim() : "";
     const fileType = typeof b.fileType === "string" ? b.fileType.trim() : "";
-    const fileSizeBytes = typeof b.fileSizeBytes === "number" ? b.fileSizeBytes : 0;
+    const fileSizeBytes = isFiniteNonNegativeNumber(b.fileSizeBytes) ? b.fileSizeBytes : 0;
 
     if (!label) {
       return NextResponse.json({ ok: false, error: "Label is required" }, { status: 400 });
@@ -183,7 +234,7 @@ export async function POST(
       estateId,
       ownerId: session.user.id,
       label,
-      subject: subject || "OTHER",
+      subject,
       notes,
       location,
       url,
@@ -193,6 +244,31 @@ export async function POST(
       fileType,
       fileSizeBytes,
     });
+
+    // Activity timeline: document created (non-blocking)
+    try {
+      await logEstateEvent({
+        ownerId: session.user.id,
+        estateId,
+        type: "DOCUMENT_CREATED",
+        summary: "Document created",
+        detail: `Created document: ${label}`,
+        meta: {
+          documentId: String((document as { _id?: unknown })._id ?? ""),
+          label,
+          subject,
+          isSensitive,
+          tags: normalizedTags,
+          url: url || null,
+          location: location || null,
+          fileName: fileName || null,
+          fileType: fileType || null,
+          fileSizeBytes,
+        },
+      });
+    } catch {
+      // Don't block document creation if event logging fails
+    }
 
     return NextResponse.json({ ok: true, document }, { status: 201 });
   } catch (error) {

@@ -13,6 +13,7 @@ interface PageProps {
     estateId: string;
     documentId: string;
   }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
 // Shape returned from Mongoose `.lean()`
@@ -81,10 +82,14 @@ async function updateDocument(formData: FormData): Promise<void> {
     redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
   }
 
-  const tags = tagsRaw
-    .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean);
+  const tags = Array.from(
+    new Set(
+      tagsRaw
+        .split(",")
+        .map((t) => t.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
 
   const updated = await EstateDocument.findOneAndUpdate(
     {
@@ -100,7 +105,11 @@ async function updateDocument(formData: FormData): Promise<void> {
       notes,
       isSensitive,
     },
-  );
+    {
+      new: true,
+      runValidators: true,
+    },
+  ).exec();
 
   if (!updated) {
     redirect(`/app/estates/${estateId}/documents/${documentId}/edit?notFound=1`);
@@ -112,8 +121,12 @@ async function updateDocument(formData: FormData): Promise<void> {
   redirect(`/app/estates/${estateId}/documents/${documentId}`);
 }
 
-export default async function EditDocumentPage({ params }: PageProps) {
+export default async function EditDocumentPage({ params, searchParams }: PageProps) {
   const { estateId, documentId } = await params;
+
+  const sp = searchParams ? await searchParams : undefined;
+  const notFoundFlag = sp?.notFound === "1";
+  const forbiddenFlag = sp?.forbidden === "1";
 
   const session = await auth();
 
@@ -139,7 +152,9 @@ export default async function EditDocumentPage({ params }: PageProps) {
   const doc = await EstateDocument.findOne({
     _id: documentId,
     estateId,
-  }).lean<EstateDocumentLean>();
+  })
+    .lean<EstateDocumentLean>()
+    .exec();
 
   if (!doc) {
     notFound();
@@ -177,6 +192,23 @@ export default async function EditDocumentPage({ params }: PageProps) {
           </div>
         }
       />
+      {forbiddenFlag ? (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+          <div className="font-medium">Action blocked</div>
+          <div className="mt-1 text-xs text-rose-200">
+            You don’t have edit permissions for this estate.
+          </div>
+        </div>
+      ) : null}
+
+      {notFoundFlag ? (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          <div className="font-medium">Document not found</div>
+          <div className="mt-1 text-xs text-amber-200">
+            This document may have been removed or you may not have access.
+          </div>
+        </div>
+      ) : null}
       <form
         action={updateDocument}
         className="space-y-6 rounded-xl border border-slate-800 bg-slate-950/40 p-4 sm:p-6"
@@ -290,7 +322,7 @@ export default async function EditDocumentPage({ params }: PageProps) {
           Tip: Use clear labels (e.g., “Bank statements 2023 Q1–Q4”) so your final inventory/accounting is painless.
         </p>
 
-        <div className="flex items-center justify-between gap-3 border-t border-slate-800 pt-4">
+        <div className="flex flex-col gap-3 border-t border-slate-800 pt-4 sm:flex-row sm:items-center sm:justify-between">
           <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-200">
             <input
               type="checkbox"
@@ -301,12 +333,20 @@ export default async function EditDocumentPage({ params }: PageProps) {
             Mark as sensitive
           </label>
 
-          <button
-            type="submit"
-            className="inline-flex items-center rounded-lg border border-emerald-500/60 bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-emerald-50 shadow-sm shadow-black/40 hover:bg-emerald-500"
-          >
-            Save changes
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Link
+              href={`/app/estates/${estateId}/documents/${documentId}`}
+              className="inline-flex items-center rounded-lg border border-slate-800 px-4 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500/70 hover:text-slate-100"
+            >
+              Cancel
+            </Link>
+            <button
+              type="submit"
+              className="inline-flex items-center rounded-lg border border-emerald-500/60 bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-emerald-50 shadow-sm shadow-black/40 hover:bg-emerald-500"
+            >
+              Save changes
+            </button>
+          </div>
         </div>
       </form>
     </div>

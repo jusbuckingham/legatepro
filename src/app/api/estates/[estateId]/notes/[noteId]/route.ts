@@ -1,83 +1,88 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import { EstateNote } from "@/models/EstateNote";
+import { logEstateEvent } from "@/lib/estateEvents";
 
-type RouteParams = {
+interface RouteParams {
   params: Promise<{
     estateId: string;
     noteId: string;
   }>;
+}
+
+type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
+
+type EstateNoteLean = {
+  _id: unknown;
+  estateId?: string | null;
+  ownerId?: string | null;
+  body?: string | null;
+  pinned?: boolean | null;
+  createdAt?: Date | string | null;
+  updatedAt?: Date | string | null;
 };
 
-function isResponseLike(v: unknown): v is Response {
-  return v instanceof Response;
+function toObjectId(id: string) {
+  return mongoose.Types.ObjectId.isValid(id)
+    ? new mongoose.Types.ObjectId(id)
+    : null;
 }
 
-async function requireView(estateId: string, userId: string): Promise<Response | { estateId: string; userId: string }> {
-  const res = await requireEstateAccess({ estateId, userId });
-  if (isResponseLike(res)) return res;
-  return { estateId, userId };
+function getRoleFromAccess(access: unknown): EstateRole | undefined {
+  if (!access || typeof access !== "object") return undefined;
+  const role = (access as Record<string, unknown>).role;
+  return role === "OWNER" || role === "EDITOR" || role === "VIEWER"
+    ? role
+    : undefined;
 }
 
-async function requireEdit(estateId: string, userId: string): Promise<Response | { estateId: string; userId: string }> {
-  const res = await requireEstateEditAccess({ estateId, userId });
-  if (isResponseLike(res)) return res;
-  return { estateId, userId };
-}
-
-async function safeLog(input: Record<string, unknown>) {
+async function safeJson(
+  request: NextRequest
+): Promise<{ ok: true; value: unknown } | { ok: false }> {
   try {
-    const fn = logActivity as unknown as (args: Record<string, unknown>) => Promise<unknown>;
-    await fn(input);
+    const value = await request.json();
+    return { ok: true, value };
   } catch {
-    // never block API responses on activity logging
+    return { ok: false };
   }
 }
 
-function asRecord(v: unknown): Record<string, unknown> {
-  if (v && typeof v === "object") return v as Record<string, unknown>;
-  return {};
+function normalizeBody(value: unknown, maxLen = 20_000): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const v = value.trim();
+  if (!v) return "";
+  return v.length > maxLen ? v.slice(0, maxLen) : v;
 }
 
-function getString(obj: unknown, key: string): string | null {
-  const rec = asRecord(obj);
-  const val = rec[key];
-  return typeof val === "string" ? val : null;
-}
-
-function getBoolean(obj: unknown, key: string): boolean {
-  const rec = asRecord(obj);
-  return Boolean(rec[key]);
-}
-
-// GET /api/estates/[estateId]/notes/[noteId]
-export async function GET(
-  _req: NextRequest,
-  { params }: RouteParams
-): Promise<Response> {
+export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { estateId, noteId } = await params;
 
     const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { ok: false, error: "Unauthorized" },
+        { status: 401 }
+      );
     }
 
-    // Enforce estate access (collaborators allowed)
-    const access = await requireView(estateId, userId);
-    if (isResponseLike(access)) return access;
+    const noteObjectId = toObjectId(noteId);
+    if (!noteObjectId) {
+      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+    }
 
     await connectToDatabase();
 
-    const note = await EstateNote.findOne({
-      _id: noteId,
-      estateId,
-    }).lean();
+    // Any estate member can view notes (VIEWER is read-only).
+    await requireEstateAccess({ estateId, userId: session.user.id });
+
+    const note = await EstateNote.findOne({ _id: noteObjectId, estateId })
+      .lean<EstateNoteLean>()
+      .exec();
 
     if (!note) {
       return NextResponse.json({ ok: false, error: "Note not found" }, { status: 404 });
@@ -93,103 +98,133 @@ export async function GET(
   }
 }
 
-interface UpdateNotePayload {
-  subject?: string;
-  body?: string;
-  category?: string;
-  pinned?: boolean;
-}
-
-// PATCH /api/estates/[estateId]/notes/[noteId]
-export async function PATCH(
-  req: NextRequest,
-  { params }: RouteParams
-): Promise<Response> {
+export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const { estateId, noteId } = await params;
 
     const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { ok: false, error: "Unauthorized" },
+        { status: 401 }
+      );
     }
 
-    // Enforce estate access (collaborators allowed) + edit permission
-    const access = await requireEdit(estateId, userId);
-    if (isResponseLike(access)) return access;
+    const noteObjectId = toObjectId(noteId);
+    if (!noteObjectId) {
+      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+    }
 
     await connectToDatabase();
 
-    let json: UpdateNotePayload;
-    try {
-      json = (await req.json()) as UpdateNotePayload;
-    } catch {
+    // Editors/owners only.
+    const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
+    const role = getRoleFromAccess(access) ?? "VIEWER";
+
+    // requireEstateEditAccess should only allow OWNER/EDITOR. Fail closed.
+    if (role !== "OWNER" && role !== "EDITOR") {
+      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+    }
+
+    const parsed = await safeJson(request);
+    if (!parsed.ok || !parsed.value || typeof parsed.value !== "object") {
       return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
     }
 
-    const update: UpdateNotePayload = {};
-    if (typeof json.subject === "string") update.subject = json.subject;
-    if (typeof json.body === "string") update.body = json.body;
-    if (typeof json.category === "string") update.category = json.category;
-    if (typeof json.pinned === "boolean") update.pinned = json.pinned;
+    const updateObj = parsed.value as Record<string, unknown>;
 
-    const noteDoc = await EstateNote.findOne({
-      _id: noteId,
-      estateId,
-    });
+    const updates: Record<string, unknown> = {};
+    const updatedFields: string[] = [];
 
-    if (!noteDoc) {
+    // body
+    if ("body" in updateObj) {
+      const nextBody = normalizeBody(updateObj.body);
+      if (nextBody !== undefined) {
+        updates.body = nextBody;
+        updatedFields.push("body");
+      }
+    }
+
+    // pinned
+    if ("pinned" in updateObj) {
+      const nextPinned = Boolean(updateObj.pinned);
+      // Policy: only OWNER can pin/unpin.
+      if (role !== "OWNER") {
+        return NextResponse.json(
+          { ok: false, error: "Only the owner can pin/unpin notes" },
+          { status: 403 }
+        );
+      }
+      updates.pinned = nextPinned;
+      updatedFields.push("pinned");
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json(
+        { ok: false, error: "No valid fields provided" },
+        { status: 400 }
+      );
+    }
+
+    const existing = await EstateNote.findOne({ _id: noteObjectId, estateId })
+      .lean<EstateNoteLean>()
+      .exec();
+
+    if (!existing) {
       return NextResponse.json({ ok: false, error: "Note not found" }, { status: 404 });
     }
 
-    const beforeObj = typeof noteDoc.toObject === "function" ? (noteDoc.toObject() as unknown) : (noteDoc as unknown);
-    const previousSubject = getString(beforeObj, "subject");
-    const previousCategory = getString(beforeObj, "category");
-    const previousPinned = getBoolean(beforeObj, "pinned");
-    const previousBody = getString(beforeObj, "body");
+    const updated = await EstateNote.findOneAndUpdate(
+      { _id: noteObjectId, estateId },
+      updates,
+      { new: true, runValidators: true }
+    )
+      .lean<EstateNoteLean>()
+      .exec();
 
-    Object.assign(noteDoc, update);
-    await noteDoc.save();
+    if (!updated) {
+      return NextResponse.json({ ok: false, error: "Note not found" }, { status: 404 });
+    }
 
-    const afterObj = typeof noteDoc.toObject === "function" ? (noteDoc.toObject() as unknown) : (noteDoc as unknown);
-    const nextSubject = getString(afterObj, "subject");
-    const nextCategory = getString(afterObj, "category");
-    const nextPinned = getBoolean(afterObj, "pinned");
-    const nextBody = getString(afterObj, "body");
+    // Log events
+    try {
+      const didPinnedChange =
+        "pinned" in updates && Boolean(existing.pinned) !== Boolean(updated.pinned);
 
-    const didPinnedChange = previousPinned !== nextPinned;
+      if (didPinnedChange) {
+        await logEstateEvent({
+          ownerId: session.user.id,
+          estateId,
+          type: Boolean(updated.pinned) ? "NOTE_PINNED" : "NOTE_UNPINNED",
+          summary: Boolean(updated.pinned) ? "Note pinned" : "Note unpinned",
+          detail: `Note ${noteId}`,
+          meta: {
+            noteId,
+            pinned: Boolean(updated.pinned),
+          },
+        });
+      }
 
-    // Activity log: note updated / pinned / unpinned
-    const previousBodyPreview = previousBody ? previousBody.trim().slice(0, 240) : null;
-    const newBodyPreview = nextBody ? nextBody.trim().slice(0, 240) : null;
-    const action = didPinnedChange ? (nextPinned ? "PINNED" : "UNPINNED") : "UPDATED";
+      if (updatedFields.includes("body")) {
+        await logEstateEvent({
+          ownerId: session.user.id,
+          estateId,
+          type: "NOTE_UPDATED",
+          summary: "Note updated",
+          detail: `Updated note ${noteId}`,
+          meta: {
+            noteId,
+            updatedFields,
+          },
+        });
+      }
+    } catch (e) {
+      console.error("[logEstateEvent NOTE_*] Error:", e);
+    }
 
-    await safeLog({
-      estateId: String(estateId),
-      kind: "NOTE",
-      action,
-      entityId: String(noteDoc._id),
-      message: didPinnedChange ? (nextPinned ? "Note pinned" : "Note unpinned") : "Note updated",
-      snapshot: {
-        noteId: String(noteDoc._id),
-        previousSubject,
-        newSubject: nextSubject,
-        previousCategory,
-        newCategory: nextCategory,
-        previousPinned,
-        newPinned: nextPinned,
-        previousBodyPreview,
-        newBodyPreview,
-      },
-    });
-
-    const note = noteDoc.toObject();
-    return NextResponse.json({ ok: true, note }, { status: 200 });
+    return NextResponse.json({ ok: true, note: updated }, { status: 200 });
   } catch (error) {
-    console.error(
-      "[PATCH /api/estates/[estateId]/notes/[noteId]] Error:",
-      error
-    );
+    console.error("[PATCH /api/estates/[estateId]/notes/[noteId]] Error:", error);
     return NextResponse.json(
       { ok: false, error: "Failed to update note" },
       { status: 500 }
@@ -197,62 +232,63 @@ export async function PATCH(
   }
 }
 
-// DELETE /api/estates/[estateId]/notes/[noteId]
-export async function DELETE(
-  _req: NextRequest,
-  { params }: RouteParams
-): Promise<Response> {
+export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
     const { estateId, noteId } = await params;
 
     const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { ok: false, error: "Unauthorized" },
+        { status: 401 }
+      );
     }
 
-    // Enforce estate access (collaborators allowed) + edit permission
-    const access = await requireEdit(estateId, userId);
-    if (isResponseLike(access)) return access;
+    const noteObjectId = toObjectId(noteId);
+    if (!noteObjectId) {
+      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+    }
 
     await connectToDatabase();
 
+    // Editors/owners only.
+    const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
+    const role = getRoleFromAccess(access) ?? "VIEWER";
+
+    if (role !== "OWNER" && role !== "EDITOR") {
+      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+    }
+
     const deleted = await EstateNote.findOneAndDelete({
-      _id: noteId,
+      _id: noteObjectId,
       estateId,
-    }).lean();
+    })
+      .lean<EstateNoteLean>()
+      .exec();
 
     if (!deleted) {
       return NextResponse.json({ ok: false, error: "Note not found" }, { status: 404 });
     }
 
-    // Activity log: note deleted
-    const deletedObj = deleted as unknown;
-
-    const bodyRaw = getString(deletedObj, "body") ?? "";
-    const bodyText = bodyRaw.trim();
-
-    await safeLog({
-      estateId: String(estateId),
-      kind: "NOTE",
-      action: "DELETED",
-      entityId: String(asRecord(deletedObj)._id ?? noteId),
-      message: "Note deleted",
-      snapshot: {
-        noteId: String(asRecord(deletedObj)._id ?? noteId),
-        subject: getString(deletedObj, "subject"),
-        category: getString(deletedObj, "category"),
-        pinned: getBoolean(deletedObj, "pinned"),
-        bodyPreview: bodyText ? bodyText.slice(0, 240) : null,
-      },
-    });
+    try {
+      await logEstateEvent({
+        ownerId: session.user.id,
+        estateId,
+        type: "NOTE_DELETED",
+        summary: "Note deleted",
+        detail: `Deleted note ${noteId}`,
+        meta: {
+          noteId,
+          wasPinned: Boolean(deleted.pinned),
+        },
+      });
+    } catch (e) {
+      console.error("[logEstateEvent NOTE_DELETED] Error:", e);
+    }
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (error) {
-    console.error(
-      "[DELETE /api/estates/[estateId]/notes/[noteId]] Error:",
-      error
-    );
+    console.error("[DELETE /api/estates/[estateId]/notes/[noteId]] Error:", error);
     return NextResponse.json(
       { ok: false, error: "Failed to delete note" },
       { status: 500 }

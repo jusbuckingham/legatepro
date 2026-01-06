@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import { EstateDocument } from "@/models/EstateDocument";
+import { logEstateEvent } from "@/lib/estateEvents";
 
 interface RouteParams {
   params: Promise<{
@@ -13,7 +14,82 @@ interface RouteParams {
   }>;
 }
 
-type EstateDocumentLean = Record<string, unknown>;
+type EstateDocumentSubject =
+  | "BANKING"
+  | "AUTO"
+  | "MEDICAL"
+  | "INCOME_TAX"
+  | "PROPERTY"
+  | "INSURANCE"
+  | "IDENTITY"
+  | "LEGAL"
+  | "ESTATE_ACCOUNTING"
+  | "RECEIPTS"
+  | "OTHER";
+
+type EstateDocumentLean = {
+  _id: unknown;
+  estateId?: string;
+  ownerId?: string;
+  subject?: EstateDocumentSubject | string | null;
+  label?: string | null;
+  location?: string | null;
+  url?: string | null;
+  tags?: string[] | null;
+  notes?: string | null;
+  isSensitive?: boolean | null;
+  fileName?: string | null;
+  fileType?: string | null;
+  fileSizeBytes?: number | null;
+  createdAt?: Date | string | null;
+  updatedAt?: Date | string | null;
+};
+
+const SUBJECT_ALLOWLIST: ReadonlySet<string> = new Set([
+  "BANKING",
+  "AUTO",
+  "MEDICAL",
+  "INCOME_TAX",
+  "PROPERTY",
+  "INSURANCE",
+  "IDENTITY",
+  "LEGAL",
+  "ESTATE_ACCOUNTING",
+  "RECEIPTS",
+  "OTHER",
+]);
+
+function normalizeSubject(value: unknown): EstateDocumentSubject {
+  if (typeof value !== "string") return "OTHER";
+  const v = value.trim().toUpperCase();
+  return SUBJECT_ALLOWLIST.has(v) ? (v as EstateDocumentSubject) : "OTHER";
+}
+
+function normalizeOptionalString(value: unknown, maxLen: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const v = value.trim();
+  if (!v) return undefined;
+  return v.length > maxLen ? v.slice(0, maxLen) : v;
+}
+
+function normalizeTags(value: unknown, maxTags = 25, maxLen = 32): string[] {
+  const raw: string[] = Array.isArray(value)
+    ? value.filter((t: unknown): t is string => typeof t === "string")
+    : typeof value === "string"
+    ? value.split(",")
+    : [];
+
+  const out: string[] = [];
+  for (const t of raw) {
+    const v = t.trim().toLowerCase();
+    if (!v) continue;
+    if (v.length > maxLen) continue;
+    if (out.includes(v)) continue;
+    out.push(v);
+    if (out.length >= maxTags) break;
+  }
+  return out;
+}
 
 function toObjectId(id: string) {
   return mongoose.Types.ObjectId.isValid(id)
@@ -29,6 +105,27 @@ function getRoleFromAccess(access: unknown): EstateRole | undefined {
 
   if (role === "OWNER" || role === "EDITOR" || role === "VIEWER") {
     return role;
+  }
+
+  return undefined;
+}
+
+function isResponseLike(value: unknown): value is Response {
+  return typeof value === "object" && value !== null && value instanceof Response;
+}
+
+function getFailureResponse(access: unknown): NextResponse | undefined {
+  if (!access || typeof access !== "object") return undefined;
+  const anyAccess = access as Record<string, unknown>;
+
+  // Support older helper shape: { ok: boolean; res: NextResponse }
+  if (anyAccess.ok === false && isResponseLike(anyAccess.res)) {
+    return anyAccess.res as NextResponse;
+  }
+
+  // Support newer helper shape: may directly return a Response/NextResponse on failure
+  if (isResponseLike(access)) {
+    return access as NextResponse;
   }
 
   return undefined;
@@ -59,9 +156,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const estateObjectId = toObjectId(estateId);
     const documentObjectId = toObjectId(documentId);
-    if (!estateObjectId || !documentObjectId) {
+    if (!documentObjectId) {
       return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
 
@@ -69,10 +165,12 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     // Any estate member can view documents (VIEWER is read-only).
     const access = await requireEstateAccess({ estateId, userId: session.user.id });
+    const failure = getFailureResponse(access);
+    if (failure) return failure;
 
     const document = await EstateDocument.findOne({
       _id: documentObjectId,
-      estateId: estateObjectId,
+      estateId,
     })
       .lean<EstateDocumentLean>()
       .exec();
@@ -81,7 +179,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ ok: false, error: "Document not found" }, { status: 404 });
     }
 
-    const role = getRoleFromAccess(access);
+    const role = getRoleFromAccess(access) ?? "VIEWER";
 
     // Viewers cannot see sensitive documents.
     if (role === "VIEWER" && isSensitiveDocument(document)) {
@@ -107,9 +205,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const estateObjectId = toObjectId(estateId);
     const documentObjectId = toObjectId(documentId);
-    if (!estateObjectId || !documentObjectId) {
+    if (!documentObjectId) {
       return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
 
@@ -117,6 +214,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     // Editors/owners only.
     const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
+    const failure = getFailureResponse(access);
+    if (failure) return failure;
     const role = getRoleFromAccess(access);
 
     // `requireEstateEditAccess` should only allow OWNER/EDITOR.
@@ -131,50 +230,71 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const updateObj = parsed.value as Record<string, unknown>;
-
-    const allowedFields = [
-      "label",
-      "subject",
-      "notes",
-      "location",
-      "url",
-      "tags",
-      "isSensitive",
-    ] as const;
-
     const filteredUpdates: Record<string, unknown> = {};
-    for (const key of allowedFields) {
-      if (key in updateObj) {
-        filteredUpdates[key] = updateObj[key];
+
+    // Normalize/sanitize each supported field.
+    if ("label" in updateObj) {
+      const v = normalizeOptionalString(updateObj.label, 200);
+      if (v) filteredUpdates.label = v;
+    }
+
+    if ("subject" in updateObj) {
+      filteredUpdates.subject = normalizeSubject(updateObj.subject);
+    }
+
+    if ("notes" in updateObj) {
+      const v = normalizeOptionalString(updateObj.notes, 5000);
+      filteredUpdates.notes = v ?? "";
+    }
+
+    if ("location" in updateObj) {
+      const v = normalizeOptionalString(updateObj.location, 200);
+      filteredUpdates.location = v ?? "";
+    }
+
+    if ("url" in updateObj) {
+      const v = normalizeOptionalString(updateObj.url, 2000);
+      filteredUpdates.url = v ?? "";
+    }
+
+    if ("tags" in updateObj) {
+      filteredUpdates.tags = normalizeTags(updateObj.tags);
+    }
+
+    let requestedIsSensitive: boolean | undefined;
+    if ("isSensitive" in updateObj) {
+      requestedIsSensitive = Boolean(updateObj.isSensitive);
+      filteredUpdates.isSensitive = requestedIsSensitive;
+    }
+
+    // Only OWNER can change a document's sensitivity (either direction).
+    if (requestedIsSensitive !== undefined && role !== "OWNER") {
+      // We need the current value to know whether this is a toggle.
+      const current = await EstateDocument.findOne({
+        _id: documentObjectId,
+        estateId,
+      })
+        .select({ isSensitive: 1 })
+        .lean<{ isSensitive?: boolean | null }>()
+        .exec();
+
+      if (!current) {
+        return NextResponse.json({ ok: false, error: "Document not found" }, { status: 404 });
       }
+
+      const currentIsSensitive = Boolean(current.isSensitive);
+      if (currentIsSensitive !== requestedIsSensitive) {
+        return NextResponse.json(
+          { ok: false, error: "Only the owner can change sensitivity" },
+          { status: 403 }
+        );
+      }
+
+      // If the value is the same, drop it (no-op) so we don't imply a permissioned change.
+      delete filteredUpdates.isSensitive;
     }
 
-    // Only OWNER can mark a document as sensitive.
-    if ("isSensitive" in filteredUpdates && Boolean(filteredUpdates.isSensitive) && role !== "OWNER") {
-      return NextResponse.json(
-        { ok: false, error: "Only the owner can mark a document as sensitive" },
-        { status: 403 }
-      );
-    }
-
-    // Normalize tags if provided
-    if ("tags" in filteredUpdates) {
-      const raw = filteredUpdates.tags;
-      const normalized = Array.isArray(raw)
-        ? raw
-            .filter((t: unknown): t is string => typeof t === "string")
-            .map((t) => t.trim().toLowerCase())
-            .filter(Boolean)
-        : typeof raw === "string"
-        ? raw
-            .split(",")
-            .map((t) => t.trim().toLowerCase())
-            .filter(Boolean)
-        : [];
-
-      filteredUpdates.tags = normalized;
-    }
-
+    // If nothing valid remains after normalization, fail.
     if (Object.keys(filteredUpdates).length === 0) {
       return NextResponse.json(
         { ok: false, error: "No valid fields provided" },
@@ -185,7 +305,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const updated = await EstateDocument.findOneAndUpdate(
       {
         _id: documentObjectId,
-        estateId: estateObjectId,
+        estateId,
       },
       filteredUpdates,
       { new: true, runValidators: true }
@@ -195,6 +315,23 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (!updated) {
       return NextResponse.json({ ok: false, error: "Document not found" }, { status: 404 });
+    }
+
+    try {
+      await logEstateEvent({
+        ownerId: session.user.id,
+        estateId,
+        type: "DOCUMENT_UPDATED",
+        summary: "Document updated",
+        detail: `Updated document ${documentId}`,
+        meta: {
+          documentId,
+          updatedFields: Object.keys(filteredUpdates),
+          isSensitive: Boolean((updated as EstateDocumentLean | null | undefined)?.isSensitive),
+        },
+      });
+    } catch (error) {
+      console.error("[logEstateEvent DOCUMENT_UPDATED] Error:", error);
     }
 
     return NextResponse.json({ ok: true, document: updated }, { status: 200 });
@@ -216,9 +353,8 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const estateObjectId = toObjectId(estateId);
     const documentObjectId = toObjectId(documentId);
-    if (!estateObjectId || !documentObjectId) {
+    if (!documentObjectId) {
       return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
 
@@ -226,6 +362,8 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     // Editors/owners only.
     const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
+    const failure = getFailureResponse(access);
+    if (failure) return failure;
     const role = getRoleFromAccess(access);
 
     // `requireEstateEditAccess` should only allow OWNER/EDITOR.
@@ -236,13 +374,29 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     const deleted = await EstateDocument.findOneAndDelete({
       _id: documentObjectId,
-      estateId: estateObjectId,
+      estateId,
     })
       .lean<EstateDocumentLean>()
       .exec();
 
     if (!deleted) {
       return NextResponse.json({ ok: false, error: "Document not found" }, { status: 404 });
+    }
+
+    try {
+      await logEstateEvent({
+        ownerId: session.user.id,
+        estateId,
+        type: "DOCUMENT_DELETED",
+        summary: "Document deleted",
+        detail: `Deleted document ${documentId}`,
+        meta: {
+          documentId,
+          wasSensitive: Boolean((deleted as EstateDocumentLean | null | undefined)?.isSensitive),
+        },
+      });
+    } catch (error) {
+      console.error("[logEstateEvent DOCUMENT_DELETED] Error:", error);
     }
 
     return NextResponse.json({ ok: true }, { status: 200 });
