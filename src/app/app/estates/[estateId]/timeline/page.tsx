@@ -11,7 +11,7 @@ import { EstateDocument } from "@/models/EstateDocument";
 import { EstateTask } from "@/models/EstateTask";
 import { EstateNote } from "@/models/EstateNote";
 
-import { EstateEvent } from "@/models/EstateEvent";
+import EstateEvent from "@/models/EstateEvent";
 import { EstateActivity } from "@/models/EstateActivity";
 
 export const dynamic = "force-dynamic";
@@ -111,7 +111,19 @@ function truncate(text: string, max = 160) {
 function formatDateTime(value: string): string {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString();
+
+  // Consistent server-side formatting (Node) to avoid hydration/locale drift.
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(d);
+  } catch {
+    return d.toLocaleString();
+  }
 }
 
 function toDateKey(date: Date): string {
@@ -124,9 +136,20 @@ function toDateKey(date: Date): string {
 function getDayLabelFromKey(dateKey: string, todayKey: string, yesterdayKey: string): string {
   if (dateKey === todayKey) return "Today";
   if (dateKey === yesterdayKey) return "Yesterday";
-  const d = new Date(dateKey);
+
+  // Avoid timezone drift by parsing the dateKey as a local date.
+  const d = new Date(`${dateKey}T00:00:00`);
   if (Number.isNaN(d.getTime())) return dateKey;
-  return d.toLocaleDateString();
+
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+    }).format(d);
+  } catch {
+    return d.toLocaleDateString();
+  }
 }
 
 function normalizeMoneyToDollars(raw: number | null | undefined): number | null {
@@ -179,6 +202,54 @@ function kindIcon(kind: TimelineKind): string {
 function titleCaseWord(s: string): string {
   if (!s) return s;
   return s.slice(0, 1).toUpperCase() + s.slice(1);
+}
+
+function friendlyKindLabel(kind: string): string {
+  switch ((kind || "").toLowerCase()) {
+    case "invoice":
+      return "Invoice";
+    case "document":
+      return "Document";
+    case "task":
+      return "Task";
+    case "note":
+      return "Note";
+    case "activity":
+      return "Log";
+    case "event":
+      return "Event";
+    default:
+      return titleCaseWord(kind);
+  }
+}
+
+function friendlyActionLabel(action: string): string {
+  const a = (action || "").toLowerCase();
+  if (a === "status_changed") return "status changed";
+  if (a === "role_changed") return "role changed";
+  if (a === "invite_sent") return "invite sent";
+  if (a === "invite_revoked") return "invite revoked";
+  if (a === "invite_accepted") return "invite accepted";
+  if (a === "pinned") return "pinned";
+  if (a === "unpinned") return "unpinned";
+  if (a === "created") return "created";
+  if (a === "updated") return "updated";
+  if (a === "deleted") return "deleted";
+  return a.replaceAll("_", " ");
+}
+
+function buildActivityTitle(kind: string, action: string, fallbackMessage: string): string {
+  // Prefer explicit messages when they exist, but avoid the generic placeholder.
+  if (fallbackMessage && fallbackMessage.trim() && fallbackMessage !== "Activity") {
+    return fallbackMessage.trim();
+  }
+
+  const k = friendlyKindLabel(kind);
+  const a = friendlyActionLabel(action);
+
+  if (k && a) return `${k} ${a}`;
+  if (k) return k;
+  return "Activity";
 }
 
 function safeString(value: unknown): string | null {
@@ -632,7 +703,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
       title: n.pinned ? "Pinned note" : "Note",
       detail: truncate(body, 180),
       timestamp: ts,
-      href: `/app/estates/${estateId}/notes#${String(n._id)}`,
+      href: `/app/estates/${estateId}/notes/${String(n._id)}`,
     });
   }
 
@@ -694,8 +765,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
 
     const entityId = typeof a.entityId === "string" ? a.entityId : null;
 
-    const defaultTitle = kind && action ? `${titleCaseWord(kind)} ${action.replaceAll("_", " ")}` : "Activity";
-    const title = message === "Activity" ? defaultTitle : message;
+    const title = buildActivityTitle(kind, action, message);
 
     let detail: string | undefined;
     if (kind === "invoice" && action === "status_changed") {
@@ -711,11 +781,13 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     } else if (kind === "document" && (action === "created" || action === "updated" || action === "deleted")) {
       detail = formatDocumentChangeDetail(action, a.snapshot) ?? `Document ${action}`;
     } else if (kind === "note") {
-      detail = formatNoteChangeDetail(action, a.snapshot) ?? (action ? `Note ${action}` : "Note activity");
+      detail =
+        formatNoteChangeDetail(action, a.snapshot) ??
+        (action ? `Note ${friendlyActionLabel(action)}` : "Note activity");
     } else if (kind && action) {
-      detail = `${kind} · ${action}`;
+      detail = `${friendlyKindLabel(kind)} · ${friendlyActionLabel(action)}`;
     } else if (kind) {
-      detail = kind;
+      detail = friendlyKindLabel(kind);
     }
 
     let href: string | undefined;
@@ -730,17 +802,19 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     } else if (kind === "document") {
       href = `/app/estates/${estateId}/documents`;
     } else if (kind === "note" && entityId) {
-      href = `/app/estates/${estateId}/notes#${entityId}`;
+      href = `/app/estates/${estateId}/notes/${entityId}`;
     } else if (kind === "note") {
       href = `/app/estates/${estateId}/notes`;
     }
+
+    const cleanedDetail = detail && detail.trim() ? detail : undefined;
 
     events.push({
       id: `activity-${String(a._id)}`,
       kind: "activity",
       estateId,
       title,
-      detail,
+      detail: cleanedDetail,
       timestamp: ts,
       href,
     });
@@ -890,6 +964,12 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
             >
               Notes
             </Link>
+            <Link
+              href={`/app/estates/${estateId}`}
+              className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              Overview
+            </Link>
           </div>
 
           <div className="flex flex-col items-start gap-1 md:items-end">
@@ -948,6 +1028,9 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
             <input
               id="q"
               name="q"
+              type="search"
+              autoComplete="off"
+              aria-label="Search timeline"
               defaultValue={searchQuery}
               placeholder="Search titles and details…"
               className="h-7 w-full rounded-md border border-gray-300 px-2 text-xs text-gray-900 placeholder:text-gray-400"
@@ -958,7 +1041,13 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
             <label htmlFor="type" className="whitespace-nowrap text-[11px] text-gray-500">
               Type
             </label>
-            <select id="type" name="type" defaultValue={typeFilter} className="h-7 rounded-md border border-gray-300 bg-white px-2 text-xs text-gray-900">
+            <select
+              id="type"
+              name="type"
+              aria-label="Filter by type"
+              defaultValue={typeFilter}
+              className="h-7 rounded-md border border-gray-300 bg-white px-2 text-xs text-gray-900"
+            >
               <option value="ALL">All</option>
               <option value="activity">Activity</option>
               <option value="event">Events</option>
@@ -978,11 +1067,65 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
             )}
           </div>
         </form>
+
+        {hasFilters && (
+          <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-gray-600">
+            <span className="text-gray-400">Active:</span>
+
+            {searchQuery ? (
+              <Link
+                href={buildHref(typeFilter, isValidBefore && beforeDate ? beforeDate.toISOString() : undefined)}
+                className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-gray-700 hover:bg-gray-100"
+                title="Clear search"
+              >
+                <span className="text-gray-500">Search</span>
+                <span className="font-medium">{truncate(searchQuery, 28)}</span>
+                <span className="text-gray-400">×</span>
+              </Link>
+            ) : null}
+
+            {typeFilter !== "ALL" ? (
+              <Link
+                href={buildHref("ALL", isValidBefore && beforeDate ? beforeDate.toISOString() : undefined)}
+                className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-gray-700 hover:bg-gray-100"
+                title="Clear type"
+              >
+                <span className="text-gray-500">Type</span>
+                <span className="font-medium">{friendlyKindLabel(typeFilter)}</span>
+                <span className="text-gray-400">×</span>
+              </Link>
+            ) : null}
+
+            {isValidBefore && beforeDate ? (
+              <Link
+                href={buildHref(typeFilter, null)}
+                className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-gray-700 hover:bg-gray-100"
+                title="Back to newest"
+              >
+                <span className="text-gray-500">Before</span>
+                <span className="font-medium">{formatDateTime(beforeDate.toISOString())}</span>
+                <span className="text-gray-400">×</span>
+              </Link>
+            ) : null}
+
+            <Link
+              href={`/app/estates/${estateId}/timeline`}
+              className="ml-1 text-[11px] font-medium text-blue-700 hover:underline"
+            >
+              Clear all
+            </Link>
+          </div>
+        )}
       </section>
 
       <section className="space-y-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
         {events.length === 0 ? (
-          <p className="text-sm text-gray-500">No activity yet. As you work, entries will appear here.</p>
+          <div className="space-y-2">
+            <p className="text-sm text-gray-500">No activity yet. As you work, entries will appear here.</p>
+            <p className="text-xs text-gray-400">
+              Tip: create a task, invoice, note, or upload a document—then come back to see it grouped here by day.
+            </p>
+          </div>
         ) : filteredEvents.length === 0 ? (
           <p className="text-sm text-gray-500">No events match this search or type filter.</p>
         ) : (
@@ -1057,7 +1200,14 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
                     }
 
                     return (
-                      <li key={ev.id} className={(isGrouped ? "mb-3" : "mb-6") + " ml-1 last:mb-0"}>
+                      <li
+                        key={ev.id}
+                        className={
+                          (isGrouped ? "mb-3" : "mb-6") +
+                          " ml-1 last:mb-0 rounded-md px-2 py-1 -mx-2 transition-colors " +
+                          (ev.href ? "hover:bg-gray-50" : "")
+                        }
+                      >
                         <span
                           className={
                             "absolute -left-[7px] mt-1.5 h-3.5 w-3.5 rounded-full border border-white shadow-sm " +

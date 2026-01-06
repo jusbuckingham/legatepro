@@ -140,17 +140,27 @@ export async function logDocumentEvent(input: LogDocumentEventInput) {
   });
 }
 
+export type LegacyEstateEventType = "DOCUMENT_ADDED";
+
 export type LogEstateEventInput = {
   ownerId: string;
   estateId: string;
-  type: EstateEventType;
+  type: EstateEventType | LegacyEstateEventType;
   summary: string;
   detail?: string | null;
   meta?: Record<string, unknown>;
 };
 
+function normalizeEstateEventType(type: EstateEventType | LegacyEstateEventType): EstateEventType {
+  // Back-compat: older routes used DOCUMENT_ADDED, but the canonical type is DOCUMENT_CREATED.
+  if (type === "DOCUMENT_ADDED") return "DOCUMENT_CREATED";
+
+  return type;
+}
+
 export async function logEstateEvent(input: LogEstateEventInput) {
   const { ownerId, estateId, type, summary, detail, meta } = input;
+  const normalizedType = normalizeEstateEventType(type);
 
   await connectToDatabase();
 
@@ -160,7 +170,7 @@ export async function logEstateEvent(input: LogEstateEventInput) {
   await EstateEvent.create({
     ownerId,
     estateId,
-    type,
+    type: normalizedType,
     summary: safeSummary,
     detail: safeDetail ?? undefined,
     meta: meta ?? undefined,

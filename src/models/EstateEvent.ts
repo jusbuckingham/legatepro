@@ -1,77 +1,133 @@
-import { Schema, model, models, type Document, type Model } from "mongoose";
+import mongoose, { Schema } from "mongoose";
+
+/**
+ * EstateEvent types + normalization helpers.
+ *
+ * NOTE: This module exports BOTH:
+ * - the Mongoose model (default export)
+ * - pure type helpers for event types (named exports)
+ *
+ * Logging lives in `src/lib/estateEvents.ts`.
+ */
 
 export const ESTATE_EVENT_TYPES = [
   "ESTATE_CREATED",
   "ESTATE_UPDATED",
   "ESTATE_DELETED",
+
   "INVOICE_CREATED",
   "INVOICE_STATUS_CHANGED",
+
+  "DOCUMENT_CREATED",
+  "DOCUMENT_UPDATED",
+  "DOCUMENT_DELETED",
+
+  "NOTE_CREATED",
+  "NOTE_UPDATED",
+  "NOTE_PINNED",
+  "NOTE_UNPINNED",
+  "NOTE_DELETED",
+
+  "TASK_CREATED",
+  "TASK_UPDATED",
+  "TASK_COMPLETED",
+  "TASK_REOPENED",
+  "TASK_DELETED",
+
   "CONTACT_LINKED",
   "CONTACT_UNLINKED",
+
   "COLLABORATOR_ADDED",
   "COLLABORATOR_ROLE_CHANGED",
   "COLLABORATOR_REMOVED",
   "COLLABORATOR_INVITE_SENT",
   "COLLABORATOR_INVITE_REVOKED",
   "COLLABORATOR_INVITE_ACCEPTED",
-  "DOCUMENT_CREATED",
-  "DOCUMENT_UPDATED",
-  "DOCUMENT_DELETED",
-  "NOTE_CREATED",
-  "NOTE_UPDATED",
-  "NOTE_PINNED",
-  "NOTE_UNPINNED",
-  "NOTE_DELETED",
 ] as const;
 
-export type EstateEventType = (typeof ESTATE_EVENT_TYPES)[number];
+export type EstateEventCanonicalType = (typeof ESTATE_EVENT_TYPES)[number];
 
-export interface EstateEventDocument extends Document {
-  ownerId: Schema.Types.ObjectId | string;
-  estateId: Schema.Types.ObjectId | string;
-  type: EstateEventType;
-  summary: string;
-  detail?: string;
-  meta?: Record<string, unknown>;
-  createdAt: Date;
-  updatedAt: Date;
+/**
+ * Aliases/legacy names that may appear in older code paths.
+ * Always normalize to a canonical value before persisting.
+ */
+export const ESTATE_EVENT_TYPE_ALIASES = {
+  // Documents
+  DOCUMENT_ADDED: "DOCUMENT_CREATED",
+  DOCUMENT_REMOVED: "DOCUMENT_DELETED",
+  DOCUMENT_UPSERTED: "DOCUMENT_UPDATED",
+
+  // Notes
+  NOTE_EDITED: "NOTE_UPDATED",
+  NOTE_ARCHIVED: "NOTE_DELETED",
+
+  // Tasks
+  TASK_DONE: "TASK_COMPLETED",
+  TASK_UNDONE: "TASK_REOPENED",
+
+  // Invoices
+  INVOICE_SENT: "INVOICE_STATUS_CHANGED",
+  INVOICE_PAID: "INVOICE_STATUS_CHANGED",
+  INVOICE_VOID: "INVOICE_STATUS_CHANGED",
+
+  // Contacts
+  CONTACT_ADDED: "CONTACT_LINKED",
+  CONTACT_REMOVED: "CONTACT_UNLINKED",
+} as const;
+
+export type EstateEventAliasType = keyof typeof ESTATE_EVENT_TYPE_ALIASES;
+
+/**
+ * Accept either canonical or known alias types.
+ */
+export type EstateEventType = EstateEventCanonicalType | EstateEventAliasType;
+
+const CANONICAL_SET: ReadonlySet<string> = new Set(ESTATE_EVENT_TYPES);
+
+export function normalizeEstateEventType(input: string): EstateEventCanonicalType {
+  const raw = (input ?? "").trim().toUpperCase();
+
+  if (!raw) return "ESTATE_UPDATED";
+
+  const aliased = (ESTATE_EVENT_TYPE_ALIASES as Record<string, EstateEventCanonicalType>)[raw];
+  if (aliased) return aliased;
+
+  if (CANONICAL_SET.has(raw)) return raw as EstateEventCanonicalType;
+
+  // Fail-safe: keep event logging resilient.
+  return "ESTATE_UPDATED";
 }
 
-const EstateEventSchema = new Schema<EstateEventDocument>(
+/* -------------------- Mongoose model -------------------- */
+( mongoose as unknown as { models: Record<string, mongoose.Model<unknown>> } ).models ||= {};
+
+export interface EstateEventRecord {
+  estateId: string;
+  ownerId: string;
+  type: EstateEventCanonicalType;
+  summary: string;
+  detail?: string | null;
+  meta?: Record<string, unknown> | null;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+const EstateEventSchema = new Schema<EstateEventRecord>(
   {
-    ownerId: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    estateId: {
-      type: Schema.Types.ObjectId,
-      ref: "Estate",
-      required: true,
-    },
-    type: {
-      type: String,
-      required: true,
-      enum: ESTATE_EVENT_TYPES,
-    },
-    summary: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    detail: {
-      type: String,
-      trim: true,
-    },
-    meta: {
-      type: Schema.Types.Mixed,
-    },
+    estateId: { type: String, required: true, index: true },
+    ownerId: { type: String, required: true, index: true },
+    type: { type: String, required: true },
+    summary: { type: String, required: true },
+    detail: { type: String, default: "" },
+    meta: { type: Schema.Types.Mixed, default: null },
   },
-  {
-    timestamps: true,
-  },
+  { timestamps: true }
 );
 
-export const EstateEvent: Model<EstateEventDocument> =
-  (models.EstateEvent as Model<EstateEventDocument>) ||
-  model<EstateEventDocument>("EstateEvent", EstateEventSchema);
+EstateEventSchema.index({ estateId: 1, createdAt: -1 });
+
+const EstateEvent =
+  (mongoose.models.EstateEvent as mongoose.Model<EstateEventRecord>) ||
+  mongoose.model<EstateEventRecord>("EstateEvent", EstateEventSchema);
+
+export default EstateEvent;

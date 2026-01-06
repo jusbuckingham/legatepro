@@ -53,6 +53,25 @@ function isFiniteNonNegativeNumber(n: unknown): n is number {
   return typeof n === "number" && Number.isFinite(n) && n >= 0;
 }
 
+function normalizeTags(value: unknown, maxTags = 25, maxLen = 32): string[] {
+  const raw: string[] = Array.isArray(value)
+    ? value.filter((t: unknown): t is string => typeof t === "string")
+    : typeof value === "string"
+      ? value.split(",")
+      : [];
+
+  const out: string[] = [];
+  for (const t of raw) {
+    const v = t.trim().toLowerCase();
+    if (!v) continue;
+    if (v.length > maxLen) continue;
+    if (out.includes(v)) continue;
+    out.push(v);
+    if (out.length >= maxTags) break;
+  }
+  return out;
+}
+
 function isResponseLike(value: unknown): value is Response {
   return typeof value === "object" && value !== null && value instanceof Response;
 }
@@ -128,15 +147,15 @@ export async function GET(
     const sensitiveParam = searchParams.get("sensitive");
     const sensitiveOnly = sensitiveParam === "1" || sensitiveParam === "true" || sensitiveParam === "on";
 
-    const limit = clampInt(searchParams.get("limit"), 250, 1, 500);
+    const limit = clampInt(searchParams.get("limit"), 250, 1, 250);
 
     const where: Record<string, unknown> = { estateId };
 
     if (searchParams.get("subject")) where.subject = subject;
 
     if (tag) {
-      // Store/search tags as lowercase for predictable filtering
-      where.tags = tag.toLowerCase();
+      // Match any array element exactly (tags are stored lowercase)
+      where.tags = tag;
     }
 
     if (q) {
@@ -204,31 +223,34 @@ export async function POST(
 
     const b = body as Record<string, unknown>;
 
-    const label = typeof b.label === "string" ? b.label.trim() : "";
+    const label = typeof b.label === "string" ? b.label.trim().slice(0, 200) : "";
     const subject = normalizeSubject(typeof b.subject === "string" ? b.subject : undefined);
-    const notes = typeof b.notes === "string" ? b.notes.trim() : "";
-    const location = typeof b.location === "string" ? b.location.trim() : "";
-    const url = typeof b.url === "string" ? b.url.trim() : "";
+    const notes = typeof b.notes === "string" ? b.notes.trim().slice(0, 5000) : "";
+    const location = typeof b.location === "string" ? b.location.trim().slice(0, 200) : "";
+    const url = typeof b.url === "string" ? b.url.trim().slice(0, 2000) : "";
     const isSensitive = Boolean(b.isSensitive);
 
     if (role === "VIEWER") {
       return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
 
-    const fileName = typeof b.fileName === "string" ? b.fileName.trim() : "";
-    const fileType = typeof b.fileType === "string" ? b.fileType.trim() : "";
+    // Only OWNER can mark documents as sensitive.
+    if (isSensitive && role !== "OWNER") {
+      return NextResponse.json(
+        { ok: false, error: "Only the owner can mark a document as sensitive" },
+        { status: 403 },
+      );
+    }
+
+    const normalizedTags = normalizeTags(b.tags);
+
+    const fileName = typeof b.fileName === "string" ? b.fileName.trim().slice(0, 255) : "";
+    const fileType = typeof b.fileType === "string" ? b.fileType.trim().slice(0, 64) : "";
     const fileSizeBytes = isFiniteNonNegativeNumber(b.fileSizeBytes) ? b.fileSizeBytes : 0;
 
     if (!label) {
       return NextResponse.json({ ok: false, error: "Label is required" }, { status: 400 });
     }
-
-    const normalizedTags = Array.isArray(b.tags)
-      ? b.tags
-          .filter((t: unknown): t is string => typeof t === "string")
-          .map((t) => t.trim().toLowerCase())
-          .filter(Boolean)
-      : [];
 
     const document = await EstateDocument.create({
       estateId,
