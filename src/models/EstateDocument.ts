@@ -15,7 +15,7 @@ export type EstateDocumentSubject =
 
 export interface IEstateDocument {
   ownerId: Types.ObjectId | string; // user who owns this record
-  estateId: Types.ObjectId; // required
+  estateId: Types.ObjectId | string; // required
 
   subject: EstateDocumentSubject;
   label: string; // human-friendly description
@@ -23,7 +23,7 @@ export interface IEstateDocument {
   location?: string; // e.g. "Google Drive", "iCloud", "Physical safe"
   url?: string; // digital link
 
-  tags?: string[];
+  tags: string[];
   notes?: string;
 
   isSensitive?: boolean;
@@ -40,6 +40,59 @@ export interface IEstateDocument {
 export interface EstateDocumentDocument
   extends IEstateDocument,
     Document {}
+
+function normalizeTags(input: unknown): string[] {
+  if (!input) return [];
+
+  const raw = Array.isArray(input)
+    ? input
+    : typeof input === "string"
+    ? input.split(",")
+    : [];
+
+  const cleaned = raw
+    .map((t) => (typeof t === "string" ? t : ""))
+    .map((t) => t.trim().toLowerCase())
+    .map((t) => t.replace(/\s+/g, " "))
+    .filter((t) => t.length > 0);
+
+  // De-dupe while preserving order
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const t of cleaned) {
+    if (seen.has(t)) continue;
+    seen.add(t);
+    deduped.push(t);
+  }
+
+  // Guardrail: avoid unbounded arrays
+  return deduped.slice(0, 20);
+}
+
+export function normalizeEstateDocumentTags(input: unknown): string[] {
+  return normalizeTags(input);
+}
+
+function normalizeSubject(input: unknown): EstateDocumentSubject {
+  if (typeof input !== "string") return "OTHER";
+  const value = input.trim().toUpperCase();
+
+  const allowed: EstateDocumentSubject[] = [
+    "BANKING",
+    "AUTO",
+    "MEDICAL",
+    "INCOME_TAX",
+    "PROPERTY",
+    "INSURANCE",
+    "IDENTITY",
+    "LEGAL",
+    "ESTATE_ACCOUNTING",
+    "RECEIPTS",
+    "OTHER",
+  ];
+
+  return (allowed as string[]).includes(value) ? (value as EstateDocumentSubject) : "OTHER";
+}
 
 const EstateDocumentSchema = new Schema<EstateDocumentDocument>(
   {
@@ -74,6 +127,8 @@ const EstateDocumentSchema = new Schema<EstateDocumentDocument>(
         "OTHER",
       ],
       trim: true,
+      default: "OTHER",
+      set: (v: unknown) => normalizeSubject(v),
     },
 
     label: { type: String, required: true, trim: true },
@@ -81,12 +136,12 @@ const EstateDocumentSchema = new Schema<EstateDocumentDocument>(
     location: { type: String, trim: true },
     url: { type: String, trim: true },
 
-    tags: [
-      {
-        type: String,
-        trim: true,
-      },
-    ],
+    tags: {
+      type: [String],
+      default: [],
+      set: (v: unknown) => normalizeTags(v),
+      index: true,
+    },
 
     notes: { type: String, trim: true },
 
@@ -99,6 +154,27 @@ const EstateDocumentSchema = new Schema<EstateDocumentDocument>(
   },
   {
     timestamps: true,
+  }
+);
+
+// Helpful compound indexes for common query patterns
+EstateDocumentSchema.index({ estateId: 1, createdAt: -1 });
+EstateDocumentSchema.index({ estateId: 1, subject: 1, createdAt: -1 });
+EstateDocumentSchema.index({ estateId: 1, isSensitive: 1, createdAt: -1 });
+EstateDocumentSchema.index({ estateId: 1, tags: 1 });
+
+EstateDocumentSchema.index(
+  { label: "text", notes: "text", location: "text", url: "text", tags: "text", fileName: "text" },
+  {
+    name: "estate_document_text",
+    weights: {
+      label: 5,
+      tags: 4,
+      notes: 2,
+      location: 2,
+      url: 1,
+      fileName: 1,
+    },
   }
 );
 

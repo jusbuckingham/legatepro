@@ -16,6 +16,29 @@ function roleAtLeast(role: EstateRole, minRole: EstateRole): boolean {
   return order[role] >= order[minRole];
 }
 
+function isEstateRole(value: unknown): value is EstateRole {
+  return value === "OWNER" || value === "EDITOR" || value === "VIEWER";
+}
+
+function getRoleFromAccess(access: unknown): EstateRole {
+  if (!access || typeof access !== "object") return "VIEWER";
+  const role = (access as Record<string, unknown>).role;
+  return isEstateRole(role) ? role : "VIEWER";
+}
+
+function formatBytes(bytes: number | null | undefined): string {
+  if (bytes == null || Number.isNaN(bytes) || bytes <= 0) return "—";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  let n = bytes;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i += 1;
+  }
+  const precision = i === 0 ? 0 : i === 1 ? 0 : 1;
+  return `${n.toFixed(precision)} ${units[i]}`;
+}
+
 type PageProps = {
   params: Promise<{ estateId: string; documentId: string }>;
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -69,14 +92,10 @@ async function deleteDocument(formData: FormData): Promise<void> {
     redirect(`/login?callbackUrl=/app/estates/${estateId}/documents/${documentId}`);
   }
 
-  let access: { role: EstateRole } | null = null;
-  try {
-    access = (await requireEstateEditAccess({ estateId, userId: session.user.id })) as { role: EstateRole };
-  } catch {
-    redirect(`/login?callbackUrl=/app/estates/${estateId}/documents/${documentId}`);
-  }
+  const editAccess = await requireEstateEditAccess({ estateId, userId: session.user.id });
+  const editRole = getRoleFromAccess(editAccess);
 
-  if (!access || access.role === "VIEWER") {
+  if (editRole === "VIEWER") {
     redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
   }
 
@@ -129,10 +148,11 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
     redirect(`/login?callbackUrl=/app/estates/${estateId}/documents/${documentId}`);
   }
 
-  let access: { role: EstateRole } | null = null;
+  let role: EstateRole = "VIEWER";
 
   try {
-    access = (await requireEstateAccess({ estateId, userId: session.user.id })) as { role: EstateRole };
+    const access = await requireEstateAccess({ estateId, userId: session.user.id });
+    role = getRoleFromAccess(access);
   } catch {
     // If access resolution fails (missing estate access / auth mismatch), show a clear Unauthorized state.
     return (
@@ -184,8 +204,6 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
       </div>
     );
   }
-
-  const role = access?.role ?? "VIEWER";
   const canEdit = roleAtLeast(role, "EDITOR") && !isReadOnly;
 
   await connectToDatabase();
@@ -260,14 +278,71 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
     );
   }
 
+  if (doc.isSensitive && role === "VIEWER") {
+    return (
+      <div className="space-y-8 p-6">
+        <PageHeader
+          eyebrow={
+            <nav className="text-xs text-slate-500">
+              <Link href="/app/estates" className="text-slate-400 hover:text-slate-200 hover:underline">
+                Estates
+              </Link>
+              <span className="mx-1 text-slate-600">/</span>
+              <Link href={`/app/estates/${estateId}`} className="text-slate-400 hover:text-slate-200 hover:underline">
+                Overview
+              </Link>
+              <span className="mx-1 text-slate-600">/</span>
+              <Link
+                href={`/app/estates/${estateId}/documents`}
+                className="text-slate-400 hover:text-slate-200 hover:underline"
+              >
+                Documents
+              </Link>
+              <span className="mx-1 text-slate-600">/</span>
+              <span className="truncate text-rose-200">Restricted</span>
+            </nav>
+          }
+          title="Restricted document"
+          description="This document is marked sensitive. Viewer access can’t open sensitive entries."
+          actions={
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-200">
+                {role}
+              </span>
+              <span className="inline-flex items-center rounded-full border border-rose-500/30 bg-rose-950/50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-100">
+                Sensitive
+              </span>
+              <Link
+                href={`/app/estates/${estateId}/documents`}
+                className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+              >
+                Back to documents
+              </Link>
+              <Link
+                href={requestAccessHref}
+                className="inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-100 hover:bg-amber-500/20"
+              >
+                Request access
+              </Link>
+            </div>
+          }
+        />
+
+        <section className="rounded-xl border border-amber-500/30 bg-amber-950/40 p-4 shadow-sm">
+          <p className="text-sm font-semibold text-amber-100">Access required</p>
+          <p className="mt-1 text-sm text-amber-200/90">
+            Ask the estate owner to grant you EDITOR access if you need to view sensitive document entries.
+          </p>
+        </section>
+      </div>
+    );
+  }
+
   const tagsArray = Array.isArray(doc.tags) ? doc.tags : [];
   const docId = doc._id?.toString?.() ?? String(doc._id);
   const createdAtText = doc.createdAt ? new Date(doc.createdAt).toLocaleString() : "—";
   const updatedAtText = doc.updatedAt ? new Date(doc.updatedAt).toLocaleString() : "—";
-  const fileSizeText =
-    typeof doc.fileSizeBytes === "number"
-      ? `${(doc.fileSizeBytes / 1024).toFixed(doc.fileSizeBytes >= 1024 * 1024 ? 1 : 0)} KB`
-      : "—";
+  const fileSizeText = formatBytes(doc.fileSizeBytes ?? null);
 
   return (
     <div className="space-y-8 p-6">

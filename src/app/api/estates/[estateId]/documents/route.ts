@@ -1,32 +1,53 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
-import { logActivity } from "@/lib/activity";
-import { EstateDocument } from "@/models/EstateDocument";
+import { connectToDatabase } from "@/lib/db";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
+import { EstateDocument } from "@/models/EstateDocument";
 
-interface RouteParams {
-  params: Promise<{
-    estateId: string;
-  }>;
-}
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+type RouteParams = {
+  params: Promise<{ estateId: string }>;
+};
 
 type RequireAccessArgs = { estateId: string; userId?: string };
-
 type RequireAccessFn = (args: RequireAccessArgs) => Promise<unknown>;
+
+type Role = "OWNER" | "EDITOR" | "VIEWER";
 
 function isResponseLike(value: unknown): value is Response {
   return typeof value === "object" && value !== null && value instanceof Response;
 }
 
-function getRoleFromAccess(access: unknown): string | undefined {
+function getFailureResponse(access: unknown): NextResponse | undefined {
+  if (!access || typeof access !== "object") return undefined;
+  const anyAccess = access as Record<string, unknown>;
+
+  // Older helper shape: { ok: boolean; res: NextResponse }
+  if (anyAccess.ok === false && isResponseLike(anyAccess.res)) {
+    return anyAccess.res as NextResponse;
+  }
+
+  // Newer helper shape: may directly return a Response/NextResponse on failure
+  if (isResponseLike(access)) {
+    return access as NextResponse;
+  }
+
+  return undefined;
+}
+
+function getRoleFromAccess(access: unknown): Role | undefined {
   if (!access || typeof access !== "object") return undefined;
   const anyAccess = access as Record<string, unknown>;
   const role = anyAccess.role;
-  return typeof role === "string" ? role : undefined;
+  return role === "OWNER" || role === "EDITOR" || role === "VIEWER" ? role : undefined;
 }
 
-async function safeJson(request: NextRequest): Promise<{ ok: true; value: unknown } | { ok: false }> {
+async function safeJson(
+  request: NextRequest,
+): Promise<{ ok: true; value: unknown } | { ok: false }> {
   try {
     const value = await request.json();
     return { ok: true, value };
@@ -35,35 +56,19 @@ async function safeJson(request: NextRequest): Promise<{ ok: true; value: unknow
   }
 }
 
-function getFailureResponse(access: unknown): NextResponse | undefined {
-  if (!access || typeof access !== "object") return undefined;
-  const anyAccess = access as Record<string, unknown>;
-
-  // Support older helper shape: { ok: boolean; res: NextResponse }
-  if (anyAccess.ok === false && isResponseLike(anyAccess.res)) {
-    return anyAccess.res as NextResponse;
-  }
-
-  // Support newer helper shape: may directly return a Response/NextResponse on failure
-  if (isResponseLike(access)) {
-    return access as NextResponse;
-  }
-
-  return undefined;
-}
-
 export async function GET(
-  _request: NextRequest,
-  { params }: RouteParams
+  request: NextRequest,
+  { params }: RouteParams,
 ): Promise<NextResponse> {
   try {
     const { estateId } = await params;
 
     const session = await auth();
-
     if (!session?.user?.id) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
+
+    await connectToDatabase();
 
     const access = await (requireEstateAccess as unknown as RequireAccessFn)({
       estateId,
@@ -74,16 +79,43 @@ export async function GET(
 
     const role = getRoleFromAccess(access);
 
+    const { searchParams } = new URL(request.url);
+    const q = searchParams.get("q")?.trim() ?? "";
+    const subject = searchParams.get("subject")?.trim() ?? "";
+    const tag = searchParams.get("tag")?.trim() ?? "";
+    const sensitiveOnly =
+      searchParams.get("sensitive") === "1" || searchParams.get("sensitive") === "true";
+
     const where: Record<string, unknown> = { estateId };
 
-    // VIEWER cannot view sensitive docs regardless of query params
+    if (subject) where.subject = subject;
+
+    if (tag) {
+      // Store/search tags as lowercase for predictable filtering
+      where.tags = tag.toLowerCase();
+    }
+
+    if (q) {
+      where.$or = [
+        { label: { $regex: q, $options: "i" } },
+        { notes: { $regex: q, $options: "i" } },
+        { location: { $regex: q, $options: "i" } },
+        { fileName: { $regex: q, $options: "i" } },
+      ];
+    }
+
+    // VIEWER cannot see sensitive docs
     if (role === "VIEWER") {
       where.isSensitive = false;
+    } else if (sensitiveOnly) {
+      where.isSensitive = true;
     }
 
     const documents = await EstateDocument.find(where)
       .sort({ createdAt: -1 })
-      .lean();
+      .limit(250)
+      .lean<Record<string, unknown>[]>()
+      .exec();
 
     return NextResponse.json({ ok: true, documents }, { status: 200 });
   } catch (error) {
@@ -94,16 +126,17 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: RouteParams
+  { params }: RouteParams,
 ): Promise<NextResponse> {
   try {
     const { estateId } = await params;
 
     const session = await auth();
-
     if (!session?.user?.id) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
+
+    await connectToDatabase();
 
     const access = await (requireEstateEditAccess as unknown as RequireAccessFn)({
       estateId,
@@ -111,8 +144,6 @@ export async function POST(
     });
     const failure = getFailureResponse(access);
     if (failure) return failure;
-
-    const role = getRoleFromAccess(access);
 
     const parsed = await safeJson(request);
     if (!parsed.ok) {
@@ -124,76 +155,44 @@ export async function POST(
       return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
     }
 
-    const bodyObj = body as Record<string, unknown>;
+    const b = body as Record<string, unknown>;
 
-    const label = bodyObj.label;
-    const subject = bodyObj.subject;
-    const notes = bodyObj.notes;
-    const location = bodyObj.location;
-    const url = bodyObj.url;
-    const tags = bodyObj.tags;
-    const isSensitive = bodyObj.isSensitive;
-    const fileName = bodyObj.fileName;
-    const fileType = bodyObj.fileType;
-    const fileSizeBytes = bodyObj.fileSizeBytes;
+    const label = typeof b.label === "string" ? b.label.trim() : "";
+    const subject = typeof b.subject === "string" ? b.subject.trim() : "OTHER";
+    const notes = typeof b.notes === "string" ? b.notes.trim() : "";
+    const location = typeof b.location === "string" ? b.location.trim() : "";
+    const url = typeof b.url === "string" ? b.url.trim() : "";
+    const isSensitive = Boolean(b.isSensitive);
 
-    // Defense in depth: do not allow VIEWER access (should already be blocked by requireEditor)
-    // and keep the policy that only non-VIEWER roles may create sensitive docs.
-    if (Boolean(isSensitive) && role === "VIEWER") {
-      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-    }
+    const fileName = typeof b.fileName === "string" ? b.fileName.trim() : "";
+    const fileType = typeof b.fileType === "string" ? b.fileType.trim() : "";
+    const fileSizeBytes = typeof b.fileSizeBytes === "number" ? b.fileSizeBytes : 0;
 
-    if (!label || typeof label !== "string") {
+    if (!label) {
       return NextResponse.json({ ok: false, error: "Label is required" }, { status: 400 });
     }
 
-    const normalizedTags = Array.isArray(tags)
-      ? tags
+    const normalizedTags = Array.isArray(b.tags)
+      ? b.tags
           .filter((t: unknown): t is string => typeof t === "string")
-          .map((t) => t.trim())
-          .filter((t) => t.length > 0)
+          .map((t) => t.trim().toLowerCase())
+          .filter(Boolean)
       : [];
 
     const document = await EstateDocument.create({
+      estateId,
+      ownerId: session.user.id,
       label,
       subject: subject || "OTHER",
-      notes: notes ?? "",
-      location: location ?? "",
-      url: url ?? "",
+      notes,
+      location,
+      url,
       tags: normalizedTags,
-      isSensitive: Boolean(isSensitive),
-      fileName: fileName ?? "",
-      fileType: fileType ?? "",
-      fileSizeBytes: typeof fileSizeBytes === "number" ? fileSizeBytes : 0,
-      ownerId: session.user.id,
-      estateId,
+      isSensitive,
+      fileName,
+      fileType,
+      fileSizeBytes,
     });
-
-    // Activity log: document created
-    try {
-      const subjectLabel = typeof subject === "string" && subject.trim() ? subject.trim() : "OTHER";
-      const safeLabel = typeof label === "string" && label.trim() ? label.trim() : "Untitled";
-
-      await logActivity({
-        estateId: String(estateId),
-        kind: "DOCUMENT",
-        action: "created",
-        entityId: String(document._id),
-        message: `Document created: ${safeLabel}`,
-        snapshot: {
-          label: document.label ?? null,
-          subject: document.subject ?? subjectLabel,
-          isSensitive: Boolean(document.isSensitive),
-          url: document.url ?? null,
-          fileName: document.fileName ?? null,
-          fileType: document.fileType ?? null,
-          fileSizeBytes: document.fileSizeBytes ?? null,
-          tags: Array.isArray(document.tags) ? document.tags : null,
-        },
-      });
-    } catch {
-      // Don't block document creation if activity logging fails
-    }
 
     return NextResponse.json({ ok: true, document }, { status: 201 });
   } catch (error) {

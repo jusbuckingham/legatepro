@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
-import { EstateDocument } from "@/models/EstateDocument";
+import { EstateDocument, normalizeEstateDocumentTags } from "@/models/EstateDocument";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +13,7 @@ type DocumentItem = {
   label: string;
   subject: string;
   sensitivity: "LOW" | "MEDIUM" | "HIGH";
+  tags: string[];
   url?: string | null;
   notes?: string | null;
   createdAt?: string;
@@ -53,6 +54,7 @@ function docToItem(doc: unknown): DocumentItem {
     label: getString("label") ?? "Document",
     subject: getString("subject") ?? "OTHER",
     sensitivity: normalizeSensitivity(d.sensitivity),
+    tags: Array.isArray(d.tags) ? (d.tags as unknown[]).filter((t): t is string => typeof t === "string") : [],
     url: getString("url") ?? null,
     notes: getString("notes") ?? null,
     createdAt: getDateIso("createdAt"),
@@ -75,6 +77,7 @@ export async function GET(req: NextRequest) {
   const q = url.searchParams.get("q")?.trim() ?? "";
   const subject = url.searchParams.get("subject")?.trim() ?? "";
   const sensitivity = url.searchParams.get("sensitivity")?.trim() ?? "";
+  const tag = url.searchParams.get("tag")?.trim() ?? "";
 
   if (!estateId) {
     // For now: documents are estate-scoped in LegatePro.
@@ -96,17 +99,24 @@ export async function GET(req: NextRequest) {
   if (sensitivity && sensitivity.toUpperCase() !== "ALL") {
     query.sensitivity = normalizeSensitivity(sensitivity);
   }
+  if (tag) {
+    // tags are normalized to lowercase in the model
+    query.tags = tag.toLowerCase();
+  }
   if (q) {
     // label + notes + url quick search
     query.$or = [
       { label: { $regex: q, $options: "i" } },
       { notes: { $regex: q, $options: "i" } },
       { url: { $regex: q, $options: "i" } },
+      { fileName: { $regex: q, $options: "i" } },
+      { tags: { $regex: q, $options: "i" } },
     ];
   }
 
   const docs = await EstateDocument.find(query)
     .sort({ createdAt: -1 })
+    .limit(100)
     .lean()
     .exec();
 
@@ -133,6 +143,7 @@ export async function POST(req: NextRequest) {
     sensitivity?: string;
     url?: string;
     notes?: string;
+    tags?: unknown;
   };
 
   const estateId = (typed.estateId ?? "").trim();
@@ -141,6 +152,7 @@ export async function POST(req: NextRequest) {
   const sensitivity = normalizeSensitivity(typed.sensitivity);
   const url = typeof typed.url === "string" ? typed.url.trim() : "";
   const notes = typeof typed.notes === "string" ? typed.notes.trim() : "";
+  const tags = normalizeEstateDocumentTags(typed.tags);
 
   if (!estateId) {
     return NextResponse.json({ ok: false, error: "estateId is required" }, { status: 400 });
@@ -162,6 +174,7 @@ export async function POST(req: NextRequest) {
     label,
     subject,
     sensitivity,
+    tags,
     url: url || undefined,
     notes: notes || undefined,
   });

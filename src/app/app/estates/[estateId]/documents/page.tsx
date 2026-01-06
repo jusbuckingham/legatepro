@@ -3,10 +3,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { auth } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 
-import { EstateDocument } from "@/models/EstateDocument";
 import PageHeader from "@/components/layout/PageHeader";
 
 interface EstateDocumentsPageProps {
@@ -54,6 +52,23 @@ const SUBJECT_LABELS: Record<string, string> = {
   OTHER: "Other",
 };
 
+function firstParam(value: string | string[] | undefined): string {
+  return typeof value === "string" ? value : Array.isArray(value) ? value[0] ?? "" : "";
+}
+
+function buildDocumentsUrl(
+  estateId: string,
+  params: { q?: string; subject?: string; sensitive?: boolean; tag?: string }
+): string {
+  const sp = new URLSearchParams();
+  if (params.q) sp.set("q", params.q);
+  if (params.subject) sp.set("subject", params.subject);
+  if (params.sensitive) sp.set("sensitive", "1");
+  if (params.tag) sp.set("tag", params.tag);
+  const qs = sp.toString();
+  return `/app/estates/${encodeURIComponent(estateId)}/documents${qs ? `?${qs}` : ""}`;
+}
+
 export const dynamic = "force-dynamic";
 
 /* -------------------- Server Actions -------------------- */
@@ -82,24 +97,33 @@ async function createDocumentEntry(formData: FormData): Promise<void> {
     redirect(`/app/estates/${estateId}/documents?forbidden=1`);
   }
 
-  const tags = tagsRaw
-    .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean);
-
-  await connectToDatabase();
-
-  await EstateDocument.create({
-    estateId,
-    subject,
-    location,
-    label,
-    url,
-    tags,
-    notes,
-    isSensitive,
-    ownerId: session.user.id,
+  const tags = Array.from(
+    new Set(
+      tagsRaw
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .map((t) => t.toLowerCase())
+    )
+  );
+  
+  const res = await fetch(`/api/estates/${encodeURIComponent(estateId)}/documents`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      label,
+      subject,
+      location,
+      url,
+      tags,
+      notes,
+      isSensitive,
+    }),
   });
+
+  if (!res.ok) {
+    redirect(`/app/estates/${estateId}/documents?error=create_failed`);
+  }
 
   redirect(`/app/estates/${estateId}/documents`);
 }
@@ -120,12 +144,14 @@ async function deleteDocument(formData: FormData): Promise<void> {
     redirect(`/app/estates/${estateId}/documents?forbidden=1`);
   }
 
-  await connectToDatabase();
+  const res = await fetch(
+    `/api/estates/${encodeURIComponent(estateId)}/documents/${encodeURIComponent(documentId)}`,
+    { method: "DELETE" },
+  );
 
-  await EstateDocument.findOneAndDelete({
-    _id: documentId,
-    estateId,
-  });
+  if (!res.ok) {
+    redirect(`/app/estates/${estateId}/documents?error=delete_failed`);
+  }
 
   revalidatePath(`/app/estates/${estateId}/documents`);
 }
@@ -150,29 +176,22 @@ export default async function EstateDocumentsPage({
 
   let searchQuery = "";
   let subjectFilter = "";
+  let tagFilter = "";
   let sensitiveOnly = false;
 
   const sp = searchParams ? await searchParams : undefined;
 
   if (sp) {
-    const q = sp.q;
-    const subject = sp.subject;
-    const sensitive = sp.sensitive;
+    const q = firstParam(sp.q).trim();
+    const subject = firstParam(sp.subject);
+    const tag = firstParam(sp.tag).trim();
+    const sensitive = firstParam(sp.sensitive);
 
-    searchQuery =
-      typeof q === "string" ? q.trim() : Array.isArray(q) ? q[0] ?? "" : "";
+    searchQuery = q;
+    subjectFilter = subject;
+    tagFilter = tag;
 
-    subjectFilter =
-      typeof subject === "string"
-        ? subject
-        : Array.isArray(subject)
-        ? subject[0] ?? ""
-        : "";
-
-    sensitiveOnly =
-      sensitive === "1" ||
-      sensitive === "true" ||
-      sensitive === "on";
+    sensitiveOnly = sensitive === "1" || sensitive === "true" || sensitive === "on";
   }
 
   const forbidden = sp?.forbidden === "1";
@@ -181,17 +200,29 @@ export default async function EstateDocumentsPage({
     sensitiveOnly = false;
   }
 
-  await connectToDatabase();
+  const apiUrl = new URL(
+    `/api/estates/${encodeURIComponent(estateId)}/documents`,
+    "http://localhost",
+  );
 
-  const docFilter: Record<string, unknown> = { estateId };
-  if (!canViewSensitive) {
-    docFilter.isSensitive = false;
-  }
+  if (searchQuery) apiUrl.searchParams.set("q", searchQuery);
+  if (subjectFilter) apiUrl.searchParams.set("subject", subjectFilter);
+  if (tagFilter) apiUrl.searchParams.set("tag", tagFilter);
+  if (canViewSensitive && sensitiveOnly) apiUrl.searchParams.set("sensitive", "1");
 
-  const docs = await EstateDocument.find(docFilter)
-    .sort({ subject: 1, label: 1 })
-    .lean<EstateDocumentLean[]>()
-    .exec();
+  const res = await fetch(apiUrl.toString().replace("http://localhost", ""), {
+    method: "GET",
+    headers: { accept: "application/json" },
+    cache: "no-store",
+  });
+
+  const data = (await res.json()) as {
+    ok: boolean;
+    documents?: EstateDocumentLean[];
+    error?: string;
+  };
+
+  const docs = res.ok && data.ok && Array.isArray(data.documents) ? data.documents : [];
 
   const documents: EstateDocumentItem[] = docs.map((doc) => ({
     _id: doc._id.toString(),
@@ -204,21 +235,33 @@ export default async function EstateDocumentsPage({
     isSensitive: doc.isSensitive ?? false,
   }));
 
-  const filteredDocuments = documents.filter((doc) => {
-    if (subjectFilter && doc.subject !== subjectFilter) return false;
-    if (!canViewSensitive && doc.isSensitive) return false;
-    if (sensitiveOnly && !doc.isSensitive) return false;
+  // Since API filters, what we have is already filtered
+  const filteredDocuments = documents;
 
-    if (!searchQuery) return true;
+  const availableTags = Array.from(
+    new Set(
+      documents
+        .flatMap((d) => d.tags ?? [])
+        .map((t) => String(t).trim())
+        .filter(Boolean)
+    )
+  ).sort((a, b) => a.localeCompare(b));
 
-    const q = searchQuery.toLowerCase();
-    return (
-      doc.label.toLowerCase().includes(q) ||
-      (doc.location ?? "").toLowerCase().includes(q) ||
-      (doc.notes ?? "").toLowerCase().includes(q) ||
-      doc.tags.join(" ").toLowerCase().includes(q)
-    );
-  });
+  const topTags = Array.from(
+    documents
+      .flatMap((d) => d.tags ?? [])
+      .map((t) => String(t).trim())
+      .filter(Boolean)
+      .reduce<Map<string, number>>((acc, t) => {
+        const key = t.toLowerCase();
+        acc.set(key, (acc.get(key) ?? 0) + 1);
+        return acc;
+      }, new Map())
+      .entries()
+  )
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))
+    .slice(0, 12);
 
   /* -------------------- JSX -------------------- */
 
@@ -326,6 +369,52 @@ export default async function EstateDocumentsPage({
           </span>
         ) : null}
       </div>
+
+      {topTags.length > 0 ? (
+        <section className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+              Top tags
+            </div>
+            {tagFilter ? (
+              <Link
+                href={buildDocumentsUrl(estateId, {
+                  q: searchQuery || undefined,
+                  subject: subjectFilter || undefined,
+                  sensitive: sensitiveOnly,
+                  tag: "",
+                })}
+                className="text-[11px] text-slate-400 hover:text-slate-200"
+              >
+                Clear tag
+              </Link>
+            ) : null}
+          </div>
+
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {topTags.map(({ tag, count }) => (
+              <Link
+                key={tag}
+                href={buildDocumentsUrl(estateId, {
+                  q: searchQuery || undefined,
+                  subject: subjectFilter || undefined,
+                  sensitive: sensitiveOnly,
+                  tag,
+                })}
+                className={
+                  tagFilter && tag.toLowerCase() === tagFilter.toLowerCase()
+                    ? "inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[11px] text-emerald-200 hover:bg-emerald-500/25"
+                    : "inline-flex items-center gap-1 rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-200 hover:bg-slate-700"
+                }
+                title={`Filter by tag: ${tag}`}
+              >
+                <span>{tag}</span>
+                <span className="text-slate-400">({count})</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {/* New document entry form */}
       {canCreate ? (
@@ -477,6 +566,27 @@ export default async function EstateDocumentsPage({
               </select>
             </div>
 
+            {availableTags.length > 0 ? (
+              <div className="flex items-center gap-2 md:w-56">
+                <label htmlFor="tag" className="whitespace-nowrap text-[11px] text-slate-400">
+                  Tag
+                </label>
+                <select
+                  id="tag"
+                  name="tag"
+                  defaultValue={tagFilter}
+                  className="h-7 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-50"
+                >
+                  <option value="">All tags</option>
+                  {availableTags.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+
             {canViewSensitive ? (
               <label className="flex items-center gap-2 text-[11px] text-slate-400">
                 <input
@@ -490,7 +600,7 @@ export default async function EstateDocumentsPage({
               </label>
             ) : null}
 
-            {(!!searchQuery || !!subjectFilter || sensitiveOnly) ? (
+            {(!!searchQuery || !!subjectFilter || !!tagFilter || sensitiveOnly) ? (
               <Link
                 href={`/app/estates/${estateId}/documents`}
                 className="whitespace-nowrap text-[11px] text-slate-400 hover:text-slate-200"
@@ -606,12 +716,23 @@ export default async function EstateDocumentsPage({
                       ) : (
                         <div className="flex flex-wrap gap-1">
                           {tags.map((tag) => (
-                            <span
+                            <Link
                               key={tag}
-                              className="inline-flex rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-200"
+                              href={buildDocumentsUrl(estateId, {
+                                q: searchQuery || undefined,
+                                subject: subjectFilter || undefined,
+                                sensitive: sensitiveOnly,
+                                tag,
+                              })}
+                              className={
+                                tagFilter && tag.toLowerCase() === tagFilter.toLowerCase()
+                                  ? "inline-flex rounded-full bg-emerald-500/20 px-2 py-0.5 text-[11px] text-emerald-200 hover:bg-emerald-500/25"
+                                  : "inline-flex rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-200 hover:bg-slate-700"
+                              }
+                              title={`Filter by tag: ${tag}`}
                             >
                               {tag}
-                            </span>
+                            </Link>
                           ))}
                         </div>
                       )}
