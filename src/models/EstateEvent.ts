@@ -116,7 +116,12 @@ const EstateEventSchema = new Schema<EstateEventRecord>(
   {
     estateId: { type: String, required: true, index: true },
     ownerId: { type: String, required: true, index: true },
-    type: { type: String, required: true },
+    type: {
+      type: String,
+      required: true,
+      enum: ESTATE_EVENT_TYPES,
+      set: (value: unknown) => normalizeEstateEventType(String(value ?? "")),
+    },
     summary: { type: String, required: true },
     detail: { type: String, default: "" },
     meta: { type: Schema.Types.Mixed, default: null },
@@ -125,6 +130,7 @@ const EstateEventSchema = new Schema<EstateEventRecord>(
 );
 
 EstateEventSchema.index({ estateId: 1, createdAt: -1 });
+EstateEventSchema.index({ estateId: 1, type: 1, createdAt: -1 });
 
 const EstateEvent =
   (mongoose.models.EstateEvent as mongoose.Model<EstateEventRecord>) ||

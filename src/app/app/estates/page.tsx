@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
-import { EstateEvent } from "@/models/EstateEvent";
+import EstateEvent from "@/models/EstateEvent";
 
 type EstateListItem = {
   _id: string | { toString(): string };

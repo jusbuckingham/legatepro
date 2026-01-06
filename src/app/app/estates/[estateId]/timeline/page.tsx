@@ -548,69 +548,97 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
 
   await connectToDatabase();
 
+  // Performance: avoid over-fetching across 6 collections when we only display `pageSize` items.
+  // - If a specific type is selected, only query the relevant collection.
+  // - If viewing ALL, cap each collection fetch to a smaller number and merge.
+  const perCollectionLimit = typeFilter === "ALL" ? Math.min(fetchSize, 40) : fetchSize;
+
+  const shouldFetchInvoices = typeFilter === "ALL" || typeFilter === "invoice";
+  const shouldFetchDocuments = typeFilter === "ALL" || typeFilter === "document";
+  const shouldFetchTasks = typeFilter === "ALL" || typeFilter === "task";
+  const shouldFetchNotes = typeFilter === "ALL" || typeFilter === "note";
+  const shouldFetchEvents = typeFilter === "ALL" || typeFilter === "event";
+  const shouldFetchActivity = typeFilter === "ALL" || typeFilter === "activity";
+
   const invoiceWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (isValidBefore) invoiceWhere.createdAt = { $lt: beforeDate };
-
-  const invoiceDocs = (await Invoice.find(
-    invoiceWhere,
-    { invoiceNumber: 1, status: 1, createdAt: 1, issueDate: 1, subtotal: 1, totalAmount: 1 },
-  )
-    .sort({ createdAt: -1 })
-    .limit(fetchSize)
-    .lean()
-    .exec()) as InvoiceLean[];
 
   const documentWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (isValidBefore) documentWhere.createdAt = { $lt: beforeDate };
   if (!canViewSensitive) (documentWhere as Record<string, unknown>).isSensitive = false;
 
-  const documentDocs = (await EstateDocument.find(documentWhere, { label: 1, subject: 1, createdAt: 1 })
-    .sort({ createdAt: -1 })
-    .limit(fetchSize)
-    .lean()
-    .exec()) as EstateDocumentLean[];
-
   const taskWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (isValidBefore) taskWhere.createdAt = { $lt: beforeDate };
-
-  const taskDocs = (await EstateTask.find(taskWhere, { title: 1, status: 1, createdAt: 1, dueDate: 1 })
-    .sort({ createdAt: -1 })
-    .limit(fetchSize)
-    .lean()
-    .exec()) as EstateTaskLean[];
 
   const noteWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (isValidBefore) noteWhere.createdAt = { $lt: beforeDate };
 
-  const noteDocs = (await EstateNote.find(noteWhere, { body: 1, pinned: 1, createdAt: 1 })
-    .sort({ createdAt: -1 })
-    .limit(fetchSize)
-    .lean()
-    .exec()) as EstateNoteLean[];
-
   const estateEventWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (isValidBefore) estateEventWhere.createdAt = { $lt: beforeDate };
-
-  const estateEventDocs = (await EstateEvent.find(
-    estateEventWhere,
-    { type: 1, summary: 1, detail: 1, meta: 1, createdAt: 1 },
-  )
-    .sort({ createdAt: -1 })
-    .limit(fetchSize)
-    .lean()
-    .exec()) as EstateEventLean[];
 
   const estateActivityWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (isValidBefore) estateActivityWhere.createdAt = { $lt: beforeDate };
 
-  const estateActivityDocs = (await EstateActivity.find(
-    estateActivityWhere,
-    { kind: 1, action: 1, entityId: 1, message: 1, snapshot: 1, createdAt: 1 },
-  )
-    .sort({ createdAt: -1 })
-    .limit(fetchSize)
-    .lean()
-    .exec()) as EstateActivityLean[];
+  // Run DB reads in parallel.
+  const [invoiceDocs, documentDocs, taskDocs, noteDocs, estateEventDocs, estateActivityDocs] =
+    await Promise.all([
+      shouldFetchInvoices
+        ? (Invoice.find(
+            invoiceWhere,
+            { invoiceNumber: 1, status: 1, createdAt: 1, issueDate: 1, subtotal: 1, totalAmount: 1 },
+          )
+            .sort({ createdAt: -1 })
+            .limit(perCollectionLimit)
+            .lean()
+            .exec() as unknown as Promise<InvoiceLean[]>)
+        : (Promise.resolve([]) as Promise<InvoiceLean[]>),
+
+      shouldFetchDocuments
+        ? (EstateDocument.find(documentWhere, { label: 1, subject: 1, createdAt: 1 })
+            .sort({ createdAt: -1 })
+            .limit(perCollectionLimit)
+            .lean()
+            .exec() as unknown as Promise<EstateDocumentLean[]>)
+        : (Promise.resolve([]) as Promise<EstateDocumentLean[]>),
+
+      shouldFetchTasks
+        ? (EstateTask.find(taskWhere, { title: 1, status: 1, createdAt: 1, dueDate: 1 })
+            .sort({ createdAt: -1 })
+            .limit(perCollectionLimit)
+            .lean()
+            .exec() as unknown as Promise<EstateTaskLean[]>)
+        : (Promise.resolve([]) as Promise<EstateTaskLean[]>),
+
+      shouldFetchNotes
+        ? (EstateNote.find(noteWhere, { body: 1, pinned: 1, createdAt: 1 })
+            .sort({ createdAt: -1 })
+            .limit(perCollectionLimit)
+            .lean()
+            .exec() as unknown as Promise<EstateNoteLean[]>)
+        : (Promise.resolve([]) as Promise<EstateNoteLean[]>),
+
+      shouldFetchEvents
+        ? (EstateEvent.find(
+            estateEventWhere,
+            { type: 1, summary: 1, detail: 1, meta: 1, createdAt: 1 },
+          )
+            .sort({ createdAt: -1 })
+            .limit(perCollectionLimit)
+            .lean()
+            .exec() as unknown as Promise<EstateEventLean[]>)
+        : (Promise.resolve([]) as Promise<EstateEventLean[]>),
+
+      shouldFetchActivity
+        ? (EstateActivity.find(
+            estateActivityWhere,
+            { kind: 1, action: 1, entityId: 1, message: 1, snapshot: 1, createdAt: 1 },
+          )
+            .sort({ createdAt: -1 })
+            .limit(perCollectionLimit)
+            .lean()
+            .exec() as unknown as Promise<EstateActivityLean[]>)
+        : (Promise.resolve([]) as Promise<EstateActivityLean[]>),
+    ]);
 
   const events: TimelineEvent[] = [];
 
@@ -820,13 +848,8 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     });
   }
 
-  const sortedEvents = [...events].sort((a, b) => {
-    const at = new Date(a.timestamp).getTime();
-    const bt = new Date(b.timestamp).getTime();
-    return bt - at;
-  });
-
-  const filteredEvents = sortedEvents.filter((ev) => {
+  // Filter (search + type) first, then sort once.
+  const filteredEvents = events.filter((ev) => {
     if (typeFilter !== "ALL" && ev.kind !== typeFilter) return false;
     if (!searchQuery) return true;
 
@@ -860,8 +883,8 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   };
 
   const sortedForPaging = [...filteredEvents].sort((a, b) => {
-    const at = new Date(a.timestamp).getTime();
-    const bt = new Date(b.timestamp).getTime();
+    const at = Date.parse(a.timestamp);
+    const bt = Date.parse(b.timestamp);
     return bt - at;
   });
 
@@ -1021,6 +1044,12 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
         </div>
 
         <form method="GET" className="flex flex-col gap-2 text-xs md:flex-row md:items-center md:justify-between">
+          {/* Preserve paging + page size when searching/filtering */}
+          {isValidBefore && beforeDate ? (
+            <input type="hidden" name="before" value={beforeDate.toISOString()} />
+          ) : null}
+          {pageSize !== 75 ? <input type="hidden" name="limit" value={String(pageSize)} /> : null}
+
           <div className="flex flex-1 items-center gap-2">
             <label htmlFor="q" className="whitespace-nowrap text-[11px] text-gray-500">
               Search
@@ -1037,7 +1066,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
             />
           </div>
 
-          <div className="flex items-center gap-2 md:w-auto">
+          <div className="flex flex-wrap items-center gap-2 md:w-auto md:flex-nowrap">
             <label htmlFor="type" className="whitespace-nowrap text-[11px] text-gray-500">
               Type
             </label>
@@ -1057,14 +1086,21 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
               <option value="note">Notes</option>
             </select>
 
-            {hasFilters && (
+            <button
+              type="submit"
+              className="inline-flex h-7 items-center justify-center rounded-md border border-gray-200 bg-white px-3 text-[11px] font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              Search
+            </button>
+
+            {hasFilters ? (
               <Link
-                href={`/app/estates/${estateId}/timeline`}
-                className="whitespace-nowrap text-[11px] text-gray-500 hover:text-gray-800"
+                href={buildHref(typeFilter, isValidBefore && beforeDate ? beforeDate.toISOString() : null)}
+                className="inline-flex h-7 items-center justify-center rounded-md border border-gray-200 bg-white px-3 text-[11px] font-medium text-gray-700 shadow-sm hover:bg-gray-50"
               >
-                Clear filters
+                Clear
               </Link>
-            )}
+            ) : null}
           </div>
         </form>
 
@@ -1074,7 +1110,13 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
 
             {searchQuery ? (
               <Link
-                href={buildHref(typeFilter, isValidBefore && beforeDate ? beforeDate.toISOString() : undefined)}
+                href={(() => {
+                  const base = buildHref(typeFilter, isValidBefore && beforeDate ? beforeDate.toISOString() : undefined);
+                  const url = new URL(base, "http://localhost");
+                  url.searchParams.delete("q");
+                  const qs = url.searchParams.toString();
+                  return qs ? `${url.pathname}?${qs}` : url.pathname;
+                })()}
                 className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-gray-700 hover:bg-gray-100"
                 title="Clear search"
               >
@@ -1086,7 +1128,13 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
 
             {typeFilter !== "ALL" ? (
               <Link
-                href={buildHref("ALL", isValidBefore && beforeDate ? beforeDate.toISOString() : undefined)}
+                href={(() => {
+                  const base = buildHref("ALL", isValidBefore && beforeDate ? beforeDate.toISOString() : undefined);
+                  const url = new URL(base, "http://localhost");
+                  // buildHref("ALL", ...) already omits type; ensure it stays omitted
+                  const qs = url.searchParams.toString();
+                  return qs ? `${url.pathname}?${qs}` : url.pathname;
+                })()}
                 className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-gray-700 hover:bg-gray-100"
                 title="Clear type"
               >
@@ -1147,7 +1195,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
                   <>
                     <span className="text-gray-400">•</span>
                     <span>
-                      Older than <span className="font-medium text-gray-900">{beforeDate.toLocaleString()}</span>
+                      Older than <span className="font-medium text-gray-900">{formatDateTime(beforeDate.toISOString())}</span>
                     </span>
                   </>
                 )}

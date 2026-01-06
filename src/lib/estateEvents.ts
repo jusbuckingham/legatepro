@@ -1,5 +1,5 @@
 import { connectToDatabase } from "@/lib/db";
-import { EstateEvent, type EstateEventType } from "@/models/EstateEvent";
+import EstateEvent, { type EstateEventType } from "@/models/EstateEvent";
 
 function truncateText(value: unknown, max = 180): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -225,22 +225,41 @@ export async function getEstateEvents(options: GetEstateEventsOptions) {
     }
   }
 
-  const docs = await EstateEvent.find(query)
+  const docs = (await EstateEvent.find(query)
     .sort({ createdAt: -1 })
     .limit(limit)
     .lean()
-    .exec();
+    .exec()) as Array<Record<string, unknown>>;
 
-  const rows: EstateEventRow[] = docs.map((d) => ({
-    id: String((d as { _id: unknown })._id),
-    ownerId: String((d as { ownerId: unknown }).ownerId),
-    estateId: String((d as { estateId: unknown }).estateId),
-    type: String((d as { type: unknown }).type) as EstateEventType,
-    summary: String((d as { summary: unknown }).summary ?? ""),
-    detail: (d as { detail?: string | null }).detail ?? null,
-    meta: (d as { meta?: Record<string, unknown> }).meta,
-    createdAt: (d as { createdAt?: Date }).createdAt,
-  }));
+  const rows: EstateEventRow[] = docs.map((d: Record<string, unknown>) => {
+    const id = String(d._id ?? "");
+    const ownerIdValue = typeof d.ownerId === "string" ? d.ownerId : String(d.ownerId ?? "");
+    const estateIdValue = typeof d.estateId === "string" ? d.estateId : String(d.estateId ?? "");
+
+    const typeValue = String(d.type ?? "") as EstateEventType;
+    const summaryValue = typeof d.summary === "string" ? d.summary : String(d.summary ?? "");
+
+    const detailValue =
+      d.detail == null ? null : typeof d.detail === "string" ? d.detail : String(d.detail);
+
+    const metaValue =
+      d.meta && typeof d.meta === "object" && !Array.isArray(d.meta)
+        ? (d.meta as Record<string, unknown>)
+        : undefined;
+
+    const createdAtValue = d.createdAt instanceof Date ? d.createdAt : undefined;
+
+    return {
+      id,
+      ownerId: ownerIdValue,
+      estateId: estateIdValue,
+      type: typeValue,
+      summary: summaryValue,
+      detail: detailValue,
+      meta: metaValue,
+      createdAt: createdAtValue,
+    };
+  });
 
   const nextCursor =
     rows.length > 0 ? rows[rows.length - 1].createdAt?.toISOString() : null;

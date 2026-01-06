@@ -8,7 +8,7 @@ import { Invoice } from "@/models/Invoice";
 import { EstateDocument } from "@/models/EstateDocument";
 import { EstateTask } from "@/models/EstateTask";
 import { EstateNote } from "@/models/EstateNote";
-import { EstateEvent } from "@/models/EstateEvent";
+import EstateEvent from "@/models/EstateEvent";
 
 type PageProps = {
   params: Promise<{
