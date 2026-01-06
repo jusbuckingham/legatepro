@@ -394,6 +394,15 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
               Back
             </Link>
 
+            <Link
+              href={`/app/estates/${estateId}/documents?${new URLSearchParams({
+                subject: String(doc.subject ?? ""),
+              }).toString()}`}
+              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+            >
+              Subject index
+            </Link>
+
             {canEdit && (
               <Link
                 href={`/app/estates/${estateId}/documents/${documentId}/edit`}
@@ -473,10 +482,23 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
       <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm">
         <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Subject</p>
-            <p className="mt-1 text-sm font-medium text-slate-50">
-              {SUBJECT_LABELS[doc.subject] ?? doc.subject ?? "—"}
-            </p>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Subject</p>
+                <p className="mt-1 text-sm font-medium text-slate-50">
+                  {SUBJECT_LABELS[doc.subject] ?? doc.subject ?? "—"}
+                </p>
+              </div>
+
+              <Link
+                href={`/app/estates/${estateId}/documents?${new URLSearchParams({
+                  subject: String(doc.subject ?? ""),
+                }).toString()}`}
+                className="mt-0.5 text-[11px] font-semibold text-slate-400 hover:text-slate-200 underline-offset-2 hover:underline"
+              >
+                View all
+              </Link>
+            </div>
           </div>
 
           <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
@@ -525,17 +547,46 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
           </div>
 
           <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Tags</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Tags</p>
+              {tagsArray.length > 0 ? (
+                <Link
+                  href={`/app/estates/${estateId}/documents?${new URLSearchParams({
+                    tag: String(tagsArray[0] ?? ""),
+                  }).toString()}`}
+                  className="text-[11px] font-semibold text-slate-400 hover:text-slate-200 underline-offset-2 hover:underline"
+                >
+                  Filter index
+                </Link>
+              ) : canEdit ? (
+                <Link
+                  href={`/app/estates/${estateId}/documents/${documentId}/edit`}
+                  className="text-[11px] font-semibold text-rose-200 hover:text-rose-100 underline-offset-2 hover:underline"
+                >
+                  Add tags
+                </Link>
+              ) : null}
+            </div>
+
             {tagsArray.length ? (
               <div className="mt-2 flex flex-wrap gap-2">
-                {tagsArray.map((t) => (
-                  <span
-                    key={t}
-                    className="inline-flex rounded-full border border-slate-700 bg-slate-900/40 px-2 py-0.5 text-[11px] font-medium text-slate-200"
-                  >
-                    {t}
-                  </span>
-                ))}
+                {tagsArray.map((t) => {
+                  const normalized = String(t ?? "").trim();
+                  const href = `/app/estates/${estateId}/documents?${new URLSearchParams({
+                    tag: normalized,
+                  }).toString()}`;
+
+                  return (
+                    <Link
+                      key={normalized || t}
+                      href={href}
+                      className="inline-flex rounded-full border border-slate-700 bg-slate-900/40 px-2 py-0.5 text-[11px] font-medium text-slate-200 hover:border-slate-600 hover:bg-slate-900/60"
+                      title={`Filter index by tag: ${normalized}`}
+                    >
+                      {normalized || "(tag)"}
+                    </Link>
+                  );
+                })}
               </div>
             ) : (
               <p className="mt-1 text-sm font-medium text-slate-50">—</p>

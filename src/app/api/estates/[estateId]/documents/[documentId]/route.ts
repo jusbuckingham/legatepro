@@ -21,22 +21,33 @@ function toObjectId(id: string) {
     : null;
 }
 
-function safeJson(request: NextRequest): Promise<{ ok: true; value: unknown } | { ok: false }> {
-  return request
-    .json()
-    .then((value) => ({ ok: true as const, value }))
-    .catch(() => ({ ok: false as const }));
-}
+type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
 
-function getRoleFromAccess(access: unknown): string | undefined {
+function getRoleFromAccess(access: unknown): EstateRole | undefined {
   if (!access || typeof access !== "object") return undefined;
   const role = (access as Record<string, unknown>).role;
-  return typeof role === "string" ? role : undefined;
+
+  if (role === "OWNER" || role === "EDITOR" || role === "VIEWER") {
+    return role;
+  }
+
+  return undefined;
 }
 
 function isSensitiveDocument(doc: unknown): boolean {
   if (!doc || typeof doc !== "object") return false;
   return Boolean((doc as Record<string, unknown>).isSensitive);
+}
+
+async function safeJson(
+  request: NextRequest
+): Promise<{ ok: true; value: unknown } | { ok: false }> {
+  try {
+    const value = await request.json();
+    return { ok: true, value };
+  } catch {
+    return { ok: false };
+  }
 }
 
 export async function GET(_request: NextRequest, { params }: RouteParams) {
@@ -110,7 +121,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     // `requireEstateEditAccess` should only allow OWNER/EDITOR.
     // If it ever returns an unexpected shape, fail closed.
-    if (!role) {
+    if (role !== "OWNER" && role !== "EDITOR") {
       return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
 
@@ -138,18 +149,26 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // Only OWNER can mark a document as sensitive.
+    if ("isSensitive" in filteredUpdates && Boolean(filteredUpdates.isSensitive) && role !== "OWNER") {
+      return NextResponse.json(
+        { ok: false, error: "Only the owner can mark a document as sensitive" },
+        { status: 403 }
+      );
+    }
+
     // Normalize tags if provided
     if ("tags" in filteredUpdates) {
       const raw = filteredUpdates.tags;
       const normalized = Array.isArray(raw)
         ? raw
             .filter((t: unknown): t is string => typeof t === "string")
-            .map((t) => t.trim())
+            .map((t) => t.trim().toLowerCase())
             .filter(Boolean)
         : typeof raw === "string"
         ? raw
             .split(",")
-            .map((t) => t.trim())
+            .map((t) => t.trim().toLowerCase())
             .filter(Boolean)
         : [];
 
@@ -211,7 +230,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     // `requireEstateEditAccess` should only allow OWNER/EDITOR.
     // If it ever returns an unexpected shape, fail closed.
-    if (!role) {
+    if (role !== "OWNER" && role !== "EDITOR") {
       return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
 
