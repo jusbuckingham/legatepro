@@ -129,8 +129,10 @@ const EstateEventSchema = new Schema<EstateEventRecord>(
   { timestamps: true }
 );
 
-EstateEventSchema.index({ estateId: 1, createdAt: -1 });
-EstateEventSchema.index({ estateId: 1, type: 1, createdAt: -1 });
+// Timeline/query performance indexes
+// Use _id as a deterministic tiebreaker when multiple docs share the same createdAt.
+EstateEventSchema.index({ estateId: 1, createdAt: -1, _id: -1 });
+EstateEventSchema.index({ estateId: 1, type: 1, createdAt: -1, _id: -1 });
 
 const EstateEvent =
   (mongoose.models.EstateEvent as mongoose.Model<EstateEventRecord>) ||

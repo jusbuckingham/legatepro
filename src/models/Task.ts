@@ -53,7 +53,8 @@ export type TaskModel = Model<TaskDocument>;
  * We define this manually instead of using mongoose.LeanDocument.
  */
 export type TaskDocLean = {
-  _id: string | Types.ObjectId;
+  _id: Types.ObjectId;
+  id: string;
   estateId: Types.ObjectId;
   ownerId: Types.ObjectId;
   subject: string;
@@ -141,9 +142,35 @@ TaskSchema.virtual("hours").get(function (this: TaskDocument) {
   return mins / 60;
 });
 
-// Make sure virtuals are included when converting to JSON/objects if you want them
-TaskSchema.set("toJSON", { virtuals: true });
-TaskSchema.set("toObject", { virtuals: true });
+// Ensure virtuals are included and shape the payload consistently.
+TaskSchema.set("toJSON", {
+  virtuals: true,
+  versionKey: false,
+  transform: (_doc, ret) => {
+    const out = ret as unknown as Record<string, unknown>;
+
+    // Provide a stable `id` string and strip mongoose internals.
+    if (out._id) out.id = String(out._id);
+    delete out._id;
+    delete out.__v;
+
+    return out;
+  },
+});
+
+TaskSchema.set("toObject", {
+  virtuals: true,
+  versionKey: false,
+  transform: (_doc, ret) => {
+    const out = ret as unknown as Record<string, unknown>;
+
+    if (out._id) out.id = String(out._id);
+    delete out._id;
+    delete out.__v;
+
+    return out;
+  },
+});
 
 export const Task: TaskModel =
   (mongoose.models.Task as TaskModel) ||

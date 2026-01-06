@@ -19,24 +19,24 @@ export interface WorkspaceSettingsAttrs {
   ownerId: string;
 
   // Branding
-  firmName?: string;
-  firmAddressLine1?: string;
-  firmAddressLine2?: string;
-  firmCity?: string;
-  firmState?: string;
-  firmPostalCode?: string;
-  firmCountry?: string;
-  logoUrl?: string;
+  firmName?: string | null;
+  firmAddressLine1?: string | null;
+  firmAddressLine2?: string | null;
+  firmCity?: string | null;
+  firmState?: string | null;
+  firmPostalCode?: string | null;
+  firmCountry?: string | null;
+  logoUrl?: string | null;
 
   // Billing defaults
-  defaultHourlyRateCents?: number;
+  defaultHourlyRateCents?: number | null;
   defaultInvoiceTerms?: InvoiceTermsCode;
-  defaultCurrency?: string;
+  defaultCurrency?: string | null;
 
   // Invoice numbering configuration
-  invoiceNumberPrefix?: string;
-  invoiceNumberSequence?: number;
-  invoiceNumberFormat?: string;
+  invoiceNumberPrefix?: string | null;
+  invoiceNumberSequence?: number | null;
+  invoiceNumberFormat?: string | null;
   /**
    * How the invoice number sequence should reset over time.
    * - NEVER: single global sequence for the workspace
@@ -47,12 +47,12 @@ export interface WorkspaceSettingsAttrs {
    * Minimum number of digits to left-pad the numeric portion of the invoice number.
    * e.g. padding 4 => INV-0001, INV-0002, etc.
    */
-  invoiceNumberPadding?: number;
+  invoiceNumberPadding?: number | null;
 
   // Billing / subscription plumbing (kept flexible)
-  stripeCustomerId?: string;
-  stripeSubscriptionId?: string;
-  subscriptionStatus?: string;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  subscriptionStatus?: string | null;
 
   createdAt?: Date;
   updatedAt?: Date;
@@ -77,17 +77,17 @@ const WorkspaceSettingsSchema = new Schema<
     },
 
     // Branding
-    firmName: { type: String },
-    firmAddressLine1: { type: String },
-    firmAddressLine2: { type: String },
-    firmCity: { type: String },
-    firmState: { type: String },
-    firmPostalCode: { type: String },
-    firmCountry: { type: String },
-    logoUrl: { type: String },
+    firmName: { type: String, default: null },
+    firmAddressLine1: { type: String, default: null },
+    firmAddressLine2: { type: String, default: null },
+    firmCity: { type: String, default: null },
+    firmState: { type: String, default: null },
+    firmPostalCode: { type: String, default: null },
+    firmCountry: { type: String, default: null },
+    logoUrl: { type: String, default: null },
 
     // Billing defaults
-    defaultHourlyRateCents: { type: Number },
+    defaultHourlyRateCents: { type: Number, default: null },
     defaultInvoiceTerms: {
       type: String,
       enum: ["DUE_ON_RECEIPT", "NET_15", "NET_30", "NET_45", "NET_60"],
@@ -95,17 +95,17 @@ const WorkspaceSettingsSchema = new Schema<
     },
     defaultCurrency: {
       type: String,
-      default: "USD",
+      default: null,
     },
 
     // Invoice numbering configuration
     invoiceNumberPrefix: {
       type: String,
-      default: "",
+      default: null,
     },
     invoiceNumberSequence: {
       type: Number,
-      default: 0,
+      default: null,
     },
     invoiceNumberFormat: {
       type: String,
@@ -118,18 +118,50 @@ const WorkspaceSettingsSchema = new Schema<
     },
     invoiceNumberPadding: {
       type: Number,
-      default: 4,
+      default: null,
     },
 
     // Billing / subscription plumbing
-    stripeCustomerId: { type: String },
-    stripeSubscriptionId: { type: String },
-    subscriptionStatus: { type: String },
+    stripeCustomerId: { type: String, default: null },
+    stripeSubscriptionId: { type: String, default: null },
+    subscriptionStatus: { type: String, default: null },
   },
   {
     timestamps: true,
+    toJSON: {
+      transform(_doc, ret) {
+        const r = ret as Record<string, unknown> & {
+          _id?: unknown;
+          __v?: unknown;
+          id?: string;
+        };
+
+        r.id = String(r._id);
+        delete r._id;
+        delete r.__v;
+
+        return r;
+      },
+    },
+    toObject: {
+      transform(_doc, ret) {
+        const r = ret as Record<string, unknown> & {
+          _id?: unknown;
+          __v?: unknown;
+          id?: string;
+        };
+
+        r.id = String(r._id);
+        delete r._id;
+        delete r.__v;
+
+        return r;
+      },
+    },
   },
 );
+
+WorkspaceSettingsSchema.index({ ownerId: 1, createdAt: -1 });
 
 export const WorkspaceSettings: WorkspaceSettingsModel =
   (models.WorkspaceSettings as WorkspaceSettingsModel) ??

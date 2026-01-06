@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document, Model, Types } from "mongoose";
+import mongoose, { Schema, Model, Types, type HydratedDocument } from "mongoose";
 
 export type ExpenseCategory =
   | "FUNERAL"
@@ -36,15 +36,13 @@ export interface IExpense {
   updatedAt?: Date;
 }
 
-export interface ExpenseDocument extends IExpense, Document {}
+export type ExpenseDocument = HydratedDocument<IExpense>;
 
 export interface ExpenseModelType extends Model<ExpenseDocument> {
   /**
    * Fetch all expenses for a given estate, newest first.
    */
-  forEstate(
-    estateId: Types.ObjectId | string
-  ): Promise<ExpenseDocument[]>;
+  forEstate(estateId: Types.ObjectId | string): Promise<ExpenseDocument[]>;
 
   /**
    * Fetch all expenses for a given owner + estate combo, newest first.
@@ -52,7 +50,7 @@ export interface ExpenseModelType extends Model<ExpenseDocument> {
    */
   forUserEstate(
     ownerId: Types.ObjectId | string,
-    estateId: Types.ObjectId | string
+    estateId: Types.ObjectId | string,
   ): Promise<ExpenseDocument[]>;
 }
 
@@ -125,15 +123,39 @@ const ExpenseSchema = new Schema<ExpenseDocument>(
   }
 );
 
-ExpenseSchema.statics.forEstate = function (
-  estateId: Types.ObjectId | string
-): Promise<ExpenseDocument[]> {
+// Indexes tuned for common list + timeline queries
+ExpenseSchema.index({ estateId: 1, date: -1, createdAt: -1 });
+ExpenseSchema.index({ ownerId: 1, estateId: 1, date: -1, createdAt: -1 });
+ExpenseSchema.index({ estateId: 1, category: 1, date: -1 });
+
+// Normalize output shape for the app
+ExpenseSchema.set("toJSON", {
+  virtuals: true,
+  transform: (_doc, ret) => {
+    const r = ret as unknown as Record<string, unknown> & { _id?: unknown; __v?: unknown };
+    const { _id, __v: _v, ...rest } = r;
+    void _v;
+    return { id: String(_id), ...rest };
+  },
+});
+
+ExpenseSchema.set("toObject", {
+  virtuals: true,
+  transform: (_doc, ret) => {
+    const r = ret as unknown as Record<string, unknown> & { _id?: unknown; __v?: unknown };
+    const { _id, __v: _v, ...rest } = r;
+    void _v;
+    return { id: String(_id), ...rest };
+  },
+});
+
+ExpenseSchema.statics.forEstate = function (estateId: Types.ObjectId | string): Promise<ExpenseDocument[]> {
   return this.find({ estateId }).sort({ date: -1, createdAt: -1 }).exec();
 };
 
 ExpenseSchema.statics.forUserEstate = function (
   ownerId: Types.ObjectId | string,
-  estateId: Types.ObjectId | string
+  estateId: Types.ObjectId | string,
 ): Promise<ExpenseDocument[]> {
   return this.find({ ownerId, estateId })
     .sort({ date: -1, createdAt: -1 })

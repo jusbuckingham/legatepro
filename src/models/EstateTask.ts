@@ -1,9 +1,6 @@
-import mongoose, { Schema, Document, Model } from "mongoose";
+import mongoose, { Schema, type Document, type Model, type HydratedDocument } from "mongoose";
 
-export type TaskStatus =
-  | "NOT_STARTED"
-  | "IN_PROGRESS"
-  | "DONE";
+export type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "DONE";
 
 export interface EstateTaskDocument extends Document {
   estateId: string;
@@ -20,6 +17,8 @@ export interface EstateTaskDocument extends Document {
   createdAt: Date;
   updatedAt: Date;
 }
+
+export type EstateTaskHydratedDocument = HydratedDocument<EstateTaskDocument>;
 
 const EstateTaskSchema = new Schema<EstateTaskDocument>(
   {
@@ -43,8 +42,32 @@ const EstateTaskSchema = new Schema<EstateTaskDocument>(
   },
   {
     timestamps: true,
+    toJSON: {
+      virtuals: true,
+      transform: (_doc, ret) => {
+        const { __v: _v, _id, ...rest } = ret as Record<string, unknown>;
+        void _v;
+        return { ...rest, id: String(_id) };
+      },
+    },
+    toObject: {
+      virtuals: true,
+      transform: (_doc, ret) => {
+        const { __v: _v, _id, ...rest } = ret as Record<string, unknown>;
+        void _v;
+        return { ...rest, id: String(_id) };
+      },
+    },
   },
 );
+
+// Common access patterns:
+// - Timeline/paging: estateId + createdAt
+// - Task lists: estateId + status
+// - Due soon: estateId + dueDate
+EstateTaskSchema.index({ estateId: 1, createdAt: -1 });
+EstateTaskSchema.index({ estateId: 1, status: 1, createdAt: -1 });
+EstateTaskSchema.index({ estateId: 1, dueDate: 1, createdAt: -1 });
 
 export const EstateTask: Model<EstateTaskDocument> =
   mongoose.models.EstateTask ||

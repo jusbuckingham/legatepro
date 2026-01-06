@@ -131,10 +131,10 @@ const EstateDocumentSchema = new Schema<EstateDocumentDocument>(
       set: (v: unknown) => normalizeSubject(v),
     },
 
-    label: { type: String, required: true, trim: true },
+    label: { type: String, required: true, trim: true, maxlength: 200 },
 
-    location: { type: String, trim: true },
-    url: { type: String, trim: true },
+    location: { type: String, trim: true, maxlength: 200 },
+    url: { type: String, trim: true, maxlength: 2000 },
 
     tags: {
       type: [String],
@@ -143,7 +143,7 @@ const EstateDocumentSchema = new Schema<EstateDocumentDocument>(
       index: true,
     },
 
-    notes: { type: String, trim: true },
+    notes: { type: String, trim: true, maxlength: 5000 },
 
     isSensitive: { type: Boolean, default: false },
 
@@ -154,6 +154,26 @@ const EstateDocumentSchema = new Schema<EstateDocumentDocument>(
   },
   {
     timestamps: true,
+    toJSON: {
+      virtuals: true,
+      transform(_doc, ret) {
+        const r = ret as Record<string, unknown>;
+        r.id = String(r._id ?? "");
+        delete r._id;
+        delete r.__v;
+        return r;
+      },
+    },
+    toObject: {
+      virtuals: true,
+      transform(_doc, ret) {
+        const r = ret as Record<string, unknown>;
+        r.id = String(r._id ?? "");
+        delete r._id;
+        delete r.__v;
+        return r;
+      },
+    },
   }
 );
 
@@ -178,6 +198,13 @@ EstateDocumentSchema.index(
     },
   }
 );
+
+EstateDocumentSchema.index(
+  { estateId: 1, createdAt: -1 },
+  { partialFilterExpression: { isSensitive: false }, name: "estate_docs_public_created" }
+);
+
+EstateDocumentSchema.index({ estateId: 1, label: 1 });
 
 let EstateDocumentModel: Model<EstateDocumentDocument>;
 

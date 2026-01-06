@@ -25,6 +25,7 @@ const EstateNoteSchema = new Schema<EstateNoteDocument>(
       type: String,
       required: true,
       trim: true,
+      maxlength: 5000,
     },
     pinned: {
       type: Boolean,
@@ -34,8 +35,26 @@ const EstateNoteSchema = new Schema<EstateNoteDocument>(
   },
   {
     timestamps: true,
+    toJSON: {
+      transform(_doc, ret: { [key: string]: unknown; _id?: unknown; __v?: unknown; id?: unknown }) {
+        ret.id = ret._id;
+        delete ret._id;
+        delete ret.__v;
+        return ret;
+      },
+    },
+    toObject: {
+      transform(_doc, ret: { [key: string]: unknown; _id?: unknown; __v?: unknown; id?: unknown }) {
+        ret.id = ret._id;
+        delete ret._id;
+        delete ret.__v;
+        return ret;
+      },
+    },
   },
 );
+
+EstateNoteSchema.index({ estateId: 1, createdAt: -1 });
 
 export const EstateNote: Model<EstateNoteDocument> =
   mongoose.models.EstateNote ||

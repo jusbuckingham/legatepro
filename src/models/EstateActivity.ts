@@ -33,6 +33,9 @@ const EstateActivitySchema = new Schema<EstateActivityDocument>(
   { timestamps: { createdAt: true, updatedAt: false } }
 );
 
+EstateActivitySchema.index({ estateId: 1, createdAt: -1, _id: -1 });
+EstateActivitySchema.index({ estateId: 1, kind: 1, action: 1, createdAt: -1, _id: -1 });
+
 export const EstateActivity: Model<EstateActivityDocument> =
   mongoose.models.EstateActivity ||
   mongoose.model<EstateActivityDocument>(

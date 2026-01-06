@@ -1,6 +1,6 @@
-import { Schema, model, models, Model, Document } from "mongoose";
+import { Schema, model, models, Model, type HydratedDocument } from "mongoose";
 
-export interface RentPaymentDocument extends Document {
+export type RentPaymentRecord = {
   estateId: Schema.Types.ObjectId;
   propertyId?: Schema.Types.ObjectId;
   tenantName: string;
@@ -14,14 +14,16 @@ export interface RentPaymentDocument extends Document {
   isLate: boolean;
   createdAt: Date;
   updatedAt: Date;
+};
+
+export type RentPaymentDocument = HydratedDocument<RentPaymentRecord>;
+
+export interface RentPaymentModelType extends Model<RentPaymentRecord> {
+  forEstate(estateId: string): Promise<RentPaymentRecord[]>;
+  forProperty(estateId: string, propertyId: string): Promise<RentPaymentRecord[]>;
 }
 
-export interface RentPaymentModelType extends Model<RentPaymentDocument> {
-  forEstate(estateId: string): Promise<RentPaymentDocument[]>;
-  forProperty(estateId: string, propertyId: string): Promise<RentPaymentDocument[]>;
-}
-
-const RentPaymentSchema = new Schema<RentPaymentDocument>(
+const RentPaymentSchema = new Schema<RentPaymentRecord>(
   {
     estateId: {
       type: Schema.Types.ObjectId,
@@ -80,22 +82,39 @@ const RentPaymentSchema = new Schema<RentPaymentDocument>(
   }
 );
 
+// ------- INDEXES ------- //
+// Estate-wide timeline queries
+RentPaymentSchema.index({ estateId: 1, paymentDate: -1 });
+// Per-property timeline queries
+RentPaymentSchema.index({ estateId: 1, propertyId: 1, paymentDate: -1 });
+
+// ------- SERIALIZATION ------- //
+RentPaymentSchema.set("toJSON", {
+  virtuals: true,
+  transform: (_doc, ret: Record<string, unknown>) => {
+    delete ret.__v;
+    return ret;
+  },
+});
+
+RentPaymentSchema.set("toObject", {
+  virtuals: true,
+  transform: (_doc, ret: Record<string, unknown>) => {
+    delete ret.__v;
+    return ret;
+  },
+});
+
 // ------- STATICS ------- //
 
 RentPaymentSchema.statics.forEstate = function (estateId: string) {
-  return this.find({ estateId }).sort({ paymentDate: -1 }).lean();
+  return this.find({ estateId }).sort({ paymentDate: -1 }).lean().exec();
 };
 
-RentPaymentSchema.statics.forProperty = function (
-  estateId: string,
-  propertyId: string
-) {
-  return this.find({ estateId, propertyId }).sort({ paymentDate: -1 }).lean();
+RentPaymentSchema.statics.forProperty = function (estateId: string, propertyId: string) {
+  return this.find({ estateId, propertyId }).sort({ paymentDate: -1 }).lean().exec();
 };
 
 export const RentPayment =
   (models.RentPayment as RentPaymentModelType) ||
-  model<RentPaymentDocument, RentPaymentModelType>(
-    "RentPayment",
-    RentPaymentSchema
-  );
+  model<RentPaymentRecord, RentPaymentModelType>("RentPayment", RentPaymentSchema);

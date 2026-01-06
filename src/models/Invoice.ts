@@ -166,6 +166,19 @@ const InvoiceSchema = new Schema<InvoiceDocument>(
   }
 );
 
+// Timeline / listing performance: fetch latest invoices for an estate.
+// (Pairs well with cursor pagination using createdAt + _id.)
+InvoiceSchema.index(
+  { estateId: 1, createdAt: -1, _id: -1 },
+  { name: "estate_createdAt_desc" }
+);
+
+// Common filter: status within an estate.
+InvoiceSchema.index(
+  { estateId: 1, status: 1, createdAt: -1, _id: -1 },
+  { name: "estate_status_createdAt_desc" }
+);
+
 // Ensure invoice numbers are unique per owner, but allow documents without an invoiceNumber.
 InvoiceSchema.index(
   { ownerId: 1, invoiceNumber: 1 },
@@ -185,17 +198,24 @@ InvoiceSchema.pre("save", function (next) {
   const lineItems = invoice.lineItems ?? [];
 
   const subtotal = lineItems.reduce((sum, item) => {
-    const lineAmount =
-      typeof item.amount === "number" && !Number.isNaN(item.amount)
-        ? item.amount
-        : (item.quantity ?? 0) * (item.rate ?? 0);
+    const qty = typeof item.quantity === "number" && !Number.isNaN(item.quantity) ? item.quantity : 0;
+    const rate = typeof item.rate === "number" && !Number.isNaN(item.rate) ? item.rate : 0;
+
+    const computed = qty * rate;
+    const rawLineAmount =
+      typeof item.amount === "number" && !Number.isNaN(item.amount) ? item.amount : computed;
+
+    // Store all money in minor units (cents) as integers.
+    const lineAmount = Math.round(rawLineAmount);
+
     return sum + lineAmount;
   }, 0);
 
   invoice.subtotal = subtotal;
 
   const taxRate = invoice.taxRate ?? 0;
-  const taxAmount = subtotal * taxRate;
+  // Tax is computed from integer subtotal; round to an integer minor-unit amount.
+  const taxAmount = Math.round(subtotal * taxRate);
 
   invoice.taxAmount = taxAmount;
   invoice.totalAmount = subtotal + taxAmount;

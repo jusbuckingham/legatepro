@@ -520,17 +520,54 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     }
   }
 
-  const beforeRaw = Array.isArray(sp.before) ? sp.before[0] : sp.before;
+  const cursorRaw = Array.isArray(sp.cursor) ? sp.cursor[0] : sp.cursor;
+  const beforeRaw = Array.isArray(sp.before) ? sp.before[0] : sp.before; // backward compat
   const limitRaw = Array.isArray(sp.limit) ? sp.limit[0] : sp.limit;
 
-  const beforeDate = typeof beforeRaw === "string" && beforeRaw ? new Date(beforeRaw) : null;
-  const isValidBefore = beforeDate instanceof Date && !Number.isNaN(beforeDate.getTime());
+  // Cursor format: `${ISO_TIMESTAMP}|${EVENT_ID}`
+  // Timestamp is primary; id is a stable tie-breaker.
+  const parseCursor = (raw: unknown): { ts: string; id: string } | null => {
+    if (typeof raw !== "string") return null;
+    const v = raw.trim();
+    if (!v) return null;
+    const [ts, id] = v.split("|");
+    if (!ts || !id) return null;
+    const d = new Date(ts);
+    if (Number.isNaN(d.getTime())) return null;
+    return { ts, id };
+  };
+
+  const cursor = parseCursor(cursorRaw);
+  const cursorDate = cursor ? new Date(cursor.ts) : null;
+  const isValidCursor = !!cursorDate && !Number.isNaN(cursorDate.getTime());
+
+  // Backward compatibility: accept ?before=... only when cursor is absent.
+  const beforeDate =
+    !isValidCursor && typeof beforeRaw === "string" && beforeRaw ? new Date(beforeRaw) : null;
+  const isValidBefore =
+    !isValidCursor && beforeDate instanceof Date && !Number.isNaN(beforeDate.getTime());
 
   const parsedLimit = typeof limitRaw === "string" ? Number.parseInt(limitRaw, 10) : NaN;
-  const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 75;
+  const pageSize = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 75;
 
-  const pageSize = limit;
   const fetchSize = pageSize + 1;
+
+  const makeCursor = (ts: string, id: string) => `${ts}|${id}`;
+
+  const isBeforeCursor = (ev: { timestamp: string; id: string }): boolean => {
+    if (isValidCursor && cursor) {
+      if (ev.timestamp < cursor.ts) return true;
+      if (ev.timestamp > cursor.ts) return false;
+      // same timestamp -> tie-breaker
+      return ev.id < cursor.id;
+    }
+
+    if (isValidBefore && beforeDate) {
+      return Date.parse(ev.timestamp) < beforeDate.getTime();
+    }
+
+    return true;
+  };
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -560,24 +597,31 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   const shouldFetchEvents = typeFilter === "ALL" || typeFilter === "event";
   const shouldFetchActivity = typeFilter === "ALL" || typeFilter === "activity";
 
+  const cutoffDate =
+    isValidCursor && cursorDate ? cursorDate : isValidBefore && beforeDate ? beforeDate : null;
+  const hasCutoff = !!cutoffDate;
+
+  // Performance: avoid over-fetching across 6 collections when we only display `pageSize` items.
+  // - If a specific type is selected, only query the relevant collection.
+  // - If viewing ALL, cap each collection fetch to a smaller number and merge.
   const invoiceWhere: FilterQuery<Record<string, unknown>> = { estateId };
-  if (isValidBefore) invoiceWhere.createdAt = { $lt: beforeDate };
+  if (hasCutoff && cutoffDate) invoiceWhere.createdAt = { $lte: cutoffDate };
 
   const documentWhere: FilterQuery<Record<string, unknown>> = { estateId };
-  if (isValidBefore) documentWhere.createdAt = { $lt: beforeDate };
+  if (hasCutoff && cutoffDate) documentWhere.createdAt = { $lte: cutoffDate };
   if (!canViewSensitive) (documentWhere as Record<string, unknown>).isSensitive = false;
 
   const taskWhere: FilterQuery<Record<string, unknown>> = { estateId };
-  if (isValidBefore) taskWhere.createdAt = { $lt: beforeDate };
+  if (hasCutoff && cutoffDate) taskWhere.createdAt = { $lte: cutoffDate };
 
   const noteWhere: FilterQuery<Record<string, unknown>> = { estateId };
-  if (isValidBefore) noteWhere.createdAt = { $lt: beforeDate };
+  if (hasCutoff && cutoffDate) noteWhere.createdAt = { $lte: cutoffDate };
 
   const estateEventWhere: FilterQuery<Record<string, unknown>> = { estateId };
-  if (isValidBefore) estateEventWhere.createdAt = { $lt: beforeDate };
+  if (hasCutoff && cutoffDate) estateEventWhere.createdAt = { $lte: cutoffDate };
 
   const estateActivityWhere: FilterQuery<Record<string, unknown>> = { estateId };
-  if (isValidBefore) estateActivityWhere.createdAt = { $lt: beforeDate };
+  if (hasCutoff && cutoffDate) estateActivityWhere.createdAt = { $lte: cutoffDate };
 
   // Run DB reads in parallel.
   const [invoiceDocs, documentDocs, taskDocs, noteDocs, estateEventDocs, estateActivityDocs] =
@@ -848,8 +892,11 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     });
   }
 
+  // Apply cursor/before boundary first, then filter and sort.
+  const boundedEvents = events.filter((ev) => isBeforeCursor({ timestamp: ev.timestamp, id: ev.id }));
+
   // Filter (search + type) first, then sort once.
-  const filteredEvents = events.filter((ev) => {
+  const filteredEvents = boundedEvents.filter((ev) => {
     if (typeFilter !== "ALL" && ev.kind !== typeFilter) return false;
     if (!searchQuery) return true;
 
@@ -859,23 +906,23 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
 
   const hasFilters = !!searchQuery || typeFilter !== "ALL";
 
-  const buildHref = (nextType: string, nextBefore?: string | null) => {
+  const buildHref = (nextType: string, nextCursorValue?: string | null) => {
     const base = `/app/estates/${estateId}/timeline`;
     const params = new URLSearchParams();
 
     if (searchQuery) params.set("q", searchQuery);
     if (nextType && nextType !== "ALL") params.set("type", nextType);
 
-    const useBefore =
-      nextBefore === null
+    const useCursor =
+      nextCursorValue === null
         ? null
-        : typeof nextBefore === "string"
-          ? nextBefore
-          : isValidBefore && beforeDate
-            ? beforeDate.toISOString()
+        : typeof nextCursorValue === "string"
+          ? nextCursorValue
+          : isValidCursor && cursor
+            ? makeCursor(cursor.ts, cursor.id)
             : null;
 
-    if (useBefore) params.set("before", useBefore);
+    if (useCursor) params.set("cursor", useCursor);
     if (pageSize !== 75) params.set("limit", String(pageSize));
 
     const qs = params.toString();
@@ -883,14 +930,18 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   };
 
   const sortedForPaging = [...filteredEvents].sort((a, b) => {
-    const at = Date.parse(a.timestamp);
-    const bt = Date.parse(b.timestamp);
-    return bt - at;
+    if (a.timestamp !== b.timestamp) {
+      return a.timestamp < b.timestamp ? 1 : -1;
+    }
+    // Tie-breaker for deterministic paging
+    return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
   });
 
   const hasMore = sortedForPaging.length > pageSize;
   const pageEvents = hasMore ? sortedForPaging.slice(0, pageSize) : sortedForPaging;
-  const nextBefore = hasMore ? pageEvents[pageEvents.length - 1]?.timestamp : null;
+
+  const last = hasMore ? pageEvents[pageEvents.length - 1] : null;
+  const nextCursor = last ? makeCursor(last.timestamp, last.id) : null;
 
   const totalFilteredCount = filteredEvents.length;
   const pageCount = pageEvents.length;
@@ -999,7 +1050,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
             <span>
               <span className="font-medium">{hasFilters ? totalFilteredCount : events.length}</span> event
               {(hasFilters ? totalFilteredCount : events.length) === 1 ? "" : "s"}
-              {hasFilters && !isValidBefore && (
+              {hasFilters && !hasCutoff && (
                 <span className="ml-1 text-[11px] text-gray-400">(of {events.length})</span>
               )}
             </span>
@@ -1045,8 +1096,8 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
 
         <form method="GET" className="flex flex-col gap-2 text-xs md:flex-row md:items-center md:justify-between">
           {/* Preserve paging + page size when searching/filtering */}
-          {isValidBefore && beforeDate ? (
-            <input type="hidden" name="before" value={beforeDate.toISOString()} />
+          {isValidCursor && cursor ? (
+            <input type="hidden" name="cursor" value={makeCursor(cursor.ts, cursor.id)} />
           ) : null}
           {pageSize !== 75 ? <input type="hidden" name="limit" value={String(pageSize)} /> : null}
 
@@ -1095,7 +1146,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
 
             {hasFilters ? (
               <Link
-                href={buildHref(typeFilter, isValidBefore && beforeDate ? beforeDate.toISOString() : null)}
+                href={buildHref(typeFilter, isValidCursor && cursor ? makeCursor(cursor.ts, cursor.id) : null)}
                 className="inline-flex h-7 items-center justify-center rounded-md border border-gray-200 bg-white px-3 text-[11px] font-medium text-gray-700 shadow-sm hover:bg-gray-50"
               >
                 Clear
@@ -1111,7 +1162,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
             {searchQuery ? (
               <Link
                 href={(() => {
-                  const base = buildHref(typeFilter, isValidBefore && beforeDate ? beforeDate.toISOString() : undefined);
+                  const base = buildHref(typeFilter, isValidCursor && cursor ? makeCursor(cursor.ts, cursor.id) : undefined);
                   const url = new URL(base, "http://localhost");
                   url.searchParams.delete("q");
                   const qs = url.searchParams.toString();
@@ -1129,7 +1180,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
             {typeFilter !== "ALL" ? (
               <Link
                 href={(() => {
-                  const base = buildHref("ALL", isValidBefore && beforeDate ? beforeDate.toISOString() : undefined);
+                  const base = buildHref("ALL", isValidCursor && cursor ? makeCursor(cursor.ts, cursor.id) : undefined);
                   const url = new URL(base, "http://localhost");
                   // buildHref("ALL", ...) already omits type; ensure it stays omitted
                   const qs = url.searchParams.toString();
@@ -1144,14 +1195,14 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
               </Link>
             ) : null}
 
-            {isValidBefore && beforeDate ? (
+            {hasCutoff && cutoffDate ? (
               <Link
                 href={buildHref(typeFilter, null)}
                 className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-gray-700 hover:bg-gray-100"
                 title="Back to newest"
               >
                 <span className="text-gray-500">Before</span>
-                <span className="font-medium">{formatDateTime(beforeDate.toISOString())}</span>
+                <span className="font-medium">{formatDateTime(cutoffDate.toISOString())}</span>
                 <span className="text-gray-400">×</span>
               </Link>
             ) : null}
@@ -1191,17 +1242,17 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
                 <span>
                   Page size: <span className="font-medium text-gray-900">{pageSize}</span>
                 </span>
-                {isValidBefore && beforeDate && (
+                {hasCutoff && cutoffDate && (
                   <>
                     <span className="text-gray-400">•</span>
                     <span>
-                      Older than <span className="font-medium text-gray-900">{formatDateTime(beforeDate.toISOString())}</span>
+                      Older than <span className="font-medium text-gray-900">{formatDateTime(cutoffDate.toISOString())}</span>
                     </span>
                   </>
                 )}
               </div>
 
-              {isValidBefore && (
+              {hasCutoff && (
                 <div className="flex items-center gap-3">
                   <Link href={buildHref(typeFilter, null)} className="text-xs font-medium text-blue-700 hover:underline">
                     Back to newest
@@ -1322,16 +1373,16 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
               </div>
             ))}
 
-            {hasMore && nextBefore && (
+            {hasMore && nextCursor && (
               <div className="mt-6 flex flex-col items-center justify-center gap-2 sm:flex-row">
                 <Link
-                  href={buildHref(typeFilter, nextBefore)}
+                  href={buildHref(typeFilter, nextCursor)}
                   className="inline-flex items-center rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
                 >
                   Load older
                 </Link>
 
-                {isValidBefore ? (
+                {hasCutoff ? (
                   <Link href={buildHref(typeFilter, null)} className="text-sm font-medium text-blue-700 hover:underline">
                     Back to newest
                   </Link>

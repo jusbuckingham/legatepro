@@ -78,10 +78,46 @@ UserSchema.virtual("fullName").get(function (this: UserDocument) {
 });
 
 UserSchema.set("toJSON", {
-  transform(_doc, ret) {
-    // Never expose password hashes in API responses
-    delete ret.password;
-    return ret;
+  transform(
+    _doc: unknown,
+    ret: UserDocument & Required<{ _id: unknown }> & { __v: number },
+  ) {
+    // Mongoose's `ret` type isn't indexable, so cast to a plain object for shaping.
+    const r = ret as unknown as Record<string, unknown> & {
+      _id: unknown;
+      __v?: number;
+      password?: unknown;
+    };
+
+    // Build a clean, client-safe shape (avoid `delete` typing issues)
+    const { password, __v, _id, ...rest } = r;
+    void password;
+    void __v;
+    return {
+      ...rest,
+      id: String(_id),
+    };
+  },
+});
+
+UserSchema.set("toObject", {
+  transform(
+    _doc: unknown,
+    ret: UserDocument & Required<{ _id: unknown }> & { __v: number },
+  ) {
+    const r = ret as unknown as Record<string, unknown> & {
+      _id: unknown;
+      __v?: number;
+      password?: unknown;
+    };
+
+    const { password, __v, _id, ...rest } = r;
+    void password;
+    void __v;
+    return {
+      ...rest,
+      id: String(_id),
+    };
   },
 });
 

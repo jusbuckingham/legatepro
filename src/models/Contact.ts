@@ -62,6 +62,7 @@ const ContactSchema = new Schema<ContactDocument>(
         "OTHER",
       ],
       default: "OTHER",
+      required: true,
     },
     email: {
       type: String,

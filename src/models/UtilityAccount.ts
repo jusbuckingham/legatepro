@@ -1,5 +1,5 @@
 // src/models/UtilityAccount.ts
-import mongoose, { Schema, Document, Model, Types } from "mongoose";
+import mongoose, { Schema, type Document, type Model, Types } from "mongoose";
 
 export type UtilityType =
   | "electric"
@@ -20,9 +20,9 @@ export interface IUtilityAccount {
   providerName: string; // e.g. DTE, Consumers, Comcast
   utilityType: UtilityType;
 
-  accountNumber?: string;
-  phone?: string;
-  website?: string;
+  accountNumber?: string | null;
+  phone?: string | null;
+  website?: string | null;
 
   // Balances & billing
   balanceDue?: number;
@@ -30,7 +30,7 @@ export interface IUtilityAccount {
   lastPaymentDate?: Date;
 
   // Notes field for miscellaneous tracking
-  notes?: string;
+  notes?: string | null;
 
   createdAt?: Date;
   updatedAt?: Date;
@@ -75,20 +75,57 @@ const UtilityAccountSchema = new Schema<UtilityAccountDocument>(
       required: true,
     },
 
-    accountNumber: { type: String, trim: true },
-    phone: { type: String, trim: true },
-    website: { type: String, trim: true },
+    accountNumber: { type: String, trim: true, default: null },
+    phone: { type: String, trim: true, default: null },
+    website: { type: String, trim: true, default: null },
 
     balanceDue: { type: Number, default: 0 },
     lastPaymentAmount: { type: Number },
     lastPaymentDate: { type: Date },
 
-    notes: { type: String, trim: true },
+    notes: { type: String, trim: true, default: null },
   },
   {
     timestamps: true,
   }
 );
+
+// Indexes for common queries
+UtilityAccountSchema.index({ estateId: 1, createdAt: -1 });
+UtilityAccountSchema.index({ ownerId: 1, createdAt: -1 });
+UtilityAccountSchema.index({ estateId: 1, propertyId: 1, createdAt: -1 });
+
+function withId(ret: unknown): Record<string, unknown> {
+  const obj = (ret ?? {}) as Record<string, unknown>;
+  const _id = obj._id;
+  return {
+    ...obj,
+    id: _id != null ? String(_id) : undefined,
+  };
+}
+
+UtilityAccountSchema.set("toJSON", {
+  virtuals: true,
+  transform: (_doc, ret) => {
+    const obj = withId(ret);
+    // Explicitly discard internal fields (avoid eslint unused warnings)
+    const { _id, __v, ...rest } = obj;
+    void _id;
+    void __v;
+    return rest;
+  },
+});
+
+UtilityAccountSchema.set("toObject", {
+  virtuals: true,
+  transform: (_doc, ret) => {
+    const obj = withId(ret);
+    const { _id, __v, ...rest } = obj;
+    void _id;
+    void __v;
+    return rest;
+  },
+});
 
 let UtilityAccountModel: Model<UtilityAccountDocument>;
 

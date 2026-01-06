@@ -2,41 +2,65 @@ import { Schema, model, models, type Model, type Document } from "mongoose";
 
 export const TIME_ENTRY_ACTIVITY_TYPES = [
   "GENERAL",
+  "CALL",
+  "EMAIL",
+  "MEETING",
+  "RESEARCH",
+  "DRAFTING",
+  "FILING",
   "COURT",
-  "ATTORNEY_COMMUNICATION",
-  "BENEFICIARY_COMMUNICATION",
-  "CREDITOR_COMMUNICATION",
-  "PROPERTY_VISIT",
-  "ACCOUNTING",
-  "DOCUMENT_PREP",
   "TRAVEL",
-  "OTHER",
+  "ADMIN",
 ] as const;
 
 export type TimeEntryActivityType = (typeof TIME_ENTRY_ACTIVITY_TYPES)[number];
 
-export interface TimeEntryAttrs {
-  ownerId: Schema.Types.ObjectId | string;
-  estateId: Schema.Types.ObjectId | string;
+export type TimeEntryRecord = {
+  ownerId: unknown;
+  estateId: unknown;
 
   date: Date;
-  minutes: number; // store minutes for easy math
+  minutes: number;
 
-  description?: string;
-  notes?: string;
+  description?: string | null;
+  notes?: string | null;
+
   activityType: TimeEntryActivityType;
 
-  // Optional billing-related fields
-  hourlyRate?: number; // dollars per hour
-  billable?: boolean;
-  invoiced?: boolean;
-}
+  hourlyRate?: number | null;
+  billable: boolean;
+  invoiced: boolean;
 
-export interface TimeEntryDocument extends Document, TimeEntryAttrs {
   createdAt: Date;
   updatedAt: Date;
+};
+
+export type TimeEntryDocument = Document & TimeEntryRecord;
+
+type PlainObject = Record<string, unknown>;
+
+function toPlainObject(ret: unknown): PlainObject {
+  return ret as PlainObject;
 }
 
+function applyCommonTransforms(ret: unknown): PlainObject {
+  const obj = toPlainObject(ret);
+
+  // Provide a stable `id` field (string) and remove Mongo internals.
+  const _id = obj._id;
+  if (typeof _id === "string") obj.id = _id;
+  else if (_id && typeof _id === "object" && "toString" in _id && typeof (_id as { toString: () => string }).toString === "function") {
+    obj.id = (_id as { toString: () => string }).toString();
+  }
+
+  delete obj._id;
+  delete obj.__v;
+
+  return obj;
+}
+
+// Indexes (query patterns: estate timeline, owner scoped queries, billing views)
+// NOTE: Mongoose will create these in dev; in production prefer migrations / ensureIndexes.
 const TimeEntrySchema = new Schema<TimeEntryDocument>(
   {
     ownerId: {
@@ -94,6 +118,23 @@ const TimeEntrySchema = new Schema<TimeEntryDocument>(
     timestamps: true,
   }
 );
+
+// Common list queries
+TimeEntrySchema.index({ estateId: 1, date: -1, createdAt: -1 });
+TimeEntrySchema.index({ ownerId: 1, estateId: 1, date: -1 });
+// Billing filters
+TimeEntrySchema.index({ estateId: 1, billable: 1, invoiced: 1, date: -1 });
+
+// Consistent serialization
+TimeEntrySchema.set("toJSON", {
+  virtuals: true,
+  transform: (_doc, ret) => applyCommonTransforms(ret),
+});
+
+TimeEntrySchema.set("toObject", {
+  virtuals: true,
+  transform: (_doc, ret) => applyCommonTransforms(ret),
+});
 
 export const TimeEntry: Model<TimeEntryDocument> =
   (models.TimeEntry as Model<TimeEntryDocument>) ||

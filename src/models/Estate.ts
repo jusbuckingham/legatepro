@@ -72,7 +72,7 @@ export interface IEstate {
   // Personal representative compensation config
   compensation?: CompensationSettings;
 
-  status?: "OPEN" | "CLOSED" | "open" | "closed";
+  status?: "OPEN" | "CLOSED";
 
   createdAt?: Date;
   updatedAt?: Date;
@@ -173,13 +173,22 @@ const EstateSchema = new Schema<EstateDocument>(
       type: String,
       enum: ["OPEN", "CLOSED"],
       default: "OPEN",
-      set: (val: string) => (typeof val === "string" ? val.toUpperCase() : val),
+      set: (val: string | undefined) => (typeof val === "string" ? val.toUpperCase() : val),
     },
   },
   {
     timestamps: true,
   }
 );
+
+// Common list queries (by owner, most recently updated)
+EstateSchema.index({ ownerId: 1, updatedAt: -1 });
+
+// Filtered list queries (by owner + status)
+EstateSchema.index({ ownerId: 1, status: 1, updatedAt: -1 });
+
+// Name-based lookups within an owner workspace
+EstateSchema.index({ ownerId: 1, decedentName: 1 });
 
 let EstateModel: Model<EstateDocument>;
 
