@@ -86,6 +86,37 @@ type ARAgingBucket = {
   invoiceCount: number;
 };
 
+type EmptyStateProps = {
+  title: string;
+  description?: string;
+  cta?: {
+    label: string;
+    href: string;
+  };
+};
+
+function EmptyState({ title, description, cta }: EmptyStateProps) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-sm">
+      <div className="text-sm font-semibold text-slate-100">{title}</div>
+      {description ? (
+        <p className="mt-1 text-xs text-slate-500">{description}</p>
+      ) : null}
+      {cta ? (
+        <div className="mt-3">
+          <Link
+            href={cta.href}
+            className="inline-flex h-8 items-center rounded-md border border-slate-800 bg-slate-900/60 px-3 text-[11px] font-medium text-sky-400 shadow-sm transition hover:bg-slate-900 hover:text-sky-300"
+          >
+            {cta.label}
+            <span className="ml-1 text-[10px]">↗</span>
+          </Link>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function formatMoney(cents: number, currency: string = "USD"): string {
   const safeCents = Number.isFinite(cents) ? cents : 0;
   const amount = safeCents / 100;
@@ -94,6 +125,14 @@ function formatMoney(cents: number, currency: string = "USD"): string {
     currency,
     maximumFractionDigits: 2,
   }).format(amount);
+}
+
+function formatShortDate(value: Date): string {
+  return value.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function toObjectId(id: string) {
@@ -117,37 +156,230 @@ export default async function DashboardPage() {
     ...(userObjectId ? [{ ownerId: userObjectId }] : []),
   ];
 
-  const [invoicesRaw, unbilledTimeRaw, workspaceSettings, estatesRaw] =
-    await Promise.all([
-      Invoice.find({ $or: ownerIdOr }).lean().exec(),
-      TimeEntry.find({
-        $and: [
-          { $or: ownerIdOr },
-          { isArchived: { $ne: true } },
+  const nowDate = new Date();
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const sixMonthWindowStart = new Date(nowDate.getFullYear(), nowDate.getMonth() - 5, 1);
+
+  const invoiceTotalsAndByEstateAgg = Invoice.aggregate([
+    { $match: { $or: ownerIdOr } },
+    {
+      $project: {
+        estateId: 1,
+        status: { $toUpper: { $ifNull: ["$status", "DRAFT"] } },
+        amountCents: { $ifNull: ["$totalAmount", { $ifNull: ["$subtotal", 0] }] },
+      },
+    },
+    {
+      $facet: {
+        totals: [
           {
-            $or: [
-              { billedInvoiceId: { $exists: false } },
-              { billedInvoiceId: null },
-            ],
+            $group: {
+              _id: null,
+              totalInvoicedCents: { $sum: "$amountCents" },
+              collectedCents: {
+                $sum: { $cond: [{ $eq: ["$status", "PAID"] }, "$amountCents", 0] },
+              },
+              voidedCents: {
+                $sum: { $cond: [{ $eq: ["$status", "VOID"] }, "$amountCents", 0] },
+              },
+              outstandingCents: {
+                $sum: {
+                  $cond: [{ $in: ["$status", ["SENT", "UNPAID", "PARTIAL"]] }, "$amountCents", 0],
+                },
+              },
+            },
           },
         ],
-      })
+        byEstate: [
+          {
+            $group: {
+              _id: "$estateId",
+              totalInvoicedCents: { $sum: "$amountCents" },
+              collectedCents: {
+                $sum: { $cond: [{ $eq: ["$status", "PAID"] }, "$amountCents", 0] },
+              },
+              voidedCents: {
+                $sum: { $cond: [{ $eq: ["$status", "VOID"] }, "$amountCents", 0] },
+              },
+              outstandingCents: {
+                $sum: {
+                  $cond: [{ $in: ["$status", ["SENT", "UNPAID", "PARTIAL"]] }, "$amountCents", 0],
+                },
+              },
+            },
+          },
+        ],
+      },
+    },
+  ]).exec();
+
+  const recentInvoicesAgg = Invoice.aggregate([
+    { $match: { $or: ownerIdOr } },
+    {
+      $project: {
+        estateId: 1,
+        status: 1,
+        totalAmount: 1,
+        subtotal: 1,
+        currency: 1,
+        createdAt: 1,
+        issueDate: 1,
+        dueDate: 1,
+        sortDate: { $ifNull: ["$issueDate", "$createdAt"] },
+      },
+    },
+    { $sort: { sortDate: -1 } },
+    { $limit: 5 },
+    { $project: { sortDate: 0 } },
+  ]).exec();
+
+  const monthlyTrendAgg = Invoice.aggregate([
+    { $match: { $or: ownerIdOr } },
+    {
+      $project: {
+        status: { $toUpper: { $ifNull: ["$status", "DRAFT"] } },
+        amountCents: { $ifNull: ["$totalAmount", { $ifNull: ["$subtotal", 0] }] },
+        baseDate: { $ifNull: ["$issueDate", "$createdAt"] },
+      },
+    },
+    { $match: { baseDate: { $gte: sixMonthWindowStart } } },
+    {
+      $group: {
+        _id: {
+          year: { $year: "$baseDate" },
+          month: { $month: "$baseDate" }, // 1-12
+        },
+        invoicedCents: { $sum: "$amountCents" },
+        collectedCents: {
+          $sum: { $cond: [{ $eq: ["$status", "PAID"] }, "$amountCents", 0] },
+        },
+        outstandingCents: {
+          $sum: {
+            $cond: [{ $in: ["$status", ["SENT", "UNPAID", "PARTIAL"]] }, "$amountCents", 0],
+          },
+        },
+      },
+    },
+  ]).exec();
+
+  const agingAgg = Invoice.aggregate([
+    { $match: { $or: ownerIdOr } },
+    {
+      $project: {
+        status: { $toUpper: { $ifNull: ["$status", "DRAFT"] } },
+        amountCents: { $ifNull: ["$totalAmount", { $ifNull: ["$subtotal", 0] }] },
+        baseDate: { $ifNull: ["$dueDate", { $ifNull: ["$issueDate", "$createdAt"] }] },
+      },
+    },
+    { $match: { status: { $in: ["SENT", "UNPAID", "PARTIAL"] } } },
+    { $match: { amountCents: { $gt: 0 } } },
+    {
+      $addFields: {
+        daysPastDue: {
+          $floor: {
+            $divide: [{ $subtract: [nowDate, "$baseDate"] }, msPerDay],
+          },
+        },
+      },
+    },
+    {
+      $addFields: {
+        bucketKey: {
+          $switch: {
+            branches: [
+              { case: { $lte: ["$daysPastDue", 0] }, then: "CURRENT" },
+              { case: { $and: [{ $gte: ["$daysPastDue", 1] }, { $lte: ["$daysPastDue", 30] }] }, then: "AGE_0_30" },
+              { case: { $and: [{ $gte: ["$daysPastDue", 31] }, { $lte: ["$daysPastDue", 60] }] }, then: "AGE_31_60" },
+              { case: { $and: [{ $gte: ["$daysPastDue", 61] }, { $lte: ["$daysPastDue", 90] }] }, then: "AGE_61_90" },
+              { case: { $gte: ["$daysPastDue", 91] }, then: "AGE_90_PLUS" },
+            ],
+            default: "CURRENT",
+          },
+        },
+      },
+    },
+    {
+      $group: {
+        _id: "$bucketKey",
+        totalCents: { $sum: "$amountCents" },
+        invoiceCount: { $sum: 1 },
+      },
+    },
+  ]).exec();
+
+  const [invoiceTotalsAndByEstate, recentInvoicesRaw, monthAggRaw, agingAggRaw, unbilledTimeRaw, workspaceSettings, estatesRaw] =
+    await Promise.all([
+      invoiceTotalsAndByEstateAgg,
+      recentInvoicesAgg,
+      monthlyTrendAgg,
+      agingAgg,
+      TimeEntry.find(
+        {
+          $and: [
+            { $or: ownerIdOr },
+            { isArchived: { $ne: true } },
+            {
+              $or: [
+                { billedInvoiceId: { $exists: false } },
+                { billedInvoiceId: null },
+              ],
+            },
+          ],
+        },
+        {
+          ownerId: 1,
+          estateId: 1,
+          description: 1,
+          durationMinutes: 1,
+          hourlyRateCents: 1,
+          startedAt: 1,
+          stoppedAt: 1,
+          billedInvoiceId: 1,
+          isArchived: 1,
+        },
+      )
         .lean()
         .exec(),
       WorkspaceSettings.findOne({ $or: ownerIdOr }).lean().exec(),
-      Estate.find({
-        $or: [
-          ...ownerIdOr,
-          { "collaborators.userId": session.user.id },
-        ],
-      })
+      Estate.find(
+        {
+          $or: [...ownerIdOr, { "collaborators.userId": session.user.id }],
+        },
+        {
+          displayName: 1,
+          caseName: 1,
+        },
+      )
         .lean()
         .exec(),
     ]);
 
-  const invoices = invoicesRaw as InvoiceLike[];
-  const unbilledTimeEntries = unbilledTimeRaw as TimeEntryLike[];
-  const estates = estatesRaw as EstateLike[];
+  const unbilledTimeEntries = unbilledTimeRaw as unknown as TimeEntryLike[];
+  const estates = estatesRaw as unknown as EstateLike[];
+
+  const totalsRow = Array.isArray(invoiceTotalsAndByEstate?.[0]?.totals)
+    ? (invoiceTotalsAndByEstate[0].totals[0] as
+        | {
+            totalInvoicedCents?: number;
+            collectedCents?: number;
+            outstandingCents?: number;
+            voidedCents?: number;
+          }
+        | undefined)
+    : undefined;
+
+  const byEstateRows = Array.isArray(invoiceTotalsAndByEstate?.[0]?.byEstate)
+    ? (invoiceTotalsAndByEstate[0].byEstate as
+        Array<{
+          _id?: unknown;
+          totalInvoicedCents?: number;
+          collectedCents?: number;
+          outstandingCents?: number;
+          voidedCents?: number;
+        }>)
+    : [];
+
+  const recentInvoices = (recentInvoicesRaw ?? []) as unknown as InvoiceLike[];
 
   const currency =
     (workspaceSettings &&
@@ -207,65 +439,20 @@ export default async function DashboardPage() {
   }
 
   // --- Aggregate invoice metrics (global + per estate) --------------------
+  const totalInvoicedCents = typeof totalsRow?.totalInvoicedCents === "number" ? totalsRow.totalInvoicedCents : 0;
+  const totalCollectedCents = typeof totalsRow?.collectedCents === "number" ? totalsRow.collectedCents : 0;
+  const totalOutstandingCents = typeof totalsRow?.outstandingCents === "number" ? totalsRow.outstandingCents : 0;
+  const totalVoidedCents = typeof totalsRow?.voidedCents === "number" ? totalsRow.voidedCents : 0;
 
-  let totalInvoicedCents = 0;
-  let totalCollectedCents = 0;
-  let totalOutstandingCents = 0;
-  let totalVoidedCents = 0;
+  for (const row of byEstateRows) {
+    if (!row._id) continue;
+    const estateId = String(row._id);
+    const metrics = ensureEstateMetrics(estateId);
 
-  for (const inv of invoices) {
-    const status = (inv.status as InvoiceStatus | undefined) ?? "DRAFT";
-
-    // All amounts are stored as cents in the schema
-    const amountCents =
-      typeof inv.totalAmount === "number"
-        ? inv.totalAmount
-        : typeof inv.subtotal === "number"
-        ? inv.subtotal
-        : 0;
-
-    totalInvoicedCents += amountCents;
-
-    switch (status) {
-      case "PAID":
-        totalCollectedCents += amountCents;
-        break;
-      case "VOID":
-        totalVoidedCents += amountCents;
-        break;
-      case "SENT":
-      case "UNPAID":
-      case "PARTIAL":
-        totalOutstandingCents += amountCents;
-        break;
-      // DRAFT and others do not count toward outstanding or collected
-      default:
-        break;
-    }
-
-    const estateIdValue = inv.estateId;
-    if (estateIdValue) {
-      const estateId = String(estateIdValue);
-      const metrics = ensureEstateMetrics(estateId);
-
-      metrics.totalInvoicedCents += amountCents;
-
-      switch (status) {
-        case "PAID":
-          metrics.collectedCents += amountCents;
-          break;
-        case "VOID":
-          metrics.voidedCents += amountCents;
-          break;
-        case "SENT":
-        case "UNPAID":
-        case "PARTIAL":
-          metrics.outstandingCents += amountCents;
-          break;
-        default:
-          break;
-      }
-    }
+    metrics.totalInvoicedCents += typeof row.totalInvoicedCents === "number" ? row.totalInvoicedCents : 0;
+    metrics.collectedCents += typeof row.collectedCents === "number" ? row.collectedCents : 0;
+    metrics.outstandingCents += typeof row.outstandingCents === "number" ? row.outstandingCents : 0;
+    metrics.voidedCents += typeof row.voidedCents === "number" ? row.voidedCents : 0;
   }
 
   const effectiveOutstanding =
@@ -328,24 +515,14 @@ export default async function DashboardPage() {
 
   const unbilledHoursTotal = unbilledMinutesTotal / 60;
 
-  // --- Simple trend: recent invoices (last 5) -----------------------------
-
-  const recentInvoices = [...invoices]
-    .sort((a, b) => {
-      const aDate = a.issueDate ?? a.createdAt ?? new Date(0);
-      const bDate = b.issueDate ?? b.createdAt ?? new Date(0);
-      return (bDate as Date).getTime() - (aDate as Date).getTime();
-    })
-    .slice(0, 5);
 
   // --- Monthly invoicing / collection trend (last 6 months) --------------
 
-  const now = new Date();
   const monthBuckets: MonthlyInvoiceBucket[] = [];
 
   // Pre-create 6 buckets for the current month and previous 5
   for (let i = 5; i >= 0; i -= 1) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const d = new Date(nowDate.getFullYear(), nowDate.getMonth() - i, 1);
     const year = d.getFullYear();
     const month = d.getMonth(); // 0-11
     const key = `${year}-${month}`;
@@ -370,42 +547,25 @@ export default async function DashboardPage() {
     monthBucketMap.set(bucket.key, bucket);
   }
 
-  for (const inv of invoices) {
-    const baseDate = inv.issueDate ?? inv.createdAt;
-    if (!baseDate) continue;
+  for (const row of monthAggRaw ?? []) {
+    const r = row as {
+      _id?: { year?: number; month?: number };
+      invoicedCents?: number;
+      collectedCents?: number;
+      outstandingCents?: number;
+    };
 
-    const date = new Date(baseDate);
-    if (Number.isNaN(date.getTime())) continue;
+    const year = typeof r._id?.year === "number" ? r._id.year : null;
+    const month1 = typeof r._id?.month === "number" ? r._id.month : null; // 1-12
+    if (!year || !month1) continue;
 
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const key = `${year}-${month}`;
+    const key = `${year}-${month1 - 1}`;
     const bucket = monthBucketMap.get(key);
-    if (!bucket) continue; // older than our window
+    if (!bucket) continue;
 
-    const status = (inv.status as InvoiceStatus | undefined) ?? "DRAFT";
-
-    const amountCents =
-      typeof inv.totalAmount === "number"
-        ? inv.totalAmount
-        : typeof inv.subtotal === "number"
-        ? inv.subtotal
-        : 0;
-
-    bucket.invoicedCents += amountCents;
-
-    switch (status) {
-      case "PAID":
-        bucket.collectedCents += amountCents;
-        break;
-      case "SENT":
-      case "UNPAID":
-      case "PARTIAL":
-        bucket.outstandingCents += amountCents;
-        break;
-      default:
-        break;
-    }
+    bucket.invoicedCents += typeof r.invoicedCents === "number" ? r.invoicedCents : 0;
+    bucket.collectedCents += typeof r.collectedCents === "number" ? r.collectedCents : 0;
+    bucket.outstandingCents += typeof r.outstandingCents === "number" ? r.outstandingCents : 0;
   }
 
   const maxInvoicedForTrend = monthBuckets.reduce(
@@ -462,58 +622,22 @@ export default async function DashboardPage() {
   ];
 
   const agingBucketList = agingBuckets;
-  const msPerDay = 1000 * 60 * 60 * 24;
+  const agingMap = new Map<string, { totalCents: number; invoiceCount: number }>();
+  for (const row of agingAggRaw ?? []) {
+    const r = row as { _id?: string; totalCents?: number; invoiceCount?: number };
+    const key = typeof r._id === "string" ? r._id : null;
+    if (!key) continue;
+    agingMap.set(key, {
+      totalCents: typeof r.totalCents === "number" ? r.totalCents : 0,
+      invoiceCount: typeof r.invoiceCount === "number" ? r.invoiceCount : 0,
+    });
+  }
 
-  for (const inv of invoices) {
-    const status = (inv.status as InvoiceStatus | undefined) ?? "DRAFT";
-
-    // Only AR relevant statuses
-    if (
-      status !== "SENT" &&
-      status !== "UNPAID" &&
-      status !== "PARTIAL"
-    ) {
-      continue;
-    }
-
-    const amountCents =
-      typeof inv.totalAmount === "number"
-        ? inv.totalAmount
-        : typeof inv.subtotal === "number"
-        ? inv.subtotal
-        : 0;
-
-    if (amountCents <= 0) continue;
-
-    const baseDate =
-      inv.dueDate ?? inv.issueDate ?? inv.createdAt ?? null;
-    if (!baseDate) continue;
-
-    const base = new Date(baseDate);
-    if (Number.isNaN(base.getTime())) continue;
-
-    const diffMs = now.getTime() - base.getTime();
-    const daysPastDue = Math.floor(diffMs / msPerDay);
-
-    let matchedBucket: ARAgingBucket | undefined;
-
-    for (const bucket of agingBucketList) {
-      if (
-        daysPastDue >= bucket.minDays &&
-        (bucket.maxDays === undefined || daysPastDue <= bucket.maxDays)
-      ) {
-        matchedBucket = bucket;
-        break;
-      }
-    }
-
-    if (!matchedBucket) {
-      // If for some reason nothing matches, treat as current
-      matchedBucket = agingBucketList[0];
-    }
-
-    matchedBucket.totalCents += amountCents;
-    matchedBucket.invoiceCount += 1;
+  for (const bucket of agingBucketList) {
+    const hit = agingMap.get(bucket.key);
+    if (!hit) continue;
+    bucket.totalCents = hit.totalCents;
+    bucket.invoiceCount = hit.invoiceCount;
   }
 
   const estateMetrics = Array.from(estateMetricsMap.values()).sort(
@@ -555,6 +679,9 @@ export default async function DashboardPage() {
           </div>
         }
       />
+      <p className="text-[11px] text-slate-500">
+        Last updated {nowDate.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}
+      </p>
       {/* Top-level metrics */}
       <section className="grid gap-6 md:grid-cols-4">
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-sm space-y-2">
@@ -628,10 +755,11 @@ export default async function DashboardPage() {
         </div>
 
         {effectiveOutstanding <= 0 ? (
-          <p className="text-xs text-slate-500">
-            No outstanding invoices at the moment. Everything that can be
-            collected is already marked as paid or void.
-          </p>
+          <EmptyState
+            title="No outstanding invoices"
+            description="Everything collectible is already marked as paid or void."
+            cta={{ label: "View invoices", href: "/app/invoices" }}
+          />
         ) : (
           <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm">
             <table className="min-w-full text-xs">
@@ -708,9 +836,11 @@ export default async function DashboardPage() {
             b.collectedCents === 0 &&
             b.outstandingCents === 0,
         ) ? (
-          <p className="text-xs text-slate-500">
-            No invoice activity yet in the last six months.
-          </p>
+          <EmptyState
+            title="No invoice activity"
+            description="Create an invoice to start tracking revenue and collections."
+            cta={{ label: "New invoice", href: "/app/invoices/new" }}
+          />
         ) : (
           <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-sm">
             {monthBuckets.map((bucket) => {
@@ -774,19 +904,26 @@ export default async function DashboardPage() {
           </p>
           <p className="text-xs text-slate-400">
             {unbilledHoursTotal > 0
-              ? `${unbilledHoursTotal.toFixed(
-                  1,
-                )} hours of tracked time that has not been attached to invoices yet.`
-              : "No unbilled time entries detected."}
+              ? `${unbilledHoursTotal.toFixed(1)} hours of tracked time that has not been attached to invoices yet.`
+              : "No unbilled time entries yet. Track time and it will appear here until it is invoiced."}
           </p>
           <div className="pt-2">
-            <Link
-              href="/app/estates"
-              className="inline-flex items-center text-xs font-medium text-sky-400 hover:text-sky-300"
-            >
-              Review time by estate
-              <span className="ml-1 text-[10px]">↗</span>
-            </Link>
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              <Link
+                href="/app/estates"
+                className="inline-flex items-center text-xs font-medium text-sky-400 hover:text-sky-300"
+              >
+                Review time by estate
+                <span className="ml-1 text-[10px]">↗</span>
+              </Link>
+              <Link
+                href="/app/time?filter=unbilled"
+                className="inline-flex items-center text-xs font-medium text-sky-400 hover:text-sky-300"
+              >
+                View unbilled entries
+                <span className="ml-1 text-[10px]">↗</span>
+              </Link>
+            </div>
           </div>
         </div>
 
@@ -805,10 +942,11 @@ export default async function DashboardPage() {
           </div>
 
           {recentInvoices.length === 0 ? (
-            <p className="text-xs text-slate-500">
-              No invoices yet. Create your first one from any estate or the
-              global invoices tab.
-            </p>
+            <EmptyState
+              title="No invoices yet"
+              description="Create your first invoice to start tracking billing and payments."
+              cta={{ label: "New invoice", href: "/app/invoices/new" }}
+            />
           ) : (
             <div className="divide-y divide-slate-800/80">
               {recentInvoices.map((inv) => {
@@ -822,20 +960,29 @@ export default async function DashboardPage() {
                     ? inv.subtotal
                     : 0;
 
-                const date =
-                  inv.issueDate ??
-                  inv.createdAt ??
-                  new Date();
+                const date = inv.issueDate ?? inv.createdAt ?? nowDate;
+                const dueDate = inv.dueDate ?? null;
 
-                const statusLabel = status.toUpperCase();
+                const baseStatus = typeof status === "string" ? status.toUpperCase() : "DRAFT";
+                const isOutstanding = ["SENT", "UNPAID", "PARTIAL"].includes(baseStatus);
+                const dueMs = dueDate ? new Date(dueDate).getTime() : null;
+                const daysPastDue =
+                  isOutstanding && dueMs !== null
+                    ? Math.floor((nowDate.getTime() - dueMs) / msPerDay)
+                    : null;
+
+                const estateId = inv.estateId ? String(inv.estateId) : null;
+                const estateLabel = estateId ? estateLabelMap.get(estateId) : null;
+
+                const statusLabel = baseStatus;
                 const statusColor =
-                  status === "PAID"
+                  baseStatus === "PAID"
                     ? "text-emerald-400"
-                    : status === "VOID"
+                    : baseStatus === "VOID"
                     ? "text-slate-500"
-                    : status === "SENT" ||
-                      status === "UNPAID" ||
-                      status === "PARTIAL"
+                    : baseStatus === "SENT" ||
+                      baseStatus === "UNPAID" ||
+                      baseStatus === "PARTIAL"
                     ? "text-amber-400"
                     : "text-slate-400";
 
@@ -848,22 +995,31 @@ export default async function DashboardPage() {
                       <span className="font-medium text-slate-100">
                         {formatMoney(amountCents, currency)}
                       </span>
-                      <span className="text-slate-500">
-                        {date.toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })}
-                      </span>
+                      {estateLabel ? (
+                        <span className="text-[11px] text-slate-400">
+                          {estateLabel}
+                        </span>
+                      ) : null}
+                      <span className="text-slate-500">{formatShortDate(date)}</span>
+                      {isOutstanding && dueDate ? (
+                        <span className="text-[11px] text-slate-500">
+                          Due {formatShortDate(new Date(dueDate))}
+                          {typeof daysPastDue === "number" && daysPastDue > 0 ? (
+                            <span className="text-amber-400"> · {daysPastDue}d late</span>
+                          ) : null}
+                        </span>
+                      ) : null}
                     </div>
                     <div className="space-y-1 text-right">
-                      <span className={statusColor}>{statusLabel}</span>
+                      <span className={`inline-flex items-center rounded-full border border-slate-800 px-2 py-0.5 text-[11px] ${statusColor}`}>
+                        {statusLabel}
+                      </span>
                       <div>
                         <Link
-                          href="/app/invoices"
+                          href={`/app/invoices?invoiceId=${encodeURIComponent(id)}`}
                           className="text-[11px] text-sky-400 hover:text-sky-300"
                         >
-                          Open
+                          View
                         </Link>
                       </div>
                     </div>
@@ -896,10 +1052,11 @@ export default async function DashboardPage() {
         </div>
 
         {estateMetrics.length === 0 ? (
-          <p className="text-xs text-slate-500">
-            No estate level billing data yet. Create an estate and attach
-            invoices or time entries to see a breakdown here.
-          </p>
+          <EmptyState
+            title="No estate billing data yet"
+            description="Create an estate, then add invoices or time entries to see a breakdown here."
+            cta={{ label: "New estate", href: "/app/estates/new" }}
+          />
         ) : (
           <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/60 shadow-sm">
             <table className="min-w-full text-xs">
