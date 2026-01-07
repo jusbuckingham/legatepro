@@ -99,7 +99,7 @@ export function normalizeEstateEventType(input: string): EstateEventCanonicalTyp
 }
 
 /* -------------------- Mongoose model -------------------- */
-( mongoose as unknown as { models: Record<string, mongoose.Model<unknown>> } ).models ||= {};
+(mongoose as unknown as { models: Record<string, mongoose.Model<unknown>> }).models ||= {};
 
 export interface EstateEventRecord {
   estateId: string;
@@ -126,12 +126,35 @@ const EstateEventSchema = new Schema<EstateEventRecord>(
     detail: { type: String, default: "" },
     meta: { type: Schema.Types.Mixed, default: null },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    toJSON: {
+      virtuals: true,
+      versionKey: false,
+      transform: (_doc, ret: Record<string, unknown>) => {
+        const _id = ret._id;
+        if (_id) ret.id = String(_id);
+        delete ret._id;
+        return ret;
+      },
+    },
+    toObject: {
+      virtuals: true,
+      versionKey: false,
+      transform: (_doc, ret: Record<string, unknown>) => {
+        const _id = ret._id;
+        if (_id) ret.id = String(_id);
+        delete ret._id;
+        return ret;
+      },
+    },
+  }
 );
 
 // Timeline/query performance indexes
 // Use _id as a deterministic tiebreaker when multiple docs share the same createdAt.
 EstateEventSchema.index({ estateId: 1, createdAt: -1, _id: -1 });
+// Common filter: estateId + type, sorted by newest first
 EstateEventSchema.index({ estateId: 1, type: 1, createdAt: -1, _id: -1 });
 
 const EstateEvent =

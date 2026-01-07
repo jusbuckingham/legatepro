@@ -178,6 +178,21 @@ const EstateSchema = new Schema<EstateDocument>(
   },
   {
     timestamps: true,
+    toJSON: {
+      virtuals: true,
+      transform: (_doc, ret) => {
+        const out = ret as Record<string, unknown> & {
+          _id?: unknown;
+          __v?: unknown;
+          id?: string;
+        };
+
+        out.id = String(out._id);
+        delete out._id;
+        delete out.__v;
+        return out;
+      },
+    },
   }
 );
 
@@ -189,6 +204,15 @@ EstateSchema.index({ ownerId: 1, status: 1, updatedAt: -1 });
 
 // Name-based lookups within an owner workspace
 EstateSchema.index({ ownerId: 1, decedentName: 1 });
+
+// Fast collaborator membership lookups
+EstateSchema.index({ "collaborators.userId": 1, updatedAt: -1 });
+
+// Fast invite lookups by email + status
+EstateSchema.index({ "invites.email": 1, "invites.status": 1 });
+
+// Fast invite token resolution
+EstateSchema.index({ "invites.token": 1 });
 
 let EstateModel: Model<EstateDocument>;
 

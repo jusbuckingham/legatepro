@@ -20,6 +20,18 @@ export interface EstateTaskDocument extends Document {
 
 export type EstateTaskHydratedDocument = HydratedDocument<EstateTaskDocument>;
 
+type TransformRet = Record<string, unknown> & { _id?: unknown; __v?: unknown };
+
+function transformDoc(_doc: EstateTaskHydratedDocument, ret: TransformRet) {
+  const { __v: _v, _id, ...rest } = ret;
+  void _v;
+
+  return {
+    ...rest,
+    id: _id != null ? String(_id) : "",
+  };
+}
+
 const EstateTaskSchema = new Schema<EstateTaskDocument>(
   {
     estateId: { type: String, required: true, index: true },
@@ -44,19 +56,11 @@ const EstateTaskSchema = new Schema<EstateTaskDocument>(
     timestamps: true,
     toJSON: {
       virtuals: true,
-      transform: (_doc, ret) => {
-        const { __v: _v, _id, ...rest } = ret as Record<string, unknown>;
-        void _v;
-        return { ...rest, id: String(_id) };
-      },
+      transform: transformDoc,
     },
     toObject: {
       virtuals: true,
-      transform: (_doc, ret) => {
-        const { __v: _v, _id, ...rest } = ret as Record<string, unknown>;
-        void _v;
-        return { ...rest, id: String(_id) };
-      },
+      transform: transformDoc,
     },
   },
 );

@@ -36,19 +36,37 @@ const EstateNoteSchema = new Schema<EstateNoteDocument>(
   {
     timestamps: true,
     toJSON: {
-      transform(_doc, ret: { [key: string]: unknown; _id?: unknown; __v?: unknown; id?: unknown }) {
-        ret.id = ret._id;
-        delete ret._id;
-        delete ret.__v;
-        return ret;
+      transform(_doc, ret: Record<string, unknown>) {
+        const obj = ret as {
+          _id?: unknown;
+          __v?: unknown;
+          id?: string;
+        };
+
+        if (obj._id) {
+          obj.id = String(obj._id);
+          delete obj._id;
+        }
+
+        delete obj.__v;
+        return obj;
       },
     },
     toObject: {
-      transform(_doc, ret: { [key: string]: unknown; _id?: unknown; __v?: unknown; id?: unknown }) {
-        ret.id = ret._id;
-        delete ret._id;
-        delete ret.__v;
-        return ret;
+      transform(_doc, ret: Record<string, unknown>) {
+        const obj = ret as {
+          _id?: unknown;
+          __v?: unknown;
+          id?: string;
+        };
+
+        if (obj._id) {
+          obj.id = String(obj._id);
+          delete obj._id;
+        }
+
+        delete obj.__v;
+        return obj;
       },
     },
   },

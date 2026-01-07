@@ -6,6 +6,20 @@ import {
   type Model,
 } from "mongoose";
 
+function serializeWorkspaceSettings(
+  _doc: unknown,
+  ret: {
+    _id?: unknown;
+    __v?: unknown;
+    [key: string]: unknown;
+  },
+) {
+  return {
+    ...ret,
+    id: ret._id ? String(ret._id) : undefined,
+  };
+}
+
 export type InvoiceTermsCode =
   | "DUE_ON_RECEIPT"
   | "NET_15"
@@ -129,34 +143,10 @@ const WorkspaceSettingsSchema = new Schema<
   {
     timestamps: true,
     toJSON: {
-      transform(_doc, ret) {
-        const r = ret as Record<string, unknown> & {
-          _id?: unknown;
-          __v?: unknown;
-          id?: string;
-        };
-
-        r.id = String(r._id);
-        delete r._id;
-        delete r.__v;
-
-        return r;
-      },
+      transform: serializeWorkspaceSettings,
     },
     toObject: {
-      transform(_doc, ret) {
-        const r = ret as Record<string, unknown> & {
-          _id?: unknown;
-          __v?: unknown;
-          id?: string;
-        };
-
-        r.id = String(r._id);
-        delete r._id;
-        delete r.__v;
-
-        return r;
-      },
+      transform: serializeWorkspaceSettings,
     },
   },
 );

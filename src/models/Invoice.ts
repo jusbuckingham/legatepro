@@ -85,6 +85,7 @@ const InvoiceLineItemSchema = new Schema<InvoiceLineItem>(
   },
   {
     _id: true,
+    id: false,
   }
 );
 
@@ -149,6 +150,7 @@ const InvoiceSchema = new Schema<InvoiceDocument>(
       type: Number,
       default: 0,
       min: 0,
+      max: 1,
     },
     taxAmount: {
       type: Number,
@@ -163,6 +165,26 @@ const InvoiceSchema = new Schema<InvoiceDocument>(
   },
   {
     timestamps: true,
+    toJSON: {
+      virtuals: true,
+      transform: (_doc, ret) => {
+        const r = ret as unknown as { _id?: unknown; __v?: unknown; id?: string } & Record<string, unknown>;
+        if (r._id) r.id = String(r._id);
+        delete r._id;
+        delete r.__v;
+        return r;
+      },
+    },
+    toObject: {
+      virtuals: true,
+      transform: (_doc, ret) => {
+        const r = ret as unknown as { _id?: unknown; __v?: unknown; id?: string } & Record<string, unknown>;
+        if (r._id) r.id = String(r._id);
+        delete r._id;
+        delete r.__v;
+        return r;
+      },
+    },
   }
 );
 
@@ -177,6 +199,12 @@ InvoiceSchema.index(
 InvoiceSchema.index(
   { estateId: 1, status: 1, createdAt: -1, _id: -1 },
   { name: "estate_status_createdAt_desc" }
+);
+
+// Owner dashboard / global lists: recent invoices for an owner.
+InvoiceSchema.index(
+  { ownerId: 1, createdAt: -1, _id: -1 },
+  { name: "owner_createdAt_desc" }
 );
 
 // Ensure invoice numbers are unique per owner, but allow documents without an invoiceNumber.
@@ -197,7 +225,9 @@ InvoiceSchema.pre("save", function (next) {
 
   const lineItems = invoice.lineItems ?? [];
 
-  const subtotal = lineItems.reduce((sum, item) => {
+  // Normalize each line item to integer minor units and compute subtotal from that.
+  let subtotal = 0;
+  for (const item of lineItems) {
     const qty = typeof item.quantity === "number" && !Number.isNaN(item.quantity) ? item.quantity : 0;
     const rate = typeof item.rate === "number" && !Number.isNaN(item.rate) ? item.rate : 0;
 
@@ -205,16 +235,17 @@ InvoiceSchema.pre("save", function (next) {
     const rawLineAmount =
       typeof item.amount === "number" && !Number.isNaN(item.amount) ? item.amount : computed;
 
-    // Store all money in minor units (cents) as integers.
     const lineAmount = Math.round(rawLineAmount);
 
-    return sum + lineAmount;
-  }, 0);
+    // Persist normalized amount back onto the doc so we don't store floats.
+    (item as unknown as { amount: number }).amount = lineAmount;
+
+    subtotal += lineAmount;
+  }
 
   invoice.subtotal = subtotal;
 
   const taxRate = invoice.taxRate ?? 0;
-  // Tax is computed from integer subtotal; round to an integer minor-unit amount.
   const taxAmount = Math.round(subtotal * taxRate);
 
   invoice.taxAmount = taxAmount;

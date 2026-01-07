@@ -16,8 +16,8 @@ export const TIME_ENTRY_ACTIVITY_TYPES = [
 export type TimeEntryActivityType = (typeof TIME_ENTRY_ACTIVITY_TYPES)[number];
 
 export type TimeEntryRecord = {
-  ownerId: unknown;
-  estateId: unknown;
+  ownerId: Schema.Types.ObjectId;
+  estateId: Schema.Types.ObjectId;
 
   date: Date;
   minutes: number;
@@ -37,26 +37,41 @@ export type TimeEntryRecord = {
 
 export type TimeEntryDocument = Document & TimeEntryRecord;
 
+export type TimeEntrySerialized = Omit<TimeEntryRecord, "ownerId" | "estateId"> & {
+  id: string;
+  ownerId: string;
+  estateId: string;
+};
+
 type PlainObject = Record<string, unknown>;
 
-function toPlainObject(ret: unknown): PlainObject {
-  return ret as PlainObject;
+type ObjectIdLike = { toString: () => string };
+
+function toStringId(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && "toString" in value && typeof (value as ObjectIdLike).toString === "function") {
+    return (value as ObjectIdLike).toString();
+  }
+  return undefined;
 }
 
-function applyCommonTransforms(ret: unknown): PlainObject {
-  const obj = toPlainObject(ret);
+function normalizeTimeEntrySerialized(ret: unknown): TimeEntrySerialized {
+  const obj = ret as PlainObject;
 
-  // Provide a stable `id` field (string) and remove Mongo internals.
-  const _id = obj._id;
-  if (typeof _id === "string") obj.id = _id;
-  else if (_id && typeof _id === "object" && "toString" in _id && typeof (_id as { toString: () => string }).toString === "function") {
-    obj.id = (_id as { toString: () => string }).toString();
-  }
+  const id = toStringId(obj._id) ?? "";
+  const ownerId = toStringId(obj.ownerId) ?? "";
+  const estateId = toStringId(obj.estateId) ?? "";
 
+  // Drop mongo internals
   delete obj._id;
   delete obj.__v;
 
-  return obj;
+  return {
+    ...(obj as Omit<TimeEntrySerialized, "id" | "ownerId" | "estateId">),
+    id,
+    ownerId,
+    estateId,
+  };
 }
 
 // Indexes (query patterns: estate timeline, owner scoped queries, billing views)
@@ -98,6 +113,7 @@ const TimeEntrySchema = new Schema<TimeEntryDocument>(
     activityType: {
       type: String,
       enum: TIME_ENTRY_ACTIVITY_TYPES,
+      required: true,
       default: "GENERAL",
     },
 
@@ -128,12 +144,12 @@ TimeEntrySchema.index({ estateId: 1, billable: 1, invoiced: 1, date: -1 });
 // Consistent serialization
 TimeEntrySchema.set("toJSON", {
   virtuals: true,
-  transform: (_doc, ret) => applyCommonTransforms(ret),
+  transform: (_doc, ret) => normalizeTimeEntrySerialized(ret),
 });
 
 TimeEntrySchema.set("toObject", {
   virtuals: true,
-  transform: (_doc, ret) => applyCommonTransforms(ret),
+  transform: (_doc, ret) => normalizeTimeEntrySerialized(ret),
 });
 
 export const TimeEntry: Model<TimeEntryDocument> =

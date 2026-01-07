@@ -157,21 +157,35 @@ const EstateDocumentSchema = new Schema<EstateDocumentDocument>(
     toJSON: {
       virtuals: true,
       transform(_doc, ret) {
-        const r = ret as Record<string, unknown>;
-        r.id = String(r._id ?? "");
-        delete r._id;
-        delete r.__v;
-        return r;
+        const { _id, __v: _unusedV, ...rest } = ret as unknown as {
+          _id?: unknown;
+          __v?: unknown;
+          [key: string]: unknown;
+        };
+
+        void _unusedV;
+
+        return {
+          ...rest,
+          id: String(_id ?? ""),
+        };
       },
     },
     toObject: {
       virtuals: true,
       transform(_doc, ret) {
-        const r = ret as Record<string, unknown>;
-        r.id = String(r._id ?? "");
-        delete r._id;
-        delete r.__v;
-        return r;
+        const { _id, __v: _unusedV, ...rest } = ret as unknown as {
+          _id?: unknown;
+          __v?: unknown;
+          [key: string]: unknown;
+        };
+
+        void _unusedV;
+
+        return {
+          ...rest,
+          id: String(_id ?? ""),
+        };
       },
     },
   }

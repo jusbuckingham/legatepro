@@ -1,5 +1,19 @@
 import { Schema, model, models } from "mongoose";
 
+type EstatePropertyTransformable = Record<string, unknown> & { _id?: unknown; __v?: unknown };
+
+function transformEstatePropertyRet(ret: unknown) {
+  const { _id, __v: _v, ...rest } = ret as unknown as EstatePropertyTransformable;
+
+  // Silence unused-var lint without changing runtime behavior.
+  void _v;
+
+  return {
+    ...rest,
+    id: _id ? String(_id) : undefined,
+  };
+}
+
 const EstatePropertySchema = new Schema(
   {
     estateId: {
@@ -87,34 +101,12 @@ const EstatePropertySchema = new Schema(
     timestamps: true,
     toJSON: {
       transform(_doc, ret) {
-        const { _id, __v: _v, ...rest } = ret as unknown as {
-          _id?: unknown;
-          __v?: unknown;
-          [key: string]: unknown;
-        };
-
-        void _v;
-
-        return {
-          ...rest,
-          id: _id ? String(_id) : undefined,
-        };
+        return transformEstatePropertyRet(ret);
       },
     },
     toObject: {
       transform(_doc, ret) {
-        const { _id, __v: _v, ...rest } = ret as unknown as {
-          _id?: unknown;
-          __v?: unknown;
-          [key: string]: unknown;
-        };
-
-        void _v;
-
-        return {
-          ...rest,
-          id: _id ? String(_id) : undefined,
-        };
+        return transformEstatePropertyRet(ret);
       },
     },
   }

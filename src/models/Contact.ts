@@ -110,5 +110,12 @@ const ContactSchema = new Schema<ContactDocument>(
   },
 );
 
+// Query helpers
+// Common access patterns:
+// - list contacts for an estate (newest first)
+// - list contacts owned by a user, optionally filtered by estate
+ContactSchema.index({ estateId: 1, createdAt: -1 });
+ContactSchema.index({ ownerId: 1, estateId: 1, createdAt: -1 });
+
 export const Contact =
   models.Contact || model<ContactDocument>("Contact", ContactSchema);

@@ -142,34 +142,45 @@ TaskSchema.virtual("hours").get(function (this: TaskDocument) {
   return mins / 60;
 });
 
+// Public/serialized shape used by API/UI layers.
+export type TaskSerialized = Omit<TaskDocLean, "_id" | "estateId" | "ownerId"> & {
+  id: string;
+  estateId: string;
+  ownerId: string;
+};
+
+function normalizeTaskSerialized(input: unknown): TaskSerialized {
+  const ret = input as Record<string, unknown>;
+
+  const _id = ret._id as unknown;
+  const estateId = ret.estateId as unknown;
+  const ownerId = ret.ownerId as unknown;
+
+  const out: Record<string, unknown> = { ...ret };
+
+  // Stable string ids
+  if (_id != null) out.id = String(_id);
+  if (estateId != null) out.estateId = String(estateId);
+  if (ownerId != null) out.ownerId = String(ownerId);
+
+  // Strip mongoose internals
+  delete out._id;
+  delete out.__v;
+
+  return out as unknown as TaskSerialized;
+}
+
 // Ensure virtuals are included and shape the payload consistently.
 TaskSchema.set("toJSON", {
   virtuals: true,
   versionKey: false,
-  transform: (_doc, ret) => {
-    const out = ret as unknown as Record<string, unknown>;
-
-    // Provide a stable `id` string and strip mongoose internals.
-    if (out._id) out.id = String(out._id);
-    delete out._id;
-    delete out.__v;
-
-    return out;
-  },
+  transform: (_doc, ret) => normalizeTaskSerialized(ret),
 });
 
 TaskSchema.set("toObject", {
   virtuals: true,
   versionKey: false,
-  transform: (_doc, ret) => {
-    const out = ret as unknown as Record<string, unknown>;
-
-    if (out._id) out.id = String(out._id);
-    delete out._id;
-    delete out.__v;
-
-    return out;
-  },
+  transform: (_doc, ret) => normalizeTaskSerialized(ret),
 });
 
 export const Task: TaskModel =

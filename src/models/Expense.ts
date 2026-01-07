@@ -129,24 +129,24 @@ ExpenseSchema.index({ ownerId: 1, estateId: 1, date: -1, createdAt: -1 });
 ExpenseSchema.index({ estateId: 1, category: 1, date: -1 });
 
 // Normalize output shape for the app
+
+type ExpenseTransformable = Record<string, unknown> & { _id?: unknown; __v?: unknown };
+
+function transformExpenseRet(ret: unknown): Record<string, unknown> & { id: string } {
+  const r = ret as unknown as ExpenseTransformable;
+  const { _id, __v: _v, ...rest } = r;
+  void _v;
+  return { id: String(_id), ...rest };
+}
+
 ExpenseSchema.set("toJSON", {
   virtuals: true,
-  transform: (_doc, ret) => {
-    const r = ret as unknown as Record<string, unknown> & { _id?: unknown; __v?: unknown };
-    const { _id, __v: _v, ...rest } = r;
-    void _v;
-    return { id: String(_id), ...rest };
-  },
+  transform: (_doc, ret) => transformExpenseRet(ret),
 });
 
 ExpenseSchema.set("toObject", {
   virtuals: true,
-  transform: (_doc, ret) => {
-    const r = ret as unknown as Record<string, unknown> & { _id?: unknown; __v?: unknown };
-    const { _id, __v: _v, ...rest } = r;
-    void _v;
-    return { id: String(_id), ...rest };
-  },
+  transform: (_doc, ret) => transformExpenseRet(ret),
 });
 
 ExpenseSchema.statics.forEstate = function (estateId: Types.ObjectId | string): Promise<ExpenseDocument[]> {

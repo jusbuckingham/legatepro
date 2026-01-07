@@ -77,48 +77,37 @@ UserSchema.virtual("fullName").get(function (this: UserDocument) {
   return [this.firstName, this.lastName].filter(Boolean).join(" ");
 });
 
-UserSchema.set("toJSON", {
-  transform(
-    _doc: unknown,
-    ret: UserDocument & Required<{ _id: unknown }> & { __v: number },
-  ) {
-    // Mongoose's `ret` type isn't indexable, so cast to a plain object for shaping.
-    const r = ret as unknown as Record<string, unknown> & {
-      _id: unknown;
-      __v?: number;
-      password?: unknown;
-    };
+type UserTransformRet = Record<string, unknown> & {
+  _id?: unknown;
+  __v?: unknown;
+  password?: unknown;
+};
 
-    // Build a clean, client-safe shape (avoid `delete` typing issues)
-    const { password, __v, _id, ...rest } = r;
-    void password;
-    void __v;
-    return {
-      ...rest,
-      id: String(_id),
-    };
-  },
+const userTransform = ((
+  _doc: unknown,
+  ret: unknown,
+): Record<string, unknown> & { id?: string } => {
+  const r = ret as UserTransformRet;
+  const { password, __v, _id, ...rest } = r;
+  void password;
+  void __v;
+
+  return {
+    ...rest,
+    id: _id != null ? String(_id) : undefined,
+  };
+}) as unknown as (
+  doc: unknown,
+  ret: UserDocument,
+  options: unknown,
+) => unknown;
+
+UserSchema.set("toJSON", {
+  transform: userTransform,
 });
 
 UserSchema.set("toObject", {
-  transform(
-    _doc: unknown,
-    ret: UserDocument & Required<{ _id: unknown }> & { __v: number },
-  ) {
-    const r = ret as unknown as Record<string, unknown> & {
-      _id: unknown;
-      __v?: number;
-      password?: unknown;
-    };
-
-    const { password, __v, _id, ...rest } = r;
-    void password;
-    void __v;
-    return {
-      ...rest,
-      id: String(_id),
-    };
-  },
+  transform: userTransform,
 });
 
 let UserModel: Model<UserDocument>;

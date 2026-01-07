@@ -98,32 +98,35 @@ UtilityAccountSchema.index({ estateId: 1, propertyId: 1, createdAt: -1 });
 function withId(ret: unknown): Record<string, unknown> {
   const obj = (ret ?? {}) as Record<string, unknown>;
   const _id = obj._id;
+
+  // Return a plain object with a stable string `id` field.
   return {
     ...obj,
     id: _id != null ? String(_id) : undefined,
   };
 }
 
+function stripInternalFields(obj: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...obj };
+  // `Record<string, unknown>` makes these optional, so `delete` is type-safe.
+  delete out._id;
+  delete out.__v;
+  return out;
+}
+
 UtilityAccountSchema.set("toJSON", {
   virtuals: true,
-  transform: (_doc, ret) => {
+  transform: (_doc: unknown, ret: unknown) => {
     const obj = withId(ret);
-    // Explicitly discard internal fields (avoid eslint unused warnings)
-    const { _id, __v, ...rest } = obj;
-    void _id;
-    void __v;
-    return rest;
+    return stripInternalFields(obj);
   },
 });
 
 UtilityAccountSchema.set("toObject", {
   virtuals: true,
-  transform: (_doc, ret) => {
+  transform: (_doc: unknown, ret: unknown) => {
     const obj = withId(ret);
-    const { _id, __v, ...rest } = obj;
-    void _id;
-    void __v;
-    return rest;
+    return stripInternalFields(obj);
   },
 });
 
