@@ -1,5 +1,6 @@
 // src/models/Task.ts
 import mongoose, { Schema, Document, Model, Types } from "mongoose";
+import { serializeMongoDoc } from "@/lib/db";
 
 /**
  * High-level state of a task.
@@ -152,20 +153,12 @@ export type TaskSerialized = Omit<TaskDocLean, "_id" | "estateId" | "ownerId"> &
 function normalizeTaskSerialized(input: unknown): TaskSerialized {
   const ret = input as Record<string, unknown>;
 
-  const _id = ret._id as unknown;
-  const estateId = ret.estateId as unknown;
-  const ownerId = ret.ownerId as unknown;
+  // Base normalization: { id: string, ... } and strips _id/__v
+  const out = serializeMongoDoc(ret) as Record<string, unknown>;
 
-  const out: Record<string, unknown> = { ...ret };
-
-  // Stable string ids
-  if (_id != null) out.id = String(_id);
-  if (estateId != null) out.estateId = String(estateId);
-  if (ownerId != null) out.ownerId = String(ownerId);
-
-  // Strip mongoose internals
-  delete out._id;
-  delete out.__v;
+  // Ensure relationship ids are stable strings
+  if (ret.estateId != null) out.estateId = String(ret.estateId);
+  if (ret.ownerId != null) out.ownerId = String(ret.ownerId);
 
   return out as unknown as TaskSerialized;
 }

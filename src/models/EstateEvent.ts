@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { serializeMongoDoc } from "@/lib/db";
 
 /**
  * EstateEvent types + normalization helpers.
@@ -131,22 +132,12 @@ const EstateEventSchema = new Schema<EstateEventRecord>(
     toJSON: {
       virtuals: true,
       versionKey: false,
-      transform: (_doc, ret: Record<string, unknown>) => {
-        const _id = ret._id;
-        if (_id) ret.id = String(_id);
-        delete ret._id;
-        return ret;
-      },
+      transform: (_doc, ret) => serializeMongoDoc(ret),
     },
     toObject: {
       virtuals: true,
       versionKey: false,
-      transform: (_doc, ret: Record<string, unknown>) => {
-        const _id = ret._id;
-        if (_id) ret.id = String(_id);
-        delete ret._id;
-        return ret;
-      },
+      transform: (_doc, ret) => serializeMongoDoc(ret),
     },
   }
 );

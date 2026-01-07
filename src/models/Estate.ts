@@ -1,5 +1,6 @@
 // src/models/Estate.ts
 import mongoose, { Schema, Document, Model } from "mongoose";
+import { serializeMongoDoc } from "@/lib/db";
 
 export type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
 
@@ -180,18 +181,11 @@ const EstateSchema = new Schema<EstateDocument>(
     timestamps: true,
     toJSON: {
       virtuals: true,
-      transform: (_doc, ret) => {
-        const out = ret as Record<string, unknown> & {
-          _id?: unknown;
-          __v?: unknown;
-          id?: string;
-        };
-
-        out.id = String(out._id);
-        delete out._id;
-        delete out.__v;
-        return out;
-      },
+      transform: (_doc, ret) => serializeMongoDoc(ret),
+    },
+    toObject: {
+      virtuals: true,
+      transform: (_doc, ret) => serializeMongoDoc(ret),
     },
   }
 );

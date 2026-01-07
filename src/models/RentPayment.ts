@@ -1,4 +1,5 @@
 import { Schema, model, models, Model, type HydratedDocument } from "mongoose";
+import { serializeMongoDoc } from "@/lib/db";
 
 export type RentPaymentRecord = {
   estateId: Schema.Types.ObjectId;
@@ -97,35 +98,32 @@ type RentPaymentPublic = Omit<RentPaymentRecord, "estateId" | "propertyId"> & {
 };
 
 function toPublicRentPayment(input: unknown): RentPaymentPublic {
-  const obj = input as Record<string, unknown>;
+  // Standardize _id/__v stripping + id creation
+  const ret = serializeMongoDoc(input) as Record<string, unknown>;
 
-  const _id = obj._id as { toString?: () => string } | undefined;
-  const estateId = obj.estateId as { toString?: () => string } | string | undefined;
-  const propertyId = obj.propertyId as { toString?: () => string } | string | undefined;
+  // Ensure foreign keys are strings (ObjectId -> string)
+  const estateId = ret.estateId as { toString?: () => string } | string | undefined;
+  const propertyId = ret.propertyId as { toString?: () => string } | string | undefined;
 
-  const id = typeof _id?.toString === "function" ? _id.toString() : String(obj.id ?? "");
+  if (estateId) {
+    ret.estateId = typeof estateId === "string" ? estateId : estateId.toString?.() ?? String(estateId);
+  }
 
-  // Return a clean, API-friendly shape
-  const ret: Record<string, unknown> = { ...obj };
-  ret.id = id;
-  if (estateId) ret.estateId = typeof estateId === "string" ? estateId : estateId.toString?.() ?? String(estateId);
-  if (propertyId)
+  if (propertyId) {
     ret.propertyId = typeof propertyId === "string" ? propertyId : propertyId.toString?.() ?? String(propertyId);
-
-  delete ret._id;
-  delete ret.__v;
+  }
 
   return ret as RentPaymentPublic;
 }
 
 RentPaymentSchema.set("toJSON", {
   virtuals: true,
-  transform: (_doc, ret) => toPublicRentPayment(ret),
+  transform: (_doc: unknown, ret: unknown) => toPublicRentPayment(ret),
 });
 
 RentPaymentSchema.set("toObject", {
   virtuals: true,
-  transform: (_doc, ret) => toPublicRentPayment(ret),
+  transform: (_doc: unknown, ret: unknown) => toPublicRentPayment(ret),
 });
 
 // ------- STATICS ------- //
@@ -136,7 +134,7 @@ RentPaymentSchema.statics.forEstate = function (estateId: string) {
     .select("-__v")
     .lean()
     .exec()
-    .then((rows: unknown[]) => rows.map((r) => toPublicRentPayment(r)));
+    .then((rows: unknown[]) => rows.map((r: unknown) => toPublicRentPayment(r)));
 };
 
 RentPaymentSchema.statics.forProperty = function (estateId: string, propertyId: string) {
@@ -145,7 +143,7 @@ RentPaymentSchema.statics.forProperty = function (estateId: string, propertyId: 
     .select("-__v")
     .lean()
     .exec()
-    .then((rows: unknown[]) => rows.map((r) => toPublicRentPayment(r)));
+    .then((rows: unknown[]) => rows.map((r: unknown) => toPublicRentPayment(r)));
 };
 
 export const RentPayment =

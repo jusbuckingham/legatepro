@@ -1,4 +1,5 @@
 import mongoose, { Schema, type Model, type Types, type ToObjectOptions } from "mongoose";
+import { serializeMongoDoc } from "@/lib/db";
 
 export interface EstateActivityDocument {
   estateId: string;
@@ -42,34 +43,10 @@ type EstateActivityTransformRet = Record<string, unknown> & {
   id?: string;
 };
 
-function serializeEstateActivity(
-  _doc: unknown,
-  ret: EstateActivityTransformRet,
-  _options?: unknown
-) {
-  // Avoid unused-var lint in some configs.
+const transform = ((_doc: unknown, ret: EstateActivityTransformRet) => {
   void _doc;
-  void _options;
-
-  // Preserve a stable id field for client usage.
-  const _id = ret._id;
-  const id = ret.id;
-
-  if (_id != null && typeof id !== "string") {
-    ret.id = String(_id);
-  }
-
-  // Remove Mongo internals.
-  delete ret._id;
-  delete ret.__v;
-
-  return ret;
-}
-
-const transform =
-  serializeEstateActivity as unknown as NonNullable<
-    ToObjectOptions<EstateActivityDocument>["transform"]
-  >;
+  return serializeMongoDoc(ret);
+}) as unknown as NonNullable<ToObjectOptions<EstateActivityDocument>["transform"]>;
 
 const toJSONOptions: ToObjectOptions<EstateActivityDocument> = {
   virtuals: true,

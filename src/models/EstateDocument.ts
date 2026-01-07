@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document, Model, Types } from "mongoose";
+import { serializeMongoDoc } from "@/lib/db";
 
 export type EstateDocumentSubject =
   | "BANKING"
@@ -157,35 +158,13 @@ const EstateDocumentSchema = new Schema<EstateDocumentDocument>(
     toJSON: {
       virtuals: true,
       transform(_doc, ret) {
-        const { _id, __v: _unusedV, ...rest } = ret as unknown as {
-          _id?: unknown;
-          __v?: unknown;
-          [key: string]: unknown;
-        };
-
-        void _unusedV;
-
-        return {
-          ...rest,
-          id: String(_id ?? ""),
-        };
+        return serializeMongoDoc(ret);
       },
     },
     toObject: {
       virtuals: true,
       transform(_doc, ret) {
-        const { _id, __v: _unusedV, ...rest } = ret as unknown as {
-          _id?: unknown;
-          __v?: unknown;
-          [key: string]: unknown;
-        };
-
-        void _unusedV;
-
-        return {
-          ...rest,
-          id: String(_id ?? ""),
-        };
+        return serializeMongoDoc(ret);
       },
     },
   }

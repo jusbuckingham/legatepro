@@ -1,4 +1,5 @@
 import mongoose, { Schema, Model, Types, type HydratedDocument } from "mongoose";
+import { serializeMongoDoc } from "@/lib/db";
 
 export type ExpenseCategory =
   | "FUNERAL"
@@ -130,13 +131,20 @@ ExpenseSchema.index({ estateId: 1, category: 1, date: -1 });
 
 // Normalize output shape for the app
 
-type ExpenseTransformable = Record<string, unknown> & { _id?: unknown; __v?: unknown };
+function transformExpenseRet(ret: unknown): Record<string, unknown> {
+  const base = serializeMongoDoc(ret);
+  const r = base as Record<string, unknown>;
 
-function transformExpenseRet(ret: unknown): Record<string, unknown> & { id: string } {
-  const r = ret as unknown as ExpenseTransformable;
-  const { _id, __v: _v, ...rest } = r;
-  void _v;
-  return { id: String(_id), ...rest };
+  const toStringIfObjectId = (v: unknown) => (v instanceof Types.ObjectId ? v.toString() : v);
+
+  // Keep common foreign keys consistently typed for the UI/API layer.
+  r.ownerId = toStringIfObjectId(r.ownerId);
+  r.estateId = toStringIfObjectId(r.estateId);
+  r.propertyId = toStringIfObjectId(r.propertyId);
+  r.utilityAccountId = toStringIfObjectId(r.utilityAccountId);
+  r.documentId = toStringIfObjectId(r.documentId);
+
+  return r;
 }
 
 ExpenseSchema.set("toJSON", {

@@ -1,5 +1,6 @@
 // src/models/User.ts
 import mongoose, { Schema, Document, Model } from "mongoose";
+import { serializeMongoDoc } from "@/lib/db";
 
 export interface IUser {
   // Authentication identifiers
@@ -77,30 +78,12 @@ UserSchema.virtual("fullName").get(function (this: UserDocument) {
   return [this.firstName, this.lastName].filter(Boolean).join(" ");
 });
 
-type UserTransformRet = Record<string, unknown> & {
-  _id?: unknown;
-  __v?: unknown;
-  password?: unknown;
+const userTransform = (_doc: unknown, ret: unknown) => {
+  const out = serializeMongoDoc(ret) as Record<string, unknown>;
+  // Never leak hashed password
+  delete (out as { password?: unknown }).password;
+  return out;
 };
-
-const userTransform = ((
-  _doc: unknown,
-  ret: unknown,
-): Record<string, unknown> & { id?: string } => {
-  const r = ret as UserTransformRet;
-  const { password, __v, _id, ...rest } = r;
-  void password;
-  void __v;
-
-  return {
-    ...rest,
-    id: _id != null ? String(_id) : undefined,
-  };
-}) as unknown as (
-  doc: unknown,
-  ret: UserDocument,
-  options: unknown,
-) => unknown;
 
 UserSchema.set("toJSON", {
   transform: userTransform,
