@@ -587,101 +587,118 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
 
   // Performance: avoid over-fetching across 6 collections when we only display `pageSize` items.
   // - If a specific type is selected, only query the relevant collection.
-  // - If viewing ALL, cap each collection fetch to a smaller number and merge.
-  const perCollectionLimit = typeFilter === "ALL" ? Math.min(fetchSize, 40) : fetchSize;
+  // - If viewing ALL, fetch fewer per collection and merge.
+  // - Run DB reads in parallel.
 
-  const shouldFetchInvoices = typeFilter === "ALL" || typeFilter === "invoice";
-  const shouldFetchDocuments = typeFilter === "ALL" || typeFilter === "document";
-  const shouldFetchTasks = typeFilter === "ALL" || typeFilter === "task";
-  const shouldFetchNotes = typeFilter === "ALL" || typeFilter === "note";
-  const shouldFetchEvents = typeFilter === "ALL" || typeFilter === "event";
-  const shouldFetchActivity = typeFilter === "ALL" || typeFilter === "activity";
+  const enabledKinds: TimelineKind[] =
+    typeFilter === "ALL"
+      ? ["invoice", "document", "task", "note", "event", "activity"]
+      : ([typeFilter] as TimelineKind[]);
+
+  // We still fetch `pageSize + 1` overall to determine `hasMore`, but per collection we cap.
+  // The ALL view does not need `pageSize+1` from every collection.
+  const perCollectionLimit =
+    typeFilter === "ALL"
+      ? Math.min(fetchSize, Math.max(15, Math.ceil(fetchSize / enabledKinds.length) + 5))
+      : fetchSize;
+
+  const shouldFetchInvoices = enabledKinds.includes("invoice");
+  const shouldFetchDocuments = enabledKinds.includes("document");
+  const shouldFetchTasks = enabledKinds.includes("task");
+  const shouldFetchNotes = enabledKinds.includes("note");
+  const shouldFetchEvents = enabledKinds.includes("event");
+  const shouldFetchActivity = enabledKinds.includes("activity");
 
   const cutoffDate =
     isValidCursor && cursorDate ? cursorDate : isValidBefore && beforeDate ? beforeDate : null;
   const hasCutoff = !!cutoffDate;
 
-  // Performance: avoid over-fetching across 6 collections when we only display `pageSize` items.
-  // - If a specific type is selected, only query the relevant collection.
-  // - If viewing ALL, cap each collection fetch to a smaller number and merge.
+  // Use `$lt` so we don't re-fetch the boundary record when paging.
+  // Exact de-duping still happens via the `isBeforeCursor` filter (timestamp + id tie-breaker).
   const invoiceWhere: FilterQuery<Record<string, unknown>> = { estateId };
-  if (hasCutoff && cutoffDate) invoiceWhere.createdAt = { $lte: cutoffDate };
+  if (hasCutoff && cutoffDate) invoiceWhere.createdAt = { $lt: cutoffDate };
 
   const documentWhere: FilterQuery<Record<string, unknown>> = { estateId };
-  if (hasCutoff && cutoffDate) documentWhere.createdAt = { $lte: cutoffDate };
+  if (hasCutoff && cutoffDate) documentWhere.createdAt = { $lt: cutoffDate };
   if (!canViewSensitive) (documentWhere as Record<string, unknown>).isSensitive = false;
 
   const taskWhere: FilterQuery<Record<string, unknown>> = { estateId };
-  if (hasCutoff && cutoffDate) taskWhere.createdAt = { $lte: cutoffDate };
+  if (hasCutoff && cutoffDate) taskWhere.createdAt = { $lt: cutoffDate };
 
   const noteWhere: FilterQuery<Record<string, unknown>> = { estateId };
-  if (hasCutoff && cutoffDate) noteWhere.createdAt = { $lte: cutoffDate };
+  if (hasCutoff && cutoffDate) noteWhere.createdAt = { $lt: cutoffDate };
 
   const estateEventWhere: FilterQuery<Record<string, unknown>> = { estateId };
-  if (hasCutoff && cutoffDate) estateEventWhere.createdAt = { $lte: cutoffDate };
+  if (hasCutoff && cutoffDate) estateEventWhere.createdAt = { $lt: cutoffDate };
 
   const estateActivityWhere: FilterQuery<Record<string, unknown>> = { estateId };
-  if (hasCutoff && cutoffDate) estateActivityWhere.createdAt = { $lte: cutoffDate };
+  if (hasCutoff && cutoffDate) estateActivityWhere.createdAt = { $lt: cutoffDate };
 
-  // Run DB reads in parallel.
+  const invoicePromise = shouldFetchInvoices
+    ? (Invoice.find(
+        invoiceWhere,
+        { invoiceNumber: 1, status: 1, createdAt: 1, issueDate: 1, subtotal: 1, totalAmount: 1 },
+      )
+        .sort({ createdAt: -1 })
+        .limit(perCollectionLimit)
+        .lean()
+        .exec() as unknown as Promise<InvoiceLean[]>)
+    : (Promise.resolve([]) as Promise<InvoiceLean[]>);
+
+  const documentPromise = shouldFetchDocuments
+    ? (EstateDocument.find(documentWhere, { label: 1, subject: 1, createdAt: 1 })
+        .sort({ createdAt: -1 })
+        .limit(perCollectionLimit)
+        .lean()
+        .exec() as unknown as Promise<EstateDocumentLean[]>)
+    : (Promise.resolve([]) as Promise<EstateDocumentLean[]>);
+
+  const taskPromise = shouldFetchTasks
+    ? (EstateTask.find(taskWhere, { title: 1, status: 1, createdAt: 1, dueDate: 1 })
+        .sort({ createdAt: -1 })
+        .limit(perCollectionLimit)
+        .lean()
+        .exec() as unknown as Promise<EstateTaskLean[]>)
+    : (Promise.resolve([]) as Promise<EstateTaskLean[]>);
+
+  const notePromise = shouldFetchNotes
+    ? (EstateNote.find(noteWhere, { body: 1, pinned: 1, createdAt: 1 })
+        .sort({ createdAt: -1 })
+        .limit(perCollectionLimit)
+        .lean()
+        .exec() as unknown as Promise<EstateNoteLean[]>)
+    : (Promise.resolve([]) as Promise<EstateNoteLean[]>);
+
+  const estateEventPromise = shouldFetchEvents
+    ? (EstateEvent.find(
+        estateEventWhere,
+        { type: 1, summary: 1, detail: 1, meta: 1, createdAt: 1 },
+      )
+        .sort({ createdAt: -1 })
+        .limit(perCollectionLimit)
+        .lean()
+        .exec() as unknown as Promise<EstateEventLean[]>)
+    : (Promise.resolve([]) as Promise<EstateEventLean[]>);
+
+  const estateActivityPromise = shouldFetchActivity
+    ? (EstateActivity.find(
+        estateActivityWhere,
+        { kind: 1, action: 1, entityId: 1, message: 1, snapshot: 1, createdAt: 1 },
+      )
+        .sort({ createdAt: -1 })
+        .limit(perCollectionLimit)
+        .lean()
+        .exec() as unknown as Promise<EstateActivityLean[]>)
+    : (Promise.resolve([]) as Promise<EstateActivityLean[]>);
+
   const [invoiceDocs, documentDocs, taskDocs, noteDocs, estateEventDocs, estateActivityDocs] =
     await Promise.all([
-      shouldFetchInvoices
-        ? (Invoice.find(
-            invoiceWhere,
-            { invoiceNumber: 1, status: 1, createdAt: 1, issueDate: 1, subtotal: 1, totalAmount: 1 },
-          )
-            .sort({ createdAt: -1 })
-            .limit(perCollectionLimit)
-            .lean()
-            .exec() as unknown as Promise<InvoiceLean[]>)
-        : (Promise.resolve([]) as Promise<InvoiceLean[]>),
-
-      shouldFetchDocuments
-        ? (EstateDocument.find(documentWhere, { label: 1, subject: 1, createdAt: 1 })
-            .sort({ createdAt: -1 })
-            .limit(perCollectionLimit)
-            .lean()
-            .exec() as unknown as Promise<EstateDocumentLean[]>)
-        : (Promise.resolve([]) as Promise<EstateDocumentLean[]>),
-
-      shouldFetchTasks
-        ? (EstateTask.find(taskWhere, { title: 1, status: 1, createdAt: 1, dueDate: 1 })
-            .sort({ createdAt: -1 })
-            .limit(perCollectionLimit)
-            .lean()
-            .exec() as unknown as Promise<EstateTaskLean[]>)
-        : (Promise.resolve([]) as Promise<EstateTaskLean[]>),
-
-      shouldFetchNotes
-        ? (EstateNote.find(noteWhere, { body: 1, pinned: 1, createdAt: 1 })
-            .sort({ createdAt: -1 })
-            .limit(perCollectionLimit)
-            .lean()
-            .exec() as unknown as Promise<EstateNoteLean[]>)
-        : (Promise.resolve([]) as Promise<EstateNoteLean[]>),
-
-      shouldFetchEvents
-        ? (EstateEvent.find(
-            estateEventWhere,
-            { type: 1, summary: 1, detail: 1, meta: 1, createdAt: 1 },
-          )
-            .sort({ createdAt: -1 })
-            .limit(perCollectionLimit)
-            .lean()
-            .exec() as unknown as Promise<EstateEventLean[]>)
-        : (Promise.resolve([]) as Promise<EstateEventLean[]>),
-
-      shouldFetchActivity
-        ? (EstateActivity.find(
-            estateActivityWhere,
-            { kind: 1, action: 1, entityId: 1, message: 1, snapshot: 1, createdAt: 1 },
-          )
-            .sort({ createdAt: -1 })
-            .limit(perCollectionLimit)
-            .lean()
-            .exec() as unknown as Promise<EstateActivityLean[]>)
-        : (Promise.resolve([]) as Promise<EstateActivityLean[]>),
+      invoicePromise,
+      documentPromise,
+      taskPromise,
+      notePromise,
+      estateEventPromise,
+      estateActivityPromise,
     ]);
 
   const events: TimelineEvent[] = [];
@@ -929,7 +946,8 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     return qs ? `${base}?${qs}` : base;
   };
 
-  const sortedForPaging = [...filteredEvents].sort((a, b) => {
+  // Sort once for deterministic paging (newest → oldest). `filteredEvents` is already a fresh array.
+  filteredEvents.sort((a, b) => {
     if (a.timestamp !== b.timestamp) {
       return a.timestamp < b.timestamp ? 1 : -1;
     }
@@ -937,8 +955,8 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
   });
 
-  const hasMore = sortedForPaging.length > pageSize;
-  const pageEvents = hasMore ? sortedForPaging.slice(0, pageSize) : sortedForPaging;
+  const hasMore = filteredEvents.length > pageSize;
+  const pageEvents = hasMore ? filteredEvents.slice(0, pageSize) : filteredEvents;
 
   const last = hasMore ? pageEvents[pageEvents.length - 1] : null;
   const nextCursor = last ? makeCursor(last.timestamp, last.id) : null;
