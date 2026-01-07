@@ -160,13 +160,22 @@ export default async function DashboardPage() {
   const msPerDay = 1000 * 60 * 60 * 24;
   const sixMonthWindowStart = new Date(nowDate.getFullYear(), nowDate.getMonth() - 5, 1);
 
-  const invoiceTotalsAndByEstateAgg = Invoice.aggregate([
+  // Consolidate invoice-related dashboard queries into a single aggregation (via $facet)
+  // to reduce query count and round trips.
+  const invoiceDashboardAgg = Invoice.aggregate([
     { $match: { $or: ownerIdOr } },
     {
       $project: {
         estateId: 1,
-        status: { $toUpper: { $ifNull: ["$status", "DRAFT"] } },
+        // normalize status once, reuse across facets
+        statusUpper: { $toUpper: { $ifNull: ["$status", "DRAFT"] } },
         amountCents: { $ifNull: ["$totalAmount", { $ifNull: ["$subtotal", 0] }] },
+        currency: 1,
+        createdAt: 1,
+        issueDate: 1,
+        dueDate: 1,
+        baseDate: { $ifNull: ["$issueDate", "$createdAt"] },
+        dueBaseDate: { $ifNull: ["$dueDate", { $ifNull: ["$issueDate", "$createdAt"] }] },
       },
     },
     {
@@ -177,14 +186,18 @@ export default async function DashboardPage() {
               _id: null,
               totalInvoicedCents: { $sum: "$amountCents" },
               collectedCents: {
-                $sum: { $cond: [{ $eq: ["$status", "PAID"] }, "$amountCents", 0] },
+                $sum: { $cond: [{ $eq: ["$statusUpper", "PAID"] }, "$amountCents", 0] },
               },
               voidedCents: {
-                $sum: { $cond: [{ $eq: ["$status", "VOID"] }, "$amountCents", 0] },
+                $sum: { $cond: [{ $eq: ["$statusUpper", "VOID"] }, "$amountCents", 0] },
               },
               outstandingCents: {
                 $sum: {
-                  $cond: [{ $in: ["$status", ["SENT", "UNPAID", "PARTIAL"]] }, "$amountCents", 0],
+                  $cond: [
+                    { $in: ["$statusUpper", ["SENT", "UNPAID", "PARTIAL"]] },
+                    "$amountCents",
+                    0,
+                  ],
                 },
               },
             },
@@ -196,16 +209,121 @@ export default async function DashboardPage() {
               _id: "$estateId",
               totalInvoicedCents: { $sum: "$amountCents" },
               collectedCents: {
-                $sum: { $cond: [{ $eq: ["$status", "PAID"] }, "$amountCents", 0] },
+                $sum: { $cond: [{ $eq: ["$statusUpper", "PAID"] }, "$amountCents", 0] },
               },
               voidedCents: {
-                $sum: { $cond: [{ $eq: ["$status", "VOID"] }, "$amountCents", 0] },
+                $sum: { $cond: [{ $eq: ["$statusUpper", "VOID"] }, "$amountCents", 0] },
               },
               outstandingCents: {
                 $sum: {
-                  $cond: [{ $in: ["$status", ["SENT", "UNPAID", "PARTIAL"]] }, "$amountCents", 0],
+                  $cond: [
+                    { $in: ["$statusUpper", ["SENT", "UNPAID", "PARTIAL"]] },
+                    "$amountCents",
+                    0,
+                  ],
                 },
               },
+            },
+          },
+        ],
+        recentInvoices: [
+          { $addFields: { sortDate: "$baseDate" } },
+          { $sort: { sortDate: -1 } },
+          { $limit: 5 },
+          {
+            $project: {
+              estateId: 1,
+              status: "$statusUpper",
+              totalAmount: "$amountCents",
+              subtotal: 1,
+              currency: 1,
+              createdAt: 1,
+              issueDate: 1,
+              dueDate: 1,
+            },
+          },
+        ],
+        monthlyTrend: [
+          { $match: { baseDate: { $gte: sixMonthWindowStart } } },
+          {
+            $group: {
+              _id: {
+                year: { $year: "$baseDate" },
+                month: { $month: "$baseDate" }, // 1-12
+              },
+              invoicedCents: { $sum: "$amountCents" },
+              collectedCents: {
+                $sum: { $cond: [{ $eq: ["$statusUpper", "PAID"] }, "$amountCents", 0] },
+              },
+              outstandingCents: {
+                $sum: {
+                  $cond: [
+                    { $in: ["$statusUpper", ["SENT", "UNPAID", "PARTIAL"]] },
+                    "$amountCents",
+                    0,
+                  ],
+                },
+              },
+            },
+          },
+        ],
+        aging: [
+          { $match: { statusUpper: { $in: ["SENT", "UNPAID", "PARTIAL"] } } },
+          { $match: { amountCents: { $gt: 0 } } },
+          {
+            $addFields: {
+              daysPastDue: {
+                $floor: {
+                  $divide: [{ $subtract: [nowDate, "$dueBaseDate"] }, msPerDay],
+                },
+              },
+            },
+          },
+          {
+            $addFields: {
+              bucketKey: {
+                $switch: {
+                  branches: [
+                    { case: { $lte: ["$daysPastDue", 0] }, then: "CURRENT" },
+                    {
+                      case: {
+                        $and: [
+                          { $gte: ["$daysPastDue", 1] },
+                          { $lte: ["$daysPastDue", 30] },
+                        ],
+                      },
+                      then: "AGE_0_30",
+                    },
+                    {
+                      case: {
+                        $and: [
+                          { $gte: ["$daysPastDue", 31] },
+                          { $lte: ["$daysPastDue", 60] },
+                        ],
+                      },
+                      then: "AGE_31_60",
+                    },
+                    {
+                      case: {
+                        $and: [
+                          { $gte: ["$daysPastDue", 61] },
+                          { $lte: ["$daysPastDue", 90] },
+                        ],
+                      },
+                      then: "AGE_61_90",
+                    },
+                    { case: { $gte: ["$daysPastDue", 91] }, then: "AGE_90_PLUS" },
+                  ],
+                  default: "CURRENT",
+                },
+              },
+            },
+          },
+          {
+            $group: {
+              _id: "$bucketKey",
+              totalCents: { $sum: "$amountCents" },
+              invoiceCount: { $sum: 1 },
             },
           },
         ],
@@ -213,106 +331,9 @@ export default async function DashboardPage() {
     },
   ]).exec();
 
-  const recentInvoicesAgg = Invoice.aggregate([
-    { $match: { $or: ownerIdOr } },
-    {
-      $project: {
-        estateId: 1,
-        status: 1,
-        totalAmount: 1,
-        subtotal: 1,
-        currency: 1,
-        createdAt: 1,
-        issueDate: 1,
-        dueDate: 1,
-        sortDate: { $ifNull: ["$issueDate", "$createdAt"] },
-      },
-    },
-    { $sort: { sortDate: -1 } },
-    { $limit: 5 },
-    { $project: { sortDate: 0 } },
-  ]).exec();
-
-  const monthlyTrendAgg = Invoice.aggregate([
-    { $match: { $or: ownerIdOr } },
-    {
-      $project: {
-        status: { $toUpper: { $ifNull: ["$status", "DRAFT"] } },
-        amountCents: { $ifNull: ["$totalAmount", { $ifNull: ["$subtotal", 0] }] },
-        baseDate: { $ifNull: ["$issueDate", "$createdAt"] },
-      },
-    },
-    { $match: { baseDate: { $gte: sixMonthWindowStart } } },
-    {
-      $group: {
-        _id: {
-          year: { $year: "$baseDate" },
-          month: { $month: "$baseDate" }, // 1-12
-        },
-        invoicedCents: { $sum: "$amountCents" },
-        collectedCents: {
-          $sum: { $cond: [{ $eq: ["$status", "PAID"] }, "$amountCents", 0] },
-        },
-        outstandingCents: {
-          $sum: {
-            $cond: [{ $in: ["$status", ["SENT", "UNPAID", "PARTIAL"]] }, "$amountCents", 0],
-          },
-        },
-      },
-    },
-  ]).exec();
-
-  const agingAgg = Invoice.aggregate([
-    { $match: { $or: ownerIdOr } },
-    {
-      $project: {
-        status: { $toUpper: { $ifNull: ["$status", "DRAFT"] } },
-        amountCents: { $ifNull: ["$totalAmount", { $ifNull: ["$subtotal", 0] }] },
-        baseDate: { $ifNull: ["$dueDate", { $ifNull: ["$issueDate", "$createdAt"] }] },
-      },
-    },
-    { $match: { status: { $in: ["SENT", "UNPAID", "PARTIAL"] } } },
-    { $match: { amountCents: { $gt: 0 } } },
-    {
-      $addFields: {
-        daysPastDue: {
-          $floor: {
-            $divide: [{ $subtract: [nowDate, "$baseDate"] }, msPerDay],
-          },
-        },
-      },
-    },
-    {
-      $addFields: {
-        bucketKey: {
-          $switch: {
-            branches: [
-              { case: { $lte: ["$daysPastDue", 0] }, then: "CURRENT" },
-              { case: { $and: [{ $gte: ["$daysPastDue", 1] }, { $lte: ["$daysPastDue", 30] }] }, then: "AGE_0_30" },
-              { case: { $and: [{ $gte: ["$daysPastDue", 31] }, { $lte: ["$daysPastDue", 60] }] }, then: "AGE_31_60" },
-              { case: { $and: [{ $gte: ["$daysPastDue", 61] }, { $lte: ["$daysPastDue", 90] }] }, then: "AGE_61_90" },
-              { case: { $gte: ["$daysPastDue", 91] }, then: "AGE_90_PLUS" },
-            ],
-            default: "CURRENT",
-          },
-        },
-      },
-    },
-    {
-      $group: {
-        _id: "$bucketKey",
-        totalCents: { $sum: "$amountCents" },
-        invoiceCount: { $sum: 1 },
-      },
-    },
-  ]).exec();
-
-  const [invoiceTotalsAndByEstate, recentInvoicesRaw, monthAggRaw, agingAggRaw, unbilledTimeRaw, workspaceSettings, estatesRaw] =
+  const [invoiceDashboardRaw, unbilledTimeRaw, workspaceSettings, estatesRaw] =
     await Promise.all([
-      invoiceTotalsAndByEstateAgg,
-      recentInvoicesAgg,
-      monthlyTrendAgg,
-      agingAgg,
+      invoiceDashboardAgg,
       TimeEntry.find(
         {
           $and: [
@@ -357,8 +378,31 @@ export default async function DashboardPage() {
   const unbilledTimeEntries = unbilledTimeRaw as unknown as TimeEntryLike[];
   const estates = estatesRaw as unknown as EstateLike[];
 
-  const totalsRow = Array.isArray(invoiceTotalsAndByEstate?.[0]?.totals)
-    ? (invoiceTotalsAndByEstate[0].totals[0] as
+  const invoiceDashboard = (invoiceDashboardRaw?.[0] ?? {}) as unknown as {
+    totals?: Array<{
+      totalInvoicedCents?: number;
+      collectedCents?: number;
+      outstandingCents?: number;
+      voidedCents?: number;
+    }>;
+    byEstate?: Array<{
+      _id?: unknown;
+      totalInvoicedCents?: number;
+      collectedCents?: number;
+      outstandingCents?: number;
+      voidedCents?: number;
+    }>;
+    recentInvoices?: unknown[];
+    monthlyTrend?: unknown[];
+    aging?: unknown[];
+  };
+
+  const recentInvoicesRaw = invoiceDashboard.recentInvoices ?? [];
+  const monthAggRaw = invoiceDashboard.monthlyTrend ?? [];
+  const agingAggRaw = invoiceDashboard.aging ?? [];
+
+  const totalsRow = Array.isArray(invoiceDashboard?.totals)
+    ? (invoiceDashboard.totals[0] as
         | {
             totalInvoicedCents?: number;
             collectedCents?: number;
@@ -368,8 +412,8 @@ export default async function DashboardPage() {
         | undefined)
     : undefined;
 
-  const byEstateRows = Array.isArray(invoiceTotalsAndByEstate?.[0]?.byEstate)
-    ? (invoiceTotalsAndByEstate[0].byEstate as
+  const byEstateRows = Array.isArray(invoiceDashboard?.byEstate)
+    ? (invoiceDashboard.byEstate as
         Array<{
           _id?: unknown;
           totalInvoicedCents?: number;
