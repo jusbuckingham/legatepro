@@ -11,6 +11,7 @@ import { TimeEntry } from "@/models/TimeEntry";
 import { WorkspaceSettings } from "@/models/WorkspaceSettings";
 import { Estate } from "@/models/Estate";
 import PageHeader from "@/components/layout/PageHeader";
+import { cache } from "react";
 
 export const metadata: Metadata = {
   title: "Dashboard | LegatePro",
@@ -36,19 +37,6 @@ type InvoiceLike = {
   dueDate?: Date | null;
 };
 
-type TimeEntryLike = {
-  _id: unknown;
-  // Mongoose lean() can return ObjectId-ish values here, so keep these loose.
-  ownerId?: unknown;
-  estateId?: unknown;
-  description?: string;
-  durationMinutes?: number;
-  hourlyRateCents?: number;
-  startedAt?: Date;
-  stoppedAt?: Date | null;
-  billedInvoiceId?: unknown | null;
-  isArchived?: boolean;
-};
 
 type EstateLike = {
   _id: unknown;
@@ -141,14 +129,17 @@ function toObjectId(id: string) {
     : null;
 }
 
+const getSession = cache(async () => getServerSession(authOptions));
+const ensureDb = cache(async () => connectToDatabase());
+
 export default async function DashboardPage() {
-  const session = await getServerSession(authOptions);
+  const session = await getSession();
 
   if (!session?.user?.id) {
     redirect("/login");
   }
 
-  await connectToDatabase();
+  await ensureDb();
 
   const userObjectId = toObjectId(session.user.id);
   const ownerIdOr: Array<Record<string, unknown>> = [
@@ -331,51 +322,130 @@ export default async function DashboardPage() {
     },
   ]).exec();
 
-  const [invoiceDashboardRaw, unbilledTimeRaw, workspaceSettings, estatesRaw] =
-    await Promise.all([
-      invoiceDashboardAgg,
-      TimeEntry.find(
-        {
-          $and: [
-            { $or: ownerIdOr },
-            { isArchived: { $ne: true } },
+  const [invoiceDashboardRaw, workspaceSettings, estatesRaw] = await Promise.all([
+    invoiceDashboardAgg,
+    WorkspaceSettings.findOne({ $or: ownerIdOr }).lean().exec(),
+    Estate.find(
+      {
+        $or: [...ownerIdOr, { "collaborators.userId": session.user.id }],
+      },
+      {
+        displayName: 1,
+        caseName: 1,
+      },
+    )
+      .lean()
+      .exec(),
+  ]);
+
+  const defaultHourlyRateCents =
+    workspaceSettings &&
+    typeof workspaceSettings.defaultHourlyRateCents === "number"
+      ? workspaceSettings.defaultHourlyRateCents
+      : 0;
+
+  const unbilledTimeAgg = await TimeEntry.aggregate([
+    {
+      $match: {
+        $and: [
+          { $or: ownerIdOr },
+          { isArchived: { $ne: true } },
+          {
+            $or: [
+              { billedInvoiceId: { $exists: false } },
+              { billedInvoiceId: null },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      $project: {
+        estateId: 1,
+        durationMinutes: 1,
+        hourlyRateCents: 1,
+        startedAt: 1,
+        stoppedAt: 1,
+      },
+    },
+    {
+      $addFields: {
+        minutes: {
+          $cond: [
+            { $gt: ["$durationMinutes", 0] },
+            "$durationMinutes",
             {
-              $or: [
-                { billedInvoiceId: { $exists: false } },
-                { billedInvoiceId: null },
+              $cond: [
+                {
+                  $and: [
+                    { $ne: ["$startedAt", null] },
+                    { $ne: ["$stoppedAt", null] },
+                  ],
+                },
+                {
+                  $divide: [
+                    { $subtract: ["$stoppedAt", "$startedAt"] },
+                    1000 * 60,
+                  ],
+                },
+                0,
               ],
             },
           ],
         },
-        {
-          ownerId: 1,
-          estateId: 1,
-          description: 1,
-          durationMinutes: 1,
-          hourlyRateCents: 1,
-          startedAt: 1,
-          stoppedAt: 1,
-          billedInvoiceId: 1,
-          isArchived: 1,
+      },
+    },
+    {
+      $addFields: {
+        rateCents: {
+          $cond: [
+            { $gt: ["$hourlyRateCents", 0] },
+            "$hourlyRateCents",
+            defaultHourlyRateCents,
+          ],
         },
-      )
-        .lean()
-        .exec(),
-      WorkspaceSettings.findOne({ $or: ownerIdOr }).lean().exec(),
-      Estate.find(
-        {
-          $or: [...ownerIdOr, { "collaborators.userId": session.user.id }],
+      },
+    },
+    {
+      $addFields: {
+        valueCents: {
+          $round: [
+            { $multiply: [{ $divide: ["$minutes", 60] }, "$rateCents"] },
+            0,
+          ],
         },
-        {
-          displayName: 1,
-          caseName: 1,
-        },
-      )
-        .lean()
-        .exec(),
-    ]);
+      },
+    },
+    {
+      $match: {
+        minutes: { $gt: 0 },
+        rateCents: { $gt: 0 },
+      },
+    },
+    {
+      $facet: {
+        totals: [
+          {
+            $group: {
+              _id: null,
+              unbilledMinutesTotal: { $sum: "$minutes" },
+              unbilledValueCentsTotal: { $sum: "$valueCents" },
+            },
+          },
+        ],
+        byEstate: [
+          {
+            $group: {
+              _id: "$estateId",
+              unbilledMinutes: { $sum: "$minutes" },
+              unbilledValueCents: { $sum: "$valueCents" },
+            },
+          },
+        ],
+      },
+    },
+  ]).exec();
 
-  const unbilledTimeEntries = unbilledTimeRaw as unknown as TimeEntryLike[];
   const estates = estatesRaw as unknown as EstateLike[];
 
   const invoiceDashboard = (invoiceDashboardRaw?.[0] ?? {}) as unknown as {
@@ -432,11 +502,6 @@ export default async function DashboardPage() {
       workspaceSettings.defaultCurrency.trim().toUpperCase()) ||
     "USD";
 
-  const defaultHourlyRateCents =
-    workspaceSettings &&
-    typeof workspaceSettings.defaultHourlyRateCents === "number"
-      ? workspaceSettings.defaultHourlyRateCents
-      : 0;
 
   // Build a lookup for estate labels
   const estateLabelMap = new Map<string, string>();
@@ -512,47 +577,46 @@ export default async function DashboardPage() {
 
   // --- Unbilled time value (global + per estate) -------------------------
 
-  let unbilledMinutesTotal = 0;
-  let unbilledTimeValueCents = 0;
+  const unbilledAggDoc = (unbilledTimeAgg?.[0] ?? {}) as unknown as {
+    totals?: Array<{ unbilledMinutesTotal?: number; unbilledValueCentsTotal?: number }>;
+    byEstate?: Array<{ _id?: unknown; unbilledMinutes?: number; unbilledValueCents?: number }>;
+  };
 
-  for (const entry of unbilledTimeEntries) {
-    let minutes = 0;
+  const unbilledTotalsRow = Array.isArray(unbilledAggDoc.totals)
+    ? unbilledAggDoc.totals[0]
+    : undefined;
 
-    if (
-      typeof entry.durationMinutes === "number" &&
-      entry.durationMinutes > 0
-    ) {
-      minutes = entry.durationMinutes;
-    } else if (entry.startedAt && entry.stoppedAt) {
-      const start = new Date(entry.startedAt).getTime();
-      const stop = new Date(entry.stoppedAt).getTime();
-      const diffMs = stop - start;
-      if (Number.isFinite(diffMs) && diffMs > 0) {
-        minutes = diffMs / (1000 * 60);
-      }
+  const unbilledMinutesTotal =
+    typeof unbilledTotalsRow?.unbilledMinutesTotal === "number"
+      ? unbilledTotalsRow.unbilledMinutesTotal
+      : 0;
+
+  const unbilledTimeValueCents =
+    typeof unbilledTotalsRow?.unbilledValueCentsTotal === "number"
+      ? unbilledTotalsRow.unbilledValueCentsTotal
+      : 0;
+
+  const unbilledByEstate = Array.isArray(unbilledAggDoc.byEstate)
+    ? (unbilledAggDoc.byEstate as Array<{
+        _id?: unknown;
+        unbilledMinutes?: number;
+        unbilledValueCents?: number;
+      }> )
+    : [];
+
+  for (const row of unbilledByEstate) {
+    if (!row._id) continue;
+    const estateId = String(row._id);
+    const metrics = ensureEstateMetrics(estateId);
+
+    const minutes = typeof row.unbilledMinutes === "number" ? row.unbilledMinutes : 0;
+    const valueCents = typeof row.unbilledValueCents === "number" ? row.unbilledValueCents : 0;
+
+    if (minutes > 0) {
+      metrics.unbilledHours += minutes / 60;
     }
 
-    if (minutes <= 0) continue;
-
-    const rateCents =
-      typeof entry.hourlyRateCents === "number" &&
-      entry.hourlyRateCents > 0
-        ? entry.hourlyRateCents
-        : defaultHourlyRateCents;
-
-    if (rateCents <= 0) continue;
-
-    const valueCents = Math.round((minutes / 60) * rateCents);
-
-    unbilledMinutesTotal += minutes;
-    unbilledTimeValueCents += valueCents;
-
-    const estateIdValue = entry.estateId;
-    if (estateIdValue) {
-      const estateId = String(estateIdValue);
-      const metrics = ensureEstateMetrics(estateId);
-
-      metrics.unbilledHours += minutes / 60;
+    if (valueCents > 0) {
       metrics.unbilledValueCents += valueCents;
     }
   }
