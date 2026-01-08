@@ -1,5 +1,3 @@
-
-
 import Link from "next/link";
 
 type PageProps = {
@@ -114,7 +112,7 @@ export default async function EstateUtilitiesEditPage({ params }: PageProps) {
                 max={31}
                 className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-900 outline-none focus:border-neutral-900"
                 placeholder="e.g., 15"
-                defaultValue={"" as unknown as number}
+                defaultValue={undefined}
               />
               <span className="text-xs text-neutral-500">Used to prefill new utility entries.</span>
             </label>
@@ -127,7 +125,7 @@ export default async function EstateUtilitiesEditPage({ params }: PageProps) {
                 max={30}
                 className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-900 outline-none focus:border-neutral-900"
                 placeholder="e.g., 3"
-                defaultValue={"" as unknown as number}
+                defaultValue={undefined}
               />
               <span className="text-xs text-neutral-500">How many days before due date to remind.</span>
             </label>

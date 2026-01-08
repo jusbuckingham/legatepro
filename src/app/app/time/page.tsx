@@ -65,16 +65,37 @@ function toObjectId(id: string) {
   return Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : null;
 }
 
-function normalizeIdFields<T extends Record<string, unknown>>(
-  obj: T,
-  keys: Array<keyof T>,
-): T {
-  for (const key of keys) {
-    const v = obj[key];
-    const s = toIdString(v);
-    if (s) (obj as Record<string, unknown>)[key as string] = s;
-  }
-  return obj;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function getRawId(doc: unknown): unknown {
+  return isRecord(doc) ? doc._id : undefined;
+}
+
+function toDateOrString(value: unknown): Date | string {
+  if (value instanceof Date) return value;
+  if (typeof value === "string") return value;
+  return new Date(0);
+}
+
+function toNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function toOptionalNumber(value: unknown): number | null | undefined {
+  if (value === null) return null;
+  if (value === undefined) return undefined;
+  return toNumber(value);
+}
+
+function toOptionalString(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  if (value === undefined) return undefined;
+  return typeof value === "string" ? value : String(value);
 }
 
 function parseDateInput(value: string | undefined): Date | undefined {
@@ -172,15 +193,26 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
     .lean()
     .exec();
 
-  const estates = (estateDocs ?? []).map((d) => {
-    const base = serializeMongoDoc(d) as Record<string, unknown>;
-    const withIds = normalizeIdFields(base, ["ownerId", "estateId", "taskId"]);
-    const id = typeof withIds.id === "string" ? withIds.id : toIdString((d as { _id?: unknown })?._id) ?? "";
+  const estates: EstateDocLean[] = (estateDocs ?? []).map((d) => {
+    const base = serializeMongoDoc(d);
+    const obj = isRecord(base) ? base : {};
+
+    const rawId = getRawId(d);
+    const id =
+      typeof obj.id === "string" && obj.id.length > 0
+        ? obj.id
+        : toIdString(rawId) ?? "";
+
     return {
-      ...(withIds as Record<string, unknown>),
       id,
-      _id: (d as { _id?: unknown })?._id as string | Types.ObjectId | undefined,
-    } as unknown as EstateDocLean;
+      _id: rawId as string | Types.ObjectId | undefined,
+      caseName: typeof obj.caseName === "string" ? obj.caseName : undefined,
+      courtCaseNumber:
+        typeof obj.courtCaseNumber === "string" ? obj.courtCaseNumber : undefined,
+      decedentName:
+        typeof obj.decedentName === "string" ? obj.decedentName : undefined,
+      status: typeof obj.status === "string" ? obj.status : undefined,
+    };
   });
 
   const estateById = new Map<string, EstateDocLean>();
@@ -195,15 +227,48 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
     .lean()
     .exec();
 
-  const allEntries = (timeDocs ?? []).map((d) => {
-    const base = serializeMongoDoc(d) as Record<string, unknown>;
-    normalizeIdFields(base, ["ownerId", "estateId", "taskId"]);
-    const id = typeof base.id === "string" ? base.id : toIdString((d as { _id?: unknown })?._id) ?? "";
+  const allEntries: TimeEntryDocLean[] = (timeDocs ?? []).map((d) => {
+    const base = serializeMongoDoc(d);
+    const obj = isRecord(base) ? base : {};
+
+    const rawId = getRawId(d);
+    const id =
+      typeof obj.id === "string" && obj.id.length > 0
+        ? obj.id
+        : toIdString(rawId) ?? "";
+
+    const ownerId = toIdString(obj.ownerId);
+    const estateId = toIdString(obj.estateId);
+    const taskIdRaw = obj.taskId;
+
+    const taskId =
+      taskIdRaw === null
+        ? null
+        : taskIdRaw === undefined
+          ? undefined
+          : (toIdString(taskIdRaw) ?? undefined);
+
     return {
-      ...(base as Record<string, unknown>),
       id,
-      _id: (d as { _id?: unknown })?._id as string | Types.ObjectId | undefined,
-    } as unknown as TimeEntryDocLean;
+      _id: rawId as string | Types.ObjectId | undefined,
+      ownerId,
+      estateId,
+      taskId,
+      date: toDateOrString(obj.date),
+      minutes: toNumber(obj.minutes, 0),
+      rate: toOptionalNumber(obj.rate) ?? null,
+      amount: toOptionalNumber(obj.amount) ?? null,
+      notes: toOptionalString(obj.notes) ?? null,
+      description: toOptionalString(obj.description) ?? null,
+      createdAt:
+        obj.createdAt instanceof Date || typeof obj.createdAt === "string"
+          ? obj.createdAt
+          : undefined,
+      updatedAt:
+        obj.updatedAt instanceof Date || typeof obj.updatedAt === "string"
+          ? obj.updatedAt
+          : undefined,
+    };
   });
 
   // Apply filters

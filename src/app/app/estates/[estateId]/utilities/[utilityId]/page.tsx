@@ -7,17 +7,47 @@ import { auth } from "@/lib/auth";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import { revalidatePath } from "next/cache";
 
-import { connectToDatabase } from "../../../../../../lib/db";
-import { UtilityAccount } from "../../../../../../models/UtilityAccount";
-import { EstateProperty } from "../../../../../../models/EstateProperty";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
+import { UtilityAccount } from "@/models/UtilityAccount";
+import { EstateProperty } from "@/models/EstateProperty";
 
 export const dynamic = "force-dynamic";
 
 type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
 
+function asString(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const t = value.trim();
+    return t.length ? t : undefined;
+  }
+  return undefined;
+}
+
+function asBool(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  return undefined;
+}
+
+function idToString(value: unknown): string | undefined {
+  if (!value) return undefined;
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && value !== null && "toString" in value) {
+    const maybe = (value as { toString?: () => string }).toString?.();
+    return typeof maybe === "string" ? maybe : undefined;
+  }
+  return undefined;
+}
+
 function roleAtLeast(role: EstateRole, minRole: EstateRole): boolean {
   const order: Record<EstateRole, number> = { OWNER: 3, EDITOR: 2, VIEWER: 1 };
   return order[role] >= order[minRole];
+}
+
+function normalizeEstateRole(value: unknown): EstateRole {
+  const obj = (value && typeof value === "object") ? (value as Record<string, unknown>) : {};
+  const r = asString(obj.role);
+  if (r === "OWNER" || r === "EDITOR" || r === "VIEWER") return r;
+  return "VIEWER";
 }
 
 interface PageProps {
@@ -60,53 +90,37 @@ async function getUtilityDetail(
   if (!rawUtility) {
     return null;
   }
-
-  const utilityDoc = rawUtility as unknown as {
-    _id?: { toString(): string };
-    estateId?: { toString(): string };
-    propertyId?: { toString(): string };
-    provider?: string;
-    type?: string;
-    accountNumber?: string;
-    billingName?: string;
-    phone?: string;
-    email?: string;
-    onlinePortalUrl?: string;
-    status?: string;
-    isAutoPay?: boolean;
-    notes?: string;
-  };
+  const utilityObj = serializeMongoDoc(rawUtility) as Record<string, unknown>;
 
   let propertyLabel: string | undefined;
 
-  if (utilityDoc.propertyId) {
-    const property = (await EstateProperty.findById(utilityDoc.propertyId)
-      .lean()
-      .exec()) as { label?: string } | null;
+  const propertyId = idToString(utilityObj.propertyId);
 
-    if (property?.label) {
-      propertyLabel = property.label;
-    } else if (property) {
-      propertyLabel = "Property";
+  if (propertyId) {
+    const propertyRaw = await EstateProperty.findById(propertyId).lean().exec();
+    if (propertyRaw) {
+      const propertyObj = serializeMongoDoc(propertyRaw) as Record<string, unknown>;
+      const label = asString(propertyObj.label);
+      propertyLabel = label ?? "Property";
     }
   }
 
-  const id = utilityDoc._id?.toString?.() ?? "";
+  const id = idToString(utilityObj._id) ?? "";
 
   return {
     id,
     estateId,
-    provider: utilityDoc.provider ?? "",
-    type: utilityDoc.type,
-    accountNumber: utilityDoc.accountNumber,
-    billingName: utilityDoc.billingName,
-    phone: utilityDoc.phone,
-    email: utilityDoc.email,
-    onlinePortalUrl: utilityDoc.onlinePortalUrl,
-    status: utilityDoc.status,
-    isAutoPay: Boolean(utilityDoc.isAutoPay),
-    notes: utilityDoc.notes,
-    propertyId: utilityDoc.propertyId?.toString?.(),
+    provider: asString(utilityObj.provider) ?? "",
+    type: asString(utilityObj.type),
+    accountNumber: asString(utilityObj.accountNumber),
+    billingName: asString(utilityObj.billingName),
+    phone: asString(utilityObj.phone),
+    email: asString(utilityObj.email),
+    onlinePortalUrl: asString(utilityObj.onlinePortalUrl),
+    status: asString(utilityObj.status),
+    isAutoPay: asBool(utilityObj.isAutoPay) ?? Boolean(utilityObj.isAutoPay),
+    notes: asString(utilityObj.notes),
+    propertyId,
     propertyLabel,
   };
 }
@@ -152,27 +166,29 @@ export async function updateUtility(formData: FormData): Promise<void> {
   }
 
   // Throws if user has no access; viewers cannot edit.
-  const access = (await requireEstateEditAccess({
+  const access = await requireEstateEditAccess({
     estateId,
     userId: session.user.id,
-  })) as { role: EstateRole };
+  });
 
-  if (!roleAtLeast(access.role, "EDITOR")) {
+  const role = normalizeEstateRole(access);
+
+  if (!roleAtLeast(role, "EDITOR")) {
     redirect(`/app/estates/${estateId}/utilities/${utilityId}?forbidden=1`);
   }
 
   await connectToDatabase();
 
   const update: Record<string, unknown> = {
-    provider: formData.get("provider") || undefined,
-    billingName: formData.get("billingName") || undefined,
-    phone: formData.get("phone") || undefined,
-    email: formData.get("email") || undefined,
-    onlinePortalUrl: formData.get("onlinePortalUrl") || undefined,
-    type: formData.get("type") || undefined,
-    status: formData.get("status") || undefined,
+    provider: asString(formData.get("provider")),
+    billingName: asString(formData.get("billingName")),
+    phone: asString(formData.get("phone")),
+    email: asString(formData.get("email")),
+    onlinePortalUrl: asString(formData.get("onlinePortalUrl")),
+    type: asString(formData.get("type")),
+    status: asString(formData.get("status")),
     isAutoPay: formData.get("isAutoPay") === "on",
-    notes: formData.get("notes") || undefined,
+    notes: asString(formData.get("notes")),
   };
 
   await UtilityAccount.findByIdAndUpdate(utilityId, update).exec();
@@ -191,11 +207,11 @@ export default async function UtilityDetailPage({ params }: PageProps) {
 
   let role: EstateRole = "VIEWER";
   try {
-    const access = (await requireEstateAccess({
+    const access = await requireEstateAccess({
       estateId,
       userId: session.user.id,
-    })) as { role: EstateRole };
-    role = access?.role ?? "VIEWER";
+    });
+    role = normalizeEstateRole(access);
   } catch {
     return (
       <div className="space-y-8 p-6">

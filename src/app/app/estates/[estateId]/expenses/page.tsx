@@ -5,7 +5,7 @@ import { redirect, notFound } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 import { requireEstateAccess } from "@/lib/estateAccess";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 import { Expense } from "@/models/Expense";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -22,19 +22,20 @@ type EstateExpenseRow = {
   hasReceipt: boolean;
 };
 
-// Narrowed version of the lean Mongoose doc so we can safely access fields
-// without pulling in the full ExpenseDocument type.
-type LeanExpenseDoc = {
-  _id: unknown;
-  amountCents?: number;
-  status?: string;
-  category?: string;
-  description?: string;
-  date?: Date;
-  createdAt?: Date;
-  // Optional receipt-related fields (if present in the schema)
-  hasReceipt?: boolean;
-  receiptUrl?: string | null;
+const asString = (v: unknown): string | undefined =>
+  typeof v === "string" ? v : undefined;
+
+const asNumber = (v: unknown): number | undefined =>
+  typeof v === "number" && Number.isFinite(v) ? v : undefined;
+
+const asDate = (v: unknown): Date | undefined => (v instanceof Date ? v : undefined);
+
+const idToString = (v: unknown): string => {
+  if (typeof v === "string") return v;
+  if (v && typeof v === "object" && "toString" in v && typeof (v as { toString: unknown }).toString === "function") {
+    return String((v as { toString: () => string }).toString());
+  }
+  return String(v);
 };
 
 type PageProps = {
@@ -77,41 +78,27 @@ export default async function EstateExpensesPage({ params }: PageProps) {
     .exec();
 
   const expenses: EstateExpenseRow[] = expensesRaw.map((expDoc) => {
-    const exp = expDoc as unknown as LeanExpenseDoc;
+    const exp = serializeMongoDoc(expDoc) as Record<string, unknown>;
 
-    const amountCents =
-      typeof exp.amountCents === "number" ? exp.amountCents : 0;
+    const amountCents = asNumber(exp.amountCents) ?? 0;
 
-    const status =
-      typeof exp.status === "string" && exp.status.trim().length > 0
-        ? exp.status
-        : "RECORDED";
+    const statusRaw = asString(exp.status);
+    const status = statusRaw && statusRaw.trim().length > 0 ? statusRaw : "RECORDED";
 
-    const category =
-      typeof exp.category === "string" && exp.category.trim().length > 0
-        ? exp.category
-        : "General";
+    const categoryRaw = asString(exp.category);
+    const category = categoryRaw && categoryRaw.trim().length > 0 ? categoryRaw : "General";
 
-    const description =
-      typeof exp.description === "string" ? exp.description : "";
+    const description = asString(exp.description) ?? "";
 
-    const date =
-      exp.date instanceof Date
-        ? exp.date
-        : exp.createdAt instanceof Date
-        ? exp.createdAt
-        : undefined;
+    const date = asDate(exp.date) ?? asDate(exp.createdAt);
 
-    const hasReceiptExplicit =
-      typeof exp.hasReceipt === "boolean" ? exp.hasReceipt : undefined;
-
-    const hasReceiptFromUrl =
-      typeof exp.receiptUrl === "string" && exp.receiptUrl.trim().length > 0;
-
+    const hasReceiptExplicit = typeof exp.hasReceipt === "boolean" ? exp.hasReceipt : undefined;
+    const receiptUrl = asString(exp.receiptUrl);
+    const hasReceiptFromUrl = !!(receiptUrl && receiptUrl.trim().length > 0);
     const hasReceipt = hasReceiptExplicit ?? hasReceiptFromUrl;
 
     return {
-      id: String(exp._id),
+      id: idToString(exp._id),
       date,
       category,
       description,
@@ -126,15 +113,14 @@ export default async function EstateExpensesPage({ params }: PageProps) {
     0,
   );
 
-  const estateTyped = estateDoc as unknown as {
-    displayName?: string;
-    caseName?: string;
-  };
+  const estateObj = serializeMongoDoc(estateDoc) as Record<string, unknown>;
+  const displayName = asString(estateObj.displayName);
+  const caseName = asString(estateObj.caseName);
 
   const estateLabel =
-    estateTyped.displayName && estateTyped.caseName
-      ? `${estateTyped.displayName} – ${estateTyped.caseName}`
-      : estateTyped.displayName ?? estateTyped.caseName ?? "Estate";
+    displayName && caseName
+      ? `${displayName} – ${caseName}`
+      : displayName ?? caseName ?? "Estate";
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-8 space-y-8">

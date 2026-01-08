@@ -29,6 +29,16 @@ type ActivityModule = {
   fetchGlobalActivity?: (args: GlobalActivityArgs) => Promise<unknown>;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function hasCountDocuments(
+  value: unknown,
+): value is { countDocuments: (q: unknown) => Promise<number> } {
+  return isRecord(value) && typeof (value as { countDocuments?: unknown }).countDocuments === "function";
+}
+
 /* -------------------- Activity helpers -------------------- */
 
 type ActivityKind = "TASK" | "EXPENSE" | "INVOICE" | "DOCUMENT" | "NOTE" | "ESTATE";
@@ -335,14 +345,15 @@ export default async function AppDashboardPage({ searchParams }: PageProps) {
     // Determine whether the user has any estates. Use a defensive model import so we don't
     // hard-crash if the model export shape changes.
     try {
-      const estateMod = (await import("@/models/Estate")) as unknown as {
-        default?: { countDocuments?: (q: unknown) => Promise<number> };
-        Estate?: { countDocuments?: (q: unknown) => Promise<number> };
-      };
+      const estateMod: unknown = await import("@/models/Estate");
 
-      const EstateModel = estateMod.default ?? estateMod.Estate;
-      if (EstateModel?.countDocuments) {
-        estateCount = await EstateModel.countDocuments({ ownerId });
+      let maybeModel: unknown = null;
+      if (isRecord(estateMod)) {
+        maybeModel = (estateMod as { default?: unknown }).default ?? (estateMod as { Estate?: unknown }).Estate;
+      }
+
+      if (hasCountDocuments(maybeModel)) {
+        estateCount = await maybeModel.countDocuments({ ownerId });
       }
     } catch {
       // If the model isn't present yet, treat as 0 estates for onboarding.
@@ -353,7 +364,7 @@ export default async function AppDashboardPage({ searchParams }: PageProps) {
     /* ---------- your existing queries remain unchanged ---------- */
 
     // Global activity (defensive helper lookup)
-    const mod = ActivityLib as unknown as ActivityModule;
+    const mod: ActivityModule = ActivityLib;
     const listFn = mod.listGlobalActivity || mod.getGlobalActivity || mod.fetchGlobalActivity;
 
     if (listFn) {

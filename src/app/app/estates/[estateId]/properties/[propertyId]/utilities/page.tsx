@@ -1,9 +1,9 @@
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
-import { connectToDatabase, serializeMongoDoc } from "../../../../../../../lib/db";
-import { UtilityAccount } from "../../../../../../../models/UtilityAccount";
-import { EstateProperty } from "../../../../../../../models/EstateProperty";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
+import { UtilityAccount } from "@/models/UtilityAccount";
+import { EstateProperty } from "@/models/EstateProperty";
 
 interface PropertyUtilitiesPageProps {
   params: {
@@ -33,6 +33,61 @@ interface UtilityItem {
   notes?: string;
 }
 
+type PlainObject = Record<string, unknown>;
+
+function isPlainObject(value: unknown): value is PlainObject {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function asString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (value && typeof value === "object" && "toString" in value) {
+    const fn = (value as { toString?: () => string }).toString;
+    if (typeof fn === "function") return fn.call(value);
+  }
+  return "";
+}
+
+function toPropertyItem(input: unknown): PropertyItem | null {
+  if (!isPlainObject(input)) return null;
+  const raw = serializeMongoDoc(input) as PlainObject;
+
+  const id = asString(raw.id);
+  const label = asString(raw.label);
+  if (!id || !label) return null;
+
+  return {
+    id,
+    label,
+    addressLine1: asString(raw.addressLine1) || undefined,
+    addressLine2: asString(raw.addressLine2) || undefined,
+    city: asString(raw.city) || undefined,
+    state: asString(raw.state) || undefined,
+    postalCode: asString(raw.postalCode) || undefined,
+  };
+}
+
+function toUtilityItem(input: unknown): UtilityItem | null {
+  if (!isPlainObject(input)) return null;
+  const raw = serializeMongoDoc(input) as PlainObject;
+
+  const id = asString(raw.id);
+  const estateId = asString(raw.estateId);
+  if (!id || !estateId) return null;
+
+  return {
+    id,
+    estateId,
+    propertyId: asString(raw.propertyId) || undefined,
+    provider: asString(raw.provider) || undefined,
+    type: asString(raw.type) || undefined,
+    accountNumber: asString(raw.accountNumber) || undefined,
+    status: asString(raw.status) || undefined,
+    notes: asString(raw.notes) || undefined,
+  };
+}
+
 function formatAddress(property: PropertyItem) {
   const line1 = property.addressLine1 || "";
   const line2 = property.addressLine2 || "";
@@ -55,11 +110,11 @@ export default async function PropertyUtilitiesPage({
   const propertyRaw = (await EstateProperty.findOne({
     _id: propertyId,
     estateId,
-  }).lean()) as unknown;
+  })
+    .lean()
+    .exec()) as unknown;
 
-  const property = propertyRaw
-    ? (serializeMongoDoc(propertyRaw) as unknown as PropertyItem)
-    : null;
+  const property = toPropertyItem(propertyRaw);
 
   // Fetch utility accounts for this property
   const utilitiesRaw = (await UtilityAccount.find({
@@ -67,11 +122,12 @@ export default async function PropertyUtilitiesPage({
     propertyId,
   })
     .sort({ provider: 1 })
-    .lean()) as unknown;
+    .lean()
+    .exec()) as unknown;
 
-  const utilities = (Array.isArray(utilitiesRaw) ? utilitiesRaw : []).map((u) =>
-    serializeMongoDoc(u) as unknown as UtilityItem,
-  );
+  const utilities = (Array.isArray(utilitiesRaw) ? utilitiesRaw : [])
+    .map((u) => toUtilityItem(u))
+    .filter((u): u is UtilityItem => Boolean(u));
 
   const address = property ? formatAddress(property) : "";
 

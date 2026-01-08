@@ -85,6 +85,30 @@ type EmptyStateProps = {
   };
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
+
+function asRecordArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function firstRecord(value: unknown): Record<string, unknown> {
+  return asRecordArray(value)[0] ?? {};
+}
+
+function pickNumber(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function pickString(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
 function EmptyState({ title, description, cta }: EmptyStateProps) {
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-sm">
@@ -353,9 +377,10 @@ export default async function DashboardPage() {
     ? (serializeMongoDoc(workspaceSettingsRaw) as Record<string, unknown>)
     : null;
 
-  const estates = (Array.isArray(estatesRaw) ? estatesRaw : []).map((e) =>
-    serializeMongoDoc(e) as unknown as EstateLike,
-  );
+  const estates = (Array.isArray(estatesRaw) ? estatesRaw : []).map((e) => {
+    const out = serializeMongoDoc(asRecord(e));
+    return out as EstateLike;
+  });
 
   const defaultHourlyRateCents =
     workspaceSettings &&
@@ -465,60 +490,31 @@ export default async function DashboardPage() {
     },
   ]).exec();
 
+  const invoiceDashboardDoc = firstRecord(invoiceDashboardRaw);
 
-  const invoiceDashboard = (invoiceDashboardRaw?.[0] ?? {}) as unknown as {
-    totals?: Array<{
-      totalInvoicedCents?: number;
-      collectedCents?: number;
-      outstandingCents?: number;
-      voidedCents?: number;
-    }>;
-    byEstate?: Array<{
-      _id?: unknown;
-      totalInvoicedCents?: number;
-      collectedCents?: number;
-      outstandingCents?: number;
-      voidedCents?: number;
-    }>;
-    recentInvoices?: unknown[];
-    monthlyTrend?: unknown[];
-    aging?: unknown[];
-  };
+  const totalsArr = asRecordArray((invoiceDashboardDoc as { totals?: unknown }).totals);
+  const byEstateRows = asRecordArray((invoiceDashboardDoc as { byEstate?: unknown }).byEstate);
 
-  const recentInvoicesRaw = invoiceDashboard.recentInvoices ?? [];
-  const monthAggRaw = invoiceDashboard.monthlyTrend ?? [];
-  const agingAggRaw = invoiceDashboard.aging ?? [];
+  const recentInvoicesRaw = asRecordArray(
+    (invoiceDashboardDoc as { recentInvoices?: unknown }).recentInvoices,
+  );
 
-  const totalsRow = Array.isArray(invoiceDashboard?.totals)
-    ? (invoiceDashboard.totals[0] as
-        | {
-            totalInvoicedCents?: number;
-            collectedCents?: number;
-            outstandingCents?: number;
-            voidedCents?: number;
-          }
-        | undefined)
-    : undefined;
+  const monthAggRaw = asRecordArray(
+    (invoiceDashboardDoc as { monthlyTrend?: unknown }).monthlyTrend,
+  );
 
-  const byEstateRows = Array.isArray(invoiceDashboard?.byEstate)
-    ? (invoiceDashboard.byEstate as
-        Array<{
-          _id?: unknown;
-          totalInvoicedCents?: number;
-          collectedCents?: number;
-          outstandingCents?: number;
-          voidedCents?: number;
-        }>)
-    : [];
+  const agingAggRaw = asRecordArray((invoiceDashboardDoc as { aging?: unknown }).aging);
 
-  const recentInvoices = (Array.isArray(recentInvoicesRaw) ? recentInvoicesRaw : []).map((inv) => {
-    const out = serializeMongoDoc(inv as unknown as Record<string, unknown>) as Record<string, unknown>;
+  const totalsRow = totalsArr[0] ?? null;
+
+  const recentInvoices = recentInvoicesRaw.map((inv) => {
+    const out = serializeMongoDoc(inv);
     // Ensure we always have a stable string id for linking
     if (typeof out.id !== "string") {
       const fallback = idToString((out as { _id?: unknown })._id);
       if (fallback) out.id = fallback;
     }
-    return out as unknown as InvoiceLike;
+    return out as InvoiceLike;
   });
 
   const currency =
@@ -576,20 +572,22 @@ export default async function DashboardPage() {
   }
 
   // --- Aggregate invoice metrics (global + per estate) --------------------
-  const totalInvoicedCents = typeof totalsRow?.totalInvoicedCents === "number" ? totalsRow.totalInvoicedCents : 0;
-  const totalCollectedCents = typeof totalsRow?.collectedCents === "number" ? totalsRow.collectedCents : 0;
-  const totalOutstandingCents = typeof totalsRow?.outstandingCents === "number" ? totalsRow.outstandingCents : 0;
-  const totalVoidedCents = typeof totalsRow?.voidedCents === "number" ? totalsRow.voidedCents : 0;
+  const totalInvoicedCents = pickNumber((totalsRow ?? {}).totalInvoicedCents);
+  const totalCollectedCents = pickNumber((totalsRow ?? {}).collectedCents);
+  const totalOutstandingCents = pickNumber((totalsRow ?? {}).outstandingCents);
+  const totalVoidedCents = pickNumber((totalsRow ?? {}).voidedCents);
 
   for (const row of byEstateRows) {
-    if (!row._id) continue;
-    const estateId = String(row._id);
+    const idRaw = (row as { _id?: unknown })._id;
+    if (!idRaw) continue;
+
+    const estateId = String(idRaw);
     const metrics = ensureEstateMetrics(estateId);
 
-    metrics.totalInvoicedCents += typeof row.totalInvoicedCents === "number" ? row.totalInvoicedCents : 0;
-    metrics.collectedCents += typeof row.collectedCents === "number" ? row.collectedCents : 0;
-    metrics.outstandingCents += typeof row.outstandingCents === "number" ? row.outstandingCents : 0;
-    metrics.voidedCents += typeof row.voidedCents === "number" ? row.voidedCents : 0;
+    metrics.totalInvoicedCents += pickNumber((row as { totalInvoicedCents?: unknown }).totalInvoicedCents);
+    metrics.collectedCents += pickNumber((row as { collectedCents?: unknown }).collectedCents);
+    metrics.outstandingCents += pickNumber((row as { outstandingCents?: unknown }).outstandingCents);
+    metrics.voidedCents += pickNumber((row as { voidedCents?: unknown }).voidedCents);
   }
 
   const effectiveOutstanding =
@@ -604,41 +602,29 @@ export default async function DashboardPage() {
       : 0;
 
   // --- Unbilled time value (global + per estate) -------------------------
+  const unbilledAggDoc = firstRecord(unbilledTimeAgg);
 
-  const unbilledAggDoc = (unbilledTimeAgg?.[0] ?? {}) as unknown as {
-    totals?: Array<{ unbilledMinutesTotal?: number; unbilledValueCentsTotal?: number }>;
-    byEstate?: Array<{ _id?: unknown; unbilledMinutes?: number; unbilledValueCents?: number }>;
-  };
+  const unbilledTotalsRow = asRecordArray((unbilledAggDoc as { totals?: unknown }).totals)[0] ?? null;
 
-  const unbilledTotalsRow = Array.isArray(unbilledAggDoc.totals)
-    ? unbilledAggDoc.totals[0]
-    : undefined;
+  const unbilledMinutesTotal = pickNumber(
+    (unbilledTotalsRow ?? {}).unbilledMinutesTotal,
+  );
 
-  const unbilledMinutesTotal =
-    typeof unbilledTotalsRow?.unbilledMinutesTotal === "number"
-      ? unbilledTotalsRow.unbilledMinutesTotal
-      : 0;
+  const unbilledTimeValueCents = pickNumber(
+    (unbilledTotalsRow ?? {}).unbilledValueCentsTotal,
+  );
 
-  const unbilledTimeValueCents =
-    typeof unbilledTotalsRow?.unbilledValueCentsTotal === "number"
-      ? unbilledTotalsRow.unbilledValueCentsTotal
-      : 0;
-
-  const unbilledByEstate = Array.isArray(unbilledAggDoc.byEstate)
-    ? (unbilledAggDoc.byEstate as Array<{
-        _id?: unknown;
-        unbilledMinutes?: number;
-        unbilledValueCents?: number;
-      }> )
-    : [];
+  const unbilledByEstate = asRecordArray((unbilledAggDoc as { byEstate?: unknown }).byEstate);
 
   for (const row of unbilledByEstate) {
-    if (!row._id) continue;
-    const estateId = String(row._id);
+    const idRaw = (row as { _id?: unknown })._id;
+    if (!idRaw) continue;
+
+    const estateId = String(idRaw);
     const metrics = ensureEstateMetrics(estateId);
 
-    const minutes = typeof row.unbilledMinutes === "number" ? row.unbilledMinutes : 0;
-    const valueCents = typeof row.unbilledValueCents === "number" ? row.unbilledValueCents : 0;
+    const minutes = pickNumber((row as { unbilledMinutes?: unknown }).unbilledMinutes);
+    const valueCents = pickNumber((row as { unbilledValueCents?: unknown }).unbilledValueCents);
 
     if (minutes > 0) {
       metrics.unbilledHours += minutes / 60;
@@ -683,25 +669,19 @@ export default async function DashboardPage() {
     monthBucketMap.set(bucket.key, bucket);
   }
 
-  for (const row of monthAggRaw ?? []) {
-    const r = row as {
-      _id?: { year?: number; month?: number };
-      invoicedCents?: number;
-      collectedCents?: number;
-      outstandingCents?: number;
-    };
-
-    const year = typeof r._id?.year === "number" ? r._id.year : null;
-    const month1 = typeof r._id?.month === "number" ? r._id.month : null; // 1-12
+  for (const row of monthAggRaw) {
+    const idObj = asRecord((row as { _id?: unknown })._id);
+    const year = pickNumber(idObj.year, 0);
+    const month1 = pickNumber(idObj.month, 0); // 1-12
     if (!year || !month1) continue;
 
     const key = `${year}-${month1 - 1}`;
     const bucket = monthBucketMap.get(key);
     if (!bucket) continue;
 
-    bucket.invoicedCents += typeof r.invoicedCents === "number" ? r.invoicedCents : 0;
-    bucket.collectedCents += typeof r.collectedCents === "number" ? r.collectedCents : 0;
-    bucket.outstandingCents += typeof r.outstandingCents === "number" ? r.outstandingCents : 0;
+    bucket.invoicedCents += pickNumber((row as { invoicedCents?: unknown }).invoicedCents);
+    bucket.collectedCents += pickNumber((row as { collectedCents?: unknown }).collectedCents);
+    bucket.outstandingCents += pickNumber((row as { outstandingCents?: unknown }).outstandingCents);
   }
 
   const maxInvoicedForTrend = monthBuckets.reduce(
@@ -759,13 +739,12 @@ export default async function DashboardPage() {
 
   const agingBucketList = agingBuckets;
   const agingMap = new Map<string, { totalCents: number; invoiceCount: number }>();
-  for (const row of agingAggRaw ?? []) {
-    const r = row as { _id?: string; totalCents?: number; invoiceCount?: number };
-    const key = typeof r._id === "string" ? r._id : null;
+  for (const row of agingAggRaw) {
+    const key = pickString((row as { _id?: unknown })._id, "");
     if (!key) continue;
     agingMap.set(key, {
-      totalCents: typeof r.totalCents === "number" ? r.totalCents : 0,
-      invoiceCount: typeof r.invoiceCount === "number" ? r.invoiceCount : 0,
+      totalCents: pickNumber((row as { totalCents?: unknown }).totalCents),
+      invoiceCount: pickNumber((row as { invoiceCount?: unknown }).invoiceCount),
     });
   }
 

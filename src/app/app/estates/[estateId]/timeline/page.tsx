@@ -634,62 +634,62 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
   const estateActivityWhere: FilterQuery<Record<string, unknown>> = { estateId };
   if (hasCutoff && cutoffDate) estateActivityWhere.createdAt = { $lt: cutoffDate };
 
-  const invoicePromise = shouldFetchInvoices
-    ? (Invoice.find(
+  const invoicePromise: Promise<InvoiceLean[]> = shouldFetchInvoices
+    ? Invoice.find(
         invoiceWhere,
         { invoiceNumber: 1, status: 1, createdAt: 1, issueDate: 1, subtotal: 1, totalAmount: 1 },
       )
         .sort({ createdAt: -1 })
         .limit(perCollectionLimit)
-        .lean()
-        .exec() as unknown as Promise<InvoiceLean[]>)
-    : (Promise.resolve([]) as Promise<InvoiceLean[]>);
+        .lean<InvoiceLean[]>()
+        .exec()
+    : Promise.resolve([] as InvoiceLean[]);
 
-  const documentPromise = shouldFetchDocuments
-    ? (EstateDocument.find(documentWhere, { label: 1, subject: 1, createdAt: 1 })
+  const documentPromise: Promise<EstateDocumentLean[]> = shouldFetchDocuments
+    ? EstateDocument.find(documentWhere, { label: 1, subject: 1, createdAt: 1 })
         .sort({ createdAt: -1 })
         .limit(perCollectionLimit)
-        .lean()
-        .exec() as unknown as Promise<EstateDocumentLean[]>)
-    : (Promise.resolve([]) as Promise<EstateDocumentLean[]>);
+        .lean<EstateDocumentLean[]>()
+        .exec()
+    : Promise.resolve([] as EstateDocumentLean[]);
 
-  const taskPromise = shouldFetchTasks
-    ? (EstateTask.find(taskWhere, { title: 1, status: 1, createdAt: 1, dueDate: 1 })
+  const taskPromise: Promise<EstateTaskLean[]> = shouldFetchTasks
+    ? EstateTask.find(taskWhere, { title: 1, status: 1, createdAt: 1, dueDate: 1 })
         .sort({ createdAt: -1 })
         .limit(perCollectionLimit)
-        .lean()
-        .exec() as unknown as Promise<EstateTaskLean[]>)
-    : (Promise.resolve([]) as Promise<EstateTaskLean[]>);
+        .lean<EstateTaskLean[]>()
+        .exec()
+    : Promise.resolve([] as EstateTaskLean[]);
 
-  const notePromise = shouldFetchNotes
-    ? (EstateNote.find(noteWhere, { body: 1, pinned: 1, createdAt: 1 })
+  const notePromise: Promise<EstateNoteLean[]> = shouldFetchNotes
+    ? EstateNote.find(noteWhere, { body: 1, pinned: 1, createdAt: 1 })
         .sort({ createdAt: -1 })
         .limit(perCollectionLimit)
-        .lean()
-        .exec() as unknown as Promise<EstateNoteLean[]>)
-    : (Promise.resolve([]) as Promise<EstateNoteLean[]>);
+        .lean<EstateNoteLean[]>()
+        .exec()
+    : Promise.resolve([] as EstateNoteLean[]);
 
-  const estateEventPromise = shouldFetchEvents
-    ? (EstateEvent.find(
+  const estateEventPromise: Promise<EstateEventLean[]> = shouldFetchEvents
+    ? EstateEvent.find(
         estateEventWhere,
         { type: 1, summary: 1, detail: 1, meta: 1, createdAt: 1 },
       )
         .sort({ createdAt: -1 })
         .limit(perCollectionLimit)
-        .lean()
-        .exec() as unknown as Promise<EstateEventLean[]>)
-    : (Promise.resolve([]) as Promise<EstateEventLean[]>);
+        .lean<EstateEventLean[]>()
+        .exec()
+    : Promise.resolve([] as EstateEventLean[]);
 
-  const estateActivityPromise = shouldFetchActivity
-    ? (EstateActivity.find(
+  const estateActivityPromise: Promise<EstateActivityLean[]> = shouldFetchActivity
+    ? EstateActivity.find(
         estateActivityWhere,
         { kind: 1, action: 1, entityId: 1, message: 1, snapshot: 1, createdAt: 1 },
       )
         .sort({ createdAt: -1 })
         .limit(perCollectionLimit)
-        .lean()
-        .exec() as unknown as Promise<EstateActivityLean[]>)
-    : (Promise.resolve([]) as Promise<EstateActivityLean[]>);
+        .lean<EstateActivityLean[]>()
+        .exec()
+    : Promise.resolve([] as EstateActivityLean[]);
 
   const [invoiceDocs, documentDocs, taskDocs, noteDocs, estateEventDocs, estateActivityDocs] =
     await Promise.all([

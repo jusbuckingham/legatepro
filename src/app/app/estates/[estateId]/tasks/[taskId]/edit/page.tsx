@@ -57,7 +57,7 @@ export default async function EditTaskPage({ params }: PageProps) {
     notFound();
   }
 
-  const task = serializeMongoDoc(taskDoc) as unknown as TaskForForm;
+  const task = serializeMongoDoc(taskDoc) as TaskForForm;
 
   const dateInputValue = (() => {
     const d = task.date;
@@ -158,9 +158,7 @@ export default async function EditTaskPage({ params }: PageProps) {
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-slate-50">
-            Edit Task
-          </h1>
+          <h1 className="text-xl font-semibold text-slate-50">Edit Task</h1>
           <p className="text-sm text-slate-400">
             Estate · Task #{String(task._id).slice(-6)}
           </p>

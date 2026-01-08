@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { logActivity } from "@/lib/activity";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
@@ -24,30 +25,41 @@ function toObjectId(id: string) {
 }
 
 function isResponse(value: unknown): value is Response {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
   return (
-    !!value &&
-    typeof value === "object" &&
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    typeof (value as any).headers !== "undefined" &&
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    typeof (value as any).status === "number"
+    typeof v.status === "number" &&
+    typeof v.headers !== "undefined" &&
+    v.headers !== null
   );
 }
 
 function extractUserId(value: unknown): string | null {
   if (!value || typeof value !== "object") return null;
 
-  // Common shapes across our access helpers
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const v = value as any;
-  const direct =
-    (typeof v.userId === "string" && v.userId) ||
-    (typeof v.viewerId === "string" && v.viewerId) ||
-    (typeof v.ownerId === "string" && v.ownerId);
-  if (direct) return direct;
+  const v = value as Record<string, unknown>;
 
-  const nested = v.session?.user?.id ?? v.user?.id;
-  return typeof nested === "string" && nested ? nested : null;
+  const directCandidates = [v.userId, v.viewerId, v.ownerId];
+  for (const c of directCandidates) {
+    if (typeof c === "string" && c) return c;
+  }
+
+  const session = v.session;
+  if (session && typeof session === "object") {
+    const user = (session as Record<string, unknown>).user;
+    if (user && typeof user === "object") {
+      const id = (user as Record<string, unknown>).id;
+      if (typeof id === "string" && id) return id;
+    }
+  }
+
+  const user = v.user;
+  if (user && typeof user === "object") {
+    const id = (user as Record<string, unknown>).id;
+    if (typeof id === "string" && id) return id;
+  }
+
+  return null;
 }
 
 async function requireAccess(
@@ -65,8 +77,8 @@ async function requireAccess(
 
   // Some helpers return an object wrapper that contains a Response.
   if (result && typeof result === "object") {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const r = (result as any).res ?? (result as any).response;
+    const obj = result as Record<string, unknown>;
+    const r = obj.res ?? obj.response;
     if (isResponse(r)) return r;
   }
 
@@ -89,6 +101,21 @@ function parseStatus(raw: unknown): TaskStatus | undefined {
   const upper = raw.toUpperCase() as TaskStatus;
   return ALLOWED_STATUSES.includes(upper) ? upper : undefined;
 }
+
+type EstateTaskLean = {
+  _id: unknown;
+  estateId: unknown;
+  ownerId: unknown;
+  title: string;
+  description?: string | null;
+  status: TaskStatus;
+  dueDate?: Date | null;
+  completedAt?: Date | null;
+  relatedDocumentId?: string | null;
+  relatedInvoiceId?: string | null;
+  createdAt?: Date;
+  updatedAt?: Date;
+};
 
 export async function GET(
   _req: NextRequest,
@@ -114,24 +141,24 @@ export async function GET(
 
   await connectToDatabase();
 
-  const tasks = await EstateTask.find({ estateId: estateObjectId })
+  const tasks = (await EstateTask.find({ estateId: estateObjectId })
     .sort({ createdAt: -1 })
-    .lean();
+    .lean()) as unknown as EstateTaskLean[];
 
   return NextResponse.json(
     tasks.map((t) => ({
-      id: String((t as { _id: unknown })._id),
+      id: String(t._id),
       estateId: String(t.estateId),
       ownerId: String(t.ownerId),
       title: t.title,
-      description: (t as { description?: string | null }).description ?? null,
+      description: t.description ?? null,
       status: t.status,
-      dueDate: (t as { dueDate?: Date | null }).dueDate ?? null,
-      completedAt: (t as { completedAt?: Date | null }).completedAt ?? null,
-      relatedDocumentId: (t as { relatedDocumentId?: string | null }).relatedDocumentId ?? null,
-      relatedInvoiceId: (t as { relatedInvoiceId?: string | null }).relatedInvoiceId ?? null,
-      createdAt: (t as { createdAt?: Date }).createdAt,
-      updatedAt: (t as { updatedAt?: Date }).updatedAt,
+      dueDate: t.dueDate ?? null,
+      completedAt: t.completedAt ?? null,
+      relatedDocumentId: t.relatedDocumentId ?? null,
+      relatedInvoiceId: t.relatedInvoiceId ?? null,
+      createdAt: t.createdAt,
+      updatedAt: t.updatedAt,
     })),
     { status: 200 },
   );

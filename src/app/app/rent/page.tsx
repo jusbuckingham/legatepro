@@ -10,17 +10,19 @@ export const metadata = {
   title: "Rent overview | LegatePro",
 };
 
+type ObjectIdLike = string | { toString(): string };
+
 type LeanEstateForRent = {
-  _id: string;
+  _id: ObjectIdLike;
   displayName?: string;
   caseName?: string;
 };
 
 type LeanRentPaymentWithEstate = {
-  _id: string;
-  estateId?: string | LeanEstateForRent;
+  _id: ObjectIdLike;
+  estateId?: ObjectIdLike | LeanEstateForRent;
   amount: number;
-  paymentDate: Date;
+  paymentDate: Date | string;
   tenantName?: string;
   periodMonth?: number;
   periodYear?: number;
@@ -48,15 +50,18 @@ function formatDate(date: Date | string | null | undefined): string {
 function getEstateLabel(estateId: LeanRentPaymentWithEstate["estateId"]): string {
   if (!estateId) return "Unknown estate";
 
-  if (typeof estateId === "string") {
-    return estateId;
+  // Not populated (just an id)
+  if (typeof estateId === "string") return estateId;
+  if (typeof (estateId as { toString?: () => string }).toString === "function") {
+    return (estateId as { toString(): string }).toString();
   }
 
-  return (
-    estateId.displayName ||
-    estateId.caseName ||
-    `Estate ${estateId._id.slice(-6)}`
-  );
+  // Populated
+  const populated = estateId as LeanEstateForRent;
+  const rawId =
+    typeof populated._id === "string" ? populated._id : populated._id.toString();
+
+  return populated.displayName || populated.caseName || `Estate ${rawId.slice(-6)}`;
 }
 
 function toObjectId(id: string) {
@@ -81,31 +86,27 @@ export default async function GlobalRentOverviewPage() {
     ownerObjectId ? { $in: [ownerId, ownerObjectId] } : ownerId;
 
   // Load payments with estate info
-  const rawPayments = (await RentPayment.find({ ownerId: ownerMatch })
+  const payments = await RentPayment.find({ ownerId: ownerMatch })
     .populate<{ estateId: LeanEstateForRent }>("estateId", "displayName caseName")
     .sort({ paymentDate: -1 })
-    .lean()
-    .exec()) as unknown[];
+    // For `find()` queries, `lean<T>()` should use the *array* element type.
+    .lean<LeanRentPaymentWithEstate[]>()
+    .exec();
 
-  const payments = (Array.isArray(rawPayments)
-    ? rawPayments
-    : []) as unknown as LeanRentPaymentWithEstate[];
-
-  const totalCollected = payments.reduce(
-    (sum, payment) => sum + (payment.amount || 0),
-    0
-  );
+  const totalCollected = payments.reduce((sum: number, payment: LeanRentPaymentWithEstate) => {
+    return sum + (payment.amount || 0);
+  }, 0);
 
   // Group by estate for summary
   const totalsByEstate = payments.reduce<Map<string, { label: string; amount: number }>>(
-    (map, payment) => {
+    (map, payment: LeanRentPaymentWithEstate) => {
       const label = getEstateLabel(payment.estateId);
       const prev = map.get(label) ?? { label, amount: 0 };
       prev.amount += payment.amount || 0;
       map.set(label, prev);
       return map;
     },
-    new Map(),
+    new Map<string, { label: string; amount: number }>(),
   );
 
   const estateSummaries = Array.from(totalsByEstate.values()).sort(
@@ -210,7 +211,7 @@ export default async function GlobalRentOverviewPage() {
                 </tr>
               </thead>
               <tbody>
-                {payments.map((payment) => {
+                {payments.map((payment: LeanRentPaymentWithEstate) => {
                   const estateLabel = getEstateLabel(payment.estateId);
                   const period =
                     payment.periodMonth && payment.periodYear
@@ -219,7 +220,9 @@ export default async function GlobalRentOverviewPage() {
 
                   return (
                     <tr
-                      key={payment._id}
+                      key={
+                        typeof payment._id === "string" ? payment._id : payment._id.toString()
+                      }
                       className="border-t border-slate-800/70 hover:bg-slate-900/60"
                     >
                       <td className="px-4 py-3 text-slate-200">

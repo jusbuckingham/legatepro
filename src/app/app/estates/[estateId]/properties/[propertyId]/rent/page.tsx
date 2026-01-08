@@ -52,6 +52,67 @@ type RentPaymentDoc = {
   notes?: string;
 };
 
+function asString(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && "toString" in value) {
+    try {
+      return String((value as { toString(): string }).toString());
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function toPropertyItem(raw: unknown): PropertyItem | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+
+  // Prefer already-serialized `id`, fall back to `_id`.
+  const id = asString(r.id ?? r._id);
+  const label = typeof r.label === "string" ? r.label : undefined;
+  if (!id || !label) return null;
+
+  return {
+    id,
+    label,
+    addressLine1: typeof r.addressLine1 === "string" ? r.addressLine1 : undefined,
+    addressLine2: typeof r.addressLine2 === "string" ? r.addressLine2 : undefined,
+    city: typeof r.city === "string" ? r.city : undefined,
+    state: typeof r.state === "string" ? r.state : undefined,
+    postalCode: typeof r.postalCode === "string" ? r.postalCode : undefined,
+  };
+}
+
+function toRentPaymentDoc(raw: unknown): RentPaymentDoc | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+
+  const id = asString(r.id ?? r._id);
+  if (!id) return null;
+
+  return {
+    id,
+    estateId: r.estateId,
+    propertyId: r.propertyId,
+    tenantName: typeof r.tenantName === "string" ? r.tenantName : undefined,
+    periodMonth: asNumber(r.periodMonth),
+    periodYear: asNumber(r.periodYear),
+    amount: asNumber(r.amount),
+    paymentDate:
+      typeof r.paymentDate === "string" || r.paymentDate instanceof Date
+        ? (r.paymentDate as string | Date)
+        : undefined,
+    method: typeof r.method === "string" ? r.method : undefined,
+    reference: typeof r.reference === "string" ? r.reference : undefined,
+    notes: typeof r.notes === "string" ? r.notes : undefined,
+  };
+}
+
 async function deleteRentPayment(formData: FormData) {
   "use server";
 
@@ -130,7 +191,7 @@ export default async function PropertyRentPage({
     estateId,
   }).lean();
 
-  const property = (propertyRaw ? (serializeMongoDoc(propertyRaw) as unknown) : null) as PropertyItem | null;
+  const property = propertyRaw ? toPropertyItem(serializeMongoDoc(propertyRaw)) : null;
 
   if (!property) {
     notFound();
@@ -143,9 +204,9 @@ export default async function PropertyRentPage({
     .sort({ periodYear: -1, periodMonth: -1, paymentDate: -1 })
     .lean();
 
-  const rentPaymentDocs = (rentPaymentDocsRaw ?? []).map(
-    (d) => serializeMongoDoc(d) as unknown as RentPaymentDoc
-  );
+  const rentPaymentDocs: RentPaymentDoc[] = (rentPaymentDocsRaw ?? [])
+    .map((d) => toRentPaymentDoc(serializeMongoDoc(d)))
+    .filter((d): d is RentPaymentDoc => Boolean(d));
 
   const rentPayments: RentPaymentItem[] = rentPaymentDocs.map((doc) => ({
     id: doc.id,

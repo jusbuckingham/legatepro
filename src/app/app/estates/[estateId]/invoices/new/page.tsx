@@ -32,7 +32,7 @@ export default async function EstateNewInvoicePage({ params }: PageProps) {
       ownerId: session.user.id,
     })
       .lean()
-      .catch(() => null as unknown as null);
+      .catch(() => null);
 
     if (
       settings &&

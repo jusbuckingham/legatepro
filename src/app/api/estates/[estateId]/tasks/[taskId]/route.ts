@@ -1,5 +1,3 @@
-// src/app/api/estates/[estateId]/tasks/[taskId]/route.ts
-
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
@@ -55,16 +53,14 @@ type UpdateTaskBody = {
   notes?: string;
 };
 
-type TaskLite = {
-  status?: unknown;
-  title?: unknown;
-};
-
-function getStr(obj: unknown, key: keyof TaskLite): string | undefined {
+function getStr(obj: unknown, key: string): string | undefined {
   if (!obj || typeof obj !== "object") return undefined;
-  const v = (obj as Record<string, unknown>)[key as string];
+  const v = (obj as Record<string, unknown>)[key];
   return typeof v === "string" ? v : undefined;
 }
+
+type ActivityKind = Parameters<typeof logActivity>[0]["kind"];
+const TASK_KIND = "TASK" as const satisfies ActivityKind;
 
 export async function GET(_req: NextRequest, { params }: RouteContext) {
   const { estateId, taskId } = await params;
@@ -75,9 +71,7 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
 
   await connectToDatabase();
 
-  const taskRaw = (await Task.findOne({ _id: taskId, estateId }).lean().exec()) as
-    | Record<string, unknown>
-    | null;
+  const taskRaw = (await Task.findOne({ _id: taskId, estateId }).lean().exec()) as unknown;
 
   if (!taskRaw) {
     return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
@@ -115,9 +109,7 @@ async function updateTask(req: NextRequest, { params }: RouteContext) {
   }
 
   // Load before-state for comparison / logging
-  const beforeRaw = (await Task.findOne({ _id: taskId, estateId }).lean().exec()) as
-    | Record<string, unknown>
-    | null;
+  const beforeRaw = (await Task.findOne({ _id: taskId, estateId }).lean().exec()) as unknown;
   const before = beforeRaw ? serializeMongoDoc(beforeRaw) : null;
 
   if (!before) {
@@ -150,7 +142,7 @@ async function updateTask(req: NextRequest, { params }: RouteContext) {
     { new: true }
   )
     .lean()
-    .exec()) as Record<string, unknown> | null;
+    .exec()) as unknown;
 
   if (!updatedRaw) {
     return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
@@ -161,9 +153,8 @@ async function updateTask(req: NextRequest, { params }: RouteContext) {
   // Activity logging
   const prevStatus = getStr(before, "status");
   const nextStatus = getStr(updated, "status");
-  const title = getStr(updated, "title");
+  const title = getStr(updated, "title") ?? getStr(updated, "subject");
 
-  const kind = "TASK" as unknown as Parameters<typeof logActivity>[0]["kind"];
   const snapshotBase = {
     taskId: String(taskId),
     title,
@@ -173,7 +164,7 @@ async function updateTask(req: NextRequest, { params }: RouteContext) {
   if (prevStatus !== nextStatus) {
     await logActivity({
       estateId,
-      kind,
+      kind: TASK_KIND,
       action: "STATUS_CHANGED",
       entityId: String(taskId),
       message: `Task status changed: ${prevStatus ?? ""} → ${nextStatus ?? ""}`,
@@ -186,7 +177,7 @@ async function updateTask(req: NextRequest, { params }: RouteContext) {
   } else {
     await logActivity({
       estateId,
-      kind,
+      kind: TASK_KIND,
       action: "UPDATED",
       entityId: String(taskId),
       message: "Task updated",
@@ -222,22 +213,18 @@ export async function DELETE(_req: NextRequest, { params }: RouteContext) {
 
   await connectToDatabase();
 
-  const deletedRaw = (await Task.findOneAndDelete({ _id: taskId, estateId }).lean().exec()) as
-    | Record<string, unknown>
-    | null;
+  const deletedRaw = (await Task.findOneAndDelete({ _id: taskId, estateId }).lean().exec()) as unknown;
 
   if (!deletedRaw) {
     return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
 
   const deleted = serializeMongoDoc(deletedRaw);
-  const title = getStr(deleted, "title");
-
-  const kind = "TASK" as unknown as Parameters<typeof logActivity>[0]["kind"];
+  const title = getStr(deleted, "title") ?? getStr(deleted, "subject");
 
   await logActivity({
     estateId,
-    kind,
+    kind: TASK_KIND,
     action: "DELETED",
     entityId: String(taskId),
     message: "Task deleted",

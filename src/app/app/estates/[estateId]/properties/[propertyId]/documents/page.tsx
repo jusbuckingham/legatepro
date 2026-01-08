@@ -20,6 +20,7 @@ interface PropertyItem {
   postalCode?: string;
 }
 
+
 interface DocumentItem {
   id: string;
   estateId?: string;
@@ -30,6 +31,61 @@ interface DocumentItem {
   notes?: string;
   createdAt?: string | Date;
   updatedAt?: string | Date;
+}
+
+// --- Type-safe coercion helpers ---
+function asString(v: unknown): string | undefined {
+  return typeof v === "string" ? v : v == null ? undefined : String(v);
+}
+
+function asStringArray(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v
+    .map((x) =>
+      typeof x === "string" ? x : x == null ? "" : String(x)
+    )
+    .filter((s) => s.trim() !== "");
+  return out.length ? out : undefined;
+}
+
+function toPropertyItem(input: unknown): PropertyItem | null {
+  const raw = serializeMongoDoc(input) as Record<string, unknown>;
+  const id = asString(raw.id) ?? asString(raw._id);
+
+  // Prefer explicit label/name, otherwise derive from address, otherwise fallback.
+  const line1 = asString(raw.addressLine1 ?? raw.address ?? raw.street ?? raw.line1);
+  const label =
+    asString(raw.label ?? raw.name ?? raw.title) ??
+    (line1 && line1.trim() ? line1 : "Property");
+
+  if (!id) return null;
+
+  return {
+    id,
+    label,
+    addressLine1: line1,
+    addressLine2: asString(raw.addressLine2 ?? raw.line2),
+    city: asString(raw.city),
+    state: asString(raw.state),
+    postalCode: asString(raw.postalCode ?? raw.zip),
+  };
+}
+
+function toDocumentItem(input: unknown): DocumentItem {
+  const raw = serializeMongoDoc(input) as Record<string, unknown>;
+  const id = asString(raw.id) ?? asString(raw._id) ?? "";
+
+  return {
+    id,
+    estateId: asString(raw.estateId),
+    title: asString(raw.title ?? raw.label),
+    category: asString(raw.category ?? raw.subject),
+    tags: asStringArray(raw.tags),
+    url: asString(raw.url),
+    notes: asString(raw.notes),
+    createdAt: (raw.createdAt as string | Date | undefined) ?? undefined,
+    updatedAt: (raw.updatedAt as string | Date | undefined) ?? undefined,
+  };
 }
 
 function formatDate(value?: string | Date) {
@@ -62,9 +118,7 @@ export default async function PropertyDocumentsPage({
     estateId,
   }).lean();
 
-  const property = (propertyRaw
-    ? (serializeMongoDoc(propertyRaw) as unknown as PropertyItem)
-    : null);
+  const property = propertyRaw ? toPropertyItem(propertyRaw) : null;
 
   // Fetch documents tagged with this property
   const docsRaw = await EstateDocument.find({
@@ -74,9 +128,7 @@ export default async function PropertyDocumentsPage({
     .sort({ createdAt: -1 })
     .lean();
 
-  const docs = (Array.isArray(docsRaw) ? docsRaw : []).map(
-    (d) => serializeMongoDoc(d) as unknown as DocumentItem,
-  );
+  const docs = (Array.isArray(docsRaw) ? docsRaw : []).map(toDocumentItem);
 
   const hasDocs = docs.length > 0;
 

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { RentPayment } from "@/models/RentPayment";
 
 interface PageProps {
@@ -65,19 +65,60 @@ export default async function EstateRentLedgerPage({ params }: PageProps) {
 
   await connectToDatabase();
 
-  const docs = await RentPayment.find({
-    estateId,
-  })
+  const docs = (await RentPayment.find({ estateId })
     .sort({ paymentDate: -1 })
-    .lean();
+    .lean()
+    .exec()) as unknown[];
 
-  const payments: LeanRentPayment[] = (docs as unknown as LeanRentPayment[]).map(
-    (doc) => ({
-      ...doc,
-      _id: String(doc._id),
-      estateId: String(doc.estateId),
+  const toStringId = (v: unknown): string => {
+    if (typeof v === "string") return v;
+    if (v && typeof v === "object" && "toString" in v && typeof (v as { toString: () => string }).toString === "function") {
+      return (v as { toString: () => string }).toString();
+    }
+    return "";
+  };
+
+  const payments: LeanRentPayment[] = docs
+    .map((d): LeanRentPayment | null => {
+      const obj = serializeMongoDoc(d) as Record<string, unknown>;
+
+      const _id = toStringId(obj._id ?? obj.id);
+      const estateIdStr = toStringId(obj.estateId);
+      const ownerIdStr = toStringId(obj.ownerId);
+
+      const tenantName = typeof obj.tenantName === "string" ? obj.tenantName : "";
+      if (!_id || !estateIdStr || !tenantName) return null;
+
+      const periodMonth = Number(obj.periodMonth);
+      const periodYear = Number(obj.periodYear);
+      const amount = Number(obj.amount);
+
+      return {
+        _id,
+        ownerId: ownerIdStr,
+        estateId: estateIdStr,
+        tenantName,
+        periodMonth: Number.isFinite(periodMonth) ? periodMonth : 0,
+        periodYear: Number.isFinite(periodYear) ? periodYear : 0,
+        amount: Number.isFinite(amount) ? amount : 0,
+        paymentDate: (obj.paymentDate as string | Date) ?? "",
+        method:
+          typeof obj.method === "string" || obj.method === null
+            ? (obj.method as string | null)
+            : undefined,
+        reference:
+          typeof obj.reference === "string" || obj.reference === null
+            ? (obj.reference as string | null)
+            : undefined,
+        notes:
+          typeof obj.notes === "string" || obj.notes === null
+            ? (obj.notes as string | null)
+            : undefined,
+        createdAt: (obj.createdAt as string | Date) ?? "",
+        updatedAt: (obj.updatedAt as string | Date) ?? "",
+      };
     })
-  );
+    .filter((p): p is LeanRentPayment => p !== null);
 
   const totalCollected = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
 

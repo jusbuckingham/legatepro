@@ -4,12 +4,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { auth } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { Expense } from "@/models/Expense";
 import { ExpenseEditForm } from "@/components/expenses/ExpenseEditForm";
 
 type PageProps = {
   params: Promise<{
+    estateId: string;
     expenseId: string;
   }>;
 };
@@ -18,8 +19,37 @@ export const metadata: Metadata = {
   title: "Edit Expense | LegatePro",
 };
 
+const asString = (v: unknown, fallback = ""): string =>
+  typeof v === "string" ? v : v == null ? fallback : String(v);
+
+const asNumber = (v: unknown, fallback = 0): number =>
+  typeof v === "number" && Number.isFinite(v) ? v : fallback;
+
+const asBoolean = (v: unknown): boolean => Boolean(v);
+
+const asDateOrNull = (v: unknown): Date | null => {
+  if (v instanceof Date) return v;
+  if (typeof v === "string") {
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+};
+
+const normalizeExpenseStatus = (
+  v: unknown,
+):
+  | "PENDING"
+  | "APPROVED"
+  | "PAID"
+  | "REJECTED" => {
+  const raw = asString(v, "PENDING").toUpperCase();
+  if (raw === "APPROVED" || raw === "PAID" || raw === "REJECTED") return raw;
+  return "PENDING";
+};
+
 export default async function GlobalExpenseEditPage({ params }: PageProps) {
-  const { expenseId } = await params;
+  const { expenseId, estateId: estateIdParam } = await params;
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -31,6 +61,7 @@ export default async function GlobalExpenseEditPage({ params }: PageProps) {
   const expenseDoc = await Expense.findOne({
     _id: expenseId,
     ownerId: session.user.id,
+    estateId: estateIdParam,
   })
     .lean()
     .exec();
@@ -39,27 +70,10 @@ export default async function GlobalExpenseEditPage({ params }: PageProps) {
     notFound();
   }
 
-  // Narrow the lean() result into a shape with the fields we care about
-  const raw = expenseDoc as unknown as {
-    estateId?: unknown;
-    amountCents?: number;
-    status?: string;
-    reimbursable?: boolean;
-    incurredAt?: Date | null;
-    receiptUrl?: string;
-    description?: string;
-    category?: string;
-    payee?: string;
-    notes?: string;
-  };
+  const raw = serializeMongoDoc(expenseDoc) as Record<string, unknown>;
 
-  const estateId =
-    typeof raw.estateId === "string"
-      ? raw.estateId
-      : String((raw.estateId as unknown) ?? "");
-
-  const amountCents =
-    typeof raw.amountCents === "number" ? raw.amountCents : 0;
+  const estateId = asString(raw.estateId, "");
+  const amountCents = asNumber(raw.amountCents, 0);
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
@@ -80,20 +94,15 @@ export default async function GlobalExpenseEditPage({ params }: PageProps) {
         estateId={estateId}
         expenseId={expenseId}
         initialExpense={{
-          description: raw.description ?? "",
-          category: raw.category ?? "",
-          status: (raw.status as
-            | "PENDING"
-            | "APPROVED"
-            | "PAID"
-            | "REJECTED"
-            | undefined) ?? "PENDING",
-          payee: raw.payee ?? "",
-          notes: raw.notes ?? "",
-          reimbursable: Boolean(raw.reimbursable),
-          incurredAt: raw.incurredAt ?? null,
+          description: asString(raw.description, ""),
+          category: asString(raw.category, ""),
+          status: normalizeExpenseStatus(raw.status),
+          payee: asString(raw.payee, ""),
+          notes: asString(raw.notes, ""),
+          reimbursable: asBoolean(raw.reimbursable),
+          incurredAt: asDateOrNull(raw.incurredAt),
           amountCents,
-          receiptUrl: raw.receiptUrl ?? "",
+          receiptUrl: asString(raw.receiptUrl, ""),
         }}
       />
 

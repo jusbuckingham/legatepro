@@ -1,15 +1,9 @@
 import Link from "next/link";
-
 import { cookies, headers } from "next/headers";
-
-
 import { safeJson } from "@/lib/utils";
 
-type HeaderLike = { get(name: string): string | null };
-type CookieLike = { getAll(): Array<{ name: string; value: string }> };
-
-function getCookieHeader(cookieStore: CookieLike): string {
-  const parts = cookieStore.getAll().map((c) => `${c.name}=${c.value}`);
+function getCookieHeader(cookieStore: Awaited<ReturnType<typeof cookies>>): string {
+  const parts = cookieStore.getAll().map((c: { name: string; value: string }) => `${c.name}=${c.value}`);
   return parts.join("; ");
 }
 
@@ -107,7 +101,7 @@ function StateLayout({ title, description, crumbs, primaryCta, secondaryCta }: S
   );
 }
 
-function getRequestBaseUrl(hdrs: HeaderLike): string {
+function getRequestBaseUrl(hdrs: Awaited<ReturnType<typeof headers>>): string {
   const proto = hdrs.get("x-forwarded-proto") ?? "http";
   const host = hdrs.get("x-forwarded-host") ?? hdrs.get("host") ?? "";
   return host ? `${proto}://${host}` : "";
@@ -149,16 +143,15 @@ async function fetchUtility(utilityId: string): Promise<UtilityFetchResult> {
   const hdrs = await headers();
   const cookieStore = await cookies();
 
-  const baseUrl = getRequestBaseUrl(hdrs as unknown as HeaderLike);
+  const baseUrl = getRequestBaseUrl(hdrs);
   const url = (baseUrl ? `${baseUrl}/api/utilities/${utilityId}` : `/api/utilities/${utilityId}`).replace(/\/$/, "");
 
+  const cookieHeader = getCookieHeader(cookieStore);
   const res = await fetch(url, {
     method: "GET",
     cache: "no-store",
     headers: {
-      ...(getCookieHeader(cookieStore as unknown as CookieLike)
-        ? { cookie: getCookieHeader(cookieStore as unknown as CookieLike) }
-        : {}),
+      ...(cookieHeader ? { cookie: cookieHeader } : {}),
       ...(hdrs.get("user-agent") ? { "user-agent": hdrs.get("user-agent") ?? "" } : {}),
       accept: "application/json",
     },
