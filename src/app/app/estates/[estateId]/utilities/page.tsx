@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { connectToDatabase } from "../../../../../lib/db";
+import { connectToDatabase, serializeMongoDoc } from "../../../../../lib/db";
 import { UtilityAccount } from "../../../../../models/UtilityAccount";
 import { EstateProperty } from "../../../../../models/EstateProperty";
 
@@ -30,7 +30,7 @@ type RawEstateProperty = {
 };
 
 type UtilityRow = {
-  _id: string;
+  id: string;
   propertyLabel: string;
   provider: string;
   type: string;
@@ -44,51 +44,76 @@ type UtilityRow = {
 async function getUtilityRows(estateId: string): Promise<UtilityRow[]> {
   await connectToDatabase();
 
-  const accounts = (await UtilityAccount.find({ estateId })
+  const accountsRaw = (await UtilityAccount.find({ estateId })
     .sort({ provider: 1, type: 1 })
     .lean()) as RawUtilityAccount[];
 
-  if (!accounts || accounts.length === 0) {
+  const accounts = accountsRaw
+    .map((a) => serializeMongoDoc(a) as Record<string, unknown>)
+    .map((a) => {
+      const propertyId = a.propertyId != null ? String(a.propertyId) : undefined;
+      const lastBillDate = a.lastBillDate as unknown;
+      return {
+        id: String(a.id ?? ""),
+        propertyId,
+        provider: typeof a.provider === "string" ? a.provider : "",
+        type: typeof a.type === "string" ? a.type : "",
+        accountNumber: typeof a.accountNumber === "string" ? a.accountNumber : undefined,
+        status:
+          a.status === "pending" || a.status === "closed" || a.status === "active"
+            ? (a.status as "active" | "pending" | "closed")
+            : "active",
+        isAutoPay: typeof a.isAutoPay === "boolean" ? a.isAutoPay : undefined,
+        lastBillAmount: typeof a.lastBillAmount === "number" ? a.lastBillAmount : undefined,
+        lastBillDate,
+      };
+    });
+
+  if (accounts.length === 0) {
     return [];
   }
 
   const propertyIds = Array.from(
-    new Set(
-      accounts
-        .map((a) => (a.propertyId ? String(a.propertyId) : null))
-        .filter((id): id is string => Boolean(id))
-    )
+    new Set(accounts.map((a) => a.propertyId).filter((id): id is string => Boolean(id)))
   );
 
-  const properties = (await EstateProperty.find({ _id: { $in: propertyIds } })
-    .lean()) as RawEstateProperty[];
+  const propertiesRaw = (await EstateProperty.find({ _id: { $in: propertyIds } }).lean()) as RawEstateProperty[];
+
+  const properties = propertiesRaw
+    .map((p) => serializeMongoDoc(p) as Record<string, unknown>)
+    .map((p) => ({
+      id: String(p.id ?? ""),
+      label: typeof p.label === "string" ? p.label : undefined,
+      addressLine1: typeof p.addressLine1 === "string" ? p.addressLine1 : undefined,
+    }));
 
   const propertyLabelById = new Map<string, string>();
   for (const p of properties) {
-    const id = String(p._id);
+    if (!p.id) continue;
     const label = p.label || p.addressLine1 || "Property";
-    propertyLabelById.set(id, label);
+    propertyLabelById.set(p.id, label);
   }
 
   return accounts.map<UtilityRow>((account) => {
-    const createdForPropertyId = account.propertyId ? String(account.propertyId) : undefined;
+    const createdForPropertyId = account.propertyId;
     const propertyLabel = createdForPropertyId
       ? propertyLabelById.get(createdForPropertyId) || "Estate-level"
       : "Estate-level";
 
-    const lastBillDateISO = account.lastBillDate
-      ? account.lastBillDate instanceof Date
-        ? account.lastBillDate.toISOString().slice(0, 10)
-        : new Date(account.lastBillDate).toISOString().slice(0, 10)
+    const rawDate = account.lastBillDate;
+    const lastBillDateISO = rawDate
+      ? rawDate instanceof Date
+        ? rawDate.toISOString().slice(0, 10)
+        : new Date(String(rawDate)).toISOString().slice(0, 10)
       : undefined;
 
     return {
-      _id: String(account._id),
+      id: account.id,
       propertyLabel,
-      provider: account.provider || "",
-      type: account.type || "",
+      provider: account.provider,
+      type: account.type,
       accountNumber: account.accountNumber,
-      status: account.status || "active",
+      status: account.status,
       isAutoPay: account.isAutoPay,
       lastBillAmount: account.lastBillAmount,
       lastBillDate: lastBillDateISO,
@@ -179,7 +204,7 @@ export default async function EstateUtilitiesPage({ params }: EstateUtilitiesPag
             </thead>
             <tbody className="divide-y divide-border bg-card/50">
               {utilities.map((u) => (
-                <tr key={u._id} className="hover:bg-muted/40">
+                <tr key={u.id} className="hover:bg-muted/40">
                   <td className="px-4 py-3 font-medium text-foreground">{u.provider}</td>
                   <td className="px-4 py-3 text-muted-foreground">{u.type}</td>
                   <td className="px-4 py-3 text-muted-foreground">{u.propertyLabel}</td>
@@ -226,7 +251,7 @@ export default async function EstateUtilitiesPage({ params }: EstateUtilitiesPag
                   </td>
                   <td className="px-4 py-3 text-right text-sm">
                     <Link
-                      href={`/app/estates/${estateId}/utilities/${u._id}`}
+                      href={`/app/estates/${estateId}/utilities/${u.id}`}
                       className="text-primary hover:underline"
                     >
                       View

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { auth } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import { EstateTask } from "@/models/EstateTask";
 
@@ -20,11 +20,11 @@ type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "DONE";
 
 type EstateTaskLean = {
   _id: unknown;
-  title?: string | null;
-  description?: string | null;
-  status?: string | null;
-  dueDate?: Date | string | null;
-  completedAt?: Date | string | null;
+  title?: unknown;
+  description?: unknown;
+  status?: unknown;
+  dueDate?: unknown;
+  completedAt?: unknown;
 };
 
 type TaskItem = {
@@ -229,15 +229,24 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
     .exec()) as EstateTaskLean[];
 
   const tasks: TaskItem[] = docs.map((doc) => {
+    const plain = serializeMongoDoc(doc) as Record<string, unknown>;
+
+    const idRaw = (plain as { id?: unknown }).id;
+    const id = typeof idRaw === "string" && idRaw.length > 0 ? idRaw : String(doc._id);
+
+    const titleRaw = (plain as { title?: unknown }).title;
     const title =
-      typeof doc.title === "string" && doc.title.trim().length > 0 ? doc.title : "Task";
+      typeof titleRaw === "string" && titleRaw.trim().length > 0 ? titleRaw : "Task";
 
-    const status = parseStatus(doc.status ?? null);
+    const status = parseStatus((plain as { status?: unknown }).status ?? null);
 
+    const dueRaw = (plain as { dueDate?: unknown }).dueDate;
     const due =
-      doc.dueDate instanceof Date
-        ? doc.dueDate.toISOString()
-        : (doc.dueDate as string | null | undefined) ?? null;
+      dueRaw instanceof Date
+        ? dueRaw.toISOString()
+        : typeof dueRaw === "string" && dueRaw
+        ? dueRaw
+        : null;
 
     let isOverdue = false;
     if (due) {
@@ -248,10 +257,13 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
       }
     }
 
+    const descriptionRaw = (plain as { description?: unknown }).description;
+    const description = typeof descriptionRaw === "string" ? descriptionRaw : null;
+
     return {
-      _id: String(doc._id),
+      _id: id,
       title,
-      description: doc.description ?? null,
+      description,
       status,
       dueDate: due,
       isOverdue,

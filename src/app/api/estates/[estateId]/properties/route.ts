@@ -1,7 +1,7 @@
 // src/app/api/estates/[estateId]/properties/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import { EstateProperty } from "@/models/EstateProperty";
 
@@ -53,10 +53,14 @@ export async function GET(
 
     await connectToDatabase();
 
-    const properties = await EstateProperty.find({ estateId: estateObjectId })
+    const propertiesRaw = await EstateProperty.find({ estateId: estateObjectId })
       .sort({ createdAt: -1 })
       .lean()
       .exec();
+
+    const properties = Array.isArray(propertiesRaw)
+      ? propertiesRaw.map((p) => serializeMongoDoc(p))
+      : [];
 
     return NextResponse.json({ ok: true, properties }, { status: 200 });
   } catch (error) {
@@ -113,8 +117,9 @@ export async function POST(
     };
 
     const created = await EstateProperty.create(payload);
+    const property = serializeMongoDoc(created);
 
-    return NextResponse.json({ ok: true, property: created }, { status: 201 });
+    return NextResponse.json({ ok: true, property }, { status: 201 });
   } catch (error) {
     console.error("[POST /api/estates/[estateId]/properties] Error:", error);
     return NextResponse.json(

@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
-import { connectToDatabase } from "../../../../../../../lib/db";
+import { connectToDatabase, serializeMongoDoc } from "../../../../../../../lib/db";
 import { UtilityAccount } from "../../../../../../../models/UtilityAccount";
 import { EstateProperty } from "../../../../../../../models/EstateProperty";
 
@@ -13,7 +13,7 @@ interface PropertyUtilitiesPageProps {
 }
 
 interface PropertyItem {
-  _id: { toString(): string };
+  id: string;
   label: string;
   addressLine1?: string;
   addressLine2?: string;
@@ -23,9 +23,9 @@ interface PropertyItem {
 }
 
 interface UtilityItem {
-  _id: { toString(): string };
-  estateId: { toString(): string };
-  propertyId?: { toString(): string };
+  id: string;
+  estateId: string;
+  propertyId?: string;
   provider?: string;
   type?: string;
   accountNumber?: string;
@@ -52,18 +52,26 @@ export default async function PropertyUtilitiesPage({
   await connectToDatabase();
 
   // Fetch property metadata
-  const property = (await EstateProperty.findOne({
+  const propertyRaw = (await EstateProperty.findOne({
     _id: propertyId,
     estateId,
-  }).lean()) as PropertyItem | null;
+  }).lean()) as unknown;
+
+  const property = propertyRaw
+    ? (serializeMongoDoc(propertyRaw) as unknown as PropertyItem)
+    : null;
 
   // Fetch utility accounts for this property
-  const utilities = (await UtilityAccount.find({
+  const utilitiesRaw = (await UtilityAccount.find({
     estateId,
     propertyId,
   })
     .sort({ provider: 1 })
-    .lean()) as unknown as UtilityItem[];
+    .lean()) as unknown;
+
+  const utilities = (Array.isArray(utilitiesRaw) ? utilitiesRaw : []).map((u) =>
+    serializeMongoDoc(u) as unknown as UtilityItem,
+  );
 
   const address = property ? formatAddress(property) : "";
 
@@ -199,10 +207,10 @@ export default async function PropertyUtilitiesPage({
             </thead>
             <tbody className="divide-y divide-slate-800">
               {utilities.map((u: UtilityItem) => (
-                <tr key={u._id.toString()} className="hover:bg-slate-800/30">
+                <tr key={u.id} className="hover:bg-slate-800/30">
                   <td className="px-4 py-2 text-slate-200">
                     <Link
-                      href={`/app/estates/${estateId}/properties/${propertyId}/utilities/${u._id.toString()}`}
+                      href={`/app/estates/${estateId}/properties/${propertyId}/utilities/${u.id}`}
                       className="font-medium hover:text-rose-200"
                     >
                       {u.provider || "Utility account"}

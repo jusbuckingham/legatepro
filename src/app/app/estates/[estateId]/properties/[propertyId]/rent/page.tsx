@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
-import { connectToDatabase } from "../../../../../../../lib/db";
+import { connectToDatabase, serializeMongoDoc } from "../../../../../../../lib/db";
 import { EstateProperty } from "../../../../../../../models/EstateProperty";
 import { RentPayment } from "../../../../../../../models/RentPayment";
 
@@ -15,7 +15,7 @@ interface PropertyRentPageProps {
 }
 
 interface PropertyItem {
-  _id: unknown;
+  id: string;
   label: string;
   addressLine1?: string;
   addressLine2?: string;
@@ -25,9 +25,9 @@ interface PropertyItem {
 }
 
 interface RentPaymentItem {
-  _id: unknown;
+  id: string;
   estateId: string;
-  propertyId?: unknown;
+  propertyId?: string;
   tenantName?: string;
   periodMonth?: number;
   periodYear?: number;
@@ -39,7 +39,7 @@ interface RentPaymentItem {
 }
 
 type RentPaymentDoc = {
-  _id: unknown;
+  id: string;
   estateId?: unknown;
   propertyId?: unknown;
   tenantName?: string;
@@ -125,39 +125,41 @@ export default async function PropertyRentPage({
 
   await connectToDatabase();
 
-  const property = (await EstateProperty.findOne({
+  const propertyRaw = await EstateProperty.findOne({
     _id: propertyId,
     estateId,
-  }).lean()) as PropertyItem | null;
+  }).lean();
+
+  const property = (propertyRaw ? (serializeMongoDoc(propertyRaw) as unknown) : null) as PropertyItem | null;
 
   if (!property) {
     notFound();
   }
 
-  const rentPaymentDocs = (await RentPayment.find({
+  const rentPaymentDocsRaw = await RentPayment.find({
     estateId,
     propertyId,
   })
     .sort({ periodYear: -1, periodMonth: -1, paymentDate: -1 })
-    .lean()) as RentPaymentDoc[];
+    .lean();
 
-  const rentPayments: RentPaymentItem[] = (rentPaymentDocs ?? []).map(
-    (doc: RentPaymentDoc) => ({
-      _id: doc._id,
-      estateId: doc.estateId ? String(doc.estateId) : estateId,
-      propertyId: doc.propertyId,
-      tenantName: doc.tenantName,
-      periodMonth:
-        typeof doc.periodMonth === "number" ? doc.periodMonth : undefined,
-      periodYear:
-        typeof doc.periodYear === "number" ? doc.periodYear : undefined,
-      amount: typeof doc.amount === "number" ? doc.amount : undefined,
-      paymentDate: doc.paymentDate,
-      method: doc.method,
-      reference: doc.reference,
-      notes: doc.notes,
-    })
+  const rentPaymentDocs = (rentPaymentDocsRaw ?? []).map(
+    (d) => serializeMongoDoc(d) as unknown as RentPaymentDoc
   );
+
+  const rentPayments: RentPaymentItem[] = rentPaymentDocs.map((doc) => ({
+    id: doc.id,
+    estateId: doc.estateId ? String(doc.estateId) : estateId,
+    propertyId: doc.propertyId ? String(doc.propertyId) : undefined,
+    tenantName: doc.tenantName,
+    periodMonth: typeof doc.periodMonth === "number" ? doc.periodMonth : undefined,
+    periodYear: typeof doc.periodYear === "number" ? doc.periodYear : undefined,
+    amount: typeof doc.amount === "number" ? doc.amount : undefined,
+    paymentDate: doc.paymentDate,
+    method: doc.method,
+    reference: doc.reference,
+    notes: doc.notes,
+  }));
 
   const hasPayments = rentPayments.length > 0;
 
@@ -342,7 +344,7 @@ export default async function PropertyRentPage({
             <tbody className="divide-y divide-slate-800">
               {rentPayments.map((payment) => (
                 <tr
-                  key={String(payment._id)}
+                  key={payment.id}
                   className="text-xs text-slate-200"
                 >
                   <td className="whitespace-nowrap px-3 py-2">
@@ -368,13 +370,13 @@ export default async function PropertyRentPage({
                       <input
                         type="hidden"
                         name="paymentId"
-                        value={String(payment._id)}
+                        value={payment.id}
                       />
                       <input type="hidden" name="estateId" value={estateId} />
                       <input
                         type="hidden"
                         name="propertyId"
-                        value={String(property._id)}
+                        value={property.id}
                       />
                       <button
                         type="submit"

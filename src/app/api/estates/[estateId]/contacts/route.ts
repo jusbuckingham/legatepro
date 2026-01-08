@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { auth } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { requireEstateEditAccess } from "@/lib/estateAccess";
 import { Estate } from "@/models/Estate";
 import { Contact } from "@/models/Contact";
@@ -96,7 +96,8 @@ export async function POST(
   try {
     estate = (await Estate.findOne({ _id: estateObjectId })
       .select("_id ownerId displayName caseName decedentName")
-      .lean()) as EstateLean | null;
+      .lean()
+      .exec()) as EstateLean | null;
   } catch (err) {
     if (isMongooseCastError(err)) {
       return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
@@ -116,7 +117,8 @@ export async function POST(
       ownerId: ownerObjectId,
     })
       .select("_id name email phone role")
-      .lean()) as ContactLean | null;
+      .lean()
+      .exec()) as ContactLean | null;
   } catch (err) {
     if (isMongooseCastError(err)) {
       return NextResponse.json({ ok: false, error: "Invalid contactId" }, { status: 400 });
@@ -128,8 +130,11 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "Contact not found" }, { status: 404 });
   }
 
-  const estateIdStr =
-    typeof estate._id === "string" ? estate._id : estate._id.toString();
+  const estateOut = serializeMongoDoc(estate) as Record<string, unknown>;
+  const estateIdStr = (estateOut.id as string | undefined) ?? "";
+  if (!estateIdStr) {
+    return NextResponse.json({ ok: false, error: "Invalid estate" }, { status: 500 });
+  }
 
   await Contact.updateOne(
     { _id: contactObjectId, ownerId: ownerObjectId },
@@ -142,14 +147,14 @@ export async function POST(
       : "Unnamed contact";
 
   const estateName =
-    estate.displayName ||
-    estate.caseName ||
-    estate.decedentName ||
+    (typeof estate.displayName === "string" && estate.displayName.trim()) ||
+    (typeof estate.caseName === "string" && estate.caseName.trim()) ||
+    (typeof estate.decedentName === "string" && estate.decedentName.trim()) ||
     `Estate …${estateIdStr.slice(-6)}`;
 
   const parts: string[] = [];
-  if (contact.email) parts.push(contact.email);
-  if (contact.phone) parts.push(contact.phone);
+  if (typeof contact.email === "string" && contact.email.trim()) parts.push(contact.email.trim());
+  if (typeof contact.phone === "string" && contact.phone.trim()) parts.push(contact.phone.trim());
   const detail = parts.length > 0 ? parts.join(" · ") : undefined;
 
   await logEstateEvent({
@@ -213,7 +218,8 @@ export async function DELETE(
   try {
     estate = (await Estate.findOne({ _id: estateObjectId })
       .select("_id ownerId displayName caseName decedentName")
-      .lean()) as EstateLean | null;
+      .lean()
+      .exec()) as EstateLean | null;
   } catch (err) {
     if (isMongooseCastError(err)) {
       return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
@@ -233,7 +239,8 @@ export async function DELETE(
       ownerId: ownerObjectId,
     })
       .select("_id name email phone role")
-      .lean()) as ContactLean | null;
+      .lean()
+      .exec()) as ContactLean | null;
   } catch (err) {
     if (isMongooseCastError(err)) {
       return NextResponse.json({ ok: false, error: "Invalid contactId" }, { status: 400 });
@@ -245,8 +252,11 @@ export async function DELETE(
     return NextResponse.json({ ok: false, error: "Contact not found" }, { status: 404 });
   }
 
-  const estateIdStr =
-    typeof estate._id === "string" ? estate._id : estate._id.toString();
+  const estateOut = serializeMongoDoc(estate) as Record<string, unknown>;
+  const estateIdStr = (estateOut.id as string | undefined) ?? "";
+  if (!estateIdStr) {
+    return NextResponse.json({ ok: false, error: "Invalid estate" }, { status: 500 });
+  }
 
   await Contact.updateOne(
     { _id: contactObjectId, ownerId: ownerObjectId },
@@ -259,14 +269,14 @@ export async function DELETE(
       : "Unnamed contact";
 
   const estateName =
-    estate.displayName ||
-    estate.caseName ||
-    estate.decedentName ||
+    (typeof estate.displayName === "string" && estate.displayName.trim()) ||
+    (typeof estate.caseName === "string" && estate.caseName.trim()) ||
+    (typeof estate.decedentName === "string" && estate.decedentName.trim()) ||
     `Estate …${estateIdStr.slice(-6)}`;
 
   const parts: string[] = [];
-  if (contact.email) parts.push(contact.email);
-  if (contact.phone) parts.push(contact.phone);
+  if (typeof contact.email === "string" && contact.email.trim()) parts.push(contact.email.trim());
+  if (typeof contact.phone === "string" && contact.phone.trim()) parts.push(contact.phone.trim());
   const detail = parts.length > 0 ? parts.join(" · ") : undefined;
 
   await logEstateEvent({

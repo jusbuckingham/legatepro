@@ -1,32 +1,13 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { Contact } from "@/models/Contact";
 
 type PageProps = {
   params: {
     contactId: string;
   };
-};
-
-type EstateRef = {
-  _id: string | { toString: () => string };
-  displayName?: string;
-  caseName?: string;
-};
-
-type ContactDoc = {
-  _id: string | { toString: () => string };
-  ownerId: string | { toString: () => string };
-  name?: string;
-  email?: string;
-  phone?: string;
-  role?: string;
-  notes?: string;
-  // This may be either populated estate refs (if your schema supports populate)
-  // or raw ObjectId strings (if you store ids only).
-  estates?: Array<EstateRef | string>;
 };
 
 function formatRole(role?: string): string {
@@ -62,39 +43,48 @@ export default async function ContactDetailPage({ params }: PageProps) {
 
   await connectToDatabase();
 
-  const contact = (await Contact.findOne({
+  const contactRaw = await Contact.findOne({
     _id: contactId,
     ownerId: session.user.id,
-  }).lean()) as ContactDoc | null;
+  }).lean();
 
-  if (!contact) {
+  if (!contactRaw) {
     notFound();
   }
-  const contactIdValue = String(contact._id ?? contactId);
+
+  const contact = serializeMongoDoc(contactRaw) as Record<string, unknown>;
+  const contactIdValue = (contact.id as string | undefined) ?? contactId;
   const contactIdEncoded = encodeURIComponent(contactIdValue);
 
-  const name = contact.name?.trim() || "Unnamed contact";
+  const name = (typeof contact.name === "string" ? contact.name : "").trim() || "Unnamed contact";
+  const email = typeof contact.email === "string" ? contact.email : undefined;
+  const phone = typeof contact.phone === "string" ? contact.phone : undefined;
+  const role = typeof contact.role === "string" ? contact.role : undefined;
+  const notes = typeof contact.notes === "string" ? contact.notes : undefined;
 
-  const estates = (contact.estates ?? []).map((est, index) => {
+  const estatesRaw = Array.isArray(contact.estates) ? (contact.estates as unknown[]) : [];
+  const estates = estatesRaw.map((est, index) => {
     // If not populated, `est` may be a string id.
     if (typeof est === "string") {
-      const estId = String(est);
+      const estId = est;
       return {
         _id: estId,
         label: `Estate …${estId.slice(-6) || index + 1}`,
       };
     }
 
-    const estId = typeof est._id === "string" ? est._id : est._id.toString();
-    const label =
-      est.displayName ||
-      est.caseName ||
-      `Estate …${estId.slice(-6) || index + 1}`;
+    if (est && typeof est === "object") {
+      const e = serializeMongoDoc(est) as Record<string, unknown>;
+      const estId = (e.id as string | undefined) ?? "";
+      const displayName = typeof e.displayName === "string" ? e.displayName : "";
+      const caseName = typeof e.caseName === "string" ? e.caseName : "";
 
-    return {
-      _id: estId,
-      label,
-    };
+      const label = displayName.trim() || caseName.trim() || `Estate …${(estId || String(index + 1)).slice(-6)}`;
+      return { _id: estId || String(index + 1), label };
+    }
+
+    // Fallback
+    return { _id: String(index + 1), label: `Estate …${index + 1}` };
   });
 
   return (
@@ -108,7 +98,7 @@ export default async function ContactDetailPage({ params }: PageProps) {
             {name}
           </h1>
           <p className="text-xs text-slate-400">
-            {formatRole(contact.role)}
+            {formatRole(role)}
           </p>
         </div>
 
@@ -134,12 +124,12 @@ export default async function ContactDetailPage({ params }: PageProps) {
             Email
           </h2>
           <p className="mt-1 text-sm text-slate-100">
-            {contact.email ? (
+            {email ? (
               <a
-                href={`mailto:${contact.email}`}
+                href={`mailto:${email}`}
                 className="text-sky-300 hover:text-sky-200"
               >
-                {contact.email}
+                {email}
               </a>
             ) : (
               "—"
@@ -151,12 +141,12 @@ export default async function ContactDetailPage({ params }: PageProps) {
             Phone
           </h2>
           <p className="mt-1 text-sm text-slate-100">
-            {contact.phone ? (
+            {phone ? (
               <a
-                href={`tel:${contact.phone}`}
+                href={`tel:${phone}`}
                 className="text-sky-300 hover:text-sky-200"
               >
-                {contact.phone}
+                {phone}
               </a>
             ) : (
               "—"
@@ -168,7 +158,7 @@ export default async function ContactDetailPage({ params }: PageProps) {
             Notes
           </h2>
           <p className="mt-1 whitespace-pre-wrap text-sm text-slate-100">
-            {contact.notes?.trim() || "No notes added yet."}
+            {notes?.trim() || "No notes added yet."}
           </p>
         </div>
       </section>

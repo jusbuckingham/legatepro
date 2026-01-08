@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase } from "../../../../lib/db";
-import { RentPayment } from "../../../../models/RentPayment";
+import { Types } from "mongoose";
+
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
+import { RentPayment } from "@/models/RentPayment";
 
 interface RentPaymentDoc {
   _id: unknown;
@@ -29,20 +31,34 @@ function csvEscape(value: string) {
   return `"${safe}"`;
 }
 
+function buildEstateIdQuery(
+  estateId: string
+): string | { $in: Array<string | Types.ObjectId> } {
+  // Some collections store `estateId` as an ObjectId; some as a string.
+  // Accept both without breaking either storage format.
+  if (Types.ObjectId.isValid(estateId)) {
+    return { $in: [estateId, new Types.ObjectId(estateId)] };
+  }
+  return estateId;
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const estateId = searchParams.get("estateId");
 
   if (!estateId) {
-    return new Response("Missing estateId", { status: 400 });
+    return new NextResponse("Missing estateId", { status: 400 });
   }
 
   await connectToDatabase();
 
   // Pull all rent payments for this estate
-  const docs = (await RentPayment.find({ estateId })
+  const docsRaw = (await RentPayment.find({ estateId: buildEstateIdQuery(estateId) })
     .sort({ receivedDate: 1, createdAt: 1 })
     .lean()) as RentPaymentDoc[];
+
+  // Normalize ids / strip mongo internals consistently (even for `lean()` results)
+  const docs = docsRaw.map((d) => serializeMongoDoc(d as unknown as Record<string, unknown>) as unknown as RentPaymentDoc);
 
   const header = [
     "Date",

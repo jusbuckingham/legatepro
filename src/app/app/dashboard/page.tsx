@@ -5,7 +5,7 @@ import type { Metadata } from "next";
 import mongoose from "mongoose";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
 import { TimeEntry } from "@/models/TimeEntry";
 import { WorkspaceSettings } from "@/models/WorkspaceSettings";
@@ -26,7 +26,8 @@ type InvoiceStatus =
   | "VOID";
 
 type InvoiceLike = {
-  _id: unknown;
+  id?: string;
+  _id?: unknown;
   estateId?: unknown;
   status?: InvoiceStatus | string;
   totalAmount?: number;
@@ -39,7 +40,8 @@ type InvoiceLike = {
 
 
 type EstateLike = {
-  _id: unknown;
+  id?: string;
+  _id?: unknown;
   displayName?: string;
   caseName?: string;
 };
@@ -127,6 +129,15 @@ function toObjectId(id: string) {
   return mongoose.Types.ObjectId.isValid(id)
     ? new mongoose.Types.ObjectId(id)
     : null;
+}
+
+function idToString(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object") {
+    const maybe = value as { toString?: () => string };
+    if (typeof maybe.toString === "function") return maybe.toString();
+  }
+  return null;
 }
 
 const getSession = cache(async () => getServerSession(authOptions));
@@ -322,7 +333,7 @@ export default async function DashboardPage() {
     },
   ]).exec();
 
-  const [invoiceDashboardRaw, workspaceSettings, estatesRaw] = await Promise.all([
+  const [invoiceDashboardRaw, workspaceSettingsRaw, estatesRaw] = await Promise.all([
     invoiceDashboardAgg,
     WorkspaceSettings.findOne({ $or: ownerIdOr }).lean().exec(),
     Estate.find(
@@ -337,6 +348,14 @@ export default async function DashboardPage() {
       .lean()
       .exec(),
   ]);
+
+  const workspaceSettings = workspaceSettingsRaw
+    ? (serializeMongoDoc(workspaceSettingsRaw) as Record<string, unknown>)
+    : null;
+
+  const estates = (Array.isArray(estatesRaw) ? estatesRaw : []).map((e) =>
+    serializeMongoDoc(e) as unknown as EstateLike,
+  );
 
   const defaultHourlyRateCents =
     workspaceSettings &&
@@ -446,7 +465,6 @@ export default async function DashboardPage() {
     },
   ]).exec();
 
-  const estates = estatesRaw as unknown as EstateLike[];
 
   const invoiceDashboard = (invoiceDashboardRaw?.[0] ?? {}) as unknown as {
     totals?: Array<{
@@ -493,7 +511,15 @@ export default async function DashboardPage() {
         }>)
     : [];
 
-  const recentInvoices = (recentInvoicesRaw ?? []) as unknown as InvoiceLike[];
+  const recentInvoices = (Array.isArray(recentInvoicesRaw) ? recentInvoicesRaw : []).map((inv) => {
+    const out = serializeMongoDoc(inv as unknown as Record<string, unknown>) as Record<string, unknown>;
+    // Ensure we always have a stable string id for linking
+    if (typeof out.id !== "string") {
+      const fallback = idToString((out as { _id?: unknown })._id);
+      if (fallback) out.id = fallback;
+    }
+    return out as unknown as InvoiceLike;
+  });
 
   const currency =
     (workspaceSettings &&
@@ -506,7 +532,9 @@ export default async function DashboardPage() {
   // Build a lookup for estate labels
   const estateLabelMap = new Map<string, string>();
   for (const estate of estates) {
-    const id = String(estate._id);
+    const id = typeof estate.id === "string" && estate.id.trim().length > 0
+      ? estate.id
+      : String(estate._id ?? "");
     const displayName =
       typeof estate.displayName === "string"
         ? estate.displayName.trim()
@@ -1058,7 +1086,9 @@ export default async function DashboardPage() {
           ) : (
             <div className="divide-y divide-slate-800/80">
               {recentInvoices.map((inv) => {
-                const id = String(inv._id);
+                const id = (typeof inv.id === "string" && inv.id.trim().length > 0)
+                  ? inv.id
+                  : (idToString(inv._id) ?? "");
                 const status =
                   (inv.status as InvoiceStatus | undefined) ?? "DRAFT";
                 const amountCents =
@@ -1079,7 +1109,7 @@ export default async function DashboardPage() {
                     ? Math.floor((nowDate.getTime() - dueMs) / msPerDay)
                     : null;
 
-                const estateId = inv.estateId ? String(inv.estateId) : null;
+                const estateId = idToString(inv.estateId);
                 const estateLabel = estateId ? estateLabelMap.get(estateId) : null;
 
                 const statusLabel = baseStatus;

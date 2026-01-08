@@ -1,4 +1,4 @@
-import { connectToDatabase } from "../../../../../../../lib/db";
+import { connectToDatabase, serializeMongoDoc } from "../../../../../../../lib/db";
 import { EstateDocument } from "../../../../../../../models/EstateDocument";
 import { EstateProperty } from "../../../../../../../models/EstateProperty";
 import Link from "next/link";
@@ -11,7 +11,7 @@ interface PropertyDocumentsPageProps {
 }
 
 interface PropertyItem {
-  _id: { toString(): string };
+  id: string;
   label: string;
   addressLine1?: string;
   addressLine2?: string;
@@ -21,8 +21,8 @@ interface PropertyItem {
 }
 
 interface DocumentItem {
-  _id: { toString(): string };
-  estateId?: { toString(): string } | string;
+  id: string;
+  estateId?: string;
   title?: string;
   category?: string;
   tags?: string[];
@@ -57,18 +57,26 @@ export default async function PropertyDocumentsPage({
   await connectToDatabase();
 
   // Fetch property info
-  const property = (await EstateProperty.findOne({
+  const propertyRaw = await EstateProperty.findOne({
     _id: propertyId,
     estateId,
-  }).lean()) as PropertyItem | null;
+  }).lean();
+
+  const property = (propertyRaw
+    ? (serializeMongoDoc(propertyRaw) as unknown as PropertyItem)
+    : null);
 
   // Fetch documents tagged with this property
-  const docs = (await EstateDocument.find({
+  const docsRaw = await EstateDocument.find({
     estateId,
     tags: { $in: [`property:${propertyId}`] },
   })
     .sort({ createdAt: -1 })
-    .lean()) as unknown as DocumentItem[];
+    .lean();
+
+  const docs = (Array.isArray(docsRaw) ? docsRaw : []).map(
+    (d) => serializeMongoDoc(d) as unknown as DocumentItem,
+  );
 
   const hasDocs = docs.length > 0;
 
@@ -213,7 +221,7 @@ export default async function PropertyDocumentsPage({
 
             <tbody className="divide-y divide-slate-800">
               {docs.map((doc) => (
-                <tr key={doc._id.toString()} className="text-slate-200">
+                <tr key={doc.id} className="text-slate-200">
                   <td className="px-3 py-2">
                     {doc.title || (
                       <span className="text-slate-500">Untitled</span>

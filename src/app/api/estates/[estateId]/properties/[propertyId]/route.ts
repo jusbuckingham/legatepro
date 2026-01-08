@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { EstateProperty } from "@/models/EstateProperty";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +50,8 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ ok: true, property }, { status: 200 });
+    const out = serializeMongoDoc(property) as Record<string, unknown>;
+    return NextResponse.json({ ok: true, property: out }, { status: 200 });
   } catch (error) {
     console.error("[GET /api/estates/[estateId]/properties/[propertyId]]", error);
     return NextResponse.json(
@@ -148,7 +149,8 @@ export async function PATCH(
       );
     }
 
-    return NextResponse.json({ ok: true, property: updated }, { status: 200 });
+    const out = serializeMongoDoc(updated) as Record<string, unknown>;
+    return NextResponse.json({ ok: true, property: out }, { status: 200 });
   } catch (error) {
     console.error(
       "[PATCH /api/estates/[estateId]/properties/[propertyId]]",
@@ -188,6 +190,8 @@ export async function DELETE(
         { status: 404 }
       );
     }
+    // Intentionally not returning deleted payload; serialize if needed in the future.
+    void deleted;
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (error) {

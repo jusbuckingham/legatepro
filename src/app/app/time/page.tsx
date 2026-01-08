@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { Types } from "mongoose";
 
 import { auth } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 import { TimeEntry } from "@/models/TimeEntry";
 
@@ -14,7 +14,8 @@ import { TimeEntry } from "@/models/TimeEntry";
  */
 
 interface EstateDocLean {
-  _id: string | Types.ObjectId;
+  id: string;
+  _id?: string | Types.ObjectId;
   caseName?: string;
   courtCaseNumber?: string;
   decedentName?: string;
@@ -22,7 +23,8 @@ interface EstateDocLean {
 }
 
 interface TimeEntryDocLean {
-  _id: string | Types.ObjectId;
+  id: string;
+  _id?: string | Types.ObjectId;
   ownerId?: string | Types.ObjectId;
   estateId?: string | Types.ObjectId;
   taskId?: string | Types.ObjectId | null;
@@ -48,14 +50,31 @@ interface PageProps {
  * Helpers
  */
 
-function toIdString(id: string | Types.ObjectId | undefined): string | undefined {
+function toIdString(id: unknown): string | undefined {
   if (!id) return undefined;
   if (typeof id === "string") return id;
-  return id.toString();
+  if (typeof id === "number") return String(id);
+  if (typeof id === "object" && id !== null) {
+    const maybe = id as { toString?: () => string };
+    if (typeof maybe.toString === "function") return maybe.toString();
+  }
+  return undefined;
 }
 
 function toObjectId(id: string) {
   return Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : null;
+}
+
+function normalizeIdFields<T extends Record<string, unknown>>(
+  obj: T,
+  keys: Array<keyof T>,
+): T {
+  for (const key of keys) {
+    const v = obj[key];
+    const s = toIdString(v);
+    if (s) (obj as Record<string, unknown>)[key as string] = s;
+  }
+  return obj;
 }
 
 function parseDateInput(value: string | undefined): Date | undefined {
@@ -153,11 +172,20 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
     .lean()
     .exec();
 
-  const estates = estateDocs as unknown as EstateDocLean[];
+  const estates = (estateDocs ?? []).map((d) => {
+    const base = serializeMongoDoc(d) as Record<string, unknown>;
+    const withIds = normalizeIdFields(base, ["ownerId", "estateId", "taskId"]);
+    const id = typeof withIds.id === "string" ? withIds.id : toIdString((d as { _id?: unknown })?._id) ?? "";
+    return {
+      ...(withIds as Record<string, unknown>),
+      id,
+      _id: (d as { _id?: unknown })?._id as string | Types.ObjectId | undefined,
+    } as unknown as EstateDocLean;
+  });
 
   const estateById = new Map<string, EstateDocLean>();
   for (const est of estates) {
-    const idStr = toIdString(est._id);
+    const idStr = est.id || toIdString(est._id);
     if (idStr) estateById.set(idStr, est);
   }
 
@@ -167,7 +195,16 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
     .lean()
     .exec();
 
-  const allEntries = timeDocs as unknown as TimeEntryDocLean[];
+  const allEntries = (timeDocs ?? []).map((d) => {
+    const base = serializeMongoDoc(d) as Record<string, unknown>;
+    normalizeIdFields(base, ["ownerId", "estateId", "taskId"]);
+    const id = typeof base.id === "string" ? base.id : toIdString((d as { _id?: unknown })?._id) ?? "";
+    return {
+      ...(base as Record<string, unknown>),
+      id,
+      _id: (d as { _id?: unknown })?._id as string | Types.ObjectId | undefined,
+    } as unknown as TimeEntryDocLean;
+  });
 
   // Apply filters
   let entries = allEntries.slice();
@@ -313,7 +350,7 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
               >
                 <option value="">All estates</option>
                 {estates.map((estate) => {
-                  const idStr = toIdString(estate._id) ?? "";
+                  const idStr = estate.id || toIdString(estate._id) || "";
                   return (
                     <option key={idStr} value={idStr}>
                       {getEstateDisplayName(estate)}
@@ -499,7 +536,7 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
                 </thead>
                 <tbody>
                   {sortedEntries.map((entry) => {
-                    const idStr = toIdString(entry._id) ?? "";
+                    const idStr = entry.id || toIdString(entry._id) || "";
                     const estateIdStr = toIdString(entry.estateId);
                     const estate =
                       (estateIdStr && estateById.get(estateIdStr)) || undefined;

@@ -1,7 +1,7 @@
 // src/app/api/estates/[estateId]/tasks/[taskId]/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { Task } from "@/models/Task";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
@@ -75,11 +75,15 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
 
   await connectToDatabase();
 
-  const task = await Task.findOne({ _id: taskId, estateId });
+  const taskRaw = (await Task.findOne({ _id: taskId, estateId }).lean().exec()) as
+    | Record<string, unknown>
+    | null;
 
-  if (!task) {
+  if (!taskRaw) {
     return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
+
+  const task = serializeMongoDoc(taskRaw);
 
   return NextResponse.json({ ok: true, task }, { status: 200 });
 }
@@ -111,7 +115,11 @@ async function updateTask(req: NextRequest, { params }: RouteContext) {
   }
 
   // Load before-state for comparison / logging
-  const before = (await Task.findOne({ _id: taskId, estateId }).lean().exec()) as unknown as TaskLite | null;
+  const beforeRaw = (await Task.findOne({ _id: taskId, estateId }).lean().exec()) as
+    | Record<string, unknown>
+    | null;
+  const before = beforeRaw ? serializeMongoDoc(beforeRaw) : null;
+
   if (!before) {
     return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
@@ -136,20 +144,24 @@ async function updateTask(req: NextRequest, { params }: RouteContext) {
     update.completedAt = new Date();
   }
 
-  const updated = await Task.findOneAndUpdate(
+  const updatedRaw = (await Task.findOneAndUpdate(
     { _id: taskId, estateId },
     { $set: update },
     { new: true }
-  );
+  )
+    .lean()
+    .exec()) as Record<string, unknown> | null;
 
-  if (!updated) {
+  if (!updatedRaw) {
     return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
 
+  const updated = serializeMongoDoc(updatedRaw);
+
   // Activity logging
   const prevStatus = getStr(before, "status");
-  const nextStatus = getStr(updated.toObject?.() ?? updated, "status");
-  const title = getStr(updated.toObject?.() ?? updated, "title");
+  const nextStatus = getStr(updated, "status");
+  const title = getStr(updated, "title");
 
   const kind = "TASK" as unknown as Parameters<typeof logActivity>[0]["kind"];
   const snapshotBase = {
@@ -210,13 +222,16 @@ export async function DELETE(_req: NextRequest, { params }: RouteContext) {
 
   await connectToDatabase();
 
-  const deleted = await Task.findOneAndDelete({ _id: taskId, estateId });
+  const deletedRaw = (await Task.findOneAndDelete({ _id: taskId, estateId }).lean().exec()) as
+    | Record<string, unknown>
+    | null;
 
-  if (!deleted) {
+  if (!deletedRaw) {
     return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
 
-  const title = getStr(deleted.toObject?.() ?? deleted, "title");
+  const deleted = serializeMongoDoc(deletedRaw);
+  const title = getStr(deleted, "title");
 
   const kind = "TASK" as unknown as Parameters<typeof logActivity>[0]["kind"];
 

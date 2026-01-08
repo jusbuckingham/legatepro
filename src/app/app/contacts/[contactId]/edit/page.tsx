@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { Contact } from "@/models/Contact";
 import { ContactEditForm } from "@/components/contacts/ContactEditForm";
 
@@ -8,16 +8,6 @@ type PageProps = {
   params: {
     contactId: string;
   };
-};
-
-type ContactDoc = {
-  _id: string | { toString: () => string };
-  ownerId: string | { toString: () => string };
-  name?: string;
-  email?: string;
-  phone?: string;
-  role?: string;
-  notes?: string;
 };
 
 export default async function EditContactPage({ params }: PageProps) {
@@ -30,23 +20,26 @@ export default async function EditContactPage({ params }: PageProps) {
 
   await connectToDatabase();
 
-  const contact = (await Contact.findOne({
+  const contactRaw = await Contact.findOne({
     _id: contactId,
     ownerId: session.user.id,
   })
     .select("_id name email phone role notes ownerId")
-    .lean()) as ContactDoc | null;
+    .lean();
 
-  if (!contact) {
+  if (!contactRaw) {
     notFound();
   }
 
+  const contact = serializeMongoDoc(contactRaw) as Record<string, unknown>;
+  const asString = (v: unknown) => (typeof v === "string" ? v : "");
+
   const initial = {
-    name: contact.name ?? "",
-    email: contact.email ?? "",
-    phone: contact.phone ?? "",
-    role: contact.role ?? "OTHER",
-    notes: contact.notes ?? "",
+    name: asString(contact.name) || "",
+    email: asString(contact.email) || "",
+    phone: asString(contact.phone) || "",
+    role: asString(contact.role) || "OTHER",
+    notes: asString(contact.notes) || "",
   };
 
   return (

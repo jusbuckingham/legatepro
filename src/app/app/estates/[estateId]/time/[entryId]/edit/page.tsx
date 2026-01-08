@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { TimeEntry } from "@/models/TimeEntry";
 
 type PageProps = {
@@ -39,15 +39,24 @@ export default async function EstateTimeEntryEditPage({ params }: PageProps) {
     notFound();
   }
 
-  const entry = rawEntry as unknown as {
-    _id: string;
-    estateId?: string;
-    description?: string;
-    notes?: string;
-    startTime?: Date | string;
-    durationMinutes?: number;
-    billable?: boolean;
-    rateCents?: number | null;
+  const entryObj = serializeMongoDoc(rawEntry) as Record<string, unknown>;
+
+  const entryIdStr = String(
+    (entryObj.id as string | undefined) ??
+      ((entryObj._id as { toString?: () => string } | string | undefined)?.toString?.() ??
+        (entryObj._id as string | undefined) ??
+        ""),
+  );
+
+  const entry = {
+    id: entryIdStr,
+    estateId: entryObj.estateId as string | undefined,
+    description: entryObj.description as string | undefined,
+    notes: entryObj.notes as string | undefined,
+    startTime: entryObj.startTime as Date | string | undefined,
+    durationMinutes: entryObj.durationMinutes as number | undefined,
+    billable: entryObj.billable as boolean | undefined,
+    rateCents: entryObj.rateCents as number | null | undefined,
   };
 
   const totalMinutes = typeof entry.durationMinutes === "number" ? entry.durationMinutes : 0;
@@ -120,6 +129,7 @@ export default async function EstateTimeEntryEditPage({ params }: PageProps) {
     await TimeEntry.findOneAndUpdate(
       {
         _id: entryId,
+        estateId,
         ownerId: session.user.id,
       },
       { $set: updateDoc },
@@ -146,7 +156,7 @@ export default async function EstateTimeEntryEditPage({ params }: PageProps) {
         action={updateTimeEntry}
         className="space-y-4 rounded-lg border border-slate-800 bg-slate-900/60 p-4"
       >
-        <input type="hidden" name="entryId" value={entry._id} />
+        <input type="hidden" name="entryId" value={entry.id} />
         <input type="hidden" name="estateId" value={estateId} />
 
         <div className="flex flex-col gap-1">

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import PageHeader from "@/components/layout/PageHeader";
 import { Contact } from "@/models/Contact";
 
@@ -12,15 +12,6 @@ type PageSearchParams = {
 
 type PageProps = {
   searchParams?: PageSearchParams;
-};
-
-type ContactLean = {
-  _id: string | { toString: () => string };
-  name?: string;
-  email?: string;
-  phone?: string;
-  role?: string;
-  estates?: Array<string | { toString: () => string }>;
 };
 
 type ContactListItem = {
@@ -68,24 +59,30 @@ export default async function ContactsPage({ searchParams }: PageProps) {
 
   const contactsRaw = (await Contact.find(mongoQuery)
     .sort({ name: 1, createdAt: -1 })
-    .lean()) as ContactLean[];
+    .lean()) as unknown[];
 
-  const contacts: ContactListItem[] = contactsRaw.map((c) => {
-    const id =
-      typeof c._id === "string" ? c._id : c._id.toString();
+  const contacts: ContactListItem[] = contactsRaw.map((raw) => {
+    const c = serializeMongoDoc(raw) as Record<string, unknown>;
 
-    const name = c.name?.trim() || "Unnamed contact";
+    const id = typeof c.id === "string" && c.id.trim().length > 0
+      ? c.id
+      : String((c._id as { toString?: () => string } | string | undefined)?.toString?.() ?? (c._id as string | undefined) ?? "");
 
-    const estatesCount = Array.isArray(c.estates)
-      ? c.estates.length
-      : 0;
+    const name = (typeof c.name === "string" ? c.name : "").trim() || "Unnamed contact";
+
+    const estates = Array.isArray(c.estates) ? (c.estates as unknown[]) : [];
+    const estatesCount = estates.length;
+
+    const email = typeof c.email === "string" && c.email.trim().length > 0 ? c.email : undefined;
+    const phone = typeof c.phone === "string" && c.phone.trim().length > 0 ? c.phone : undefined;
+    const role = typeof c.role === "string" && c.role.trim().length > 0 ? c.role : undefined;
 
     return {
       _id: id,
       name,
-      email: c.email || undefined,
-      phone: c.phone || undefined,
-      role: c.role || undefined,
+      email,
+      phone,
+      role,
       estatesCount,
     };
   });

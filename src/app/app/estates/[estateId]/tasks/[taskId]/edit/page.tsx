@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import Link from "next/link";
 
 import { auth } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { requireEstateAccess } from "@/lib/estateAccess";
 import { Task, TaskPriority, TaskStatus, type TaskDocument } from "@/models/Task";
 
@@ -15,14 +15,14 @@ type PageProps = {
   };
 };
 
-type TaskLean = {
+type TaskForForm = {
   _id: string;
   subject: string;
   description?: string;
   notes?: string;
   status: TaskStatus;
   priority: TaskPriority;
-  date?: Date | string;
+  date?: string | Date;
 };
 
 export default async function EditTaskPage({ params }: PageProps) {
@@ -49,22 +49,22 @@ export default async function EditTaskPage({ params }: PageProps) {
   const taskDoc = await Task.findOne({
     _id: params.taskId,
     estateId: params.estateId,
-  }).lean();
+  })
+    .lean()
+    .exec();
 
   if (!taskDoc) {
     notFound();
   }
 
-  const task = taskDoc as unknown as TaskLean;
+  const task = serializeMongoDoc(taskDoc) as unknown as TaskForForm;
 
-  // Removed displayTitle
-
-  const dateInputValue =
-    task.date instanceof Date
-      ? task.date.toISOString().slice(0, 10)
-      : typeof task.date === "string"
-      ? task.date.slice(0, 10)
-      : "";
+  const dateInputValue = (() => {
+    const d = task.date;
+    if (d instanceof Date) return d.toISOString().slice(0, 10);
+    if (typeof d === "string") return d.slice(0, 10);
+    return "";
+  })();
 
   async function updateTask(formData: FormData) {
     "use server";
@@ -135,12 +135,14 @@ export default async function EditTaskPage({ params }: PageProps) {
       if (!Number.isNaN(parsed.getTime())) {
         existing.date = parsed;
       }
+    } else {
+      existing.date = undefined;
     }
 
     if (nextStatus === "DONE" && !existing.completedAt) {
       existing.completedAt = new Date();
     } else if (nextStatus === "OPEN") {
-      existing.completedAt = undefined;
+      existing.completedAt = null;
     }
 
     await existing.save();

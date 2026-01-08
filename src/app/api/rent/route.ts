@@ -5,18 +5,18 @@ import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
 
 import { auth } from "../../../lib/auth";
-import { connectToDatabase } from "../../../lib/db";
+import { connectToDatabase, serializeMongoDoc } from "../../../lib/db";
 import { RentPayment } from "../../../models/RentPayment";
 
 type RentPaymentLean = {
   _id: unknown;
-  estateId: string;
-  propertyId: string;
-  tenantName: string;
-  paymentDate: Date;
-  amount: number;
-  notes?: string;
-  isPaid: boolean;
+  estateId: unknown;
+  propertyId: unknown;
+  tenantName: unknown;
+  paymentDate: unknown;
+  amount: unknown;
+  notes?: unknown;
+  isPaid: unknown;
   [key: string]: unknown;
 };
 
@@ -94,10 +94,32 @@ export async function GET(request: NextRequest) {
       .lean()
       .exec()) as unknown as RentPaymentLean[];
 
-    const payments = rawPayments.map((p: RentPaymentLean) => ({
-      ...p,
-      _id: String(p._id),
-    }));
+    const payments = rawPayments.map((p) => {
+      const base = serializeMongoDoc(p) as Record<string, unknown>;
+
+      // Normalize common fields the UI expects
+      const estateIdVal = base.estateId as { toString?: () => string } | string | undefined;
+      const propertyIdVal = base.propertyId as { toString?: () => string } | string | undefined;
+      const paymentDateVal = base.paymentDate as Date | string | number | undefined;
+
+      return {
+        ...base,
+        estateId: estateIdVal ? String(estateIdVal.toString?.() ?? estateIdVal) : "",
+        propertyId: propertyIdVal ? String(propertyIdVal.toString?.() ?? propertyIdVal) : "",
+        tenantName: typeof base.tenantName === "string" ? base.tenantName : String(base.tenantName ?? ""),
+        amount: typeof base.amount === "number" ? base.amount : Number(base.amount ?? 0),
+        isPaid: typeof base.isPaid === "boolean" ? base.isPaid : Boolean(base.isPaid),
+        paymentDate:
+          paymentDateVal instanceof Date
+            ? paymentDateVal.toISOString()
+            : typeof paymentDateVal === "string"
+              ? paymentDateVal
+              : typeof paymentDateVal === "number"
+                ? new Date(paymentDateVal).toISOString()
+                : null,
+        notes: typeof base.notes === "string" ? base.notes : String(base.notes ?? ""),
+      };
+    });
 
     return NextResponse.json({ ok: true, data: { payments } }, { status: 200 });
   } catch (error) {
@@ -215,8 +237,10 @@ export async function POST(request: NextRequest) {
       isPaid: typeof isPaid === "boolean" ? isPaid : true,
     });
 
+    const serialized = serializeMongoDoc(payment.toObject()) as Record<string, unknown>;
+
     return NextResponse.json(
-      { ok: true, data: { payment: { ...payment.toJSON(), _id: String(payment._id) } } },
+      { ok: true, data: { payment: serialized } },
       { status: 201 }
     );
   } catch (error) {

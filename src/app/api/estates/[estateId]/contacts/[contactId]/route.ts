@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { Contact } from "@/models/Contact";
 import mongoose from "mongoose";
@@ -54,11 +54,15 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     await connectToDatabase();
 
-    const contact = await Contact.findOne({
+    const contactRaw = await Contact.findOne({
       _id: contactObjectId,
       ownerId: session.user.id,
       $or: [{ estateId: estateObjectId }, { estates: estateObjectId }],
-    }).lean();
+    })
+      .lean()
+      .exec();
+
+    const contact = contactRaw ? (serializeMongoDoc(contactRaw) as Record<string, unknown>) : null;
 
     if (!contact) {
       return NextResponse.json({ ok: false, error: "Contact not found" }, { status: 404 });
@@ -126,7 +130,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     await connectToDatabase();
 
-    const updated = await Contact.findOneAndUpdate(
+    const updatedRaw = await Contact.findOneAndUpdate(
       {
         _id: contactObjectId,
         ownerId: session.user.id,
@@ -134,7 +138,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       },
       filteredUpdates,
       { new: true },
-    ).lean();
+    )
+      .lean()
+      .exec();
+
+    const updated = updatedRaw ? (serializeMongoDoc(updatedRaw) as Record<string, unknown>) : null;
 
     if (!updated) {
       return NextResponse.json({ ok: false, error: "Contact not found" }, { status: 404 });
@@ -163,11 +171,15 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     await connectToDatabase();
 
-    const deleted = await Contact.findOneAndDelete({
+    const deletedRaw = await Contact.findOneAndDelete({
       _id: contactObjectId,
       ownerId: session.user.id,
       $or: [{ estateId: estateObjectId }, { estates: estateObjectId }],
-    }).lean();
+    })
+      .lean()
+      .exec();
+
+    const deleted = deletedRaw ? (serializeMongoDoc(deletedRaw) as Record<string, unknown>) : null;
 
     if (!deleted) {
       return NextResponse.json({ ok: false, error: "Contact not found" }, { status: 404 });
