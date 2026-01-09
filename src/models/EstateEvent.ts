@@ -102,8 +102,11 @@ export function normalizeEstateEventType(input: string): EstateEventCanonicalTyp
 /* -------------------- Mongoose model -------------------- */
 
 
-const toRecord = (value: unknown): Record<string, unknown> =>
-  value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value);
+
+const serializeRet = (ret: unknown) => serializeMongoDoc(isRecord(ret) ? ret : {});
 
 export interface EstateEventRecord {
   estateId: string;
@@ -127,7 +130,8 @@ const EstateEventSchema = new Schema<EstateEventRecord>(
       set: (value: unknown) => normalizeEstateEventType(String(value ?? "")),
     },
     summary: { type: String, required: true },
-    detail: { type: String, default: "" },
+    // Optional freeform detail; keep null as the absence value (not empty string).
+    detail: { type: String, default: null },
     meta: { type: Schema.Types.Mixed, default: null },
   },
   {
@@ -135,12 +139,12 @@ const EstateEventSchema = new Schema<EstateEventRecord>(
     toJSON: {
       virtuals: true,
       versionKey: false,
-      transform: (_doc, ret) => serializeMongoDoc(toRecord(ret)),
+      transform: (_doc, ret) => serializeRet(ret),
     },
     toObject: {
       virtuals: true,
       versionKey: false,
-      transform: (_doc, ret) => serializeMongoDoc(toRecord(ret)),
+      transform: (_doc, ret) => serializeRet(ret),
     },
   }
 );

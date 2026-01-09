@@ -143,6 +143,15 @@ TaskSchema.virtual("hours").get(function (this: TaskDocument) {
   return mins / 60;
 });
 
+const toIdString = (v: unknown): string => {
+  if (typeof v === "string") return v;
+  if (v instanceof Types.ObjectId) return v.toString();
+  if (v && typeof (v as { toString?: unknown }).toString === "function") {
+    return String((v as { toString: () => string }).toString());
+  }
+  return "";
+};
+
 // Public/serialized shape used by API/UI layers.
 export type TaskSerialized = Omit<TaskDocLean, "_id" | "estateId" | "ownerId"> & {
   id: string;
@@ -178,6 +187,9 @@ function normalizeTaskSerialized(input: unknown): TaskSerialized {
 
   const coerceNumber = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
 
+  const estateId = toIdString((base as Record<string, unknown>).estateId) || toIdString(raw.estateId);
+  const ownerId = toIdString((base as Record<string, unknown>).ownerId) || toIdString(raw.ownerId);
+
   return {
     id: base.id,
     subject: typeof base.subject === "string" ? base.subject : "",
@@ -191,8 +203,8 @@ function normalizeTaskSerialized(input: unknown): TaskSerialized {
     createdAt: coerceDate(base.createdAt) ?? new Date(0),
     updatedAt: coerceDate(base.updatedAt) ?? new Date(0),
     hours: typeof base.hours === "number" && Number.isFinite(base.hours) ? base.hours : 0,
-    estateId: raw.estateId != null ? String(raw.estateId) : "",
-    ownerId: raw.ownerId != null ? String(raw.ownerId) : "",
+    estateId,
+    ownerId,
   };
 }
 
@@ -200,13 +212,13 @@ function normalizeTaskSerialized(input: unknown): TaskSerialized {
 TaskSchema.set("toJSON", {
   virtuals: true,
   versionKey: false,
-  transform: (_doc, ret) => normalizeTaskSerialized(ret),
+  transform: (_doc: unknown, ret: unknown) => normalizeTaskSerialized(ret),
 });
 
 TaskSchema.set("toObject", {
   virtuals: true,
   versionKey: false,
-  transform: (_doc, ret) => normalizeTaskSerialized(ret),
+  transform: (_doc: unknown, ret: unknown) => normalizeTaskSerialized(ret),
 });
 
 const ExistingTask = mongoose.models.Task as TaskModel | undefined;

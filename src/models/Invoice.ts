@@ -221,10 +221,8 @@ InvoiceSchema.index(
 // Keep monetary totals in sync before save.
 // This is defensive: callers can set amount explicitly per line,
 // but if they don't, we compute from quantity * rate.
-InvoiceSchema.pre("save", function (next) {
-  const invoice = this as InvoiceDocument;
-
-  const lineItems = invoice.lineItems ?? [];
+InvoiceSchema.pre("save", function (this: InvoiceDocument, next) {
+  const lineItems = (this.lineItems ?? []) as InvoiceLineItem[];
 
   // Normalize each line item to integer minor units and compute subtotal from that.
   let subtotal = 0;
@@ -244,13 +242,13 @@ InvoiceSchema.pre("save", function (next) {
     subtotal += lineAmount;
   }
 
-  invoice.subtotal = subtotal;
+  this.subtotal = subtotal;
 
-  const taxRate = invoice.taxRate ?? 0;
+  const taxRate = this.taxRate ?? 0;
   const taxAmount = Math.round(subtotal * taxRate);
 
-  invoice.taxAmount = taxAmount;
-  invoice.totalAmount = subtotal + taxAmount;
+  this.taxAmount = taxAmount;
+  this.totalAmount = subtotal + taxAmount;
 
   next();
 });

@@ -1,16 +1,25 @@
-import mongoose, { Schema } from "mongoose";
+import mongoose, { Schema, Document } from "mongoose";
+import { serializeMongoDoc } from "@/lib/db";
 
-function transformEstatePropertyRet(ret: Record<string, unknown>) {
-  const out = { ...ret } as Record<string, unknown> & { _id?: unknown; __v?: unknown };
-
-  if (out._id != null) {
-    out.id = String(out._id);
-  }
-
-  delete out._id;
-  delete out.__v;
-
-  return out;
+export interface EstatePropertyDocument extends Document {
+  estateId: mongoose.Types.ObjectId;
+  label: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  propertyType: "single_family" | "multi_family" | "condo" | "land" | "other";
+  bedrooms?: number;
+  bathrooms?: number;
+  squareFeet?: number;
+  estimatedValue?: number;
+  monthlyRentTarget?: number;
+  isRented: boolean;
+  isSold: boolean;
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const EstatePropertySchema = new Schema(
@@ -100,12 +109,12 @@ const EstatePropertySchema = new Schema(
     timestamps: true,
     toJSON: {
       transform(_doc, ret) {
-        return transformEstatePropertyRet(ret);
+        return serializeMongoDoc(ret);
       },
     },
     toObject: {
       transform(_doc, ret) {
-        return transformEstatePropertyRet(ret);
+        return serializeMongoDoc(ret);
       },
     },
   }
@@ -116,5 +125,5 @@ EstatePropertySchema.index({ estateId: 1, isSold: 1 });
 EstatePropertySchema.index({ estateId: 1, isRented: 1 });
 
 export const EstateProperty =
-  (mongoose.models.EstateProperty as mongoose.Model<Record<string, unknown>> | undefined) ??
-  mongoose.model<Record<string, unknown>>("EstateProperty", EstatePropertySchema);
+  (mongoose.models.EstateProperty as mongoose.Model<EstatePropertyDocument> | undefined) ??
+  mongoose.model<EstatePropertyDocument>("EstateProperty", EstatePropertySchema);
