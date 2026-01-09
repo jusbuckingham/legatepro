@@ -37,9 +37,11 @@ const EstateActivitySchema = new Schema<EstateActivityDocument>(
 EstateActivitySchema.index({ estateId: 1, createdAt: -1, _id: -1 });
 EstateActivitySchema.index({ estateId: 1, kind: 1, action: 1, createdAt: -1, _id: -1 });
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value);
+
 const toRecord = (value: unknown): Record<string, unknown> => {
-  if (value && typeof value === "object") return value as Record<string, unknown>;
-  return {};
+  return isRecord(value) ? value : {};
 };
 
 const transform: NonNullable<ToObjectOptions<EstateActivityDocument>["transform"]> = (

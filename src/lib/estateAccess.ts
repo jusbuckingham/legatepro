@@ -1,7 +1,7 @@
 // src/lib/estateAccess.ts
+import mongoose from "mongoose";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import mongoose from "mongoose";
 import { Estate } from "@/models/Estate";
 
 export type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
@@ -98,6 +98,10 @@ type EstateLean = {
   userIds?: unknown[];
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 function normalizeRole(value: unknown): EstateRole {
   if (value === "OWNER" || value === "EDITOR" || value === "VIEWER") return value;
   return "VIEWER";
@@ -106,10 +110,12 @@ function normalizeRole(value: unknown): EstateRole {
 function toIdString(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value === "number") return String(value);
-  if (value && typeof value === "object") {
-    const maybe = (value as { toString?: () => string }).toString?.();
+
+  if (isRecord(value) && typeof value.toString === "function") {
+    const maybe = value.toString();
     if (typeof maybe === "string") return maybe;
   }
+
   return "";
 }
 
@@ -118,7 +124,6 @@ function toObjectId(id: string) {
     ? new mongoose.Types.ObjectId(id)
     : null;
 }
-
 
 function arrayContainsUserId(arr: unknown[] | undefined, userId: string): boolean {
   if (!Array.isArray(arr)) return false;
@@ -198,8 +203,7 @@ export async function getEstateAccess(
     : [];
 
   const collaboratorsObj: Array<{ userId: unknown; role?: unknown }> = collaboratorsRaw.filter(
-    (c): c is { userId: unknown; role?: unknown } =>
-      !!c && typeof c === "object" && "userId" in (c as Record<string, unknown>)
+    (c): c is { userId: unknown; role?: unknown } => isRecord(c) && "userId" in c
   );
 
   const collab = collaboratorsObj.find((c) => toIdString(c.userId) === resolvedUserId);

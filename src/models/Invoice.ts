@@ -255,9 +255,7 @@ InvoiceSchema.pre("save", function (next) {
   next();
 });
 
-const ExistingInvoice = (
-  mongoose.models as unknown as { Invoice?: Model<InvoiceDocument> }
-).Invoice;
+const ExistingInvoice = mongoose.models.Invoice as Model<InvoiceDocument> | undefined;
 
 export const Invoice: Model<InvoiceDocument> =
   ExistingInvoice ?? mongoose.model<InvoiceDocument>("Invoice", InvoiceSchema);

@@ -1,5 +1,4 @@
-import mongoose, { Schema, model } from "mongoose";
-import type { Model } from "mongoose";
+import mongoose, { Schema } from "mongoose";
 
 function transformEstatePropertyRet(ret: Record<string, unknown>) {
   const out = { ...ret } as Record<string, unknown> & { _id?: unknown; __v?: unknown };
@@ -116,12 +115,6 @@ EstatePropertySchema.index({ estateId: 1 });
 EstatePropertySchema.index({ estateId: 1, isSold: 1 });
 EstatePropertySchema.index({ estateId: 1, isRented: 1 });
 
-type EstatePropertyModel = Model<unknown>;
-type EstatePropertyModels = {
-  EstateProperty?: EstatePropertyModel;
-};
-
-const models = mongoose.models as unknown as EstatePropertyModels;
-
 export const EstateProperty =
-  models.EstateProperty ?? model("EstateProperty", EstatePropertySchema);
+  (mongoose.models.EstateProperty as mongoose.Model<Record<string, unknown>> | undefined) ??
+  mongoose.model<Record<string, unknown>>("EstateProperty", EstatePropertySchema);
