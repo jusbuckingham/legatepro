@@ -88,7 +88,7 @@ export type RequireEstateAccessResult = Omit<EstateAccess, "userId"> & {
 
 type EstateLean = {
   ownerId: unknown;
-  collaborators?: { userId: unknown; role?: unknown }[];
+  collaborators?: Array<{ userId: unknown; role?: unknown }> | unknown[];
 
   // Legacy/common alternate shapes (arrays of ids)
   collaboratorIds?: unknown[];
@@ -112,7 +112,6 @@ function toIdString(value: unknown): string {
   }
   return "";
 }
-void toIdString;
 
 function toObjectId(id: string) {
   return mongoose.Types.ObjectId.isValid(id)
@@ -126,7 +125,8 @@ function arrayContainsUserId(arr: unknown[] | undefined, userId: string): boolea
   return arr.some((v) => toIdString(v) === userId);
 }
 
-export function buildEstateAccessOr(userId: string): Record<string, unknown>[] {  const userObjectId = toObjectId(userId);
+export function buildEstateAccessOr(userId: string): Record<string, unknown>[] {
+  const userObjectId = toObjectId(userId);
   return [
     { ownerId: userId },
     ...(userObjectId ? [{ ownerId: userObjectId }] : []),
@@ -193,11 +193,16 @@ export async function getEstateAccess(
     };
   }
 
-  const collaborators = Array.isArray(estate.collaborators)
+  const collaboratorsRaw = Array.isArray(estate.collaborators)
     ? estate.collaborators
     : [];
 
-  const collab = collaborators.find((c) => toIdString(c.userId) === resolvedUserId);
+  const collaboratorsObj: Array<{ userId: unknown; role?: unknown }> = collaboratorsRaw.filter(
+    (c): c is { userId: unknown; role?: unknown } =>
+      !!c && typeof c === "object" && "userId" in (c as Record<string, unknown>)
+  );
+
+  const collab = collaboratorsObj.find((c) => toIdString(c.userId) === resolvedUserId);
 
   // If the estate uses the primary collaborators[] object shape, respect role.
   if (collab) {
@@ -215,9 +220,13 @@ export async function getEstateAccess(
   }
 
   // Otherwise, fall back to legacy id arrays. Default role is VIEWER.
+  const legacyCollaboratorsArray = Array.isArray(estate.collaborators)
+    ? estate.collaborators
+    : undefined;
+
   const hasLegacyAccess =
     arrayContainsUserId(estate.collaboratorIds, resolvedUserId) ||
-    arrayContainsUserId((estate as unknown as { collaborators?: unknown[] }).collaborators, resolvedUserId) ||
+    arrayContainsUserId(legacyCollaboratorsArray, resolvedUserId) ||
     arrayContainsUserId(estate.collaboratorsIds, resolvedUserId) ||
     arrayContainsUserId(estate.memberIds, resolvedUserId) ||
     arrayContainsUserId(estate.members, resolvedUserId) ||

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 
-import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
+import { connectToDatabase } from "@/lib/db";
 import { RentPayment } from "@/models/RentPayment";
 
 interface RentPaymentDoc {
@@ -58,8 +58,42 @@ export async function GET(request: NextRequest) {
     .lean<Record<string, unknown>[]>()
     .exec();
 
-  // Normalize ids / strip mongo internals consistently (even for `lean()` results)
-  const docs = docsRaw.map((d) => serializeMongoDoc(d) as unknown as RentPaymentDoc);
+  const toNumberIfPossible = (v: unknown): number | undefined => {
+    if (typeof v === "number" && !Number.isNaN(v)) return v;
+    if (typeof v === "string") {
+      const n = Number(v);
+      return Number.isNaN(n) ? undefined : n;
+    }
+    return undefined;
+  };
+
+  const toDateOrStringIfPossible = (v: unknown): string | Date | undefined => {
+    if (v instanceof Date) return v;
+    if (typeof v === "string") return v;
+    return undefined;
+  };
+
+  const normalizeRentPayment = (raw: Record<string, unknown>): RentPaymentDoc => {
+    return {
+      _id: raw._id,
+      estateId: raw.estateId,
+      propertyId: raw.propertyId,
+      tenantName: typeof raw.tenantName === "string" ? raw.tenantName : undefined,
+      method: typeof raw.method === "string" ? raw.method : undefined,
+      amount: toNumberIfPossible(raw.amount),
+      periodLabel: typeof raw.periodLabel === "string" ? raw.periodLabel : undefined,
+      notes: typeof raw.notes === "string" ? raw.notes : undefined,
+      receivedDate: toDateOrStringIfPossible(raw.receivedDate),
+      createdAt: toDateOrStringIfPossible(raw.createdAt),
+      propertyLabel:
+        typeof raw.propertyLabel === "string"
+          ? raw.propertyLabel
+          : (typeof raw.propertyName === "string" ? raw.propertyName : undefined),
+    };
+  };
+
+  // Normalize lean results without unsafe casts
+  const docs: RentPaymentDoc[] = docsRaw.map(normalizeRentPayment);
 
   const header = [
     "Date",

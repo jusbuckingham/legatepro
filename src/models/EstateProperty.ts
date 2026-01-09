@@ -1,17 +1,17 @@
-import { Schema, model, models } from "mongoose";
+import mongoose, { Schema, model } from "mongoose";
+import type { Model } from "mongoose";
 
-type EstatePropertyTransformable = Record<string, unknown> & { _id?: unknown; __v?: unknown };
+function transformEstatePropertyRet(ret: Record<string, unknown>) {
+  const out = { ...ret } as Record<string, unknown> & { _id?: unknown; __v?: unknown };
 
-function transformEstatePropertyRet(ret: unknown) {
-  const { _id, __v: _v, ...rest } = ret as unknown as EstatePropertyTransformable;
+  if (out._id != null) {
+    out.id = String(out._id);
+  }
 
-  // Silence unused-var lint without changing runtime behavior.
-  void _v;
+  delete out._id;
+  delete out.__v;
 
-  return {
-    ...rest,
-    id: _id ? String(_id) : undefined,
-  };
+  return out;
 }
 
 const EstatePropertySchema = new Schema(
@@ -59,7 +59,7 @@ const EstatePropertySchema = new Schema(
         "multi_family",
         "condo",
         "land",
-        "other"
+        "other",
       ],
       default: "single_family",
     },
@@ -116,5 +116,12 @@ EstatePropertySchema.index({ estateId: 1 });
 EstatePropertySchema.index({ estateId: 1, isSold: 1 });
 EstatePropertySchema.index({ estateId: 1, isRented: 1 });
 
+type EstatePropertyModel = Model<unknown>;
+type EstatePropertyModels = {
+  EstateProperty?: EstatePropertyModel;
+};
+
+const models = mongoose.models as unknown as EstatePropertyModels;
+
 export const EstateProperty =
-  models.EstateProperty || model("EstateProperty", EstatePropertySchema);
+  models.EstateProperty ?? model("EstateProperty", EstatePropertySchema);

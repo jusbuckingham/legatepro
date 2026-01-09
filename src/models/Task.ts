@@ -151,16 +151,49 @@ export type TaskSerialized = Omit<TaskDocLean, "_id" | "estateId" | "ownerId"> &
 };
 
 function normalizeTaskSerialized(input: unknown): TaskSerialized {
-  const ret = input as Record<string, unknown>;
+  const raw = (input ?? {}) as Record<string, unknown>;
+  const base = serializeMongoDoc(raw) as Record<string, unknown> & { id: string };
 
-  // Base normalization: { id: string, ... } and strips _id/__v
-  const out = serializeMongoDoc(ret) as Record<string, unknown>;
+  const status = base.status;
+  const priority = base.priority;
 
-  // Ensure relationship ids are stable strings
-  if (ret.estateId != null) out.estateId = String(ret.estateId);
-  if (ret.ownerId != null) out.ownerId = String(ret.ownerId);
+  const safeStatus: TaskStatus =
+    status === "OPEN" || status === "IN_PROGRESS" || status === "DONE" || status === "CANCELLED"
+      ? (status as TaskStatus)
+      : "OPEN";
 
-  return out as unknown as TaskSerialized;
+  const safePriority: TaskPriority =
+    priority === "LOW" || priority === "MEDIUM" || priority === "HIGH" || priority === "CRITICAL"
+      ? (priority as TaskPriority)
+      : "MEDIUM";
+
+  const coerceDate = (v: unknown): Date | undefined => {
+    if (v instanceof Date) return v;
+    if (typeof v === "string" || typeof v === "number") {
+      const d = new Date(v);
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+    return undefined;
+  };
+
+  const coerceNumber = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+
+  return {
+    id: base.id,
+    subject: typeof base.subject === "string" ? base.subject : "",
+    description: typeof base.description === "string" ? base.description : undefined,
+    status: safeStatus,
+    priority: safePriority,
+    dueDate: coerceDate(base.dueDate),
+    estimatedMinutes: coerceNumber(base.estimatedMinutes),
+    actualMinutes: coerceNumber(base.actualMinutes),
+    notes: typeof base.notes === "string" ? base.notes : undefined,
+    createdAt: coerceDate(base.createdAt) ?? new Date(0),
+    updatedAt: coerceDate(base.updatedAt) ?? new Date(0),
+    hours: typeof base.hours === "number" && Number.isFinite(base.hours) ? base.hours : 0,
+    estateId: raw.estateId != null ? String(raw.estateId) : "",
+    ownerId: raw.ownerId != null ? String(raw.ownerId) : "",
+  };
 }
 
 // Ensure virtuals are included and shape the payload consistently.
@@ -176,6 +209,6 @@ TaskSchema.set("toObject", {
   transform: (_doc, ret) => normalizeTaskSerialized(ret),
 });
 
-export const Task: TaskModel =
-  (mongoose.models.Task as TaskModel) ||
-  mongoose.model<TaskDocument, TaskModel>("Task", TaskSchema);
+const ExistingTask = mongoose.models.Task as TaskModel | undefined;
+
+export const Task: TaskModel = ExistingTask ?? mongoose.model<TaskDocument, TaskModel>("Task", TaskSchema);

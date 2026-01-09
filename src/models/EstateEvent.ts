@@ -100,7 +100,15 @@ export function normalizeEstateEventType(input: string): EstateEventCanonicalTyp
 }
 
 /* -------------------- Mongoose model -------------------- */
-(mongoose as unknown as { models: Record<string, mongoose.Model<unknown>> }).models ||= {};
+
+type EstateEventModels = typeof mongoose.models & {
+  EstateEvent?: mongoose.Model<EstateEventRecord>;
+};
+
+const models = mongoose.models as EstateEventModels;
+
+const toRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 
 export interface EstateEventRecord {
   estateId: string;
@@ -132,12 +140,12 @@ const EstateEventSchema = new Schema<EstateEventRecord>(
     toJSON: {
       virtuals: true,
       versionKey: false,
-      transform: (_doc, ret) => serializeMongoDoc(ret),
+      transform: (_doc, ret) => serializeMongoDoc(toRecord(ret)),
     },
     toObject: {
       virtuals: true,
       versionKey: false,
-      transform: (_doc, ret) => serializeMongoDoc(ret),
+      transform: (_doc, ret) => serializeMongoDoc(toRecord(ret)),
     },
   }
 );
@@ -148,8 +156,6 @@ EstateEventSchema.index({ estateId: 1, createdAt: -1, _id: -1 });
 // Common filter: estateId + type, sorted by newest first
 EstateEventSchema.index({ estateId: 1, type: 1, createdAt: -1, _id: -1 });
 
-const EstateEvent =
-  (mongoose.models.EstateEvent as mongoose.Model<EstateEventRecord>) ||
-  mongoose.model<EstateEventRecord>("EstateEvent", EstateEventSchema);
+const EstateEvent = models.EstateEvent ?? mongoose.model<EstateEventRecord>("EstateEvent", EstateEventSchema);
 
 export default EstateEvent;

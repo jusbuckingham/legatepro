@@ -47,6 +47,19 @@ export interface InvoiceDocument extends Document, InvoiceAttrs {
   updatedAt: Date;
 }
 
+type InvoiceTransformRet = Record<string, unknown> & {
+  _id?: unknown;
+  __v?: unknown;
+  id?: string;
+};
+
+const normalizeInvoiceTransform = (_doc: unknown, ret: InvoiceTransformRet) => {
+  if (ret._id != null) ret.id = String(ret._id);
+  delete ret._id;
+  delete ret.__v;
+  return ret;
+};
+
 const InvoiceLineItemSchema = new Schema<InvoiceLineItem>(
   {
     type: {
@@ -167,23 +180,11 @@ const InvoiceSchema = new Schema<InvoiceDocument>(
     timestamps: true,
     toJSON: {
       virtuals: true,
-      transform: (_doc, ret) => {
-        const r = ret as unknown as { _id?: unknown; __v?: unknown; id?: string } & Record<string, unknown>;
-        if (r._id) r.id = String(r._id);
-        delete r._id;
-        delete r.__v;
-        return r;
-      },
+      transform: normalizeInvoiceTransform,
     },
     toObject: {
       virtuals: true,
-      transform: (_doc, ret) => {
-        const r = ret as unknown as { _id?: unknown; __v?: unknown; id?: string } & Record<string, unknown>;
-        if (r._id) r.id = String(r._id);
-        delete r._id;
-        delete r.__v;
-        return r;
-      },
+      transform: normalizeInvoiceTransform,
     },
   }
 );
@@ -238,7 +239,7 @@ InvoiceSchema.pre("save", function (next) {
     const lineAmount = Math.round(rawLineAmount);
 
     // Persist normalized amount back onto the doc so we don't store floats.
-    (item as unknown as { amount: number }).amount = lineAmount;
+    item.amount = lineAmount;
 
     subtotal += lineAmount;
   }
@@ -254,6 +255,9 @@ InvoiceSchema.pre("save", function (next) {
   next();
 });
 
+const ExistingInvoice = (
+  mongoose.models as unknown as { Invoice?: Model<InvoiceDocument> }
+).Invoice;
+
 export const Invoice: Model<InvoiceDocument> =
-  (mongoose.models.Invoice as Model<InvoiceDocument>) ||
-  mongoose.model<InvoiceDocument>("Invoice", InvoiceSchema);
+  ExistingInvoice ?? mongoose.model<InvoiceDocument>("Invoice", InvoiceSchema);

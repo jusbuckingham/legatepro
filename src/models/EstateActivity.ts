@@ -1,4 +1,4 @@
-import mongoose, { Schema, type Model, type Types, type ToObjectOptions } from "mongoose";
+import mongoose, { Schema, type Model, type ToObjectOptions } from "mongoose";
 import { serializeMongoDoc } from "@/lib/db";
 
 export interface EstateActivityDocument {
@@ -37,16 +37,17 @@ const EstateActivitySchema = new Schema<EstateActivityDocument>(
 EstateActivitySchema.index({ estateId: 1, createdAt: -1, _id: -1 });
 EstateActivitySchema.index({ estateId: 1, kind: 1, action: 1, createdAt: -1, _id: -1 });
 
-type EstateActivityTransformRet = Record<string, unknown> & {
-  _id?: Types.ObjectId;
-  __v?: unknown;
-  id?: string;
+const toRecord = (value: unknown): Record<string, unknown> => {
+  if (value && typeof value === "object") return value as Record<string, unknown>;
+  return {};
 };
 
-const transform = ((_doc: unknown, ret: EstateActivityTransformRet) => {
-  void _doc;
-  return serializeMongoDoc(ret);
-}) as unknown as NonNullable<ToObjectOptions<EstateActivityDocument>["transform"]>;
+const transform: NonNullable<ToObjectOptions<EstateActivityDocument>["transform"]> = (
+  _doc,
+  ret
+) => {
+  return serializeMongoDoc(toRecord(ret));
+};
 
 const toJSONOptions: ToObjectOptions<EstateActivityDocument> = {
   virtuals: true,
