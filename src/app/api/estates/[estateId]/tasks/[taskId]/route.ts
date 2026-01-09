@@ -59,6 +59,11 @@ function getStr(obj: unknown, key: string): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") return null;
+  return value as Record<string, unknown>;
+}
+
 type ActivityKind = Parameters<typeof logActivity>[0]["kind"];
 const TASK_KIND = "TASK" as const satisfies ActivityKind;
 
@@ -71,13 +76,14 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
 
   await connectToDatabase();
 
-  const taskRaw = (await Task.findOne({ _id: taskId, estateId }).lean().exec()) as unknown;
+  const taskRaw = await Task.findOne({ _id: taskId, estateId }).lean().exec();
+  const taskRec = asRecord(taskRaw);
 
-  if (!taskRaw) {
+  if (!taskRec) {
     return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
 
-  const task = serializeMongoDoc(taskRaw);
+  const task = serializeMongoDoc(taskRec);
 
   return NextResponse.json({ ok: true, task }, { status: 200 });
 }
@@ -109,8 +115,9 @@ async function updateTask(req: NextRequest, { params }: RouteContext) {
   }
 
   // Load before-state for comparison / logging
-  const beforeRaw = (await Task.findOne({ _id: taskId, estateId }).lean().exec()) as unknown;
-  const before = beforeRaw ? serializeMongoDoc(beforeRaw) : null;
+  const beforeRaw = await Task.findOne({ _id: taskId, estateId }).lean().exec();
+  const beforeRec = asRecord(beforeRaw);
+  const before = beforeRec ? serializeMongoDoc(beforeRec) : null;
 
   if (!before) {
     return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
@@ -136,19 +143,20 @@ async function updateTask(req: NextRequest, { params }: RouteContext) {
     update.completedAt = new Date();
   }
 
-  const updatedRaw = (await Task.findOneAndUpdate(
+  const updatedRaw = await Task.findOneAndUpdate(
     { _id: taskId, estateId },
     { $set: update },
     { new: true }
   )
     .lean()
-    .exec()) as unknown;
+    .exec();
+  const updatedRec = asRecord(updatedRaw);
 
-  if (!updatedRaw) {
+  if (!updatedRec) {
     return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
 
-  const updated = serializeMongoDoc(updatedRaw);
+  const updated = serializeMongoDoc(updatedRec);
 
   // Activity logging
   const prevStatus = getStr(before, "status");
@@ -213,13 +221,14 @@ export async function DELETE(_req: NextRequest, { params }: RouteContext) {
 
   await connectToDatabase();
 
-  const deletedRaw = (await Task.findOneAndDelete({ _id: taskId, estateId }).lean().exec()) as unknown;
+  const deletedRaw = await Task.findOneAndDelete({ _id: taskId, estateId }).lean().exec();
+  const deletedRec = asRecord(deletedRaw);
 
-  if (!deletedRaw) {
+  if (!deletedRec) {
     return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
 
-  const deleted = serializeMongoDoc(deletedRaw);
+  const deleted = serializeMongoDoc(deletedRec);
   const title = getStr(deleted, "title") ?? getStr(deleted, "subject");
 
   await logActivity({

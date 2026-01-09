@@ -98,7 +98,20 @@ export async function PATCH(
     relatedInvoiceId?: string | null;
   };
 
-  const update: Partial<EstateTaskDocument> = {};
+  type TaskUpdate = Partial<
+    Pick<
+      EstateTaskDocument,
+      | "title"
+      | "description"
+      | "status"
+      | "dueDate"
+      | "completedAt"
+      | "relatedDocumentId"
+      | "relatedInvoiceId"
+    >
+  >;
+
+  const update: TaskUpdate = {};
 
   if (typeof title === "string") {
     update.title = title.trim();
@@ -117,13 +130,13 @@ export async function PATCH(
     }
     if (status !== "DONE" && completedAt === null) {
       // allow clearing completedAt if status moved away from DONE and caller sends null
-      update.completedAt = null as unknown as Date;
+      update.completedAt = null;
     }
   }
 
   if (dueDate !== undefined) {
     if (dueDate === null || dueDate === "") {
-      update.dueDate = null as unknown as Date;
+      update.dueDate = null;
     } else {
       const d = new Date(dueDate);
       if (!Number.isNaN(d.getTime())) {
@@ -134,7 +147,7 @@ export async function PATCH(
 
   if (completedAt !== undefined) {
     if (completedAt === null || completedAt === "") {
-      update.completedAt = null as unknown as Date;
+      update.completedAt = null;
     } else {
       const d = new Date(completedAt);
       if (!Number.isNaN(d.getTime())) {

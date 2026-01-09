@@ -13,8 +13,8 @@ interface RentPaymentDoc {
   amount?: number;
   periodLabel?: string;
   notes?: string;
-  receivedDate?: string | Date;
-  createdAt?: string | Date;
+  receivedDate?: string | Date | undefined;
+  createdAt?: string | Date | undefined;
   propertyLabel?: string;
 }
 
@@ -53,12 +53,13 @@ export async function GET(request: NextRequest) {
   await connectToDatabase();
 
   // Pull all rent payments for this estate
-  const docsRaw = (await RentPayment.find({ estateId: buildEstateIdQuery(estateId) })
+  const docsRaw = await RentPayment.find({ estateId: buildEstateIdQuery(estateId) })
     .sort({ receivedDate: 1, createdAt: 1 })
-    .lean()) as RentPaymentDoc[];
+    .lean<Record<string, unknown>[]>()
+    .exec();
 
   // Normalize ids / strip mongo internals consistently (even for `lean()` results)
-  const docs = docsRaw.map((d) => serializeMongoDoc(d as unknown as Record<string, unknown>) as unknown as RentPaymentDoc);
+  const docs = docsRaw.map((d) => serializeMongoDoc(d) as unknown as RentPaymentDoc);
 
   const header = [
     "Date",

@@ -87,13 +87,7 @@ async function requireAccess(
     const input = { estateId, userId } as Parameters<typeof requireEstateAccess>[0];
 
     const result =
-      mode === "edit"
-        ? await (requireEstateEditAccess as unknown as (args: typeof input) => Promise<unknown>)(
-            input
-          )
-        : await (requireEstateAccess as unknown as (args: typeof input) => Promise<unknown>)(
-            input
-          );
+      mode === "edit" ? await requireEstateEditAccess(input) : await requireEstateAccess(input);
 
     const failure = getFailureResponse(result);
     if (failure) return failure;

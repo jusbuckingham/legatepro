@@ -13,9 +13,6 @@ type RouteParams = {
   params: Promise<{ estateId: string }>;
 };
 
-type RequireAccessArgs = { estateId: string; userId?: string };
-type RequireAccessFn = (args: RequireAccessArgs) => Promise<unknown>;
-
 type Role = "OWNER" | "EDITOR" | "VIEWER";
 
 const SUBJECTS = [
@@ -125,7 +122,7 @@ export async function GET(
 
     await connectToDatabase();
 
-    const access = await (requireEstateAccess as unknown as RequireAccessFn)({
+    const access = await requireEstateAccess({
       estateId,
       userId: session.user.id,
     });
@@ -202,7 +199,7 @@ export async function POST(
 
     await connectToDatabase();
 
-    const access = await (requireEstateEditAccess as unknown as RequireAccessFn)({
+    const access = await requireEstateEditAccess({
       estateId,
       userId: session.user.id,
     });

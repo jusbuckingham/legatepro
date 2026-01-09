@@ -89,10 +89,10 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    const rawPayments = (await RentPayment.find(filter)
+    const rawPayments = await RentPayment.find(filter)
       .sort({ paymentDate: -1 })
-      .lean()
-      .exec()) as unknown as RentPaymentLean[];
+      .lean<RentPaymentLean[]>()
+      .exec();
 
     const payments = rawPayments.map((p) => {
       const base = serializeMongoDoc(p) as Record<string, unknown>;
@@ -230,14 +230,14 @@ export async function POST(request: NextRequest) {
       ownerId,
       estateId: String(estateId),
       propertyId: String(propertyId),
-      tenantName,
+      tenantName: String(tenantName).trim(),
       paymentDate: parsedPaymentDate,
       amount: Number(amount),
-      notes: notes || "",
+      notes: typeof notes === "string" ? notes : String(notes ?? ""),
       isPaid: typeof isPaid === "boolean" ? isPaid : true,
     });
 
-    const serialized = serializeMongoDoc(payment.toObject()) as Record<string, unknown>;
+    const serialized = serializeMongoDoc(payment) as Record<string, unknown>;
 
     return NextResponse.json(
       { ok: true, data: { payment: serialized } },

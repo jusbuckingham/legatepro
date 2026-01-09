@@ -141,12 +141,13 @@ export async function GET(
 
   await connectToDatabase();
 
-  const tasks = (await EstateTask.find({ estateId: estateObjectId })
+  const tasks = await EstateTask.find({ estateId: estateObjectId })
     .sort({ createdAt: -1 })
-    .lean()) as unknown as EstateTaskLean[];
+    .lean<EstateTaskLean[]>()
+    .exec();
 
   return NextResponse.json(
-    tasks.map((t) => ({
+    tasks.map((t: EstateTaskLean) => ({
       id: String(t._id),
       estateId: String(t.estateId),
       ownerId: String(t.ownerId),

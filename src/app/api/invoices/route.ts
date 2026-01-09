@@ -71,24 +71,26 @@ export async function GET(req: NextRequest) {
 
   await connectToDatabase();
 
-  const accessibleEstates = await Estate.find({
+  type EstateIdLean = { _id: unknown };
+
+  const accessibleEstates = (await Estate.find({
     $or: buildEstateAccessOr(session.user.id),
   })
     .select("_id")
     .lean()
-    .exec();
+    .exec()) as EstateIdLean[];
 
   const allowedEstateIds = accessibleEstates
-    .map((e) => idToString((e as { _id?: unknown })._id))
-    .filter((v): v is string => Boolean(v));
+    .map((e: EstateIdLean) => idToString(e._id))
+    .filter((v: string | null): v is string => typeof v === "string" && v.length > 0);
 
   if (allowedEstateIds.length === 0) {
     return NextResponse.json({ ok: true, invoices: [] }, { status: 200 });
   }
 
   const allowedEstateObjectIds = allowedEstateIds
-    .map((id) => toObjectId(id))
-    .filter((v): v is mongoose.Types.ObjectId => Boolean(v));
+    .map((id: string) => toObjectId(id))
+    .filter((v: mongoose.Types.ObjectId | null): v is mongoose.Types.ObjectId => Boolean(v));
 
   const query: Record<string, unknown> = {
     estateId: { $in: [...allowedEstateIds, ...allowedEstateObjectIds] },
@@ -248,16 +250,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }
 
+  type EstateOwnerLean = { _id: unknown; ownerId?: unknown };
+
   const estateDoc = await Estate.findById(estateObjectId)
     .select("_id ownerId")
-    .lean()
+    .lean<EstateOwnerLean>()
     .exec();
 
   if (!estateDoc) {
     return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
   }
 
-  const ownerIdString = idToString((estateDoc as { ownerId?: unknown }).ownerId);
+  const ownerIdString = idToString(estateDoc.ownerId);
   if (!ownerIdString) {
     return NextResponse.json({ ok: false, error: "Invalid estate owner" }, { status: 400 });
   }
@@ -269,7 +273,8 @@ export async function POST(req: NextRequest) {
 
   const settings = await WorkspaceSettings.findOne({ ownerId: ownerIdString })
     .lean()
-    .catch(() => null as unknown as null);
+    .exec()
+    .catch(() => null);
 
   const currency =
     (typeof currencyFromBody === "string" && currencyFromBody.trim().length > 0
