@@ -1,13 +1,13 @@
 import Link from "next/link";
 
 type PageProps = {
-  params: Promise<{ estateId: string }>;
+  params: { estateId: string };
 };
 
 export const dynamic = "force-dynamic";
 
 export default async function EstateUtilitiesEditPage({ params }: PageProps) {
-  const { estateId } = await params;
+  const { estateId } = params;
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">
@@ -56,6 +56,7 @@ export default async function EstateUtilitiesEditPage({ params }: PageProps) {
             <label className="grid gap-1">
               <span className="text-sm font-medium text-neutral-900">Electric</span>
               <input
+                name="electricProvider"
                 className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-900 outline-none focus:border-neutral-900"
                 placeholder="e.g., DTE Energy"
                 defaultValue=""
@@ -65,6 +66,7 @@ export default async function EstateUtilitiesEditPage({ params }: PageProps) {
             <label className="grid gap-1">
               <span className="text-sm font-medium text-neutral-900">Gas</span>
               <input
+                name="gasProvider"
                 className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-900 outline-none focus:border-neutral-900"
                 placeholder="e.g., Consumers Energy"
                 defaultValue=""
@@ -74,6 +76,7 @@ export default async function EstateUtilitiesEditPage({ params }: PageProps) {
             <label className="grid gap-1">
               <span className="text-sm font-medium text-neutral-900">Water</span>
               <input
+                name="waterProvider"
                 className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-900 outline-none focus:border-neutral-900"
                 placeholder="e.g., City Water Department"
                 defaultValue=""
@@ -83,6 +86,7 @@ export default async function EstateUtilitiesEditPage({ params }: PageProps) {
             <label className="grid gap-1">
               <span className="text-sm font-medium text-neutral-900">Internet</span>
               <input
+                name="internetProvider"
                 className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-900 outline-none focus:border-neutral-900"
                 placeholder="e.g., Comcast Xfinity"
                 defaultValue=""
@@ -107,12 +111,13 @@ export default async function EstateUtilitiesEditPage({ params }: PageProps) {
             <label className="grid gap-1">
               <span className="text-sm font-medium text-neutral-900">Default due day</span>
               <input
+                name="defaultDueDay"
                 type="number"
                 min={1}
                 max={31}
                 className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-900 outline-none focus:border-neutral-900"
                 placeholder="e.g., 15"
-                defaultValue={undefined}
+                defaultValue=""
               />
               <span className="text-xs text-neutral-500">Used to prefill new utility entries.</span>
             </label>
@@ -120,18 +125,19 @@ export default async function EstateUtilitiesEditPage({ params }: PageProps) {
             <label className="grid gap-1">
               <span className="text-sm font-medium text-neutral-900">Reminder lead time (days)</span>
               <input
+                name="reminderLeadDays"
                 type="number"
                 min={0}
                 max={30}
                 className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-900 outline-none focus:border-neutral-900"
                 placeholder="e.g., 3"
-                defaultValue={undefined}
+                defaultValue=""
               />
               <span className="text-xs text-neutral-500">How many days before due date to remind.</span>
             </label>
 
             <label className="flex items-start gap-3 rounded-md border border-neutral-200 p-3">
-              <input type="checkbox" className="mt-1 h-4 w-4" defaultChecked={false} />
+              <input name="requireAttachments" type="checkbox" className="mt-1 h-4 w-4" defaultChecked={false} />
               <div className="grid gap-1">
                 <span className="text-sm font-medium text-neutral-900">Require attachments</span>
                 <span className="text-sm text-neutral-600">
@@ -141,7 +147,7 @@ export default async function EstateUtilitiesEditPage({ params }: PageProps) {
             </label>
 
             <label className="flex items-start gap-3 rounded-md border border-neutral-200 p-3">
-              <input type="checkbox" className="mt-1 h-4 w-4" defaultChecked={false} />
+              <input name="autoTagActivities" type="checkbox" className="mt-1 h-4 w-4" defaultChecked={false} />
               <div className="grid gap-1">
                 <span className="text-sm font-medium text-neutral-900">Auto-tag activities</span>
                 <span className="text-sm text-neutral-600">

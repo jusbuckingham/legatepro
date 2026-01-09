@@ -97,7 +97,13 @@ async function getUtilityDetail(
   const propertyId = idToString(utilityObj.propertyId);
 
   if (propertyId) {
-    const propertyRaw = await EstateProperty.findById(propertyId).lean().exec();
+    const propertyRaw = await EstateProperty.findOne({
+      _id: propertyId,
+      estateId,
+    })
+      .lean()
+      .exec();
+
     if (propertyRaw) {
       const propertyObj = serializeMongoDoc(propertyRaw) as Record<string, unknown>;
       const label = asString(propertyObj.label);
@@ -190,8 +196,10 @@ export async function updateUtility(formData: FormData): Promise<void> {
     isAutoPay: formData.get("isAutoPay") === "on",
     notes: asString(formData.get("notes")),
   };
-
-  await UtilityAccount.findByIdAndUpdate(utilityId, update).exec();
+  await UtilityAccount.findOneAndUpdate(
+    { _id: utilityId, estateId },
+    update,
+  ).exec();
 
   revalidatePath(`/app/estates/${estateId}/utilities/${utilityId}`);
   revalidatePath(`/app/estates/${estateId}/utilities`);

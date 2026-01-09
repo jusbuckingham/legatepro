@@ -1,9 +1,15 @@
 import Link from "next/link";
 import { cookies, headers } from "next/headers";
+
 import { safeJson } from "@/lib/utils";
 
-function getCookieHeader(cookieStore: Awaited<ReturnType<typeof cookies>>): string {
-  const parts = cookieStore.getAll().map((c: { name: string; value: string }) => `${c.name}=${c.value}`);
+type CookieLike = { getAll(): Array<{ name: string; value: string }> };
+type HeaderLike = { get(name: string): string | null };
+
+function getCookieHeader(cookieStore: CookieLike): string {
+  const parts = cookieStore
+    .getAll()
+    .map((c) => `${c.name}=${c.value}`);
   return parts.join("; ");
 }
 
@@ -101,7 +107,7 @@ function StateLayout({ title, description, crumbs, primaryCta, secondaryCta }: S
   );
 }
 
-function getRequestBaseUrl(hdrs: Awaited<ReturnType<typeof headers>>): string {
+function getRequestBaseUrl(hdrs: HeaderLike): string {
   const proto = hdrs.get("x-forwarded-proto") ?? "http";
   const host = hdrs.get("x-forwarded-host") ?? hdrs.get("host") ?? "";
   return host ? `${proto}://${host}` : "";

@@ -51,7 +51,7 @@ function asString(value: unknown): string {
 
 function toPropertyItem(input: unknown): PropertyItem | null {
   if (!isPlainObject(input)) return null;
-  const raw = serializeMongoDoc(input) as PlainObject;
+  const raw = serializeMongoDoc(input as Record<string, unknown>) as PlainObject;
 
   const id = asString(raw.id);
   const label = asString(raw.label);
@@ -70,7 +70,7 @@ function toPropertyItem(input: unknown): PropertyItem | null {
 
 function toUtilityItem(input: unknown): UtilityItem | null {
   if (!isPlainObject(input)) return null;
-  const raw = serializeMongoDoc(input) as PlainObject;
+  const raw = serializeMongoDoc(input as Record<string, unknown>) as PlainObject;
 
   const id = asString(raw.id);
   const estateId = asString(raw.estateId);
