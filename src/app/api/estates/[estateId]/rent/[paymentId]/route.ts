@@ -1,23 +1,25 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { RentPayment } from "@/models/RentPayment";
 
-interface RouteParams {
-  params: {
-    estateId: string;
-    paymentId: string;
-  };
-}
+type RouteParams = {
+  estateId: string;
+  paymentId: string;
+};
 
-export async function GET(_request: Request, { params }: RouteParams): Promise<NextResponse> {
+type RouteContext = {
+  params: Promise<RouteParams>;
+};
+
+export async function GET(_request: NextRequest, context: RouteContext): Promise<NextResponse> {
   try {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const { estateId, paymentId } = params;
+    const { estateId, paymentId } = await context.params;
 
     await connectToDatabase();
 
@@ -38,14 +40,14 @@ export async function GET(_request: Request, { params }: RouteParams): Promise<N
   }
 }
 
-export async function PATCH(request: Request, { params }: RouteParams): Promise<NextResponse> {
+export async function PATCH(request: NextRequest, context: RouteContext): Promise<NextResponse> {
   try {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const { estateId, paymentId } = params;
+    const { estateId, paymentId } = await context.params;
 
     let body;
     try {
@@ -87,14 +89,14 @@ export async function PATCH(request: Request, { params }: RouteParams): Promise<
   }
 }
 
-export async function DELETE(_request: Request, { params }: RouteParams): Promise<NextResponse> {
+export async function DELETE(_request: NextRequest, context: RouteContext): Promise<NextResponse> {
   try {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const { estateId, paymentId } = params;
+    const { estateId, paymentId } = await context.params;
 
     await connectToDatabase();
 

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 
 import { auth } from "@/lib/auth";
@@ -15,10 +15,12 @@ const NO_STORE_HEADERS = {
   "Cache-Control": "no-store",
 } as const;
 
+type RouteParams = {
+  invoiceId: string;
+};
+
 type RouteContext = {
-  params: {
-    invoiceId: string;
-  };
+  params: Promise<RouteParams>;
 };
 
 function isValidObjectId(id: string) {
@@ -59,7 +61,7 @@ function friendlyStatus(status: string | null | undefined): string {
   }
 }
 
-export async function PATCH(req: Request, ctx: RouteContext): Promise<NextResponse> {
+export async function PATCH(req: NextRequest, ctx: RouteContext): Promise<NextResponse> {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json(
@@ -68,7 +70,7 @@ export async function PATCH(req: Request, ctx: RouteContext): Promise<NextRespon
     );
   }
 
-  const { invoiceId } = ctx.params;
+  const { invoiceId } = await ctx.params;
 
   if (!invoiceId || !isValidObjectId(invoiceId)) {
     return NextResponse.json(

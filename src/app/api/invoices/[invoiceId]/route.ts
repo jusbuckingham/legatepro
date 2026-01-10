@@ -1,5 +1,4 @@
-import type { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
@@ -7,9 +6,11 @@ import { auth } from "@/lib/auth";
 import { getEstateAccess } from "@/lib/estateAccess";
 
 type RouteParams = {
-  params: {
-    invoiceId: string;
-  };
+  invoiceId: string;
+};
+
+type RouteContext = {
+  params: Promise<RouteParams>;
 };
 
 type IncomingLineItem = {
@@ -54,7 +55,7 @@ function coerceStatus(value: unknown): InvoiceStatus | undefined {
 /**
  * GET: return a single invoice (used by edit UI / debugging)
  */
-export async function GET(_req: NextRequest, { params }: RouteParams) {
+export async function GET(_req: NextRequest, context: RouteContext) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -62,7 +63,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 
   await connectToDatabase();
 
-  const { invoiceId } = params;
+  const { invoiceId } = await context.params;
 
   const invoiceObjectId = mongoose.Types.ObjectId.isValid(invoiceId)
     ? new mongoose.Types.ObjectId(invoiceId)
@@ -115,7 +116,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
  * Critical: we normalize each line item so that label, rate, and amount
  * are present if the row is not blank, and drop "empty" rows.
  */
-export async function PUT(req: NextRequest, { params }: RouteParams) {
+export async function PUT(req: NextRequest, context: RouteContext) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -134,7 +135,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 
   const { status, issueDate, dueDate, notes, currency, lineItems } = body;
 
-  const { invoiceId } = params;
+  const { invoiceId } = await context.params;
 
   const nextStatus = coerceStatus(status);
 
@@ -315,7 +316,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 /**
  * DELETE: delete an invoice
  */
-export async function DELETE(_req: NextRequest, { params }: RouteParams) {
+export async function DELETE(_req: NextRequest, context: RouteContext) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -323,7 +324,7 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
 
   await connectToDatabase();
 
-  const { invoiceId } = params;
+  const { invoiceId } = await context.params;
 
   const invoiceObjectId = mongoose.Types.ObjectId.isValid(invoiceId)
     ? new mongoose.Types.ObjectId(invoiceId)

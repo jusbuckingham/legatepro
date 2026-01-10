@@ -6,9 +6,11 @@ import { connectToDatabase } from "@/lib/db";
 import { RentPayment } from "@/models/RentPayment";
 
 type RouteParams = {
-  params: {
-    id: string;
-  };
+  id: string;
+};
+
+type RouteContext = {
+  params: Promise<RouteParams>;
 };
 
 export const dynamic = "force-dynamic";
@@ -20,9 +22,9 @@ const OWNER_ID_PLACEHOLDER = "demo-user";
  * GET /api/rent/[id]
  * Fetch a single rent payment record
  */
-export async function GET(_request: NextRequest, { params }: RouteParams): Promise<NextResponse> {
+export async function GET(_request: NextRequest, context: RouteContext): Promise<NextResponse> {
   try {
-    const { id } = params;
+    const { id } = await context.params;
 
     if (!id) {
       return NextResponse.json(
@@ -64,9 +66,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams): Promi
  * PATCH /api/rent/[id]
  * Update a single rent payment record (partial update)
  */
-export async function PATCH(request: NextRequest, { params }: RouteParams): Promise<NextResponse> {
+export async function PATCH(request: NextRequest, context: RouteContext): Promise<NextResponse> {
   try {
-    const { id } = params;
+    const { id } = await context.params;
 
     if (!id) {
       return NextResponse.json(
@@ -156,10 +158,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams): Prom
  */
 export async function DELETE(
   _request: NextRequest,
-  { params }: RouteParams
+  context: RouteContext
 ): Promise<NextResponse> {
   try {
-    const { id } = params;
+    const { id } = await context.params;
 
     if (!id) {
       return NextResponse.json(
