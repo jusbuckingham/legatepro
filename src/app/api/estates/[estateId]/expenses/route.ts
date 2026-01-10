@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { auth } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { Expense } from "@/models/Expense";
 
 /**
@@ -37,13 +37,15 @@ export async function GET(
 
   await connectToDatabase();
 
-  const expenses = await Expense.find({
+  const expensesRaw = await Expense.find({
     estateId: estateObjectId,
     ownerId: ownerObjectId,
   })
     .sort({ date: -1 })
     .lean()
     .exec();
+
+  const expenses = expensesRaw.map((d) => serializeMongoDoc(d));
 
   return NextResponse.json({ ok: true, expenses });
 }
@@ -70,15 +72,25 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
-  const body = (await req.json()) as Record<string, unknown>;
+  let body: Record<string, unknown>;
+  try {
+    body = (await req.json()) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "Invalid JSON" },
+      { status: 400 },
+    );
+  }
 
   await connectToDatabase();
 
-  const expense = await Expense.create({
+  const expenseDoc = await Expense.create({
     ...body,
     estateId: estateObjectId,
     ownerId: ownerObjectId,
   });
+
+  const expense = serializeMongoDoc(expenseDoc);
 
   return NextResponse.json({ ok: true, expense }, { status: 201 });
 }

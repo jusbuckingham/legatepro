@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { EstateProperty } from "@/models/EstateProperty";
 
 export const dynamic = "force-dynamic";
@@ -58,8 +58,9 @@ export async function GET(request: NextRequest, { params }: RouteParams): Promis
     }
 
     const property = await EstateProperty.findOne(query).lean();
+    const propertyOut = property ? serializeMongoDoc(property) : null;
 
-    if (!property) {
+    if (!propertyOut) {
       return NextResponse.json(
         { ok: false, error: "Property not found" },
         { status: 404, headers: NO_STORE_HEADERS }
@@ -67,7 +68,7 @@ export async function GET(request: NextRequest, { params }: RouteParams): Promis
     }
 
     return NextResponse.json(
-      { ok: true, data: { property } },
+      { ok: true, data: { property: propertyOut } },
       { status: 200, headers: NO_STORE_HEADERS }
     );
   } catch (error) {
@@ -162,8 +163,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams): Promis
       { $set: update },
       { new: true, runValidators: true }
     ).lean();
+    const propertyOut = property ? serializeMongoDoc(property) : null;
 
-    if (!property) {
+    if (!propertyOut) {
       return NextResponse.json(
         { ok: false, error: "Property not found or does not belong to this estate" },
         { status: 404, headers: NO_STORE_HEADERS }
@@ -171,7 +173,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams): Promis
     }
 
     return NextResponse.json(
-      { ok: true, data: { property } },
+      { ok: true, data: { property: propertyOut } },
       { status: 200, headers: NO_STORE_HEADERS }
     );
   } catch (error) {
@@ -214,8 +216,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams): Pro
       _id: propertyId,
       estateId,
     }).lean();
+    const deletedOut = result ? serializeMongoDoc(result) : null;
 
-    if (!result) {
+    if (!deletedOut) {
       return NextResponse.json(
         { ok: false, error: "Property not found or already deleted" },
         { status: 404, headers: NO_STORE_HEADERS }

@@ -14,7 +14,11 @@ type RouteContext = {
 export async function GET(_request: NextRequest, { params }: RouteContext) {
   const { entryId } = await params;
 
-  const doc = await TimeEntry.findById(entryId).lean();
+  if (!entryId || entryId.trim().length === 0) {
+    return NextResponse.json({ ok: false, error: "Missing entryId" }, { status: 400 });
+  }
+
+  const doc = await TimeEntry.findById(entryId).lean().exec();
   if (!doc) {
     return NextResponse.json({ ok: false, error: "Time entry not found" }, { status: 404 });
   }
@@ -25,6 +29,10 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
 
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
   const { entryId } = await params;
+
+  if (!entryId || entryId.trim().length === 0) {
+    return NextResponse.json({ ok: false, error: "Missing entryId" }, { status: 400 });
+  }
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body || typeof body !== "object") {
@@ -41,7 +49,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   if ("notes" in body) update.notes = body.notes;
   if ("taskId" in body) update.taskId = body.taskId;
 
-  const updated = await TimeEntry.findByIdAndUpdate(entryId, update, { new: true }).lean();
+  const updated = await TimeEntry.findByIdAndUpdate(entryId, update, { new: true }).lean().exec();
   if (!updated) {
     return NextResponse.json({ ok: false, error: "Time entry not found" }, { status: 404 });
   }
@@ -53,7 +61,11 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
 export async function DELETE(_request: NextRequest, { params }: RouteContext) {
   const { entryId } = await params;
 
-  const deleted = await TimeEntry.findByIdAndDelete(entryId).lean();
+  if (!entryId || entryId.trim().length === 0) {
+    return NextResponse.json({ ok: false, error: "Missing entryId" }, { status: 400 });
+  }
+
+  const deleted = await TimeEntry.findByIdAndDelete(entryId).lean().exec();
   if (!deleted) {
     return NextResponse.json({ ok: false, error: "Time entry not found" }, { status: 404 });
   }

@@ -45,6 +45,12 @@ export async function GET(
 
   const { searchParams } = new URL(req.url);
   const { estateId } = await params;
+  if (!estateId) {
+    return NextResponse.json(
+      { ok: false, error: "Missing estateId" },
+      { status: 400 }
+    );
+  }
   const from = searchParams.get("from");
   const to = searchParams.get("to");
 
@@ -75,7 +81,8 @@ export async function GET(
 
     const docs = (await TimeEntry.find(query)
       .sort({ date: -1, createdAt: -1 })
-      .lean()) as unknown[];
+      .lean()
+      .exec()) as unknown[];
 
     const entries = docs.map((raw) => {
       const doc = raw as {
@@ -128,6 +135,12 @@ export async function POST(
   }
 
   const { estateId } = await params;
+  if (!estateId) {
+    return NextResponse.json(
+      { ok: false, error: "Missing estateId" },
+      { status: 400 }
+    );
+  }
 
   try {
     await connectToDatabase();

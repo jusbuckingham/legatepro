@@ -87,9 +87,9 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  await requireEstateAccess({ estateId, userId: session.user.id });
-
   await connectToDatabase();
+
+  await requireEstateAccess({ estateId, userId: session.user.id });
 
   const query: Record<string, unknown> = { estateId };
 
@@ -161,12 +161,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "label is required" }, { status: 400 });
   }
 
+  await connectToDatabase();
+
   const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
   if (access.role === "VIEWER") {
     return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }
-
-  await connectToDatabase();
 
   const created = await EstateDocument.create({
     estateId,

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
 
 import { auth } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { requireEstateEditAccess } from "@/lib/estateAccess";
 import { Estate } from "@/models/Estate";
 import { logEstateEvent } from "@/lib/estateEvents";
@@ -61,6 +61,8 @@ export async function PATCH(
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
+  await connectToDatabase();
+
   // Permission: must be able to edit this estate
   await requireEstateEditAccess({ estateId, userId: session.user.id });
 
@@ -92,7 +94,7 @@ export async function PATCH(
   ]);
 
   try {
-    await connectToDatabase();
+    // await connectToDatabase();  <-- removed as per instructions
 
     // Estate.ownerId is a string in this project. Keep scoping tight to the owner.
     const updated = await Estate.findOneAndUpdate(
@@ -119,11 +121,12 @@ export async function PATCH(
       console.warn("[ESTATE_UPDATED] log failed:", err);
     }
 
-    return NextResponse.json({ ok: true, estate: updated }, { status: 200 });
+    const estate = serializeMongoDoc(updated);
+    return NextResponse.json({ ok: true, estate }, { status: 200 });
   } catch (error) {
     console.error("[PATCH /api/estates/[estateId]] Error:", error);
     return NextResponse.json(
-      { error: "Failed to update estate" },
+      { ok: false, error: "Failed to update estate" },
       { status: 500 }
     );
   }
@@ -144,6 +147,8 @@ export async function DELETE(
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
+  await connectToDatabase();
+
   // Permission: must be able to edit this estate
   await requireEstateEditAccess({ estateId, userId: session.user.id });
 
@@ -153,7 +158,7 @@ export async function DELETE(
   }
 
   try {
-    await connectToDatabase();
+    // await connectToDatabase();  <-- removed as per instructions
 
     const deleted = await Estate.findOneAndDelete({
       _id: estateObjectId,
@@ -177,11 +182,12 @@ export async function DELETE(
       console.warn("[ESTATE_DELETED] log failed:", err);
     }
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    const estate = serializeMongoDoc(deleted);
+    return NextResponse.json({ ok: true, estate }, { status: 200 });
   } catch (error) {
     console.error("[DELETE /api/estates/[estateId]] Error:", error);
     return NextResponse.json(
-      { error: "Failed to delete estate" },
+      { ok: false, error: "Failed to delete estate" },
       { status: 500 }
     );
   }

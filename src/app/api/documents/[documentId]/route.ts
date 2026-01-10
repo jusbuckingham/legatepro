@@ -51,7 +51,6 @@ function docToItem(doc: unknown) {
 }
 
 async function getDocOr404(documentId: string) {
-  await connectToDatabase();
   const doc = await EstateDocument.findById(documentId).lean().exec();
   return doc ?? null;
 }
@@ -61,6 +60,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ documentId
   if (!session?.user?.id) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+
+  await connectToDatabase();
 
   const { documentId } = await ctx.params;
   if (!documentId) {
@@ -86,6 +87,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ documentI
   if (!session?.user?.id) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+
+  await connectToDatabase();
 
   const { documentId } = await ctx.params;
   if (!documentId) {
@@ -135,8 +138,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ documentI
     update.notes = v || undefined;
   }
 
-  await connectToDatabase();
-
   const updated = await EstateDocument.findOneAndUpdate(
     { _id: documentId, estateId },
     update,
@@ -161,6 +162,8 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ documen
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
+  await connectToDatabase();
+
   const { documentId } = await ctx.params;
   if (!documentId) {
     return NextResponse.json({ ok: false, error: "Missing documentId" }, { status: 400 });
@@ -177,7 +180,6 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ documen
     return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }
 
-  await connectToDatabase();
   await EstateDocument.findOneAndDelete({ _id: documentId, estateId });
 
   return NextResponse.json({ ok: true }, { status: 200 });

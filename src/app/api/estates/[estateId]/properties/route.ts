@@ -43,15 +43,14 @@ export async function GET(
   }
 
   try {
+    await connectToDatabase();
     // Permission: must be able to view this estate (collaborators allowed)
     await requireEstateAccess({ estateId });
 
     const estateObjectId = toObjectId(estateId);
     if (!estateObjectId) {
-      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
     }
-
-    await connectToDatabase();
 
     const propertiesRaw = await EstateProperty.find({ estateId: estateObjectId })
       .sort({ createdAt: -1 })
@@ -66,7 +65,7 @@ export async function GET(
   } catch (error) {
     console.error("[GET /api/estates/[estateId]/properties] Error:", error);
     return NextResponse.json(
-      { error: "Failed to load properties" },
+      { ok: false, error: "Failed to load properties" },
       { status: 500 }
     );
   }
@@ -83,15 +82,14 @@ export async function POST(
   }
 
   try {
+    await connectToDatabase();
     // Permission: must be able to edit this estate
     await requireEstateEditAccess({ estateId });
 
     const estateObjectId = toObjectId(estateId);
     if (!estateObjectId) {
-      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
     }
-
-    await connectToDatabase();
 
     const body = (await req.json()) as PropertyCreateBody;
 
@@ -123,7 +121,7 @@ export async function POST(
   } catch (error) {
     console.error("[POST /api/estates/[estateId]/properties] Error:", error);
     return NextResponse.json(
-      { error: "Failed to create property" },
+      { ok: false, error: "Failed to create property" },
       { status: 500 }
     );
   }

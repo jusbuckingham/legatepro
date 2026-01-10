@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Types } from "mongoose";
+
 import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { EstateProperty } from "@/models/EstateProperty";
 
@@ -22,6 +24,8 @@ type PropertyUpdateBody = Partial<{
   notes: string;
 }>;
 
+const isValidObjectId = (value: string) => Types.ObjectId.isValid(value);
+
 export async function GET(
   _req: NextRequest,
   { params }: RouteParams
@@ -35,13 +39,22 @@ export async function GET(
     );
   }
 
+  if (!isValidObjectId(estateId) || !isValidObjectId(propertyId)) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid estateId or propertyId" },
+      { status: 400 }
+    );
+  }
+
   try {
     await connectToDatabase();
 
     const property = await EstateProperty.findOne({
       _id: propertyId,
       estateId,
-    }).lean();
+    })
+      .lean()
+      .exec();
 
     if (!property) {
       return NextResponse.json(
@@ -70,6 +83,13 @@ export async function PATCH(
   if (!estateId || !propertyId) {
     return NextResponse.json(
       { ok: false, error: "Missing estateId or propertyId" },
+      { status: 400 }
+    );
+  }
+
+  if (!isValidObjectId(estateId) || !isValidObjectId(propertyId)) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid estateId or propertyId" },
       { status: 400 }
     );
   }
@@ -140,7 +160,9 @@ export async function PATCH(
       { _id: propertyId, estateId },
       update,
       { new: true, runValidators: true }
-    ).lean();
+    )
+      .lean()
+      .exec();
 
     if (!updated) {
       return NextResponse.json(
@@ -176,13 +198,22 @@ export async function DELETE(
     );
   }
 
+  if (!isValidObjectId(estateId) || !isValidObjectId(propertyId)) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid estateId or propertyId" },
+      { status: 400 }
+    );
+  }
+
   try {
     await connectToDatabase();
 
     const deleted = await EstateProperty.findOneAndDelete({
       _id: propertyId,
       estateId,
-    }).lean();
+    })
+      .lean()
+      .exec();
 
     if (!deleted) {
       return NextResponse.json(
@@ -190,8 +221,6 @@ export async function DELETE(
         { status: 404 }
       );
     }
-    // Intentionally not returning deleted payload; serialize if needed in the future.
-    void deleted;
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (error) {

@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 import { logEstateEvent } from "@/lib/estateEvents";
 
@@ -37,16 +37,18 @@ export async function GET() {
     await connectToDatabase();
 
     // IMPORTANT: scope to ownerId (Estate.ownerId is a string)
-    const estates = await Estate.find({ ownerId: session.user.id })
+    const estatesRaw = await Estate.find({ ownerId: session.user.id })
       .sort({ createdAt: -1 })
       .lean()
       .exec();
+
+    const estates = estatesRaw.map((e) => serializeMongoDoc(e));
 
     return NextResponse.json({ ok: true, estates }, { status: 200 });
   } catch (error) {
     console.error("[GET /api/estates] Error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch estates" },
+      { ok: false, error: "Failed to fetch estates" },
       { status: 500 }
     );
   }
@@ -78,12 +80,12 @@ export async function POST(req: NextRequest) {
       status: body.status ?? "OPEN",
     };
 
-    const estate = await Estate.create(payload);
+    const estateDoc = await Estate.create(payload);
 
     try {
       await logEstateEvent({
         ownerId: session.user.id,
-        estateId: String(estate._id),
+        estateId: String(estateDoc._id),
         type: "ESTATE_CREATED",
         summary: "Estate created",
       });
@@ -91,11 +93,12 @@ export async function POST(req: NextRequest) {
       console.warn("[ESTATE_CREATED] log failed:", err);
     }
 
+    const estate = serializeMongoDoc(estateDoc);
     return NextResponse.json({ ok: true, estate }, { status: 201 });
   } catch (error) {
     console.error("[POST /api/estates] Error:", error);
     return NextResponse.json(
-      { error: "Failed to create estate" },
+      { ok: false, error: "Failed to create estate" },
       { status: 500 }
     );
   }

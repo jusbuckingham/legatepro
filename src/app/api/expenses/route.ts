@@ -3,7 +3,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { Expense } from "@/models/Expense";
 import { auth } from "@/lib/auth";
 
@@ -91,16 +91,18 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    const expenses = await Expense.find(filter)
+    const expensesRaw = await Expense.find(filter)
       .sort({ date: -1, createdAt: -1 })
       .lean()
       .exec();
+
+    const expenses = expensesRaw.map((e) => serializeMongoDoc(e));
 
     return NextResponse.json({ ok: true, expenses }, { status: 200 });
   } catch (error) {
     console.error("GET /api/expenses error", error);
     return NextResponse.json(
-      { error: "Unable to load expenses" },
+      { ok: false, error: "Unable to load expenses" },
       { status: 500 }
     );
   }
@@ -140,7 +142,7 @@ export async function POST(request: NextRequest) {
 
     if (!body) {
       return NextResponse.json(
-        { error: "Request body is required" },
+        { ok: false, error: "Request body is required" },
         { status: 400 }
       );
     }
@@ -200,11 +202,13 @@ export async function POST(request: NextRequest) {
       documentId,
     });
 
-    return NextResponse.json({ ok: true, expense }, { status: 201 });
+    const expenseOut = serializeMongoDoc(expense.toObject());
+
+    return NextResponse.json({ ok: true, expense: expenseOut }, { status: 201 });
   } catch (error) {
     console.error("POST /api/expenses error", error);
     return NextResponse.json(
-      { error: "Unable to create expense" },
+      { ok: false, error: "Unable to create expense" },
       { status: 500 }
     );
   }

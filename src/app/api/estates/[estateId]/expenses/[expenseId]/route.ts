@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { Expense } from "@/models/Expense";
 import { Types } from "mongoose";
 
@@ -76,7 +76,9 @@ export async function GET(
       return NextResponse.json({ ok: false, error: "Expense not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, expense }, { status: 200 });
+    const expenseOut = serializeMongoDoc(expense as unknown as Record<string, unknown>);
+
+    return NextResponse.json({ ok: true, expense: expenseOut }, { status: 200 });
   } catch (error) {
     console.error(
       "[GET /api/estates/[estateId]/expenses/[expenseId]] Error:",
@@ -177,7 +179,9 @@ export async function PATCH(
       return NextResponse.json({ ok: false, error: "Expense not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, expense: updated }, { status: 200 });
+    const expenseOut = serializeMongoDoc(updated as unknown as Record<string, unknown>);
+
+    return NextResponse.json({ ok: true, expense: expenseOut }, { status: 200 });
   } catch (error) {
     console.error(
       "[PATCH /api/estates/[estateId]/expenses/[expenseId]] Error:",
@@ -229,7 +233,10 @@ export async function DELETE(
       return NextResponse.json({ ok: false, error: "Expense not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return NextResponse.json(
+      { ok: true, data: { success: true, id: String((deleted as { _id?: unknown })._id ?? "") } },
+      { status: 200 }
+    );
   } catch (error) {
     console.error(
       "[DELETE /api/estates/[estateId]/expenses/[expenseId]] Error:",

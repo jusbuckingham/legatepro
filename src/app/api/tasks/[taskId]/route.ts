@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
-import { requireEstateEditAccess } from "@/lib/estateAccess";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import {
   EstateTask,
   type EstateTaskDocument,
@@ -29,9 +29,9 @@ function parseStatus(raw: unknown): TaskStatus | undefined {
 
 function serializeTask(task: EstateTaskDocument) {
   return {
-    id: task.id,
-    estateId: task.estateId,
-    ownerId: task.ownerId,
+    id: task.id ?? String(task._id),
+    estateId: String(task.estateId),
+    ownerId: String(task.ownerId),
     title: task.title,
     description: task.description ?? null,
     status: task.status,
@@ -42,6 +42,51 @@ function serializeTask(task: EstateTaskDocument) {
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
   };
+}
+
+export async function GET(
+  _req: NextRequest,
+  { params }: RouteContext,
+): Promise<Response> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json(
+      { ok: false, error: "Unauthorized" },
+      { status: 401 },
+    );
+  }
+
+  await connectToDatabase();
+
+  const { taskId } = await params;
+  if (!taskId) {
+    return NextResponse.json(
+      { ok: false, error: "Missing taskId in route params" },
+      { status: 400 },
+    );
+  }
+
+  const task = (await EstateTask.findById(taskId)) as EstateTaskDocument | null;
+  if (!task) {
+    return NextResponse.json(
+      { ok: false, error: "Task not found" },
+      { status: 404 },
+    );
+  }
+
+  const access = await requireEstateAccess({
+    estateId: String(task.estateId),
+    userId: session.user.id,
+  });
+
+  if (access instanceof Response) {
+    return access;
+  }
+
+  return NextResponse.json(
+    { ok: true, data: { task: serializeTask(task) } },
+    { status: 200 },
+  );
 }
 
 export async function PATCH(
@@ -115,6 +160,12 @@ export async function PATCH(
 
   if (typeof title === "string") {
     update.title = title.trim();
+    if (!update.title) {
+      return NextResponse.json(
+        { ok: false, error: "Title is required" },
+        { status: 400 },
+      );
+    }
   }
 
   if (typeof description === "string") {
@@ -157,11 +208,11 @@ export async function PATCH(
   }
 
   if (typeof relatedDocumentId === "string") {
-    update.relatedDocumentId = relatedDocumentId || undefined;
+    update.relatedDocumentId = relatedDocumentId.trim() ? relatedDocumentId : null;
   }
 
   if (typeof relatedInvoiceId === "string") {
-    update.relatedInvoiceId = relatedInvoiceId || undefined;
+    update.relatedInvoiceId = relatedInvoiceId.trim() ? relatedInvoiceId : null;
   }
 
   const existingTask = (await EstateTask.findById(taskId)) as EstateTaskDocument | null;

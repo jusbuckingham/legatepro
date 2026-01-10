@@ -4,10 +4,10 @@ import { connectToDatabase } from "@/lib/db";
 import { RentPayment } from "@/models/RentPayment";
 
 interface RouteParams {
-  params: Promise<{
+  params: {
     estateId: string;
     paymentId: string;
-  }>;
+  };
 }
 
 export async function GET(_request: Request, { params }: RouteParams): Promise<NextResponse> {
@@ -17,7 +17,7 @@ export async function GET(_request: Request, { params }: RouteParams): Promise<N
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const { estateId, paymentId } = await params;
+    const { estateId, paymentId } = params;
 
     await connectToDatabase();
 
@@ -45,7 +45,7 @@ export async function PATCH(request: Request, { params }: RouteParams): Promise<
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const { estateId, paymentId } = await params;
+    const { estateId, paymentId } = params;
 
     let body;
     try {
@@ -94,7 +94,7 @@ export async function DELETE(_request: Request, { params }: RouteParams): Promis
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const { estateId, paymentId } = await params;
+    const { estateId, paymentId } = params;
 
     await connectToDatabase();
 

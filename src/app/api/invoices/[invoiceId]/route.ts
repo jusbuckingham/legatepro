@@ -7,9 +7,9 @@ import { auth } from "@/lib/auth";
 import { getEstateAccess } from "@/lib/estateAccess";
 
 type RouteParams = {
-  params: Promise<{
+  params: {
     invoiceId: string;
-  }>;
+  };
 };
 
 type IncomingLineItem = {
@@ -62,7 +62,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 
   await connectToDatabase();
 
-  const { invoiceId } = await params;
+  const { invoiceId } = params;
 
   const invoiceObjectId = mongoose.Types.ObjectId.isValid(invoiceId)
     ? new mongoose.Types.ObjectId(invoiceId)
@@ -134,7 +134,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 
   const { status, issueDate, dueDate, notes, currency, lineItems } = body;
 
-  const { invoiceId } = await params;
+  const { invoiceId } = params;
 
   const nextStatus = coerceStatus(status);
 
@@ -288,16 +288,20 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 
     const updatedDoc = updated as { estateId: unknown; _id: unknown };
 
-    // On success, redirect back to the invoice detail page
     const estateId = String(updatedDoc.estateId);
     const updatedInvoiceId = String(updatedDoc._id);
 
-    return NextResponse.redirect(
-      new URL(
-        `/app/estates/${estateId}/invoices/${updatedInvoiceId}`,
-        req.url,
-      ),
-      303,
+    return NextResponse.json(
+      {
+        ok: true,
+        data: {
+          invoice: {
+            id: updatedInvoiceId,
+            estateId,
+          },
+        },
+      },
+      { status: 200 },
     );
   } catch (err) {
     console.error("Error updating invoice", err);
@@ -319,7 +323,7 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
 
   await connectToDatabase();
 
-  const { invoiceId } = await params;
+  const { invoiceId } = params;
 
   const invoiceObjectId = mongoose.Types.ObjectId.isValid(invoiceId)
     ? new mongoose.Types.ObjectId(invoiceId)

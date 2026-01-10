@@ -6,9 +6,9 @@ import { connectToDatabase } from "@/lib/db";
 import { RentPayment } from "@/models/RentPayment";
 
 type RouteParams = {
-  params: Promise<{
+  params: {
     id: string;
-  }>;
+  };
 };
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ const OWNER_ID_PLACEHOLDER = "demo-user";
  */
 export async function GET(_request: NextRequest, { params }: RouteParams): Promise<NextResponse> {
   try {
-    const { id } = await params;
+    const { id } = params;
 
     if (!id) {
       return NextResponse.json(
@@ -66,7 +66,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams): Promi
  */
 export async function PATCH(request: NextRequest, { params }: RouteParams): Promise<NextResponse> {
   try {
-    const { id } = await params;
+    const { id } = params;
 
     if (!id) {
       return NextResponse.json(
@@ -159,7 +159,7 @@ export async function DELETE(
   { params }: RouteParams
 ): Promise<NextResponse> {
   try {
-    const { id } = await params;
+    const { id } = params;
 
     if (!id) {
       return NextResponse.json(

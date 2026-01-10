@@ -3,7 +3,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { Contact } from "@/models/Contact";
 
@@ -60,16 +60,20 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    const contacts = await Contact.find(filter)
+    const contactsRaw = await Contact.find(filter)
       .sort({ name: 1 })
       .lean()
       .exec();
+
+    const contacts = contactsRaw.map((c) =>
+      serializeMongoDoc(c as Record<string, unknown>),
+    );
 
     return NextResponse.json({ ok: true, contacts }, { status: 200 });
   } catch (error) {
     console.error("GET /api/contacts error", error);
     return NextResponse.json(
-      { error: "Unable to load contacts" },
+      { ok: false, error: "Unable to load contacts" },
       { status: 500 }
     );
   }
@@ -122,7 +126,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const contact = await Contact.create({
+    const created = await Contact.create({
       ownerId: ownerObjectId,
       category,
       name,
@@ -139,11 +143,18 @@ export async function POST(request: NextRequest) {
       estates: [], // linked later via /api/estates/[estateId]/contacts
     });
 
+    const contact = serializeMongoDoc(
+      (created.toObject?.() ?? (created as unknown as Record<string, unknown>)) as Record<
+        string,
+        unknown
+      >,
+    );
+
     return NextResponse.json({ ok: true, contact }, { status: 201 });
   } catch (error) {
     console.error("POST /api/contacts error", error);
     return NextResponse.json(
-      { error: "Unable to create contact" },
+      { ok: false, error: "Unable to create contact" },
       { status: 500 }
     );
   }

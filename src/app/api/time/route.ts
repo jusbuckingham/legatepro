@@ -24,8 +24,12 @@ export const dynamic = "force-dynamic";
 
 function toStringId(value: unknown): string {
   if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
   if (value instanceof Date) return value.toISOString();
-  return String(value);
+  if (value && typeof (value as { toString?: unknown }).toString === "function") {
+    return String((value as { toString: () => string }).toString());
+  }
+  return "";
 }
 
 // GET /api/time?estateId=...
@@ -52,7 +56,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const docs = (await TimeEntry.find(query)
       .sort({ date: -1, createdAt: -1 })
       .limit(200)
-      .lean()) as TimeEntryDocLean[];
+      .lean()
+      .exec()) as TimeEntryDocLean[];
 
     const entries = docs.map((doc) => ({
       id: toStringId(doc._id),
@@ -259,7 +264,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     const id = searchParams.get("id");
     const estateId = searchParams.get("estateId");
 
-    if (!id) {
+    if (!id || id.trim() === "") {
       return NextResponse.json(
         { ok: false, error: "Missing id for time entry to delete" },
         { status: 400 },
@@ -277,7 +282,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
       deleteQuery.estateId = estateId;
     }
 
-    const deleted = await TimeEntry.findOneAndDelete(deleteQuery).lean();
+    const deleted = await TimeEntry.findOneAndDelete(deleteQuery).lean().exec();
 
     if (!deleted) {
       return NextResponse.json(

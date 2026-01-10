@@ -16,16 +16,14 @@ const NO_STORE_HEADERS = {
 } as const;
 
 type RouteContext = {
-  params: Promise<{
+  params: {
     invoiceId: string;
-  }>;
+  };
 };
 
 function isValidObjectId(id: string) {
   return Types.ObjectId.isValid(id);
 }
-
-
 function idToString(value: unknown): string | null {
   if (value == null) return null;
   if (typeof value === "string") return value;
@@ -70,7 +68,7 @@ export async function PATCH(req: Request, ctx: RouteContext): Promise<NextRespon
     );
   }
 
-  const { invoiceId } = await ctx.params;
+  const { invoiceId } = ctx.params;
 
   if (!invoiceId || !isValidObjectId(invoiceId)) {
     return NextResponse.json(

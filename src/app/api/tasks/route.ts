@@ -2,7 +2,7 @@
 // Tasks API for LegatePro (estate to‑do list / required actions)
 
 import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { Task } from "@/models/Task";
 import { requireViewer, requireEditor } from "@/lib/estateAccess";
 
@@ -61,10 +61,12 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    const tasks = await Task.find(filter)
+    const tasksRaw = await Task.find(filter)
       .sort({ isCompleted: 1, dueDate: 1 })
       .lean()
       .exec();
+
+    const tasks = tasksRaw.map((t) => serializeMongoDoc(t));
 
     return NextResponse.json({ ok: true, data: { tasks } }, { status: 200 });
   } catch (error) {
@@ -128,7 +130,7 @@ export async function POST(request: NextRequest) {
       parsedDueDate = d;
     }
 
-    const task = await Task.create({
+    const taskDoc = await Task.create({
       estateId,
       title,
       category: category || undefined,
@@ -136,6 +138,8 @@ export async function POST(request: NextRequest) {
       notes: notes || undefined,
       isCompleted: typeof isCompleted === "boolean" ? isCompleted : false,
     });
+
+    const task = serializeMongoDoc(taskDoc);
 
     return NextResponse.json(
       { ok: true, data: { task } },

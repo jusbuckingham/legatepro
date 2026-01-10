@@ -11,6 +11,23 @@ import { Estate } from "@/models/Estate";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+function idToString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value && typeof (value as { toString?: () => string }).toString === "function") {
+    return (value as { toString: () => string }).toString();
+  }
+  return "";
+}
+
+function stripMongoMeta<T extends Record<string, unknown>>(doc: T): Omit<T, "_id" | "__v"> & { id: string } {
+  const { _id, __v: _v, ...rest } = doc as T & { _id?: unknown; __v?: unknown };
+  void _v;
+  return {
+    ...(rest as Omit<T, "_id" | "__v">),
+    id: idToString(_id),
+  };
+}
+
 function jsonError(status: number, message: string) {
   return NextResponse.json({ ok: false, error: message }, { status });
 }
@@ -50,17 +67,17 @@ export async function GET(request: NextRequest) {
     if (estateId) {
       estateIds = [estateId];
     } else {
-      const estates = await Estate.find(
+      const estates = await Estate.find<{ _id: unknown }>(
         { $or: [{ ownerId: userId }, { "collaborators.userId": userId }] },
         { _id: 1 }
       )
         .lean()
         .exec();
 
-      estateIds = estates.map((e) => String((e as { _id: unknown })._id));
+      estateIds = estates.map((e) => idToString(e._id)).filter(Boolean);
     }
 
-    const activity = await EstateActivity.find({
+    const activityRaw = await EstateActivity.find<Record<string, unknown>>({
       estateId: { $in: estateIds },
     })
       .sort({ createdAt: -1 })
@@ -68,12 +85,19 @@ export async function GET(request: NextRequest) {
       .lean()
       .exec();
 
+    const activity = activityRaw.map((row) => {
+      const base = stripMongoMeta(row);
+      // Normalize common id fields if present
+      const estateIdValue = (row as { estateId?: unknown }).estateId;
+      return {
+        ...base,
+        ...(estateIdValue != null ? { estateId: idToString(estateIdValue) } : {}),
+      };
+    });
+
     return NextResponse.json({ ok: true, activity }, { status: 200 });
   } catch (error) {
     console.error("GET /api/activity error", error);
-    return NextResponse.json(
-      { error: "Unable to load activity" },
-      { status: 500 }
-    );
+    return jsonError(500, "Unable to load activity");
   }
 }

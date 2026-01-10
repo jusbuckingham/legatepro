@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
 
 import { auth } from "../../../lib/auth";
-import { connectToDatabase } from "../../../lib/db";
+import { connectToDatabase, serializeMongoDoc } from "../../../lib/db";
 import { EstateProperty } from "../../../models/EstateProperty";
 
 // Helpers
@@ -88,10 +88,12 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    const properties = await EstateProperty.find(filter)
+    const propertiesRaw = await EstateProperty.find(filter)
       .sort({ createdAt: -1 })
       .lean()
       .exec();
+
+    const properties = propertiesRaw.map((p) => serializeMongoDoc(p));
 
     return NextResponse.json({ ok: true, data: { properties } }, { status: 200 });
   } catch (error) {
@@ -182,7 +184,7 @@ export async function POST(request: NextRequest) {
     const parsedIsPrimaryResidence = parseOptionalBoolean(isPrimaryResidence);
     const parsedIsRented = parseOptionalBoolean(isRented);
 
-    const property = await EstateProperty.create({
+    const propertyDoc = await EstateProperty.create({
       ownerId,
       estateId,
       nickname,
@@ -198,6 +200,8 @@ export async function POST(request: NextRequest) {
       estimatedValue,
       notes,
     });
+
+    const property = serializeMongoDoc(propertyDoc.toObject());
 
     return NextResponse.json({ ok: true, data: { property } }, { status: 201 });
   } catch (error) {

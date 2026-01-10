@@ -4,9 +4,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
 
-import { auth } from "../../../lib/auth";
-import { connectToDatabase } from "../../../lib/db";
-import { UtilityAccount } from "../../../models/UtilityAccount";
+import { auth } from "@/lib/auth";
+import { connectToDatabase } from "@/lib/db";
+import { UtilityAccount } from "@/models/UtilityAccount";
 
 function escapeRegex(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -14,6 +14,15 @@ function escapeRegex(input: string): string {
 
 function isValidObjectId(value: string): boolean {
   return mongoose.Types.ObjectId.isValid(value);
+}
+
+function asTrimmedString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function asOptionalTrimmedString(value: unknown): string | undefined {
+  const s = asTrimmedString(value);
+  return s.length > 0 ? s : undefined;
 }
 
 // GET /api/utilities
@@ -44,7 +53,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Invalid propertyId" }, { status: 400 });
     }
 
-    const type = searchParams.get("type");
+    const type = searchParams.get("type")?.trim() ?? "";
     const q = searchParams.get("q")?.trim() ?? "";
     const qSafe = q ? escapeRegex(q) : "";
 
@@ -104,7 +113,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
     }
 
-    const {
+    const raw = (body ?? {}) as Record<string, unknown>;
+
+    const estateId = asTrimmedString(raw.estateId);
+    const propertyId = asOptionalTrimmedString(raw.propertyId);
+    const providerName = asTrimmedString(raw.providerName);
+    const utilityType = asOptionalTrimmedString(raw.utilityType) ?? "other";
+    const accountNumber = asOptionalTrimmedString(raw.accountNumber);
+    const billingName = asOptionalTrimmedString(raw.billingName);
+    const phone = asOptionalTrimmedString(raw.phone);
+    const email = asOptionalTrimmedString(raw.email);
+    const onlinePortalUrl = asOptionalTrimmedString(raw.onlinePortalUrl);
+    const status = asOptionalTrimmedString(raw.status) ?? "active";
+    const isAutoPay = Boolean(raw.isAutoPay);
+    const notes = asOptionalTrimmedString(raw.notes);
+
+    if (!estateId) {
+      return NextResponse.json({ ok: false, error: "estateId is required" }, { status: 400 });
+    }
+
+    if (!isValidObjectId(estateId)) {
+      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
+    }
+
+    if (propertyId && !isValidObjectId(propertyId)) {
+      return NextResponse.json({ ok: false, error: "Invalid propertyId" }, { status: 400 });
+    }
+
+    if (!providerName) {
+      return NextResponse.json({ ok: false, error: "providerName is required" }, { status: 400 });
+    }
+
+    const utility = await UtilityAccount.create({
+      ownerId,
       estateId,
       propertyId,
       providerName,
@@ -116,38 +157,6 @@ export async function POST(request: NextRequest) {
       onlinePortalUrl,
       status,
       isAutoPay,
-      notes,
-    } = (body ?? {}) as Record<string, unknown>;
-
-    if (!estateId) {
-      return NextResponse.json({ ok: false, error: "estateId is required" }, { status: 400 });
-    }
-
-    if (!isValidObjectId(String(estateId))) {
-      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
-    }
-
-    if (propertyId && !isValidObjectId(String(propertyId))) {
-      return NextResponse.json({ ok: false, error: "Invalid propertyId" }, { status: 400 });
-    }
-
-    if (!providerName) {
-      return NextResponse.json({ ok: false, error: "providerName is required" }, { status: 400 });
-    }
-
-    const utility = await UtilityAccount.create({
-      ownerId,
-      estateId: String(estateId),
-      propertyId: propertyId ? String(propertyId) : undefined,
-      providerName,
-      utilityType: utilityType || "other",
-      accountNumber,
-      billingName,
-      phone,
-      email,
-      onlinePortalUrl,
-      status: status || "active",
-      isAutoPay: Boolean(isAutoPay),
       notes,
     });
 
