@@ -1,7 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { RentPayment } from "@/models/RentPayment";
+import {
+  jsonErr,
+  jsonNotFound,
+  jsonOk,
+  jsonUnauthorized,
+  noStoreHeaders,
+  requireObjectIdLike,
+  safeErrorMessage,
+} from "@/lib/apiResponse";
 
 type RouteParams = {
   estateId: string;
@@ -12,14 +21,31 @@ type RouteContext = {
   params: Promise<RouteParams>;
 };
 
-export async function GET(_request: NextRequest, context: RouteContext): Promise<NextResponse> {
+function idToString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+  if (value && typeof value === "object" && "toString" in value) {
+    return String((value as { toString: () => string }).toString());
+  }
+  return "";
+}
+
+export async function GET(_request: NextRequest, context: RouteContext): Promise<Response> {
   try {
+    const headers = noStoreHeaders();
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      return jsonUnauthorized();
     }
 
     const { estateId, paymentId } = await context.params;
+
+    if (!requireObjectIdLike(estateId)) {
+      return jsonErr("Invalid estateId", 400, "BAD_REQUEST", { headers });
+    }
+    if (!requireObjectIdLike(paymentId)) {
+      return jsonErr("Invalid paymentId", 400, "BAD_REQUEST", { headers });
+    }
 
     await connectToDatabase();
 
@@ -30,30 +56,41 @@ export async function GET(_request: NextRequest, context: RouteContext): Promise
     }).lean();
 
     if (!payment) {
-      return NextResponse.json({ ok: false, error: "Payment not found" }, { status: 404 });
+      return jsonNotFound("Payment not found");
     }
 
-    return NextResponse.json({ ok: true, payment }, { status: 200 });
+    return jsonOk(
+      { payment: { ...payment, _id: idToString((payment as { _id?: unknown })._id) } },
+      { headers },
+    );
   } catch (error) {
-    console.error("[GET /api/estates/[estateId]/rent/[paymentId]] Error:", error);
-    return NextResponse.json({ ok: false, error: "Failed to fetch payment" }, { status: 500 });
+    console.error("[GET /api/estates/[estateId]/rent/[paymentId]] Error:", safeErrorMessage(error));
+    return jsonErr("Failed to fetch payment", 500, "INTERNAL_ERROR", { headers: noStoreHeaders() });
   }
 }
 
-export async function PATCH(request: NextRequest, context: RouteContext): Promise<NextResponse> {
+export async function PATCH(request: NextRequest, context: RouteContext): Promise<Response> {
   try {
+    const headers = noStoreHeaders();
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      return jsonUnauthorized();
     }
 
     const { estateId, paymentId } = await context.params;
+
+    if (!requireObjectIdLike(estateId)) {
+      return jsonErr("Invalid estateId", 400, "BAD_REQUEST", { headers });
+    }
+    if (!requireObjectIdLike(paymentId)) {
+      return jsonErr("Invalid paymentId", 400, "BAD_REQUEST", { headers });
+    }
 
     let body;
     try {
       body = await request.json();
     } catch {
-      return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+      return jsonErr("Invalid JSON", 400, "BAD_REQUEST", { headers });
     }
 
     const update: Record<string, unknown> = {};
@@ -79,24 +116,35 @@ export async function PATCH(request: NextRequest, context: RouteContext): Promis
     ).lean();
 
     if (!updated) {
-      return NextResponse.json({ ok: false, error: "Payment not found" }, { status: 404 });
+      return jsonNotFound("Payment not found");
     }
 
-    return NextResponse.json({ ok: true, payment: updated }, { status: 200 });
+    return jsonOk(
+      { payment: { ...updated, _id: idToString((updated as { _id?: unknown })._id) } },
+      { headers },
+    );
   } catch (error) {
-    console.error("[PATCH /api/estates/[estateId]/rent/[paymentId]] Error:", error);
-    return NextResponse.json({ ok: false, error: "Failed to update payment" }, { status: 500 });
+    console.error("[PATCH /api/estates/[estateId]/rent/[paymentId]] Error:", safeErrorMessage(error));
+    return jsonErr("Failed to update payment", 500, "INTERNAL_ERROR", { headers: noStoreHeaders() });
   }
 }
 
-export async function DELETE(_request: NextRequest, context: RouteContext): Promise<NextResponse> {
+export async function DELETE(_request: NextRequest, context: RouteContext): Promise<Response> {
   try {
+    const headers = noStoreHeaders();
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      return jsonUnauthorized();
     }
 
     const { estateId, paymentId } = await context.params;
+
+    if (!requireObjectIdLike(estateId)) {
+      return jsonErr("Invalid estateId", 400, "BAD_REQUEST", { headers });
+    }
+    if (!requireObjectIdLike(paymentId)) {
+      return jsonErr("Invalid paymentId", 400, "BAD_REQUEST", { headers });
+    }
 
     await connectToDatabase();
 
@@ -107,12 +155,12 @@ export async function DELETE(_request: NextRequest, context: RouteContext): Prom
     }).lean();
 
     if (!deleted) {
-      return NextResponse.json({ ok: false, error: "Payment not found" }, { status: 404 });
+      return jsonNotFound("Payment not found");
     }
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return jsonOk({ success: true }, { headers });
   } catch (error) {
-    console.error("[DELETE /api/estates/[estateId]/rent/[paymentId]] Error:", error);
-    return NextResponse.json({ ok: false, error: "Failed to delete payment" }, { status: 500 });
+    console.error("[DELETE /api/estates/[estateId]/rent/[paymentId]] Error:", safeErrorMessage(error));
+    return jsonErr("Failed to delete payment", 500, "INTERNAL_ERROR", { headers: noStoreHeaders() });
   }
 }

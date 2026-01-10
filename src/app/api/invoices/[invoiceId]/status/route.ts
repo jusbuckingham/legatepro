@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { Types } from "mongoose";
 
 import { auth } from "@/lib/auth";
@@ -8,12 +8,15 @@ import { Invoice, type InvoiceStatus } from "@/models/Invoice";
 import { Estate } from "@/models/Estate";
 import { logEstateEvent } from "@/lib/estateEvents";
 import { logActivity } from "@/lib/activity";
+import {
+  jsonErr,
+  jsonOk,
+  noStoreHeaders,
+  requireObjectIdLike,
+  safeErrorMessage,
+} from "@/lib/apiResponse";
 
 export const dynamic = "force-dynamic";
-
-const NO_STORE_HEADERS = {
-  "Cache-Control": "no-store",
-} as const;
 
 type RouteParams = {
   invoiceId: string;
@@ -23,9 +26,6 @@ type RouteContext = {
   params: Promise<RouteParams>;
 };
 
-function isValidObjectId(id: string) {
-  return Types.ObjectId.isValid(id);
-}
 function idToString(value: unknown): string | null {
   if (value == null) return null;
   if (typeof value === "string") return value;
@@ -61,40 +61,29 @@ function friendlyStatus(status: string | null | undefined): string {
   }
 }
 
-export async function PATCH(req: NextRequest, ctx: RouteContext): Promise<NextResponse> {
+export async function PATCH(req: NextRequest, ctx: RouteContext): Promise<Response> {
+  const headers = noStoreHeaders();
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json(
-      { ok: false, error: "Unauthorized" },
-      { status: 401, headers: NO_STORE_HEADERS }
-    );
+    return jsonErr("Unauthorized", 401, "UNAUTHORIZED", { headers });
   }
 
   const { invoiceId } = await ctx.params;
 
-  if (!invoiceId || !isValidObjectId(invoiceId)) {
-    return NextResponse.json(
-      { ok: false, error: "Invalid invoiceId" },
-      { status: 400, headers: NO_STORE_HEADERS }
-    );
+  if (!requireObjectIdLike(invoiceId)) {
+    return jsonErr("Invalid invoiceId", 400, "BAD_REQUEST", { headers });
   }
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json(
-      { ok: false, error: "Invalid JSON body" },
-      { status: 400, headers: NO_STORE_HEADERS }
-    );
+    return jsonErr("Invalid JSON body", 400, "BAD_REQUEST", { headers });
   }
 
   const nextStatus = normalizeStatus((body as { status?: unknown })?.status);
   if (!nextStatus) {
-    return NextResponse.json(
-      { ok: false, error: "Invalid status. Use DRAFT | SENT | PAID | VOID" },
-      { status: 400, headers: NO_STORE_HEADERS }
-    );
+    return jsonErr("Invalid status. Use DRAFT | SENT | PAID | VOID", 400, "BAD_REQUEST", { headers });
   }
 
   await connectToDatabase();
@@ -102,10 +91,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext): Promise<NextRe
   const invoice = await Invoice.findById(new Types.ObjectId(invoiceId));
 
   if (!invoice) {
-    return NextResponse.json(
-      { ok: false, error: "Invoice not found" },
-      { status: 404, headers: NO_STORE_HEADERS }
-    );
+    return jsonErr("Invoice not found", 404, "NOT_FOUND", { headers });
   }
 
   const access = await getEstateAccess({
@@ -115,10 +101,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext): Promise<NextRe
   });
 
   if (!access || !access.canEdit) {
-    return NextResponse.json(
-      { ok: false, error: "Invoice not found" },
-      { status: 404, headers: NO_STORE_HEADERS }
-    );
+    return jsonErr("Invoice not found", 404, "NOT_FOUND", { headers });
   }
 
   const previousStatusRaw = invoice.status ? String(invoice.status).toUpperCase() : null;
@@ -127,16 +110,13 @@ export async function PATCH(req: NextRequest, ctx: RouteContext): Promise<NextRe
 
   // No-op: still return ok, but don’t spam logs
   if (previousStatusRaw === nextStatus) {
-    return NextResponse.json(
+    return jsonOk(
       {
-        ok: true,
-        data: {
-          invoiceId,
-          status: nextStatus,
-          message: "Status unchanged",
-        },
+        invoiceId,
+        status: nextStatus,
+        message: "Status unchanged",
       },
-      { status: 200, headers: NO_STORE_HEADERS }
+      { headers },
     );
   }
 
@@ -180,7 +160,8 @@ export async function PATCH(req: NextRequest, ctx: RouteContext): Promise<NextRe
         newStatus: nextStatus,
       },
     });
-  } catch {
+  } catch (err) {
+    console.error("logEstateEvent failed:", safeErrorMessage(err));
     // don’t block status change if event logging fails
   }
 
@@ -201,19 +182,17 @@ export async function PATCH(req: NextRequest, ctx: RouteContext): Promise<NextRe
         invoiceNumber: invoice.invoiceNumber ?? null,
       },
     });
-  } catch {
+  } catch (err) {
+    console.error("logActivity failed:", safeErrorMessage(err));
     // don’t block status change if activity logging fails
   }
 
-  return NextResponse.json(
+  return jsonOk(
     {
-      ok: true,
-      data: {
-        invoiceId,
-        estateId: estateIdStr,
-        status: nextStatus,
-      },
+      invoiceId,
+      estateId: estateIdStr,
+      status: nextStatus,
     },
-    { status: 200, headers: NO_STORE_HEADERS }
+    { headers },
   );
 }

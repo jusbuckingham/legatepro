@@ -1,9 +1,19 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
 import { auth } from "@/lib/auth";
 import { getEstateAccess } from "@/lib/estateAccess";
+import {
+  jsonErr,
+  jsonForbidden,
+  jsonNotFound,
+  jsonOk,
+  jsonUnauthorized,
+  noStoreHeaders,
+  requireObjectIdLike,
+  safeErrorMessage,
+} from "@/lib/apiResponse";
 
 type RouteParams = {
   invoiceId: string;
@@ -58,12 +68,16 @@ function coerceStatus(value: unknown): InvoiceStatus | undefined {
 export async function GET(_req: NextRequest, context: RouteContext) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    return jsonUnauthorized();
   }
 
   await connectToDatabase();
 
   const { invoiceId } = await context.params;
+
+  if (!requireObjectIdLike(invoiceId)) {
+    return jsonErr("Invalid invoiceId", 400, "BAD_REQUEST", { headers: noStoreHeaders() });
+  }
 
   const invoiceObjectId = mongoose.Types.ObjectId.isValid(invoiceId)
     ? new mongoose.Types.ObjectId(invoiceId)
@@ -76,7 +90,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
     .exec();
 
   if (!invoice) {
-    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+    return jsonNotFound();
   }
 
   const access = await getEstateAccess({
@@ -86,28 +100,25 @@ export async function GET(_req: NextRequest, context: RouteContext) {
   });
 
   if (!access) {
-    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+    return jsonNotFound();
   }
 
-  return NextResponse.json(
+  return jsonOk(
     {
-      ok: true,
-      data: {
-        invoice: {
-          id: String(invoice._id),
-          estateId: String(invoice.estateId),
-          status: invoice.status,
-          issueDate: invoice.issueDate,
-          dueDate: invoice.dueDate ?? null,
-          notes: invoice.notes ?? "",
-          currency: invoice.currency ?? "USD",
-          subtotal: invoice.subtotal ?? 0,
-          totalAmount: invoice.totalAmount ?? 0,
-          lineItems: invoice.lineItems ?? [],
-        },
+      invoice: {
+        id: String(invoice._id),
+        estateId: String(invoice.estateId),
+        status: invoice.status,
+        issueDate: invoice.issueDate,
+        dueDate: invoice.dueDate ?? null,
+        notes: invoice.notes ?? "",
+        currency: invoice.currency ?? "USD",
+        subtotal: invoice.subtotal ?? 0,
+        totalAmount: invoice.totalAmount ?? 0,
+        lineItems: invoice.lineItems ?? [],
       },
     },
-    { status: 200 },
+    { headers: noStoreHeaders() },
   );
 }
 
@@ -119,7 +130,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
 export async function PUT(req: NextRequest, context: RouteContext) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    return jsonUnauthorized();
   }
 
   await connectToDatabase();
@@ -136,6 +147,10 @@ export async function PUT(req: NextRequest, context: RouteContext) {
   const { status, issueDate, dueDate, notes, currency, lineItems } = body;
 
   const { invoiceId } = await context.params;
+
+  if (!requireObjectIdLike(invoiceId)) {
+    return jsonErr("Invalid invoiceId", 400, "BAD_REQUEST", { headers: noStoreHeaders() });
+  }
 
   const nextStatus = coerceStatus(status);
 
@@ -253,7 +268,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
       .exec();
 
     if (!existing) {
-      return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+      return jsonNotFound();
     }
 
     const access = await getEstateAccess({
@@ -263,7 +278,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
     });
 
     if (!access || !access.canEdit) {
-      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+      return jsonForbidden();
     }
 
     const estateIdStr = String(existing.estateId);
@@ -284,7 +299,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
       .exec();
 
     if (!updated) {
-      return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+      return jsonNotFound();
     }
 
     const updatedDoc = updated as { estateId: unknown; _id: unknown };
@@ -292,24 +307,20 @@ export async function PUT(req: NextRequest, context: RouteContext) {
     const estateId = String(updatedDoc.estateId);
     const updatedInvoiceId = String(updatedDoc._id);
 
-    return NextResponse.json(
+    return jsonOk(
       {
-        ok: true,
-        data: {
-          invoice: {
-            id: updatedInvoiceId,
-            estateId,
-          },
+        invoice: {
+          id: updatedInvoiceId,
+          estateId,
         },
       },
-      { status: 200 },
+      { headers: noStoreHeaders() },
     );
   } catch (err) {
-    console.error("Error updating invoice", err);
-    return NextResponse.json(
-      { ok: false, error: "Failed to update invoice" },
-      { status: 500 },
-    );
+    console.error("Error updating invoice:", safeErrorMessage(err));
+    return jsonErr("Failed to update invoice", 500, "INTERNAL_ERROR", {
+      headers: noStoreHeaders(),
+    });
   }
 }
 
@@ -319,12 +330,16 @@ export async function PUT(req: NextRequest, context: RouteContext) {
 export async function DELETE(_req: NextRequest, context: RouteContext) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    return jsonUnauthorized();
   }
 
   await connectToDatabase();
 
   const { invoiceId } = await context.params;
+
+  if (!requireObjectIdLike(invoiceId)) {
+    return jsonErr("Invalid invoiceId", 400, "BAD_REQUEST", { headers: noStoreHeaders() });
+  }
 
   const invoiceObjectId = mongoose.Types.ObjectId.isValid(invoiceId)
     ? new mongoose.Types.ObjectId(invoiceId)
@@ -338,7 +353,7 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
     .exec();
 
   if (!existing) {
-    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+    return jsonNotFound();
   }
 
   const access = await getEstateAccess({
@@ -348,7 +363,7 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
   });
 
   if (!access || !access.canEdit) {
-    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+    return jsonForbidden();
   }
 
   const estateIdStr = String(existing.estateId);
@@ -365,11 +380,11 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
     .exec();
 
   if (!deleted) {
-    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+    return jsonNotFound();
   }
 
-  return NextResponse.json(
-    { ok: true, data: { success: true, id: String(deleted._id) } },
-    { status: 200 },
+  return jsonOk(
+    { success: true, id: String(deleted._id) },
+    { headers: noStoreHeaders() },
   );
 }

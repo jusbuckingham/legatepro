@@ -1,9 +1,19 @@
 // src/app/api/rent/[id]/route.ts
 // Single Rent Payment API (view, update, delete)
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import { RentPayment } from "@/models/RentPayment";
+import { auth } from "@/lib/auth";
+import {
+  jsonErr,
+  jsonNotFound,
+  jsonOk,
+  jsonUnauthorized,
+  noStoreHeaders,
+  requireObjectIdLike,
+  safeErrorMessage,
+} from "@/lib/apiResponse";
 
 type RouteParams = {
   id: string;
@@ -15,71 +25,52 @@ type RouteContext = {
 
 export const dynamic = "force-dynamic";
 
-/** TODO: Inject authenticated user ID from middleware/session */
-const OWNER_ID_PLACEHOLDER = "demo-user";
-
-/**
- * GET /api/rent/[id]
- * Fetch a single rent payment record
- */
-export async function GET(_request: NextRequest, context: RouteContext): Promise<NextResponse> {
+export async function GET(_request: NextRequest, context: RouteContext): Promise<Response> {
   try {
+    const headers = noStoreHeaders();
+    const session = await auth();
+    if (!session?.user?.id) return jsonUnauthorized();
+
     const { id } = await context.params;
 
-    if (!id) {
-      return NextResponse.json(
-        { ok: false, error: "Missing rent payment id" },
-        { status: 400 }
-      );
-    }
+    if (!id) return jsonErr("Missing rent payment id", 400, "BAD_REQUEST", { headers });
+    if (!requireObjectIdLike(id)) return jsonErr("Invalid rent payment id", 400, "BAD_REQUEST", { headers });
 
     await connectToDatabase();
 
-    const ownerId = OWNER_ID_PLACEHOLDER;
+    const ownerId = session.user.id;
 
     const payment = await RentPayment.findOne({
       _id: id,
       ownerId,
     }).lean();
 
-    if (!payment) {
-      return NextResponse.json(
-        { ok: false, error: "Rent payment not found" },
-        { status: 404 }
-      );
-    }
+    if (!payment) return jsonNotFound("Rent payment not found");
 
-    return NextResponse.json(
-      { ok: true, payment: { ...payment, _id: String(payment._id) } },
-      { status: 200, headers: { "Cache-Control": "no-store" } }
+    return jsonOk(
+      { payment: { ...payment, _id: String(payment._id) } },
+      { headers },
     );
   } catch (error) {
-    console.error("GET /api/rent/[id] error", error);
-    return NextResponse.json(
-      { ok: false, error: "Unable to load rent payment" },
-      { status: 500 }
-    );
+    console.error("GET /api/rent/[id] error:", safeErrorMessage(error));
+    return jsonErr("Unable to load rent payment", 500, "INTERNAL_ERROR", { headers: noStoreHeaders() });
   }
 }
 
-/**
- * PATCH /api/rent/[id]
- * Update a single rent payment record (partial update)
- */
-export async function PATCH(request: NextRequest, context: RouteContext): Promise<NextResponse> {
+export async function PATCH(request: NextRequest, context: RouteContext): Promise<Response> {
   try {
+    const headers = noStoreHeaders();
+    const session = await auth();
+    if (!session?.user?.id) return jsonUnauthorized();
+
     const { id } = await context.params;
 
-    if (!id) {
-      return NextResponse.json(
-        { ok: false, error: "Missing rent payment id" },
-        { status: 400 }
-      );
-    }
+    if (!id) return jsonErr("Missing rent payment id", 400, "BAD_REQUEST", { headers });
+    if (!requireObjectIdLike(id)) return jsonErr("Invalid rent payment id", 400, "BAD_REQUEST", { headers });
 
     await connectToDatabase();
 
-    const ownerId = OWNER_ID_PLACEHOLDER;
+    const ownerId = session.user.id;
     const allowedFields = [
       "tenantName",
       "paymentDate",
@@ -99,10 +90,7 @@ export async function PATCH(request: NextRequest, context: RouteContext): Promis
         updates = parsed;
       }
     } catch {
-      return NextResponse.json(
-        { ok: false, error: "Invalid JSON" },
-        { status: 400 }
-      );
+      return jsonErr("Invalid JSON", 400, "BAD_REQUEST", { headers });
     }
 
     const updatePayload: Record<string, unknown> = {};
@@ -132,69 +120,46 @@ export async function PATCH(request: NextRequest, context: RouteContext): Promis
       { new: true }
     ).lean();
 
-    if (!payment) {
-      return NextResponse.json(
-        { ok: false, error: "Rent payment not found" },
-        { status: 404 }
-      );
-    }
+    if (!payment) return jsonNotFound("Rent payment not found");
 
-    return NextResponse.json(
-      { ok: true, payment: { ...payment, _id: String(payment._id) } },
-      { status: 200, headers: { "Cache-Control": "no-store" } }
+    return jsonOk(
+      { payment: { ...payment, _id: String(payment._id) } },
+      { headers },
     );
   } catch (error) {
-    console.error("PATCH /api/rent/[id] error", error);
-    return NextResponse.json(
-      { ok: false, error: "Unable to update rent payment" },
-      { status: 500 }
-    );
+    console.error("PATCH /api/rent/[id] error:", safeErrorMessage(error));
+    return jsonErr("Unable to update rent payment", 500, "INTERNAL_ERROR", { headers: noStoreHeaders() });
   }
 }
 
-/**
- * DELETE /api/rent/[id]
- * Delete a single rent payment record
- */
 export async function DELETE(
   _request: NextRequest,
   context: RouteContext
-): Promise<NextResponse> {
+): Promise<Response> {
   try {
+    const headers = noStoreHeaders();
+    const session = await auth();
+    if (!session?.user?.id) return jsonUnauthorized();
+
     const { id } = await context.params;
 
-    if (!id) {
-      return NextResponse.json(
-        { ok: false, error: "Missing rent payment id" },
-        { status: 400 }
-      );
-    }
+    if (!id) return jsonErr("Missing rent payment id", 400, "BAD_REQUEST", { headers });
+    if (!requireObjectIdLike(id)) return jsonErr("Invalid rent payment id", 400, "BAD_REQUEST", { headers });
 
     await connectToDatabase();
 
-    const ownerId = OWNER_ID_PLACEHOLDER;
+    const ownerId = session.user.id;
 
     const payment = await RentPayment.findOneAndDelete({
       _id: id,
       ownerId,
     }).lean();
 
-    if (!payment) {
-      return NextResponse.json(
-        { ok: false, error: "Rent payment not found" },
-        { status: 404 }
-      );
-    }
+    if (!payment) return jsonNotFound("Rent payment not found");
 
-    return NextResponse.json(
-      { ok: true, id },
-      { status: 200, headers: { "Cache-Control": "no-store" } }
-    );
+    return jsonOk({ id }, { headers });
   } catch (error) {
-    console.error("DELETE /api/rent/[id] error", error);
-    return NextResponse.json(
-      { ok: false, error: "Unable to delete rent payment" },
-      { status: 500 }
-    );
+    console.error("DELETE /api/rent/[id] error:", safeErrorMessage(error));
+    return jsonErr("Unable to delete rent payment", 500, "INTERNAL_ERROR", { headers: noStoreHeaders() });
   }
 }
