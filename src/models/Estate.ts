@@ -125,7 +125,7 @@ const CollaboratorSchema = new Schema<EstateCollaborator>(
 
 const InviteSchema = new Schema<EstateInvite>(
   {
-    token: { type: String, required: true, index: true },
+    token: { type: String, required: true },
     email: {
       type: String,
       required: true,
