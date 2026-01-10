@@ -1,5 +1,6 @@
 // src/lib/db.ts
 import mongoose, { Mongoose } from "mongoose";
+import { assertEnv } from "@/lib/assertEnv";
 
 // Shape of our cached connection
 interface MongooseCache {
@@ -8,11 +9,19 @@ interface MongooseCache {
 }
 
 function getMongoUri(): string {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) {
+  try {
+    assertEnv([
+      {
+        key: "MONGODB_URI",
+        hint: "Mongo connection string used by connectToDatabase() (set in .env.local and Vercel env vars)",
+      },
+    ]);
+  } catch {
+    // Preserve the existing, friendly local-dev message while still failing fast.
     throw new Error("❌ Missing MONGODB_URI — please define it in your .env.local file.");
   }
-  return uri;
+
+  return process.env.MONGODB_URI as string;
 }
 
 /**
