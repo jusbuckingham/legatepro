@@ -1,11 +1,8 @@
-// src/app/app/billing/page.tsx
-import type { Metadata } from "next";
-import Link from "next/link";
+"use client";
 
-export const metadata: Metadata = {
-  title: "Billing · LegatePro",
-  description: "Manage your LegatePro subscription and invoices.",
-};
+// src/app/app/billing/page.tsx
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 
 const PLANS = [
   {
@@ -39,10 +36,111 @@ const PLANS = [
   },
 ];
 
+type BillingPlan = {
+  id: string;
+  name: string;
+  price: number;
+  currency: string;
+  interval: "month" | "year";
+  stripePriceEnv?: string;
+};
+
+type BillingSnapshot = {
+  customer: {
+    id: string;
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+    stripeCustomerId: string | null;
+  };
+  subscription: {
+    planId: string;
+    planName: string;
+    price: number;
+    currency: string;
+    interval: "month" | "year";
+    status: string;
+    managedByStripe: boolean;
+  };
+  plans: BillingPlan[];
+};
+
+async function fetchBilling(): Promise<BillingSnapshot> {
+  const res = await fetch("/api/billing", {
+    method: "GET",
+    headers: { "Accept": "application/json" },
+    cache: "no-store",
+  });
+
+  const json = (await res.json()) as { ok: boolean; data?: BillingSnapshot; error?: string };
+  if (!res.ok || !json.ok || !json.data) {
+    throw new Error(json.error || "Failed to load billing");
+  }
+  return json.data;
+}
+
+async function startCheckout(planId: string): Promise<string> {
+  const res = await fetch("/api/billing", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify({ planId }),
+  });
+
+  const json = (await res.json()) as { ok: boolean; data?: { url?: string }; error?: string };
+  if (!res.ok || !json.ok || !json.data?.url) {
+    throw new Error(json.error || "Failed to start checkout");
+  }
+
+  return json.data.url;
+}
+
+async function startPortal(): Promise<string> {
+  const res = await fetch("/api/billing/portal", {
+    method: "POST",
+    headers: { "Accept": "application/json" },
+  });
+
+  const json = (await res.json()) as { ok: boolean; data?: { url?: string }; error?: string };
+  if (!res.ok || !json.ok || !json.data?.url) {
+    throw new Error(json.error || "Failed to open customer portal");
+  }
+
+  return json.data.url;
+}
+
 export default function BillingPage() {
-  const currentPlanId = "free"; // TODO: wire to real user subscription
-  const currentPlan = PLANS.find((p) => p.id === currentPlanId) ?? PLANS[0];
-  const isBillingLive = false;
+  const [snapshot, setSnapshot] = useState<BillingSnapshot | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busyPlanId, setBusyPlanId] = useState<string | null>(null);
+  const [busyPortal, setBusyPortal] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await fetchBilling();
+        if (!cancelled) setSnapshot(data);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load billing");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const currentPlanId = snapshot?.subscription?.planId ?? "free";
+  const currentPlan = useMemo(
+    () => PLANS.find((p) => p.id === currentPlanId) ?? PLANS[0],
+    [currentPlanId],
+  );
+
+  const isBillingLive = Boolean(snapshot);
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 p-4 md:p-6 lg:p-8">
@@ -85,20 +183,35 @@ export default function BillingPage() {
           </div>
           <div className="mt-1 text-sm font-semibold text-slate-50">{currentPlan.name}</div>
           <p className="mt-1 text-xs text-emerald-200/80">
-            All core features are available while we finish billing integration.
+            {loading
+              ? "Loading your billing status…"
+              : error
+                ? `Billing unavailable: ${error}`
+                : "Your subscription is managed securely through Stripe."}
           </p>
 
           <div className="mt-3 flex flex-col gap-2">
             <button
               type="button"
-              disabled={!isBillingLive}
-              className="inline-flex w-full items-center justify-center rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs font-medium text-slate-200 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={!isBillingLive || busyPortal}
+              onClick={async () => {
+                try {
+                  setBusyPortal(true);
+                  const url = await startPortal();
+                  window.location.assign(url);
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : "Failed to open customer portal");
+                } finally {
+                  setBusyPortal(false);
+                }
+              }}
+              className="inline-flex w-full items-center justify-center rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs font-medium text-slate-200 shadow-sm hover:bg-slate-900/80 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Manage billing portal
+              {busyPortal ? "Opening portal…" : "Customer portal"}
             </button>
             {!isBillingLive ? (
               <p className="text-[11px] text-emerald-200/70">
-                Coming soon: update payment method, download invoices, and manage your plan.
+                Connect Stripe to enable the customer portal (update payment methods, cancel, and download invoices).
               </p>
             ) : null}
           </div>
@@ -170,10 +283,21 @@ export default function BillingPage() {
                 ) : (
                   <button
                     type="button"
-                    disabled={!isBillingLive}
+                    disabled={!isBillingLive || busyPlanId === plan.id}
+                    onClick={async () => {
+                      try {
+                        setBusyPlanId(plan.id);
+                        const url = await startCheckout(plan.id);
+                        window.location.assign(url);
+                      } catch (e) {
+                        setError(e instanceof Error ? e.message : "Failed to start checkout");
+                      } finally {
+                        setBusyPlanId(null);
+                      }
+                    }}
                     className="inline-flex w-full items-center justify-center rounded-md border border-[#F15A43]/80 bg-[#F15A43] px-3 py-2 text-xs font-semibold text-slate-950 shadow-sm hover:bg-[#f26b56] disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    Upgrade (Stripe coming soon)
+                    {busyPlanId === plan.id ? "Redirecting…" : "Upgrade to Pro"}
                   </button>
                 )}
               </div>
@@ -188,7 +312,11 @@ export default function BillingPage() {
           <div>
             <h2 className="text-sm font-semibold text-slate-100">Invoices &amp; receipts</h2>
             <p className="mt-0.5 text-xs text-slate-500">
-              Download billing receipts once Stripe is enabled.
+              {loading
+                ? "Loading billing history…"
+                : isBillingLive
+                  ? "Receipts will appear here after your first Stripe invoice."
+                  : "Connect billing to download receipts."}
             </p>
           </div>
           <button

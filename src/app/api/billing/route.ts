@@ -1,12 +1,27 @@
 // src/app/api/billing/route.ts
-// Minimal billing endpoint for LegatePro MVP.
-// In production, replace this with real Stripe-backed billing.
+// Stripe-backed billing endpoints for LegatePro.
+// - GET: returns current user's billing/subscription snapshot
+// - POST: creates a Stripe Checkout Session for a subscription
 
-import { NextResponse } from "next/server";
-import { connectToDatabase } from "../../../lib/db";
-import { User, UserDocument } from "../../../models/User";
+import { NextRequest } from "next/server";
+import Stripe from "stripe";
 
-// Simple in-memory description of the plans used on /app/billing
+import { auth } from "@/lib/auth";
+import { connectToDatabase } from "@/lib/db";
+import { assertEnv } from "@/lib/assertEnv";
+import {
+  jsonErr,
+  jsonOk,
+  jsonUnauthorized,
+  noStoreHeaders,
+  safeErrorMessage,
+} from "@/lib/apiResponse";
+import { User, UserDocument } from "@/models/User";
+
+export const dynamic = "force-dynamic";
+
+// Plans shown on /app/billing
+// NOTE: For Stripe, set STRIPE_PRICE_PRO_MONTHLY to the Price ID for the plan.
 const PLAN_METADATA: Record<
   string,
   {
@@ -15,6 +30,7 @@ const PLAN_METADATA: Record<
     price: number;
     currency: string;
     interval: "month" | "year";
+    stripePriceEnv?: string;
   }
 > = {
   free: {
@@ -30,37 +46,67 @@ const PLAN_METADATA: Record<
     price: 19,
     currency: "usd",
     interval: "month",
+    stripePriceEnv: "STRIPE_PRICE_PRO_MONTHLY",
   },
 };
 
+function getStripe() {
+  assertEnv([
+    { key: "STRIPE_SECRET_KEY", hint: "Stripe secret key for server-side billing" },
+  ]);
+  return new Stripe(process.env.STRIPE_SECRET_KEY as string, {
+    apiVersion: "2025-12-15.clover",
+  });
+}
+
+function getAppUrl() {
+  // Prefer an explicit app url in prod.
+  // Fallbacks are fine for local/dev.
+  const url =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.NEXTAUTH_URL ||
+    process.env.VERCEL_URL ||
+    "http://localhost:3000";
+  return url.startsWith("http") ? url : `https://${url}`;
+}
+
+function idToString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+  if (value && typeof value === "object" && "toString" in value) {
+    return String((value as { toString: () => string }).toString());
+  }
+  return "";
+}
+
 // GET /api/billing
-// Returns mock subscription/billing info for the "current" user (demo user for now).
+// Returns subscription/billing info for the authenticated user.
 export async function GET() {
+  const headers = noStoreHeaders();
+
   try {
+    const session = await auth();
+    if (!session?.user?.id) return jsonUnauthorized();
+
     await connectToDatabase();
 
-    const demoEmail = process.env.LEGATEPRO_DEMO_EMAIL || "demo@legatepro.test";
-
-    let user: UserDocument | null = await User.findOne({ email: demoEmail });
-
-    // If the demo user doesn't exist yet, create it.
+    const user: UserDocument | null = await User.findById(session.user.id);
     if (!user) {
-      user = await User.create({
-        email: demoEmail,
-        firstName: "Demo",
-        lastName: "User",
-        authProvider: "password",
-        onboardingCompleted: false,
-        subscriptionStatus: "free",
-      });
-    }
-
-    if (!user) {
-      throw new Error("Unable to load or create demo user");
+      return jsonErr("User not found", 404, "NOT_FOUND", { headers });
     }
 
     const planId = user.subscriptionStatus ?? "free";
-    const plan = PLAN_METADATA[planId] ?? PLAN_METADATA["free"];
+    const plan = PLAN_METADATA[planId] ?? PLAN_METADATA.free;
+
+    const customer = {
+      id: idToString(user._id),
+      email: user.email,
+      firstName: user.firstName ?? null,
+      lastName: user.lastName ?? null,
+      // Best-effort: only present if your User model has this field.
+      stripeCustomerId:
+        (user as unknown as { stripeCustomerId?: string }).stripeCustomerId ?? null,
+    };
 
     const subscription = {
       planId: plan.id,
@@ -69,36 +115,101 @@ export async function GET() {
       currency: plan.currency,
       interval: plan.interval,
       status: planId === "free" ? "inactive" : "active",
-      // Eventually, when Stripe is wired up, this will reflect real state
-      managedByStripe: false,
-      isDemo: true,
+      managedByStripe: true,
     };
 
-    // Mongoose 8 types mark `_id` as `unknown`, so we defensively coerce to string.
-    const userId =
-      typeof user._id === "string"
-        ? user._id
-        : (user._id as { toString(): string }).toString();
-
-    const customer = {
-      id: userId,
-      email: user.email,
-      firstName: user.firstName ?? null,
-      lastName: user.lastName ?? null,
-    };
-
-    return NextResponse.json(
-      {
-        customer,
-        subscription,
-      },
-      { status: 200 }
+    return jsonOk(
+      { customer, subscription, plans: Object.values(PLAN_METADATA) },
+      { headers },
     );
   } catch (error) {
-    console.error("GET /api/billing error", error);
-    return NextResponse.json(
-      { error: "Unable to load billing information" },
-      { status: 500 }
-    );
+    console.error("GET /api/billing error:", safeErrorMessage(error));
+    return jsonErr("Unable to load billing information", 500, "INTERNAL_ERROR", {
+      headers,
+    });
+  }
+}
+
+// POST /api/billing
+// Body: { planId: "pro" }
+// Creates a Stripe Checkout Session and returns { url }.
+export async function POST(req: NextRequest) {
+  const headers = noStoreHeaders();
+
+  try {
+    const session = await auth();
+    if (!session?.user?.id) return jsonUnauthorized();
+
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return jsonErr("Invalid JSON", 400, "BAD_REQUEST", { headers });
+    }
+
+    const planId = (body as { planId?: string })?.planId ?? "";
+    const plan = PLAN_METADATA[planId];
+    if (!plan || planId === "free") {
+      return jsonErr("Invalid planId", 400, "BAD_REQUEST", { headers });
+    }
+
+    const priceEnv = plan.stripePriceEnv;
+    if (!priceEnv) {
+      return jsonErr("Plan is not billable", 400, "BAD_REQUEST", { headers });
+    }
+
+    assertEnv([{ key: priceEnv, hint: "Stripe Price ID for the selected plan" }]);
+
+    await connectToDatabase();
+
+    const user: UserDocument | null = await User.findById(session.user.id);
+    if (!user) return jsonErr("User not found", 404, "NOT_FOUND", { headers });
+
+    const stripe = getStripe();
+
+    // Ensure Stripe Customer exists.
+    const u = user as unknown as {
+      stripeCustomerId?: string;
+      save: () => Promise<unknown>;
+    };
+
+    if (!u.stripeCustomerId) {
+      const customer = await stripe.customers.create({
+        email: user.email,
+        name: [user.firstName, user.lastName].filter(Boolean).join(" ") || undefined,
+        metadata: {
+          userId: idToString(user._id),
+        },
+      });
+      u.stripeCustomerId = customer.id;
+      await u.save();
+    }
+
+    const appUrl = getAppUrl();
+
+    const checkout = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      customer: u.stripeCustomerId,
+      line_items: [{ price: process.env[priceEnv] as string, quantity: 1 }],
+      allow_promotion_codes: true,
+      success_url: `${appUrl}/app/billing?success=1`,
+      cancel_url: `${appUrl}/app/billing?canceled=1`,
+      // Important: don't trust client state—webhook will finalize subscription status.
+      metadata: {
+        userId: idToString(user._id),
+        planId,
+      },
+    });
+
+    if (!checkout.url) {
+      return jsonErr("Unable to create checkout session", 500, "INTERNAL_ERROR", {
+        headers,
+      });
+    }
+
+    return jsonOk({ url: checkout.url }, { headers });
+  } catch (error) {
+    console.error("POST /api/billing error:", safeErrorMessage(error));
+    return jsonErr("Unable to start checkout", 500, "INTERNAL_ERROR", { headers });
   }
 }
