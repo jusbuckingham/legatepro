@@ -188,17 +188,31 @@ export default async function TasksPage({ searchParams }: PageProps) {
         .filter((id): id is string => typeof id === "string" && id.trim().length > 0),
     ),
   );
+  const hasAnyTasks = rawTasks.length > 0;
 
   let estatesById: Record<string, string> = {};
   let estateOptions: { id: string; name: string }[] = [];
-  if (estateIds.length > 0) {
-    const estateDocs = (await Estate.find({
-      _id: { $in: estateIds },
-      ownerId: session.user.id,
-    })
-      .lean()
-      .exec()) as EstateDocLike[];
 
+  // If we have tasks, we only need the estates referenced by those tasks.
+  // If we have no tasks yet, load the user's estates so filters and onboarding can work.
+  const estateDocs = (estateIds.length > 0
+    ? ((await Estate.find({
+        _id: { $in: estateIds },
+        ownerId: session.user.id,
+      })
+        .lean()
+        .exec()) as EstateDocLike[])
+    : !hasAnyTasks
+    ? ((await Estate.find(
+        { ownerId: session.user.id },
+        { displayName: 1, caseName: 1 },
+      )
+        .sort({ createdAt: -1 })
+        .lean()
+        .exec()) as EstateDocLike[])
+    : []) as EstateDocLike[];
+
+  if (estateDocs.length > 0) {
     estatesById = estateDocs.reduce<Record<string, string>>((acc, est) => {
       const id = String(est._id);
       const displayName =
@@ -290,6 +304,28 @@ export default async function TasksPage({ searchParams }: PageProps) {
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8 px-4 py-8">
+      {!hasAnyTasks && estateOptions.length === 0 && !hasActiveFilters ? (
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 text-xs text-slate-200 shadow-sm">
+          <p className="text-sm font-semibold text-slate-100">Create your first estate</p>
+          <p className="mt-0.5 text-[11px] text-slate-500">
+            Tasks are tied to estates. Create an estate first, then add tasks to build your probate checklist.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href="/app/estates/new"
+              className="inline-flex h-9 items-center rounded-md bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500"
+            >
+              New estate
+            </Link>
+            <Link
+              href="/app/estates"
+              className="inline-flex h-9 items-center rounded-md border border-slate-700 bg-slate-950 px-3 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+            >
+              View estates
+            </Link>
+          </div>
+        </div>
+      ) : null}
       <PageHeader
         title="All tasks"
         description="Unified task list across all estates, with quick filters for status and per-estate work."
@@ -453,28 +489,103 @@ export default async function TasksPage({ searchParams }: PageProps) {
       <section className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/70">
         {tasks.length === 0 ? (
           <div className="px-4 py-10 text-center text-sm text-slate-400">
-            <p>No tasks found.</p>
-            <p className="mt-1 text-xs text-slate-500">
-              {hasActiveFilters
-                ? "Try resetting filters, or create a new task to get started."
-                : "Create a new task to get started."}
-            </p>
-            <div className="mt-4 flex flex-wrap justify-center gap-2">
-              <Link
-                href="/app/tasks/new"
-                className="inline-flex h-9 items-center rounded-md bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500"
-              >
-                + New task
-              </Link>
-              {hasActiveFilters ? (
-                <Link
-                  href="/app/tasks"
-                  className="inline-flex h-9 items-center rounded-md border border-slate-700 bg-slate-950 px-3 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
-                >
-                  Reset
-                </Link>
-              ) : null}
-            </div>
+            {hasActiveFilters ? (
+              <>
+                <p className="text-sm font-semibold text-slate-100">No tasks match your filters</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Try a different status / estate, or reset filters to see everything.
+                </p>
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  <Link
+                    href="/app/tasks"
+                    className="inline-flex h-9 items-center rounded-md border border-slate-700 bg-slate-950 px-3 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+                  >
+                    Reset filters
+                  </Link>
+                  {estateOptions.length > 0 ? (
+                    <Link
+                      href="/app/tasks/new"
+                      className="inline-flex h-9 items-center rounded-md bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500"
+                    >
+                      + New task
+                    </Link>
+                  ) : (
+                    <Link
+                      href="/app/estates/new"
+                      className="inline-flex h-9 items-center rounded-md bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500"
+                    >
+                      New estate
+                    </Link>
+                  )}
+                </div>
+              </>
+            ) : estateOptions.length === 0 ? (
+              <>
+                <p className="text-sm font-semibold text-slate-100">Create an estate first</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Tasks are tied to estates. Once you create an estate, you can build your probate checklist here.
+                </p>
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  <Link
+                    href="/app/estates/new"
+                    className="inline-flex h-9 items-center rounded-md bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500"
+                  >
+                    New estate
+                  </Link>
+                  <Link
+                    href="/app/estates"
+                    className="inline-flex h-9 items-center rounded-md border border-slate-700 bg-slate-950 px-3 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+                  >
+                    View estates
+                  </Link>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-slate-100">Add your first tasks</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Start with 3–5 items you’re already thinking about (court filings, bank account, notifications, inventory).
+                </p>
+
+                <div className="mx-auto mt-4 grid max-w-2xl gap-3 text-left md:grid-cols-3">
+                  <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                    <p className="text-xs font-semibold text-slate-100">Quick ideas</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] text-slate-500">
+                      <li>Open estate bank account</li>
+                      <li>File Letters of Authority</li>
+                      <li>Inventory assets</li>
+                    </ul>
+                  </div>
+                  <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                    <p className="text-xs font-semibold text-slate-100">Stay on track</p>
+                    <p className="mt-2 text-[11px] text-slate-500">
+                      Add due dates to surface “Overdue” and “Due soon” badges.
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                    <p className="text-xs font-semibold text-slate-100">Link to estates</p>
+                    <p className="mt-2 text-[11px] text-slate-500">
+                      Tasks roll up to each estate checklist automatically.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  <Link
+                    href="/app/tasks/new"
+                    className="inline-flex h-9 items-center rounded-md bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500"
+                  >
+                    + New task
+                  </Link>
+                  <Link
+                    href="/app/estates"
+                    className="inline-flex h-9 items-center rounded-md border border-slate-700 bg-slate-950 px-3 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+                  >
+                    View estates
+                  </Link>
+                </div>
+              </>
+            )}
           </div>
         ) : (
           <>

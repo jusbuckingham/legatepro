@@ -18,9 +18,48 @@ import { User, UserDocument } from "@/models/User";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+// Best-effort in-memory rate limit (works in long-lived runtimes; may reset on serverless cold starts).
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 30;
+const attempts = new Map<string, { count: number; resetAt: number }>();
+
+function getClientKey(): string {
+  // Portal is auth-gated; we rate limit primarily by user id (fallback to UA).
+  // We can't access req headers here (no req param), so keep this conservative.
+  // If you want IP-based limiting too, change POST signature to accept NextRequest.
+  return "portal";
+}
+
+function checkRateLimit(
+  key: string,
+): { ok: true } | { ok: false; retryAfterSeconds: number } {
+  const now = Date.now();
+  const entry = attempts.get(key);
+
+  if (!entry || entry.resetAt <= now) {
+    attempts.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return { ok: true };
+  }
+
+  if (entry.count >= RATE_LIMIT_MAX) {
+    return { ok: false, retryAfterSeconds: Math.max(1, Math.ceil((entry.resetAt - now) / 1000)) };
+  }
+
+  entry.count += 1;
+  attempts.set(key, entry);
+  return { ok: true };
+}
+
+function isProd(): boolean {
+  return process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
+}
+
 function getStripe() {
   assertEnv([
-    { key: "STRIPE_SECRET_KEY", hint: "Stripe secret key for server-side billing" },
+    {
+      key: "STRIPE_SECRET_KEY",
+      hint: "Stripe secret key for server-side billing",
+    },
   ]);
 
   return new Stripe(process.env.STRIPE_SECRET_KEY as string, {
@@ -28,13 +67,34 @@ function getStripe() {
   });
 }
 
-function getAppUrl() {
+function getAppUrl(): string {
   const url =
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.NEXTAUTH_URL ||
     process.env.VERCEL_URL ||
     "http://localhost:3000";
+
   return url.startsWith("http") ? url : `https://${url}`;
+}
+
+function safeReturnUrl(appUrl: string): string | null {
+  try {
+    const base = new URL(appUrl);
+
+    // Only allow http(s)
+    if (base.protocol !== "https:" && base.protocol !== "http:") return null;
+
+    // In production, require https
+    if (isProd() && base.protocol !== "https:") return null;
+
+    // Require a host
+    if (!base.host) return null;
+
+    // Only return to our own billing page (prevents open redirects)
+    return new URL("/app/billing", base).toString();
+  } catch {
+    return null;
+  }
 }
 
 function idToString(value: unknown): string {
@@ -46,14 +106,42 @@ function idToString(value: unknown): string {
   return "";
 }
 
+function addSecurityHeaders(headers: Headers) {
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Referrer-Policy", "same-origin");
+  headers.set("X-Frame-Options", "DENY");
+}
+
 // POST /api/billing/portal
 // Returns a Stripe billing portal url for the authenticated user.
 export async function POST() {
-  const headers = noStoreHeaders();
+  const headers = new Headers(noStoreHeaders());
+  addSecurityHeaders(headers);
+
+  // Rate limit (best-effort). We include the user id once we have it.
+  const rl = checkRateLimit(getClientKey());
+  if (!rl.ok) {
+    headers.set("Retry-After", String(rl.retryAfterSeconds));
+    return jsonErr("Too many requests. Please try again shortly.", 429, "RATE_LIMITED", {
+      headers,
+    });
+  }
 
   try {
     const session = await auth();
     if (!session?.user?.id) return jsonUnauthorized();
+
+    // Add per-user rate limit key for better protection (in addition to the coarse bucket above).
+    const userRl = checkRateLimit(`portal:user:${session.user.id}`);
+    if (!userRl.ok) {
+      headers.set("Retry-After", String(userRl.retryAfterSeconds));
+      return jsonErr(
+        "Too many requests. Please try again shortly.",
+        429,
+        "RATE_LIMITED",
+        { headers },
+      );
+    }
 
     await connectToDatabase();
 
@@ -81,12 +169,27 @@ export async function POST() {
       await u.save();
     }
 
+    // Guard against corrupted/invalid values
+    if (!u.stripeCustomerId || !u.stripeCustomerId.startsWith("cus_")) {
+      return jsonErr("Billing is not configured for this user.", 409, "BILLING_NOT_READY", {
+        headers,
+      });
+    }
+
     const appUrl = getAppUrl();
+    const returnUrl = safeReturnUrl(appUrl);
+    if (!returnUrl) {
+      // Avoid leaking env details in prod.
+      const message = isProd()
+        ? "Billing is not configured."
+        : `Invalid app URL configuration: ${appUrl}`;
+      return jsonErr(message, 500, "CONFIG_ERROR", { headers });
+    }
 
     // NOTE: Stripe Billing Portal must be enabled in the Stripe Dashboard.
     const portal = await stripe.billingPortal.sessions.create({
       customer: u.stripeCustomerId,
-      return_url: `${appUrl}/app/billing`,
+      return_url: returnUrl,
     });
 
     if (!portal.url) {

@@ -2,8 +2,11 @@
 
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+
 import PageHeader from "@/components/layout/PageHeader";
+import { auth } from "@/lib/auth";
+import { connectToDatabase } from "@/lib/db";
+import { Estate } from "@/models/Estate";
 
 export const metadata = {
   title: "Documents | LegatePro",
@@ -14,6 +17,11 @@ export default async function DocumentsPage() {
   if (!session?.user?.id) {
     redirect("/login?callbackUrl=/app/documents");
   }
+  await connectToDatabase();
+  const estatesCount = await Estate.countDocuments({
+    $or: [{ ownerId: session.user.id }, { "collaborators.userId": session.user.id }],
+  });
+  const hasEstates = estatesCount > 0;
   return (
     <div className="space-y-8 p-4 md:p-6">
       <PageHeader
@@ -49,13 +57,57 @@ export default async function DocumentsPage() {
         }
       />
 
+      {hasEstates ? (
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 text-xs text-slate-200 shadow-sm">
+          <p className="text-sm font-semibold text-slate-100">Open an estate to manage documents</p>
+          <p className="mt-0.5 text-[11px] text-slate-500">
+            Documents stay estate-scoped for audit clarity. Pick an estate, then add links, tags, and notes.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href="/app/estates"
+              className="inline-flex h-9 items-center rounded-md bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-500"
+            >
+              Browse estates
+            </Link>
+            <Link
+              href="/app/estates/new"
+              className="inline-flex h-9 items-center rounded-md border border-slate-700 bg-slate-950 px-3 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+            >
+              Create an estate
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 text-xs text-slate-200 shadow-sm">
+          <p className="text-sm font-semibold text-slate-100">Create your first estate to start indexing documents</p>
+          <p className="mt-0.5 text-[11px] text-slate-500">
+            Documents live inside estates so files stay legally separated and easy to audit.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href="/app/estates/new"
+              className="inline-flex h-9 items-center rounded-md bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-500"
+            >
+              New estate
+            </Link>
+            <Link
+              href="/app/estates"
+              className="inline-flex h-9 items-center rounded-md border border-slate-700 bg-slate-950 px-3 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+            >
+              View estates
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Main documents section */}
       <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-5 shadow-sm">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div className="space-y-2">
-            <p className="text-base font-semibold text-slate-100">Documents live inside estates</p>
+            <p className="text-base font-semibold text-slate-100">Documents are estate-scoped</p>
             <p className="max-w-2xl text-sm text-slate-400">
-              LegatePro keeps documents estate-scoped by design so files stay legally separated and easy to audit.
+              To keep things legally clean, documents live inside an estate. Open an estate to add links, tags, and notes.
             </p>
           </div>
 
@@ -72,6 +124,12 @@ export default async function DocumentsPage() {
             >
               Create an estate
             </Link>
+            <Link
+              href="/app/estates?sort=updated"
+              className="inline-flex items-center rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/60 hover:text-slate-50"
+            >
+              Recently updated
+            </Link>
           </div>
         </div>
 
@@ -80,7 +138,7 @@ export default async function DocumentsPage() {
             <p className="text-sm font-semibold text-slate-200">What you can do now</p>
             <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-slate-400">
               <li>Open an estate and manage its document index</li>
-              <li>Add Drive/Dropbox links so you can find files fast</li>
+              <li>Add Drive/Dropbox links so you can find the authoritative file fast</li>
               <li>Use consistent tags (COURT, ID, TAX, BANK)</li>
             </ul>
           </div>
@@ -118,15 +176,4 @@ export default async function DocumentsPage() {
       </section>
     </div>
   );
-}
-
-// src/components/layout/PageHeader.tsx
-
-import type { ReactNode } from "react";
-
-export interface PageHeaderProps {
-  eyebrow?: ReactNode;
-  title: string;
-  description?: string;
-  actions?: ReactNode;
 }

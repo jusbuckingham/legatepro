@@ -1,4 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+
+import { auth } from "@/lib/auth";
+import { EntitlementError, requireFeature } from "@/lib/entitlements";
+import {
+  jsonErr,
+  jsonUnauthorized,
+  noStoreHeaders,
+  safeErrorMessage,
+} from "@/lib/apiResponse";
+import { User, UserDocument } from "@/models/User";
 import { Types } from "mongoose";
 
 import { connectToDatabase } from "@/lib/db";
@@ -43,103 +53,136 @@ function buildEstateIdQuery(
 }
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const estateId = searchParams.get("estateId");
+  const headersNoStore = noStoreHeaders();
 
-  if (!estateId) {
-    return new NextResponse("Missing estateId", { status: 400 });
-  }
+  try {
+    const session = await auth();
+    if (!session?.user?.id) return jsonUnauthorized();
 
-  await connectToDatabase();
+    await connectToDatabase();
 
-  // Pull all rent payments for this estate
-  const docsRaw = await RentPayment.find({ estateId: buildEstateIdQuery(estateId) })
-    .sort({ receivedDate: 1, createdAt: 1 })
-    .lean<Record<string, unknown>[]>()
-    .exec();
-
-  const toNumberIfPossible = (v: unknown): number | undefined => {
-    if (typeof v === "number" && !Number.isNaN(v)) return v;
-    if (typeof v === "string") {
-      const n = Number(v);
-      return Number.isNaN(n) ? undefined : n;
+    const user: UserDocument | null = await User.findById(session.user.id);
+    if (!user) {
+      return jsonErr("User not found", 404, "NOT_FOUND", { headers: headersNoStore });
     }
-    return undefined;
-  };
 
-  const toDateOrStringIfPossible = (v: unknown): string | Date | undefined => {
-    if (v instanceof Date) return v;
-    if (typeof v === "string") return v;
-    return undefined;
-  };
+    try {
+      requireFeature(
+        user as unknown as {
+          subscriptionPlanId?: string | null;
+          subscriptionStatus?: string | null;
+        },
+        "exports"
+      );
+    } catch (e) {
+      if (e instanceof EntitlementError) {
+        return jsonErr("Pro subscription required", 402, e.code, { headers: headersNoStore });
+      }
+      throw e;
+    }
 
-  const normalizeRentPayment = (raw: Record<string, unknown>): RentPaymentDoc => {
-    return {
-      _id: raw._id,
-      estateId: raw.estateId,
-      propertyId: raw.propertyId,
-      tenantName: typeof raw.tenantName === "string" ? raw.tenantName : undefined,
-      method: typeof raw.method === "string" ? raw.method : undefined,
-      amount: toNumberIfPossible(raw.amount),
-      periodLabel: typeof raw.periodLabel === "string" ? raw.periodLabel : undefined,
-      notes: typeof raw.notes === "string" ? raw.notes : undefined,
-      receivedDate: toDateOrStringIfPossible(raw.receivedDate),
-      createdAt: toDateOrStringIfPossible(raw.createdAt),
-      propertyLabel:
-        typeof raw.propertyLabel === "string"
-          ? raw.propertyLabel
-          : (typeof raw.propertyName === "string" ? raw.propertyName : undefined),
+    const { searchParams } = new URL(request.url);
+    const estateId = searchParams.get("estateId");
+
+    if (!estateId) {
+      return jsonErr("Missing estateId", 400, "BAD_REQUEST", { headers: headersNoStore });
+    }
+
+    // Pull all rent payments for this estate
+    const docsRaw = await RentPayment.find({ estateId: buildEstateIdQuery(estateId) })
+      .sort({ receivedDate: 1, createdAt: 1 })
+      .lean<Record<string, unknown>[]>()
+      .exec();
+
+    const toNumberIfPossible = (v: unknown): number | undefined => {
+      if (typeof v === "number" && !Number.isNaN(v)) return v;
+      if (typeof v === "string") {
+        const n = Number(v);
+        return Number.isNaN(n) ? undefined : n;
+      }
+      return undefined;
     };
-  };
 
-  // Normalize lean results without unsafe casts
-  const docs: RentPaymentDoc[] = docsRaw.map(normalizeRentPayment);
+    const toDateOrStringIfPossible = (v: unknown): string | Date | undefined => {
+      if (v instanceof Date) return v;
+      if (typeof v === "string") return v;
+      return undefined;
+    };
 
-  const header = [
-    "Date",
-    "Period",
-    "Tenant",
-    "Property",
-    "Method",
-    "Amount",
-    "Notes",
-  ];
+    const normalizeRentPayment = (raw: Record<string, unknown>): RentPaymentDoc => {
+      return {
+        _id: raw._id,
+        estateId: raw.estateId,
+        propertyId: raw.propertyId,
+        tenantName: typeof raw.tenantName === "string" ? raw.tenantName : undefined,
+        method: typeof raw.method === "string" ? raw.method : undefined,
+        amount: toNumberIfPossible(raw.amount),
+        periodLabel: typeof raw.periodLabel === "string" ? raw.periodLabel : undefined,
+        notes: typeof raw.notes === "string" ? raw.notes : undefined,
+        receivedDate: toDateOrStringIfPossible(raw.receivedDate),
+        createdAt: toDateOrStringIfPossible(raw.createdAt),
+        propertyLabel:
+          typeof raw.propertyLabel === "string"
+            ? raw.propertyLabel
+            : (typeof raw.propertyName === "string" ? raw.propertyName : undefined),
+      };
+    };
 
-  const lines = [header.map(csvEscape).join(",")];
+    // Normalize lean results without unsafe casts
+    const docs: RentPaymentDoc[] = docsRaw.map(normalizeRentPayment);
 
-  for (const payment of docs) {
-    const dateStr =
-      formatDate(payment.receivedDate ?? payment.createdAt ?? undefined) || "";
-    const period = payment.periodLabel ?? "";
-    const tenant = payment.tenantName ?? "";
-    const property = payment.propertyLabel ?? "";
-    const method = payment.method ?? "";
-    const amount =
-      payment.amount != null && !Number.isNaN(payment.amount)
-        ? payment.amount.toFixed(2)
-        : "";
-    const notes = payment.notes ?? "";
+    const header = [
+      "Date",
+      "Period",
+      "Tenant",
+      "Property",
+      "Method",
+      "Amount",
+      "Notes",
+    ];
 
-    const row = [
-      dateStr,
-      period,
-      tenant,
-      property,
-      method,
-      amount,
-      notes,
-    ].map(csvEscape);
+    const lines = [header.map(csvEscape).join(",")];
 
-    lines.push(row.join(","));
+    for (const payment of docs) {
+      const dateStr =
+        formatDate(payment.receivedDate ?? payment.createdAt ?? undefined) || "";
+      const period = payment.periodLabel ?? "";
+      const tenant = payment.tenantName ?? "";
+      const property = payment.propertyLabel ?? "";
+      const method = payment.method ?? "";
+      const amount =
+        payment.amount != null && !Number.isNaN(payment.amount)
+          ? payment.amount.toFixed(2)
+          : "";
+      const notes = payment.notes ?? "";
+
+      const row = [
+        dateStr,
+        period,
+        tenant,
+        property,
+        method,
+        amount,
+        notes,
+      ].map(csvEscape);
+
+      lines.push(row.join(","));
+    }
+
+    const csv = lines.join("\n");
+
+    return new NextResponse(csv, {
+      status: 200,
+      headers: {
+        ...headersNoStore,
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="estate-${estateId}-rent-ledger.csv"`,
+      },
+    });
+  } catch (error) {
+    console.error("GET /api/rent/export error:", safeErrorMessage(error));
+    return jsonErr("Failed to export rent ledger", 500, "INTERNAL_ERROR", {
+      headers: headersNoStore,
+    });
   }
-
-  const csv = lines.join("\n");
-
-  return new NextResponse(csv, {
-    status: 200,
-    headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="estate-${estateId}-rent-ledger.csv"`,
-    },
-  });
 }

@@ -1,13 +1,17 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+
 import { auth } from "@/lib/auth";
 import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
+import { getEntitlements, getUpgradeReason } from "@/lib/entitlements";
+import { User } from "@/models/User";
 import { RentPayment } from "@/models/RentPayment";
 
 interface PageProps {
   params: Promise<{
     estateId: string;
   }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
 type LeanRentPayment = {
@@ -55,8 +59,20 @@ function formatPeriod(month: number, year: number): string {
   });
 }
 
-export default async function EstateRentLedgerPage({ params }: PageProps) {
+export default async function EstateRentLedgerPage({ params, searchParams }: PageProps) {
   const { estateId } = await params;
+
+  const sp = searchParams ? await searchParams : undefined;
+  const successFlag = sp?.success;
+  const canceledFlag = sp?.canceled;
+
+  const isSuccess = Array.isArray(successFlag)
+    ? successFlag.includes("1")
+    : successFlag === "1";
+
+  const isCanceled = Array.isArray(canceledFlag)
+    ? canceledFlag.includes("1")
+    : canceledFlag === "1";
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -64,6 +80,17 @@ export default async function EstateRentLedgerPage({ params }: PageProps) {
   }
 
   await connectToDatabase();
+
+  const userDoc = await User.findById(session.user.id).lean().exec();
+  const ent = getEntitlements(userDoc as unknown as {
+    subscriptionPlanId?: string | null;
+    subscriptionStatus?: string | null;
+  });
+  const upgradeReason = getUpgradeReason(userDoc as unknown as {
+    subscriptionPlanId?: string | null;
+    subscriptionStatus?: string | null;
+  });
+  const exportHref = `/api/rent/export?estateId=${encodeURIComponent(estateId)}`;
 
   const docs = (await RentPayment.find({ estateId })
     .sort({ paymentDate: -1 })
@@ -144,6 +171,45 @@ export default async function EstateRentLedgerPage({ params }: PageProps) {
 
   return (
     <div className="space-y-6 p-6">
+      {isSuccess ? (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-100">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-emerald-100">Billing updated</p>
+              <p className="mt-0.5 text-[11px] text-emerald-100/80">
+                If you upgraded to Pro, you can now export your rent ledger as CSV.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {ent.canUsePro ? (
+                <a
+                  href={exportHref}
+                  className="inline-flex items-center rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 shadow-sm hover:bg-emerald-400"
+                >
+                  Export CSV
+                </a>
+              ) : (
+                <Link
+                  href="/app/billing"
+                  className="inline-flex items-center rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 shadow-sm hover:bg-emerald-400"
+                >
+                  Upgrade to Pro
+                </Link>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isCanceled ? (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-100">
+          <p className="text-sm font-semibold text-amber-100">Checkout canceled</p>
+          <p className="mt-0.5 text-[11px] text-amber-100/80">
+            No worries — you can try again anytime from Billing.
+          </p>
+        </div>
+      ) : null}
+
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
@@ -151,6 +217,11 @@ export default async function EstateRentLedgerPage({ params }: PageProps) {
           <p className="text-xs text-slate-400">
             Track rent payments collected for this estate.
           </p>
+          {!ent.canUsePro ? (
+            <p className="mt-1 text-[11px] text-slate-500">
+              {upgradeReason ?? "Upgrade to Pro to export rent ledger CSV."}
+            </p>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -167,6 +238,23 @@ export default async function EstateRentLedgerPage({ params }: PageProps) {
           >
             View all rent
           </Link>
+
+          {ent.canUsePro ? (
+            <a
+              href={exportHref}
+              className="inline-flex items-center rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:border-slate-700 hover:bg-slate-950"
+            >
+              Export CSV
+            </a>
+          ) : (
+            <Link
+              href="/app/billing"
+              className="inline-flex items-center rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-slate-700 hover:bg-slate-950"
+              title={upgradeReason ?? "Upgrade to export"}
+            >
+              Export CSV (Pro)
+            </Link>
+          )}
 
           <Link
             href={`/app/estates/${estateId}/rent/new`}

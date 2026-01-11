@@ -131,6 +131,71 @@ function EmptyState({ title, description, cta }: EmptyStateProps) {
   );
 }
 
+function OnboardingBanner() {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-sm">
+      <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-slate-100">Finish setup</p>
+          <p className="mt-1 text-xs text-slate-500">
+            You’ve added an estate — now log time and create your first invoice so this dashboard starts
+            rolling up totals automatically.
+          </p>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2 md:mt-0">
+          <Link
+            href="/app/time"
+            className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-sky-500/20 px-3 text-xs font-medium text-sky-200 shadow-sm transition hover:bg-sky-500/30"
+          >
+            Track time
+          </Link>
+          <Link
+            href="/app/invoices/new"
+            className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-900/60 px-3 text-xs font-medium text-slate-200 shadow-sm transition hover:bg-slate-900"
+          >
+            New invoice
+          </Link>
+          <Link
+            href="/app/estates"
+            className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-900/60 px-3 text-xs font-medium text-slate-200 shadow-sm transition hover:bg-slate-900"
+          >
+            Estates
+          </Link>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
+        <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-4">
+          <p className="text-xs font-medium text-slate-200">Step 1</p>
+          <p className="mt-1 text-[11px] text-slate-500">Track time so LegatePro can calculate unbilled value.</p>
+          <Link href="/app/time" className="mt-2 inline-flex text-[11px] font-medium text-sky-400 hover:text-sky-300">
+            Log time ↗
+          </Link>
+        </div>
+        <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-4">
+          <p className="text-xs font-medium text-slate-200">Step 2</p>
+          <p className="mt-1 text-[11px] text-slate-500">Create your first invoice and mark payments as they come in.</p>
+          <Link href="/app/invoices/new" className="mt-2 inline-flex text-[11px] font-medium text-sky-400 hover:text-sky-300">
+            Create invoice ↗
+          </Link>
+        </div>
+        <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-4">
+          <p className="text-xs font-medium text-slate-200">Step 3</p>
+          <p className="mt-1 text-[11px] text-slate-500">Add tasks and documents so everything lives in one place.</p>
+          <div className="mt-2 flex flex-wrap gap-3">
+            <Link href="/app/tasks" className="inline-flex text-[11px] font-medium text-sky-400 hover:text-sky-300">
+              Tasks ↗
+            </Link>
+            <Link href="/app/documents" className="inline-flex text-[11px] font-medium text-sky-400 hover:text-sky-300">
+              Documents ↗
+            </Link>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function formatMoney(cents: number, currency: string = "USD"): string {
   const safeCents = Number.isFinite(cents) ? cents : 0;
   const amount = safeCents / 100;
@@ -182,7 +247,78 @@ export default async function DashboardPage() {
     ...(userObjectId ? [{ ownerId: userObjectId }] : []),
   ];
 
+  // Fetch estates first so we can show a first-time onboarding state
+  // and avoid running heavy aggregations when there's nothing to summarize.
+  const estatesRaw = await Estate.find(
+    {
+      $or: [...ownerIdOr, { "collaborators.userId": session.user.id }],
+    },
+    {
+      displayName: 1,
+      caseName: 1,
+    },
+  )
+    .lean()
+    .exec();
+
+  const estates = (Array.isArray(estatesRaw) ? estatesRaw : []).map((e) => {
+    const out = serializeMongoDoc(asRecord(e));
+    return out as EstateLike;
+  });
+
   const nowDate = new Date();
+
+  if (estates.length === 0) {
+    return (
+      <div className="mx-auto w-full max-w-6xl space-y-8 px-4 py-8">
+        <PageHeader
+          eyebrow="Welcome"
+          title="Create your first estate"
+          description="Start by adding an estate. Once you do, your invoices, time, tasks, and billing metrics will roll up here automatically."
+          actions={
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/app/estates/new"
+                className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-sky-500/20 px-3 text-xs font-medium text-sky-200 shadow-sm transition hover:bg-sky-500/30"
+              >
+                New estate
+              </Link>
+              <Link
+                href="/app/estates"
+                className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-900/60 px-3 text-xs font-medium text-slate-200 shadow-sm transition hover:bg-slate-900"
+              >
+                View estates
+              </Link>
+              <Link
+                href="/app/billing"
+                className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-900/60 px-3 text-xs font-medium text-slate-200 shadow-sm transition hover:bg-slate-900"
+              >
+                Billing
+              </Link>
+            </div>
+          }
+        />
+
+        <section className="grid gap-4 md:grid-cols-2">
+          <EmptyState
+            title="Step 1: Add the estate"
+            description="Give it a name and (optionally) a case name. You can add collaborators later."
+            cta={{ label: "Create an estate", href: "/app/estates/new" }}
+          />
+          <EmptyState
+            title="Step 2: Track work and money"
+            description="Log time, create invoices, and record rent payments. LegatePro will build your dashboard automatically."
+            cta={{ label: "Track time", href: "/app/time" }}
+          />
+        </section>
+
+        <p className="text-[11px] text-slate-500">
+          Tip: You can always come back here — the dashboard becomes more useful as soon as your first invoice, time entry, or rent payment exists.
+        </p>
+      </div>
+    );
+  }
+
   const msPerDay = 1000 * 60 * 60 * 24;
   const sixMonthWindowStart = new Date(nowDate.getFullYear(), nowDate.getMonth() - 5, 1);
 
@@ -357,30 +493,14 @@ export default async function DashboardPage() {
     },
   ]).exec();
 
-  const [invoiceDashboardRaw, workspaceSettingsRaw, estatesRaw] = await Promise.all([
+  const [invoiceDashboardRaw, workspaceSettingsRaw] = await Promise.all([
     invoiceDashboardAgg,
     WorkspaceSettings.findOne({ $or: ownerIdOr }).lean().exec(),
-    Estate.find(
-      {
-        $or: [...ownerIdOr, { "collaborators.userId": session.user.id }],
-      },
-      {
-        displayName: 1,
-        caseName: 1,
-      },
-    )
-      .lean()
-      .exec(),
   ]);
 
   const workspaceSettings = workspaceSettingsRaw
     ? (serializeMongoDoc(workspaceSettingsRaw) as Record<string, unknown>)
     : null;
-
-  const estates = (Array.isArray(estatesRaw) ? estatesRaw : []).map((e) => {
-    const out = serializeMongoDoc(asRecord(e));
-    return out as EstateLike;
-  });
 
   const defaultHourlyRateCents =
     workspaceSettings &&
@@ -636,6 +756,11 @@ export default async function DashboardPage() {
   }
 
   const unbilledHoursTotal = unbilledMinutesTotal / 60;
+  const showOnboarding =
+    estates.length > 0 &&
+    recentInvoices.length === 0 &&
+    totalInvoicedCents === 0 &&
+    unbilledMinutesTotal === 0;
 
 
   // --- Monthly invoicing / collection trend (last 6 months) --------------
@@ -797,6 +922,9 @@ export default async function DashboardPage() {
       <p className="text-[11px] text-slate-500">
         Last updated {nowDate.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}
       </p>
+      {showOnboarding ? (
+        <OnboardingBanner />
+      ) : null}
       {/* Top-level metrics */}
       <section className="grid gap-6 md:grid-cols-4">
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-sm space-y-2">

@@ -162,18 +162,45 @@ export default async function EstateUtilitiesPage({ params }: EstateUtilitiesPag
 
       {utilities.length === 0 ? (
         <div className="rounded-lg border border-dashed bg-muted/40 p-8">
-          <div className="mx-auto max-w-xl text-center">
-            <p className="text-sm font-medium">No utilities added yet.</p>
+          <div className="mx-auto max-w-2xl text-center">
+            <p className="text-sm font-semibold text-foreground">No utilities added yet</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Add your first utility account to keep track of billing details, online portals, and shutoff
-              risks in one place.
+              Add provider + account details so you can prevent shutoffs, track autopay, and prep clean court accountings.
             </p>
-            <div className="mt-4 flex items-center justify-center gap-2">
+
+            <div className="mx-auto mt-5 grid max-w-2xl gap-3 text-left md:grid-cols-3">
+              <div className="rounded-xl border bg-background p-4">
+                <p className="text-xs font-semibold text-foreground">Step 1</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Add a utility provider (gas, electric, water, internet).
+                </p>
+              </div>
+              <div className="rounded-xl border bg-background p-4">
+                <p className="text-xs font-semibold text-foreground">Step 2</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Record account number + status (active/pending/closed).
+                </p>
+              </div>
+              <div className="rounded-xl border bg-background p-4">
+                <p className="text-xs font-semibold text-foreground">Step 3</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Track autopay + last bill to avoid surprises.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
               <Link
                 href={`/app/estates/${estateId}/utilities/new`}
                 className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
               >
-                Add utility account
+                + Add utility account
+              </Link>
+              <Link
+                href={`/app/estates/${estateId}/properties`}
+                className="inline-flex items-center rounded-md border bg-background px-3 py-2 text-sm font-medium text-foreground shadow-sm hover:bg-muted/40"
+              >
+                View properties
               </Link>
               <Link
                 href={`/app/estates/${estateId}`}
@@ -187,7 +214,7 @@ export default async function EstateUtilitiesPage({ params }: EstateUtilitiesPag
       ) : (
         <div className="overflow-hidden rounded-lg border bg-card">
           <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-border text-sm">
+            <table className="min-w-full divide-y divide-border text-sm">
             <thead className="bg-muted/40">
               <tr>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">Provider</th>
@@ -260,7 +287,7 @@ export default async function EstateUtilitiesPage({ params }: EstateUtilitiesPag
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
           </div>
         </div>
       )}

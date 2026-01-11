@@ -172,6 +172,8 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
   const fromDate = parseDateInput(fromInput);
   const toDate = parseDateInput(toInput);
 
+  const hasActiveFilters = Boolean(estateFilter || fromDate || toDate);
+
   const session = await auth();
   if (!session?.user?.id) {
     redirect("/");
@@ -568,8 +570,89 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
       >
         <div className="rounded-xl border border-slate-800 bg-slate-950/80">
           {sortedEntries.length === 0 ? (
-            <div className="px-4 py-6 text-xs text-slate-500">
-              No time entries found for the selected filters.
+            <div className="px-4 py-8">
+              <div className="mx-auto max-w-2xl text-center">
+                {hasActiveFilters ? (
+                  <>
+                    <p className="text-sm font-semibold text-slate-100">No time entries match your filters</p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Try a different estate or date range — or reset filters to see everything.
+                    </p>
+                    <div className="mt-4 flex flex-wrap justify-center gap-2">
+                      <Link
+                        href="/app/time"
+                        className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-950/60 px-3 text-xs font-semibold text-slate-200 hover:bg-slate-900"
+                      >
+                        Reset filters
+                      </Link>
+                      <Link
+                        href="/app/estates"
+                        className="inline-flex h-9 items-center rounded-md bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-500"
+                      >
+                        Go to an estate
+                      </Link>
+                    </div>
+                  </>
+                ) : estates.length === 0 ? (
+                  <>
+                    <p className="text-sm font-semibold text-slate-100">Create an estate to start tracking time</p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Time entries are linked to estates so work stays organized and audit-friendly.
+                    </p>
+                    <div className="mt-4 flex flex-wrap justify-center gap-2">
+                      <Link
+                        href="/app/estates/new"
+                        className="inline-flex h-9 items-center rounded-md bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-500"
+                      >
+                        New estate
+                      </Link>
+                      <Link
+                        href="/app/dashboard"
+                        className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-950/60 px-3 text-xs font-semibold text-slate-200 hover:bg-slate-900"
+                      >
+                        Dashboard
+                      </Link>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-semibold text-slate-100">No time entries yet</p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Log time inside an estate (Estate → Time) and you&apos;ll see totals and analysis here.
+                    </p>
+
+                    <div className="mx-auto mt-5 grid max-w-2xl gap-3 text-left md:grid-cols-3">
+                      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                        <p className="text-xs font-semibold text-slate-100">Step 1</p>
+                        <p className="mt-1 text-[11px] text-slate-500">Open an estate → Time.</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                        <p className="text-xs font-semibold text-slate-100">Step 2</p>
+                        <p className="mt-1 text-[11px] text-slate-500">Add a date, minutes, and optional rate.</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                        <p className="text-xs font-semibold text-slate-100">Step 3</p>
+                        <p className="mt-1 text-[11px] text-slate-500">Use filters here to review totals.</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap justify-center gap-2">
+                      <Link
+                        href="/app/estates"
+                        className="inline-flex h-9 items-center rounded-md bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-500"
+                      >
+                        Go to an estate
+                      </Link>
+                      <Link
+                        href="/app/estates?sort=updated"
+                        className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-950/60 px-3 text-xs font-semibold text-slate-200 hover:bg-slate-900"
+                      >
+                        Recently updated
+                      </Link>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           ) : (
             <div className="overflow-x-auto">

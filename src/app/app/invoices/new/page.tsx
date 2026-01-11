@@ -27,6 +27,7 @@ type PageProps = {
   // Next 16: searchParams is now a Promise-like dynamic API
   searchParams?: Promise<{
     estateId?: string;
+    created?: string;
   }>;
 };
 
@@ -38,6 +39,7 @@ export default async function GlobalNewInvoicePage({ searchParams }: PageProps) 
   // Safely unwrap the promised searchParams (or fall back to empty object)
   const sp = (await searchParams) || {};
   const preselectedEstateId = sp.estateId;
+  const isCreated = sp.created === "1";
 
   const session = await getServerSession(authOptions);
 
@@ -116,6 +118,38 @@ export default async function GlobalNewInvoicePage({ searchParams }: PageProps) 
         </p>
       </header>
 
+      <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+        <p className="text-xs font-semibold text-slate-100">How this works</p>
+        <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] text-slate-400">
+          <li>Select the <span className="text-slate-200">estate</span> this invoice belongs to.</li>
+          <li>You’ll add line items, issue/due dates, and payment status on the next screen.</li>
+          <li>Invoices stay estate-scoped so records are easy to audit.</li>
+        </ul>
+      </div>
+
+      {isCreated ? (
+        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-100 shadow-sm">
+          <p className="text-sm font-semibold text-emerald-100">Estate created</p>
+          <p className="mt-0.5 text-[11px] text-emerald-100/80">
+            Next: create your first invoice for that estate.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href="/app/estates"
+              className="inline-flex items-center rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-500/20"
+            >
+              View estates
+            </Link>
+            <Link
+              href="/app/dashboard"
+              className="inline-flex items-center rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-500/20"
+            >
+              Dashboard
+            </Link>
+          </div>
+        </div>
+      ) : null}
+
       <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
         {estates.length === 0 ? (
           <div className="space-y-2 text-sm text-slate-400">
@@ -124,12 +158,27 @@ export default async function GlobalNewInvoicePage({ searchParams }: PageProps) 
               Create an estate first, then you&apos;ll be able to generate
               invoices for it.
             </p>
-            <div className="mt-3">
+            <p className="text-[11px] text-slate-500">
+              This keeps billing records separated per estate and makes accounting cleaner.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <Link
                 href="/app/estates/new"
                 className="inline-flex items-center rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500"
               >
                 Create estate
+              </Link>
+              <Link
+                href="/app/estates"
+                className="inline-flex items-center rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+              >
+                View estates
+              </Link>
+              <Link
+                href="/app/dashboard"
+                className="inline-flex items-center rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+              >
+                Dashboard
               </Link>
             </div>
           </div>
@@ -145,11 +194,11 @@ export default async function GlobalNewInvoicePage({ searchParams }: PageProps) 
               <select
                 id="estateId"
                 name="estateId"
-                defaultValue=""
+                defaultValue={estates[0]?._id ?? ""}
                 required
                 className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
               >
-                <option value="" disabled>
+                <option value="">
                   Select an estate…
                 </option>
                 {estates.map((estate) => {

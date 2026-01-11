@@ -118,6 +118,9 @@ export default async function PrintableInvoicePage({ params }: PageProps) {
   ) as InvoiceStatus;
 
   const statusLabel = STATUS_LABELS[status];
+  const isDraft = status === "DRAFT";
+  const isVoid = status === "VOID";
+  const isPaid = status === "PAID";
 
   const invoiceNumber =
     (invoiceDoc as { invoiceNumber?: string | null }).invoiceNumber ?? null;
@@ -128,6 +131,24 @@ export default async function PrintableInvoicePage({ params }: PageProps) {
     (invoiceDoc as { dueDate?: Date | string | null }).dueDate ?? null;
   const paidAt =
     (invoiceDoc as { paidAt?: Date | string | null }).paidAt ?? null;
+
+  const dueDateObj = dueDate ? new Date(dueDate) : null;
+  const now = new Date();
+  const isOverdue = Boolean(
+    !isPaid &&
+      !isVoid &&
+      dueDateObj &&
+      !Number.isNaN(dueDateObj.getTime()) &&
+      dueDateObj.getTime() < now.getTime(),
+  );
+  const daysPastDue = isOverdue
+    ? Math.max(
+        1,
+        Math.floor(
+          (now.getTime() - (dueDateObj as Date).getTime()) / (1000 * 60 * 60 * 24),
+        ),
+      )
+    : 0;
 
   const subtotalCents =
     (invoiceDoc as { subtotal?: number | null }).subtotal ?? 0;
@@ -149,10 +170,6 @@ export default async function PrintableInvoicePage({ params }: PageProps) {
   // Estate info
   const estateName =
     (estateDoc as { name?: string | null }).name ?? "Estate";
-  const estateReference =
-    (estateDoc as { referenceId?: string | null }).referenceId ?? null;
-  const estateCourtCase =
-    (estateDoc as { caseNumber?: string | null }).caseNumber ?? null;
 
   const displayInvoiceTitle =
     invoiceNumber && invoiceNumber.trim().length > 0
@@ -165,7 +182,21 @@ export default async function PrintableInvoicePage({ params }: PageProps) {
 
   return (
     <div className="min-h-screen bg-white text-slate-900">
-      <div className="mx-auto max-w-3xl px-6 py-8 print:px-0 print:py-4">
+      {isDraft || isVoid ? (
+        <div className="pointer-events-none fixed inset-0 z-0 flex items-center justify-center print:fixed">
+          <p
+            className={
+              "select-none text-7xl font-black uppercase tracking-widest " +
+              (isVoid ? "text-slate-200" : "text-slate-100")
+            }
+            style={{ transform: "rotate(-18deg)" }}
+          >
+            {isVoid ? "VOID" : "DRAFT"}
+          </p>
+        </div>
+      ) : null}
+
+      <div className="relative z-10 mx-auto max-w-3xl px-6 py-8 print:px-0 print:py-4">
         {/* Header */}
         <header className="flex flex-col gap-4 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
           <div>
@@ -190,21 +221,50 @@ export default async function PrintableInvoicePage({ params }: PageProps) {
               {statusLabel}
             </p>
             <p className="mt-1 text-lg font-semibold">{displayInvoiceTitle}</p>
-            <p className="mt-1 text-xs text-slate-500">
+
+            <div className="mt-2 flex flex-wrap justify-end gap-2 text-[11px] text-slate-700">
+              <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5">
+                Issue: {formatDate(issueDate)}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5">
+                Due: {formatDate(dueDate)}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 font-semibold text-slate-900">
+                Amount due: {formatCurrency(amountDueCents / 100, currency)}
+              </span>
+            </div>
+
+            <p className="mt-2 text-xs text-slate-500">
               Estate: {estateName}
             </p>
-            {estateReference && (
-              <p className="mt-0.5 text-xs text-slate-500">
-                Reference: {estateReference}
-              </p>
-            )}
-            {estateCourtCase && (
-              <p className="mt-0.5 text-xs text-slate-500">
-                Court Case: {estateCourtCase}
-              </p>
-            )}
           </div>
         </header>
+        {(isPaid || isVoid || isOverdue) ? (
+          <section className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-4">
+            {isPaid ? (
+              <>
+                <p className="text-sm font-semibold text-slate-900">Paid</p>
+                <p className="mt-1 text-xs text-slate-600">
+                  This invoice has been marked paid{paidAt ? ` on ${formatDate(paidAt)}` : ""}.
+                </p>
+              </>
+            ) : isVoid ? (
+              <>
+                <p className="text-sm font-semibold text-slate-900">Voided</p>
+                <p className="mt-1 text-xs text-slate-600">
+                  This invoice has been voided and should not be collected.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-slate-900">Overdue</p>
+                <p className="mt-1 text-xs text-slate-600">
+                  This invoice is {daysPastDue} day{daysPastDue === 1 ? "" : "s"} past the due date.
+                </p>
+              </>
+            )}
+          </section>
+        ) : null}
 
         {/* Meta / dates */}
         <section className="mt-4 grid gap-4 text-sm md:grid-cols-2">
@@ -343,8 +403,9 @@ export default async function PrintableInvoicePage({ params }: PageProps) {
           </section>
         )}
 
-        <footer className="mt-8 text-xs text-slate-500 print:mt-6">
+        <footer className="mt-8 space-y-1 text-xs text-slate-500 print:mt-6">
           <p>Thank you for your trust and business.</p>
+          <p>Generated {formatDate(now)}.</p>
         </footer>
       </div>
     </div>

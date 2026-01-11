@@ -1,6 +1,7 @@
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import { notFound, redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
@@ -31,6 +32,7 @@ type InvoiceLeanDoc = {
   subtotal?: number | null; // cents
   totalAmount?: number | null; // cents
   amount?: number | null; // cents (fallback)
+  paidAt?: Date | string | null;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -41,6 +43,25 @@ const STATUS_LABELS: Record<string, string> = {
   PAID: "Paid",
   VOID: "Void",
 };
+
+function statusHelperText(statusUpper: string): string {
+  switch (statusUpper) {
+    case "DRAFT":
+      return "Not sent yet. You can edit line items and dates before sending.";
+    case "SENT":
+      return "Sent to the recipient. Mark as Paid when payment is received.";
+    case "UNPAID":
+      return "Payment is outstanding. Follow up or update status when funds arrive.";
+    case "PARTIAL":
+      return "Partially paid. Record the remaining balance when received.";
+    case "PAID":
+      return "Paid in full. This invoice counts toward collected totals.";
+    case "VOID":
+      return "Voided. This invoice should not be collected or reported as receivable.";
+    default:
+      return "Status is informational. Update it as the invoice progresses.";
+  }
+}
 
 function formatCurrencyFromCents(cents: number | null | undefined): string {
   const safe = typeof cents === "number" && Number.isFinite(cents) ? cents : 0;
@@ -134,6 +155,7 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
         status: 1,
         issueDate: 1,
         dueDate: 1,
+        paidAt: 1,
         subtotal: 1,
         totalAmount: 1,
         amount: 1,
@@ -173,6 +195,22 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
       ? invoiceDoc.dueDate.toISOString()
       : (invoiceDoc.dueDate as string | null | undefined) ?? null;
 
+  const dueDateObj = due ? new Date(due) : null;
+  const now = new Date();
+  const isPaidLike = statusUpper === "PAID" || statusUpper === "VOID";
+  const isOverdue = Boolean(
+    !isPaidLike &&
+      dueDateObj &&
+      !Number.isNaN(dueDateObj.getTime()) &&
+      dueDateObj.getTime() < now.getTime(),
+  );
+  const daysPastDue = isOverdue
+    ? Math.max(
+        1,
+        Math.floor((now.getTime() - (dueDateObj as Date).getTime()) / (1000 * 60 * 60 * 24)),
+      )
+    : 0;
+
   const totalCents =
     typeof invoiceDoc.totalAmount === "number" && Number.isFinite(invoiceDoc.totalAmount)
       ? invoiceDoc.totalAmount
@@ -189,6 +227,80 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
 
   const hasInvoiceNumber =
     typeof invoiceDoc.invoiceNumber === "string" && invoiceDoc.invoiceNumber.trim().length > 0;
+
+  const canEdit = statusUpper !== "VOID";
+  const isPaid = statusUpper === "PAID";
+  const isVoid = statusUpper === "VOID";
+
+  async function markPaidAction() {
+    "use server";
+
+    const session = await auth();
+    if (!session?.user?.id) redirect("/login");
+
+    await connectToDatabase();
+
+    await Invoice.updateOne(
+      {
+        _id: invoiceObjectId ?? invoiceId,
+        estateId: { $in: estateIdCandidates },
+      },
+      {
+        $set: {
+          status: "PAID",
+          paidAt: new Date(),
+        },
+      },
+    );
+
+    revalidatePath(`/app/estates/${estateId}/invoices/${invoiceId}`);
+    revalidatePath(`/app/estates/${estateId}/invoices`);
+    revalidatePath(`/app/invoices`);
+  }
+
+  async function voidInvoiceAction() {
+    "use server";
+
+    const session = await auth();
+    if (!session?.user?.id) redirect("/login");
+
+    await connectToDatabase();
+
+    await Invoice.updateOne(
+      {
+        _id: invoiceObjectId ?? invoiceId,
+        estateId: { $in: estateIdCandidates },
+      },
+      {
+        $set: {
+          status: "VOID",
+        },
+      },
+    );
+
+    revalidatePath(`/app/estates/${estateId}/invoices/${invoiceId}`);
+    revalidatePath(`/app/estates/${estateId}/invoices`);
+    revalidatePath(`/app/invoices`);
+  }
+
+  async function deleteInvoiceAction() {
+    "use server";
+
+    const session = await auth();
+    if (!session?.user?.id) redirect("/login");
+
+    await connectToDatabase();
+
+    await Invoice.deleteOne({
+      _id: invoiceObjectId ?? invoiceId,
+      estateId: { $in: estateIdCandidates },
+    });
+
+    revalidatePath(`/app/estates/${estateId}/invoices`);
+    revalidatePath(`/app/invoices`);
+
+    redirect(`/app/estates/${estateId}/invoices`);
+  }
 
   return (
     <div className="space-y-6">
@@ -218,10 +330,13 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Link
                 href={`/app/estates/${estateId}/invoices/${invoiceId}/edit`}
-                className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-900 shadow-sm hover:bg-gray-50"
+                aria-disabled={!canEdit || isPaid}
+                className={`rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-900 shadow-sm hover:bg-gray-50 ${
+                  !canEdit || isPaid ? "pointer-events-none opacity-50" : ""
+                }`}
               >
                 Edit
               </Link>
@@ -231,16 +346,90 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
               >
                 Print
               </Link>
+
+              <details className="group">
+                <summary
+                  className={`list-none rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-900 shadow-sm hover:bg-gray-50 ${
+                    isPaid || isVoid ? "pointer-events-none opacity-50" : "cursor-pointer"
+                  }`}
+                >
+                  Mark as paid
+                </summary>
+                <div className="mt-2 flex items-center gap-2">
+                  <form action={markPaidAction}>
+                    <button
+                      type="submit"
+                      className="rounded-md bg-emerald-600 px-3 py-2 text-xs font-medium text-white shadow-sm hover:bg-emerald-700"
+                    >
+                      Confirm paid
+                    </button>
+                  </form>
+                  <span className="text-[11px] text-gray-500">This will set status to PAID and record paid date.</span>
+                </div>
+              </details>
+
+              <details className="group">
+                <summary
+                  className={`list-none rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-800 shadow-sm hover:bg-red-100 ${
+                    isVoid ? "pointer-events-none opacity-50" : "cursor-pointer"
+                  }`}
+                >
+                  Void
+                </summary>
+                <div className="mt-2 flex items-center gap-2">
+                  <form action={voidInvoiceAction}>
+                    <button
+                      type="submit"
+                      className="rounded-md bg-red-600 px-3 py-2 text-xs font-medium text-white shadow-sm hover:bg-red-700"
+                    >
+                      Confirm void
+                    </button>
+                  </form>
+                  <span className="text-[11px] text-gray-500">Voided invoices should not be collected.</span>
+                </div>
+              </details>
+
+              <details className="group">
+                <summary className="cursor-pointer list-none rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-900 shadow-sm hover:bg-gray-100">
+                  Delete
+                </summary>
+                <div className="mt-2 flex items-center gap-2">
+                  <form action={deleteInvoiceAction}>
+                    <button
+                      type="submit"
+                      className="rounded-md bg-gray-900 px-3 py-2 text-xs font-medium text-white shadow-sm hover:bg-black"
+                    >
+                      Confirm delete
+                    </button>
+                  </form>
+                  <span className="text-[11px] text-gray-500">This cannot be undone.</span>
+                </div>
+              </details>
             </div>
           </div>
         }
       />
+      {isOverdue ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-semibold text-amber-900">Overdue</p>
+          <p className="mt-1 text-xs text-amber-900/80">
+            This invoice is {daysPastDue} day{daysPastDue === 1 ? "" : "s"} past the due date.
+            Consider following up or updating the status once paid.
+          </p>
+        </div>
+      ) : null}
 
       {/* Details card */}
       <section className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Invoice details</h2>
 
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="rounded-md bg-gray-50 p-4">
+            <p className="text-xs font-medium uppercase text-gray-500">Status</p>
+            <p className="mt-1 text-sm font-medium text-gray-900">{statusLabel}</p>
+            <p className="mt-1 text-xs text-gray-500">{statusHelperText(statusUpper)}</p>
+          </div>
+
           <div className="rounded-md bg-gray-50 p-4">
             <p className="text-xs font-medium uppercase text-gray-500">Issue date</p>
             <p className="mt-1 text-sm font-medium text-gray-900">
@@ -270,12 +459,14 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
           </div>
         </div>
 
-        <div className="mt-5">
-          <p className="text-xs font-medium uppercase text-gray-500">Internal IDs</p>
-          <p className="mt-1 break-all text-xs text-gray-600">
+        <details className="mt-5">
+          <summary className="cursor-pointer select-none text-xs font-medium uppercase text-gray-500 hover:text-gray-700">
+            Internal IDs
+          </summary>
+          <p className="mt-2 break-all text-xs text-gray-600">
             Estate: {estateId} • Invoice: {invoiceId}
           </p>
-        </div>
+        </details>
       </section>
     </div>
   );

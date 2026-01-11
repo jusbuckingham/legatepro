@@ -85,7 +85,7 @@ async function getEstates(userId: string): Promise<EstateListItem[]> {
   });
 }
 
-export default async function EstatesPage() {
+export default async function EstatesPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login?callbackUrl=/app/estates");
 
@@ -93,8 +93,45 @@ export default async function EstatesPage() {
 
   const hasEstates = Array.isArray(estates) && estates.length > 0;
 
+  const sp = searchParams ? await searchParams : undefined;
+  const createdFlag = sp?.created;
+  const isCreated = Array.isArray(createdFlag) ? createdFlag.includes("1") : createdFlag === "1";
+
+  const hasAnyActivity = Array.isArray(estates)
+    ? estates.some((e) => Boolean(e.lastActivityAt || e.lastActivitySummary))
+    : false;
+
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8">
+      {isCreated ? (
+        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-100 shadow-sm">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-emerald-100">Estate created</p>
+              <p className="mt-0.5 text-[11px] text-emerald-100/80">
+                Next: open the estate to add tasks, documents, invoices, rent, and contacts.
+              </p>
+            </div>
+            {hasEstates ? (
+              <Link
+                href={`/app/estates/${(typeof estates[0]._id === "string" ? estates[0]._id : estates[0]._id?.toString?.() ?? "")}`}
+                className="inline-flex h-9 items-center justify-center rounded-xl bg-emerald-500 px-3 text-xs font-semibold text-slate-950 shadow-sm hover:bg-emerald-400"
+              >
+                Open newest estate
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {hasEstates && !hasAnyActivity ? (
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 text-xs text-slate-200 shadow-sm">
+          <p className="text-sm font-semibold text-slate-100">Quick start</p>
+          <p className="mt-0.5 text-[11px] text-slate-500">
+            Add your first task or invoice and this page will start showing recent activity.
+          </p>
+        </div>
+      ) : null}
       <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Estates</h2>

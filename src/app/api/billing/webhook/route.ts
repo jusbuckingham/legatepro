@@ -3,6 +3,7 @@
 
 import Stripe from "stripe";
 import { NextRequest } from "next/server";
+import mongoose from "mongoose";
 
 import { assertEnv } from "@/lib/assertEnv";
 import { connectToDatabase } from "@/lib/db";
@@ -11,6 +12,67 @@ import { User, UserDocument } from "@/models/User";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+const ALLOWED_EVENT_TYPES = new Set<string>([
+  "checkout.session.completed",
+  "customer.subscription.created",
+  "customer.subscription.updated",
+  "customer.subscription.deleted",
+  "invoice.payment_failed",
+]);
+
+const MAX_WEBHOOK_BODY_BYTES = 1_000_000; // 1MB
+const WEBHOOK_EVENT_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
+
+let ensuredWebhookIndexes: Promise<void> | null = null;
+
+function isDuplicateKeyError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  if (!("code" in err)) return false;
+  const code = (err as { code?: unknown }).code;
+  return code === 11000;
+}
+
+async function ensureWebhookIndexes() {
+  if (ensuredWebhookIndexes) return ensuredWebhookIndexes;
+
+  ensuredWebhookIndexes = (async () => {
+    const db = mongoose.connection.db;
+    if (!db) return;
+
+    const col = db.collection<{ eventId: string; type: string; createdAt: Date }>(
+      "stripe_webhook_events",
+    );
+
+    // Idempotency via unique Stripe event id
+    await col.createIndex({ eventId: 1 }, { unique: true });
+
+    // TTL to keep the idempotency table bounded
+    await col.createIndex({ createdAt: 1 }, { expireAfterSeconds: WEBHOOK_EVENT_TTL_SECONDS });
+  })();
+
+  return ensuredWebhookIndexes;
+}
+
+async function markEventProcessed(eventId: string, eventType: string): Promise<"new" | "duplicate"> {
+  const db = mongoose.connection.db;
+  if (!db) return "new";
+
+  const col = db.collection<{ eventId: string; type: string; createdAt: Date }>("stripe_webhook_events");
+
+  try {
+    await col.insertOne({ eventId, type: eventType, createdAt: new Date() });
+    return "new";
+  } catch (err) {
+    // Duplicate key => already processed
+    if (isDuplicateKeyError(err)) return "duplicate";
+    throw err;
+  }
+}
+
+function safeTrim(s: string | null | undefined): string {
+  return typeof s === "string" ? s.trim() : "";
+}
 
 function getStripe() {
   assertEnv([
@@ -99,12 +161,21 @@ export async function POST(req: NextRequest) {
   try {
     const stripe = getStripe();
 
-    const sig = req.headers.get("stripe-signature");
+    const sig = safeTrim(req.headers.get("stripe-signature"));
     if (!sig) {
       return jsonErr("Missing stripe-signature header", 400, "BAD_REQUEST", { headers });
     }
 
+    // Stripe sends JSON; we still must verify the signature using the raw body.
+    const contentType = safeTrim(req.headers.get("content-type"));
+    if (contentType && !contentType.toLowerCase().includes("application/json")) {
+      return jsonErr("Unsupported Content-Type", 415, "UNSUPPORTED_MEDIA_TYPE", { headers });
+    }
+
     const rawBody = await req.text();
+    if (rawBody.length > MAX_WEBHOOK_BODY_BYTES) {
+      return jsonErr("Payload too large", 413, "PAYLOAD_TOO_LARGE", { headers });
+    }
 
     let event: Stripe.Event;
     try {
@@ -118,7 +189,19 @@ export async function POST(req: NextRequest) {
       return jsonErr("Invalid signature", 400, "BAD_REQUEST", { headers });
     }
 
+    // Fast ignore: only handle events we explicitly support.
+    if (!ALLOWED_EVENT_TYPES.has(event.type)) {
+      return jsonOk({ received: true, ignored: true }, { headers });
+    }
+
     await connectToDatabase();
+    await ensureWebhookIndexes();
+
+    // Idempotency: drop duplicate deliveries.
+    const processed = await markEventProcessed(event.id, event.type);
+    if (processed === "duplicate") {
+      return jsonOk({ received: true, duplicate: true }, { headers });
+    }
 
     // Handle only the events we care about.
     switch (event.type) {
@@ -173,13 +256,20 @@ export async function POST(req: NextRequest) {
 
         // Best effort: if we can fetch the subscription, update the user's persisted status.
         if (subscriptionId) {
-          const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-          const user =
-            (await User.findOne({ stripeCustomerId: customerId ?? null } as never)) ||
-            (await User.findOne({ stripeSubscriptionId: subscription.id } as never));
+          try {
+            const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+            const user =
+              (await User.findOne({ stripeCustomerId: customerId ?? null } as never)) ||
+              (await User.findOne({ stripeSubscriptionId: subscription.id } as never));
 
-          if (user) {
-            await updateUserSubscriptionFromSubscription(user, subscription);
+            if (user) {
+              await updateUserSubscriptionFromSubscription(user, subscription);
+            }
+          } catch (err) {
+            console.error(
+              "Stripe subscription retrieve failed (invoice.payment_failed):",
+              safeErrorMessage(err),
+            );
           }
         }
 

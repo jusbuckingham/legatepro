@@ -483,18 +483,26 @@ export default async function EstateOverviewPage({ params }: PageProps) {
   const openTasks = tasks.filter((t) => t.status !== "DONE");
   const completedTasks = tasks.filter((t) => t.status === "DONE");
   const overdueTasksCount = tasks.filter((t) => t.isOverdue).length;
+  const checklistComplete = tasks.length > 0 && openTasks.length === 0;
+  const isEstateEmpty =
+    invoices.length === 0 &&
+    tasks.length === 0 &&
+    documents.length === 0 &&
+    notes.length === 0 &&
+    recentActivity.length === 0;
 
-  // Show up to 5 tasks, prioritizing overdue and with due dates
-  const recentTasks = [...tasks]
-    .sort((a, b) => {
-      if (a.isOverdue && !b.isOverdue) return -1;
-      if (!a.isOverdue && b.isOverdue) return 1;
+  // Tasks sorted: overdue first, then soonest due date
+  const sortedTasks = [...tasks].sort((a, b) => {
+    if (a.isOverdue && !b.isOverdue) return -1;
+    if (!a.isOverdue && b.isOverdue) return 1;
 
-      const aTime = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
-      const bTime = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
-      return aTime - bTime;
-    })
-    .slice(0, 5);
+    const aTime = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+    const bTime = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+    return aTime - bTime;
+  });
+
+  // Show up to 5 tasks in the main preview
+  const recentTasks = sortedTasks.slice(0, 5);
 
   return (
     <div className="space-y-8">
@@ -609,6 +617,163 @@ export default async function EstateOverviewPage({ params }: PageProps) {
           </div>
         </div>
       </header>
+      {isEstateEmpty ? (
+        <section className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Getting started</h2>
+              <p className="mt-1 text-xs text-gray-500">
+                Add a few basics and this overview will start populating automatically.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {canEdit ? (
+                <>
+                  <Link
+                    href={`/app/estates/${estateId}/tasks#add-task`}
+                    className="rounded-md bg-gray-900 px-3 py-1 text-xs font-semibold text-white shadow-sm hover:bg-black"
+                  >
+                    Add first task
+                  </Link>
+                  <Link
+                    href={`/app/estates/${estateId}/invoices/new`}
+                    className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                  >
+                    Create invoice
+                  </Link>
+                </>
+              ) : (
+                <span className="rounded-md border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-900">
+                  Ask an owner/editor to add the first items.
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase text-gray-700">Step 1</p>
+                <span className="text-[11px] text-gray-500">Tasks</span>
+              </div>
+              <p className="mt-1 text-sm font-medium text-gray-900">Add a probate checklist</p>
+              <p className="mt-1 text-xs text-gray-500">
+                Start with 3–5 tasks: court filings, bank steps, property actions.
+              </p>
+              <div className="mt-2">
+                <Link
+                  href={`/app/estates/${estateId}/tasks${canEdit ? "#add-task" : ""}`}
+                  className="text-xs font-medium text-blue-600 hover:underline"
+                >
+                  {canEdit ? "Add a task" : "View tasks"}
+                </Link>
+              </div>
+            </div>
+
+            <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase text-gray-700">Step 2</p>
+                <span className="text-[11px] text-gray-500">Invoices</span>
+              </div>
+              <p className="mt-1 text-sm font-medium text-gray-900">Track work and billing</p>
+              <p className="mt-1 text-xs text-gray-500">
+                Create your first invoice so totals and overdue alerts show up here.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-3">
+                <Link
+                  href={`/app/estates/${estateId}/invoices`}
+                  className="text-xs font-medium text-blue-600 hover:underline"
+                >
+                  View invoices
+                </Link>
+                {canEdit ? (
+                  <Link
+                    href={`/app/estates/${estateId}/invoices/new`}
+                    className="text-xs font-medium text-gray-700 hover:underline"
+                  >
+                    Create invoice
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase text-gray-700">Step 3</p>
+                <span className="text-[11px] text-gray-500">Documents</span>
+              </div>
+              <p className="mt-1 text-sm font-medium text-gray-900">Index key documents</p>
+              <p className="mt-1 text-xs text-gray-500">
+                Add letters, court filings, IDs, banking info, receipts, and more.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-3">
+                <Link
+                  href={`/app/estates/${estateId}/documents`}
+                  className="text-xs font-medium text-blue-600 hover:underline"
+                >
+                  View documents
+                </Link>
+                {canEdit ? (
+                  <Link
+                    href={`/app/estates/${estateId}/documents#add-document`}
+                    className="text-xs font-medium text-gray-700 hover:underline"
+                  >
+                    Add document
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase text-gray-700">Step 4</p>
+                <span className="text-[11px] text-gray-500">Notes</span>
+              </div>
+              <p className="mt-1 text-sm font-medium text-gray-900">Capture context</p>
+              <p className="mt-1 text-xs text-gray-500">
+                Keep a running log of calls, court info, and decisions.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-3">
+                <Link
+                  href={`/app/estates/${estateId}/notes`}
+                  className="text-xs font-medium text-blue-600 hover:underline"
+                >
+                  View notes
+                </Link>
+                {canEdit ? (
+                  <Link
+                    href={`/app/estates/${estateId}/notes#add-note`}
+                    className="text-xs font-medium text-gray-700 hover:underline"
+                  >
+                    Add note
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-3 text-[11px] text-gray-500">
+            <Link
+              href={`/app/estates/${estateId}/contacts/new`}
+              className="font-medium text-blue-600 hover:underline"
+            >
+              Add a contact
+            </Link>
+            <Link
+              href={`/app/estates/${estateId}/properties/new`}
+              className="font-medium text-blue-600 hover:underline"
+            >
+              Add a property
+            </Link>
+            <Link
+              href={`/app/estates/${estateId}/rent/new`}
+              className="font-medium text-blue-600 hover:underline"
+            >
+              Record rent
+            </Link>
+          </div>
+        </section>
+      ) : null}
       {(overdueCount > 0 || overdueTasksCount > 0) && (
         <section className="rounded-md border border-amber-200 bg-amber-50 p-4 shadow-sm">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -1086,18 +1251,16 @@ export default async function EstateOverviewPage({ params }: PageProps) {
             Tasks &amp; probate checklist
             {tasks.length > 0 ? ` (${tasks.length})` : ""}
           </h2>
+
           {tasks.length > 0 && (
             <div className="flex flex-col items-end gap-1 text-xs text-gray-500">
               <div>
                 <span className="font-medium">{openTasks.length}</span> open ·{" "}
-                <span className="font-medium">{completedTasks.length}</span>{" "}
-                done ·{" "}
-                <span className="font-medium">{overdueTasksCount}</span>{" "}
-                overdue
+                <span className="font-medium">{completedTasks.length}</span> done ·{" "}
+                <span className="font-medium">{overdueTasksCount}</span> overdue
               </div>
               <p className="text-[11px] text-gray-400">
-                Use this checklist to track court steps, banking, and
-                paperwork.
+                Use this checklist to track court steps, banking, and paperwork.
               </p>
               <Link
                 href={`/app/estates/${estateId}/tasks`}
@@ -1106,19 +1269,87 @@ export default async function EstateOverviewPage({ params }: PageProps) {
                 View all tasks
               </Link>
               {access.role === "VIEWER" && (
-                <span className="text-[11px] text-gray-400">
-                  Create/edit disabled
-                </span>
+                <span className="text-[11px] text-gray-400">Create/edit disabled</span>
               )}
             </div>
           )}
         </div>
 
+        {/* Auto-hide when checklist is complete */}
         {tasks.length === 0 ? (
           <p className="text-sm text-gray-500">
-            No tasks yet. Start by listing the first 3–5 things you need to do
-            for this estate.
+            No tasks yet. Start by listing the first 3–5 things you need to do for this estate.
           </p>
+        ) : checklistComplete ? (
+          <details className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
+            <summary className="cursor-pointer list-none">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-emerald-900">Checklist complete</div>
+                  <div className="mt-1 text-xs text-emerald-900/80">
+                    All tasks are marked done. You can add more as new steps come up.
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    href={`/app/estates/${estateId}/tasks`}
+                    className="rounded-md border border-emerald-300 bg-white px-3 py-1 text-xs font-medium text-emerald-900 hover:bg-emerald-100"
+                  >
+                    View tasks
+                  </Link>
+                  {canEdit ? (
+                    <Link
+                      href={`/app/estates/${estateId}/tasks#add-task`}
+                      className="rounded-md bg-emerald-900 px-3 py-1 text-xs font-semibold text-white shadow-sm hover:bg-emerald-950"
+                    >
+                      Add a new task
+                    </Link>
+                  ) : null}
+                  <span className="hidden text-[11px] font-medium text-emerald-900/70 md:inline">
+                    Click to expand
+                  </span>
+                </div>
+              </div>
+            </summary>
+
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-emerald-200 text-xs uppercase text-emerald-900/70">
+                    <th className="px-3 py-2">Task</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Due</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedTasks.map((task) => (
+                    <tr key={task._id} className="border-b border-emerald-200/60 last:border-0">
+                      <td className="px-3 py-2 align-top">
+                        <Link
+                          href={`/app/estates/${estateId}/tasks/${task._id}`}
+                          className="font-medium text-emerald-900 hover:underline"
+                        >
+                          {task.title}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-900">
+                          Done
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        {task.dueDate ? (
+                          <span className="text-emerald-900/80">{formatDate(task.dueDate)}</span>
+                        ) : (
+                          <span className="text-emerald-900/60">No due date</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">

@@ -18,6 +18,7 @@ import {
 } from "@/lib/apiResponse";
 import { User, UserDocument } from "@/models/User";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // Plans shown on /app/billing
@@ -50,16 +51,36 @@ const PLAN_METADATA: Record<
   },
 };
 
+// --- Security helpers ---
+function isProd(): boolean {
+  return process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
+}
+
+function headersNoStore(): Headers {
+  // `noStoreHeaders()` returns HeadersInit; normalize to Headers for `.set()`.
+  return new Headers(noStoreHeaders());
+}
+
+function addSecurityHeaders(headers: Headers) {
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Referrer-Policy", "same-origin");
+  headers.set("X-Frame-Options", "DENY");
+}
+
 function getStripe() {
   assertEnv([
-    { key: "STRIPE_SECRET_KEY", hint: "Stripe secret key for server-side billing" },
+    {
+      key: "STRIPE_SECRET_KEY",
+      hint: "Stripe secret key for server-side billing",
+    },
   ]);
+
   return new Stripe(process.env.STRIPE_SECRET_KEY as string, {
     apiVersion: "2025-12-15.clover",
   });
 }
 
-function getAppUrl() {
+function getAppUrl(): string {
   // Prefer an explicit app url in prod.
   // Fallbacks are fine for local/dev.
   const url =
@@ -67,7 +88,27 @@ function getAppUrl() {
     process.env.NEXTAUTH_URL ||
     process.env.VERCEL_URL ||
     "http://localhost:3000";
+
   return url.startsWith("http") ? url : `https://${url}`;
+}
+
+function safeBillingReturnUrl(appUrl: string): string | null {
+  try {
+    const base = new URL(appUrl);
+
+    // Only allow http(s)
+    if (base.protocol !== "https:" && base.protocol !== "http:") return null;
+
+    // In production, require https
+    if (isProd() && base.protocol !== "https:") return null;
+
+    if (!base.host) return null;
+
+    // Lock return URLs to our billing page only.
+    return new URL("/app/billing", base).toString();
+  } catch {
+    return null;
+  }
 }
 
 function idToString(value: unknown): string {
@@ -79,10 +120,80 @@ function idToString(value: unknown): string {
   return "";
 }
 
+// --- Best-effort in-memory rate limit (may reset on serverless cold starts) ---
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_POST = 20;
+const attempts = new Map<string, { count: number; resetAt: number }>();
+
+function getClientKey(req: NextRequest): string {
+  const xfwd = req.headers.get("x-forwarded-for");
+  const ip = xfwd ? xfwd.split(",")[0]?.trim() : "";
+  const realIp = req.headers.get("x-real-ip")?.trim() ?? "";
+  const ua = req.headers.get("user-agent")?.slice(0, 64) ?? "";
+  return ip || realIp || `ua:${ua}`;
+}
+
+function checkRateLimit(
+  key: string,
+): { ok: true } | { ok: false; retryAfterSeconds: number } {
+  const now = Date.now();
+  const entry = attempts.get(key);
+
+  if (!entry || entry.resetAt <= now) {
+    attempts.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return { ok: true };
+  }
+
+  if (entry.count >= RATE_LIMIT_MAX_POST) {
+    return {
+      ok: false,
+      retryAfterSeconds: Math.max(1, Math.ceil((entry.resetAt - now) / 1000)),
+    };
+  }
+
+  entry.count += 1;
+  attempts.set(key, entry);
+  return { ok: true };
+}
+
+// --- Request parsing ---
+const MAX_JSON_BODY_BYTES = 25_000;
+
+async function readJsonBody(req: NextRequest): Promise<
+  | { ok: true; planId: string }
+  | { ok: false; res: ReturnType<typeof jsonErr> }
+> {
+  const contentType = req.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    return {
+      ok: false,
+      res: jsonErr("Content-Type must be application/json", 415, "UNSUPPORTED_MEDIA_TYPE"),
+    };
+  }
+
+  try {
+    const raw = await req.text();
+    if (raw.length > MAX_JSON_BODY_BYTES) {
+      return { ok: false, res: jsonErr("Request body too large", 413, "PAYLOAD_TOO_LARGE") };
+    }
+
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    const planId =
+      typeof (parsed as { planId?: unknown } | null)?.planId === "string"
+        ? String((parsed as { planId: string }).planId).trim()
+        : "";
+
+    return { ok: true, planId };
+  } catch {
+    return { ok: false, res: jsonErr("Invalid JSON", 400, "BAD_REQUEST") };
+  }
+}
+
 // GET /api/billing
 // Returns subscription/billing info for the authenticated user.
 export async function GET() {
-  const headers = noStoreHeaders();
+  const headers = headersNoStore();
+  addSecurityHeaders(headers);
 
   try {
     const session = await auth();
@@ -134,20 +245,26 @@ export async function GET() {
 // Body: { planId: "pro" }
 // Creates a Stripe Checkout Session and returns { url }.
 export async function POST(req: NextRequest) {
-  const headers = noStoreHeaders();
+  const headers = headersNoStore();
+  addSecurityHeaders(headers);
+
+  // Rate limit (best-effort)
+  const rl = checkRateLimit(`billing:checkout:${getClientKey(req)}`);
+  if (!rl.ok) {
+    headers.set("Retry-After", String(rl.retryAfterSeconds));
+    return jsonErr("Too many requests. Please try again shortly.", 429, "RATE_LIMITED", {
+      headers,
+    });
+  }
 
   try {
     const session = await auth();
     if (!session?.user?.id) return jsonUnauthorized();
 
-    let body: unknown;
-    try {
-      body = await req.json();
-    } catch {
-      return jsonErr("Invalid JSON", 400, "BAD_REQUEST", { headers });
-    }
+    const parsed = await readJsonBody(req);
+    if (!parsed.ok) return parsed.res;
 
-    const planId = (body as { planId?: string })?.planId ?? "";
+    const planId = parsed.planId;
     const plan = PLAN_METADATA[planId];
     if (!plan || planId === "free") {
       return jsonErr("Invalid planId", 400, "BAD_REQUEST", { headers });
@@ -169,7 +286,7 @@ export async function POST(req: NextRequest) {
 
     // Ensure Stripe Customer exists.
     const u = user as unknown as {
-      stripeCustomerId?: string;
+      stripeCustomerId?: string | null;
       save: () => Promise<unknown>;
     };
 
@@ -185,15 +302,30 @@ export async function POST(req: NextRequest) {
       await u.save();
     }
 
+    // Guard against corrupted/invalid values.
+    if (!u.stripeCustomerId || !u.stripeCustomerId.startsWith("cus_")) {
+      return jsonErr("Billing is not configured for this user.", 409, "BILLING_NOT_READY", {
+        headers,
+      });
+    }
+
     const appUrl = getAppUrl();
+    const returnUrl = safeBillingReturnUrl(appUrl);
+    if (!returnUrl) {
+      const message = isProd() ? "Billing is not configured." : `Invalid app URL: ${appUrl}`;
+      return jsonErr(message, 500, "CONFIG_ERROR", { headers });
+    }
+
+    const successUrl = `${returnUrl}?success=1`;
+    const cancelUrl = `${returnUrl}?canceled=1`;
 
     const checkout = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer: u.stripeCustomerId,
       line_items: [{ price: process.env[priceEnv] as string, quantity: 1 }],
       allow_promotion_codes: true,
-      success_url: `${appUrl}/app/billing?success=1`,
-      cancel_url: `${appUrl}/app/billing?canceled=1`,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
       // Important: don't trust client state—webhook will finalize subscription status.
       metadata: {
         userId: idToString(user._id),

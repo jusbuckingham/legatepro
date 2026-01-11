@@ -195,28 +195,48 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
         <PageHeader
           eyebrow="Billing"
           title="Invoices"
-          description="Track all invoices across your firm. Filter by status, timeframe, or search by notes and invoice number."
+          description="Invoices are estate-scoped. Create an estate first, then generate invoices for work completed."
           actions={
-            <Link
-              href="/app/invoices/new"
-              className="inline-flex items-center rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400"
-            >
-              New invoice
-            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href="/app/estates/new"
+                className="inline-flex items-center rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400"
+              >
+                New estate
+              </Link>
+              <Link
+                href="/app/estates"
+                className="inline-flex items-center rounded-md border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-900"
+              >
+                View estates
+              </Link>
+              <Link
+                href="/app/billing"
+                className="inline-flex items-center rounded-md border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-900"
+              >
+                Billing
+              </Link>
+            </div>
           }
         />
 
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
-          <p className="text-sm font-medium text-slate-100">No estates yet</p>
+          <p className="text-sm font-medium text-slate-100">Create your first estate</p>
           <p className="mt-1 text-xs text-slate-500">
-            Create an estate first to start generating and tracking invoices.
+            Once you have an estate, you can create invoices, track payment status, and see AR totals here.
           </p>
-          <div className="mt-3">
+          <div className="mt-3 flex flex-wrap gap-2">
             <Link
               href="/app/estates/new"
               className="inline-flex items-center rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-white"
             >
               Create an estate
+            </Link>
+            <Link
+              href="/app/estates"
+              className="inline-flex items-center rounded-md border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-900"
+            >
+              View estates
             </Link>
           </div>
         </section>
@@ -373,6 +393,7 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
     sortBy !== "recent";
 
   const clearHref = "/app/invoices";
+  const isEmptyWithoutFilters = invoices.length === 0 && !hasActiveFilters;
 
   return (
     <div className="space-y-8">
@@ -389,6 +410,29 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
           </Link>
         }
       />
+
+      {isEmptyWithoutFilters ? (
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 text-xs text-slate-200 shadow-sm">
+          <p className="text-sm font-semibold text-slate-100">Create your first invoice</p>
+          <p className="mt-0.5 text-[11px] text-slate-500">
+            Pick an estate, set issue/due dates, and send it when ready. Once you mark invoices PAID, your collected totals update automatically.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href="/app/invoices/new"
+              className="inline-flex h-9 items-center rounded-md bg-sky-500 px-3 text-xs font-semibold text-slate-950 hover:bg-sky-400"
+            >
+              New invoice
+            </Link>
+            <Link
+              href="/app/estates"
+              className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-950/60 px-3 text-xs font-semibold text-slate-200 hover:bg-slate-900"
+            >
+              Browse estates
+            </Link>
+          </div>
+        </div>
+      ) : null}
 
       {/* Tab strip: All vs AR aging */}
       <nav className="border-b border-slate-800">
@@ -586,9 +630,66 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
         </div>
 
         {invoices.length === 0 ? (
-          <p className="text-xs text-slate-500">
-            No invoices match the current filters.
-          </p>
+          <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+            {hasActiveFilters ? (
+              <>
+                <p className="text-sm font-semibold text-slate-100">No invoices match your filters</p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Try a different status, timeframe, or estate — or clear filters to see everything.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link
+                    href={clearHref}
+                    className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-950/60 px-3 text-xs font-semibold text-slate-200 hover:bg-slate-900"
+                  >
+                    Clear filters
+                  </Link>
+                  <Link
+                    href="/app/invoices/new"
+                    className="inline-flex h-9 items-center rounded-md bg-sky-500 px-3 text-xs font-semibold text-slate-950 hover:bg-sky-400"
+                  >
+                    New invoice
+                  </Link>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-slate-100">Add your first invoice</p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Pick an estate, set issue/due dates, and track payment status (UNPAID → PARTIAL → PAID).
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link
+                    href="/app/invoices/new"
+                    className="inline-flex h-9 items-center rounded-md bg-sky-500 px-3 text-xs font-semibold text-slate-950 hover:bg-sky-400"
+                  >
+                    New invoice
+                  </Link>
+                  <Link
+                    href="/app/estates"
+                    className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-950/60 px-3 text-xs font-semibold text-slate-200 hover:bg-slate-900"
+                  >
+                    Browse estates
+                  </Link>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-3">
+                    <p className="text-xs font-medium text-slate-200">Step 1</p>
+                    <p className="mt-1 text-[11px] text-slate-500">Create an invoice for work completed.</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-3">
+                    <p className="text-xs font-medium text-slate-200">Step 2</p>
+                    <p className="mt-1 text-[11px] text-slate-500">Mark it SENT / UNPAID once it’s out the door.</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-3">
+                    <p className="text-xs font-medium text-slate-200">Step 3</p>
+                    <p className="mt-1 text-[11px] text-slate-500">Update to PAID to keep totals accurate.</p>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-xs">

@@ -130,9 +130,9 @@ export default function NewEstatePage() {
       const estateId = data?.estate?._id;
 
       if (estateId) {
-        router.push(`/app/estates/${estateId}`);
+        router.push(`/app/estates/${estateId}?created=1`);
       } else {
-        router.push("/app/estates");
+        router.push("/app/estates?created=1");
       }
     } catch (err) {
       console.error("Error creating estate", err);
@@ -167,6 +167,15 @@ export default function NewEstatePage() {
           </Link>
         </div>
       </header>
+
+      <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 text-xs text-slate-300">
+        <p className="font-medium text-slate-100">Getting started</p>
+        <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] text-slate-400">
+          <li><span className="text-slate-200">Estate name</span> is required and should match court paperwork.</li>
+          <li>All other fields are optional and can be filled in later.</li>
+          <li>You’ll be able to add <span className="text-slate-200">tasks, documents, time, and invoices</span> after creation.</li>
+        </ul>
+      </div>
 
       <form
         onSubmit={handleSubmit}

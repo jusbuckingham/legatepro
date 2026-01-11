@@ -413,42 +413,82 @@ export default function GlobalExpensesPage() {
 
         {filteredRows.length === 0 ? (
           <div className="px-4 py-10">
-            <div className="mx-auto max-w-md text-center">
-              <div className="text-sm font-semibold text-slate-100">No expenses yet</div>
-              <div className="mt-1 text-xs text-slate-400">
-                Track probate costs, repairs, travel, filing fees, and anything you’ll want to reimburse or report.
-              </div>
+            <div className="mx-auto max-w-2xl text-center">
+              {categoryFilter !== "all" ? (
+                <>
+                  <div className="text-sm font-semibold text-slate-100">No expenses match your filters</div>
+                  <div className="mt-1 text-xs text-slate-400">
+                    Try a different category, or clear filters to see everything.
+                  </div>
 
-              <div className="mt-5 flex flex-wrap justify-center gap-2">
-                <Link
-                  href="/app/expenses/new"
-                  className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-400"
-                >
-                  Add an expense
-                </Link>
-                <Link
-                  href="/app/estates"
-                  className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-900"
-                >
-                  Go to an estate
-                </Link>
+                  <div className="mt-5 flex flex-wrap justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCategoryFilter("all");
+                        const params = new URLSearchParams(searchParams?.toString());
+                        params.delete("category");
+                        const qs = params.toString();
+                        router.replace(qs ? `${pathname}?${qs}` : pathname);
+                      }}
+                      className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-900"
+                    >
+                      Clear filters
+                    </button>
+                    <Link
+                      href="/app/expenses/new"
+                      className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-400"
+                    >
+                      Add an expense
+                    </Link>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="text-sm font-semibold text-slate-100">Track your first expense</div>
+                  <div className="mt-1 text-xs text-slate-400">
+                    Log probate costs, repairs, travel, filing fees, and anything you’ll want to reimburse or report.
+                  </div>
 
-                {categoryFilter !== "all" ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCategoryFilter("all");
-                      const params = new URLSearchParams(searchParams?.toString());
-                      params.delete("category");
-                      const qs = params.toString();
-                      router.replace(qs ? `${pathname}?${qs}` : pathname);
-                    }}
-                    className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-900"
-                  >
-                    Clear filters
-                  </button>
-                ) : null}
-              </div>
+                  <div className="mx-auto mt-5 grid max-w-2xl gap-3 text-left md:grid-cols-3">
+                    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                      <p className="text-xs font-semibold text-slate-100">Common categories</p>
+                      <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] text-slate-500">
+                        <li>Repairs &amp; maintenance</li>
+                        <li>Utilities &amp; insurance</li>
+                        <li>Legal &amp; filing fees</li>
+                      </ul>
+                    </div>
+                    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                      <p className="text-xs font-semibold text-slate-100">Keep receipts</p>
+                      <p className="mt-2 text-[11px] text-slate-500">
+                        Add payee + date so you can reconcile later (and export clean reports).
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                      <p className="text-xs font-semibold text-slate-100">Estate rollups</p>
+                      <p className="mt-2 text-[11px] text-slate-500">
+                        Expenses stay tied to estates, so summaries remain legally separated.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 flex flex-wrap justify-center gap-2">
+                    <Link
+                      href="/app/expenses/new"
+                      className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-400"
+                    >
+                      Add an expense
+                    </Link>
+                    <Link
+                      href="/app/estates"
+                      className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-900"
+                    >
+                      Go to an estate
+                    </Link>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         ) : (

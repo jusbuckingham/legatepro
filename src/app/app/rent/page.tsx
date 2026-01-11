@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { RentPayment } from "@/models/RentPayment";
@@ -159,9 +160,41 @@ export default async function GlobalRentOverviewPage() {
         </h2>
 
         {estateSummaries.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/40 p-6 text-sm text-slate-400">
-            No rent payments recorded yet. When you add rent under each estate,
-            you&apos;ll see a cross-estate summary here.
+          <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/40 p-6">
+            <p className="text-sm font-semibold text-slate-100">No rent recorded yet</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Add rent entries inside an estate and we&apos;ll automatically roll up totals here.
+            </p>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link
+                href="/app/estates"
+                className="inline-flex h-9 items-center rounded-md bg-emerald-500 px-3 text-xs font-semibold text-slate-950 hover:bg-emerald-400"
+              >
+                Go to an estate
+              </Link>
+              <Link
+                href="/app/dashboard"
+                className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-950/60 px-3 text-xs font-semibold text-slate-200 hover:bg-slate-900"
+              >
+                Dashboard
+              </Link>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                <p className="text-xs font-semibold text-slate-100">Step 1</p>
+                <p className="mt-1 text-[11px] text-slate-500">Open an estate → Rent tab.</p>
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                <p className="text-xs font-semibold text-slate-100">Step 2</p>
+                <p className="mt-1 text-[11px] text-slate-500">Add tenant + payment date + amount.</p>
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                <p className="text-xs font-semibold text-slate-100">Step 3</p>
+                <p className="mt-1 text-[11px] text-slate-500">See totals by estate and across all estates here.</p>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -193,10 +226,25 @@ export default async function GlobalRentOverviewPage() {
         </div>
 
         {!hasPayments ? (
-          <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/40 p-6 text-sm text-slate-400">
-            No rent recorded yet. Add rent from the{" "}
-            <span className="font-semibold text-slate-200">Rent</span> tab
-            inside any estate to start tracking income.
+          <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/40 p-6">
+            <p className="text-sm font-semibold text-slate-100">No payments yet</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Add rent from the <span className="font-semibold text-slate-200">Rent</span> tab inside any estate to start tracking income.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link
+                href="/app/estates"
+                className="inline-flex h-9 items-center rounded-md bg-emerald-500 px-3 text-xs font-semibold text-slate-950 hover:bg-emerald-400"
+              >
+                Go to an estate
+              </Link>
+              <Link
+                href="/app/estates?sort=updated"
+                className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-950/60 px-3 text-xs font-semibold text-slate-200 hover:bg-slate-900"
+              >
+                Recently updated
+              </Link>
+            </div>
           </div>
         ) : (
           <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/40">
