@@ -125,7 +125,7 @@ const CollaboratorSchema = new Schema<EstateCollaborator>(
 
 const InviteSchema = new Schema<EstateInvite>(
   {
-    token: { type: String, required: true },
+    token: { type: String, required: true, index: true },
     email: {
       type: String,
       required: true,
@@ -205,8 +205,6 @@ EstateSchema.index({ "collaborators.userId": 1, updatedAt: -1 });
 // Fast invite lookups by email + status
 EstateSchema.index({ "invites.email": 1, "invites.status": 1 });
 
-// Fast invite token resolution
-EstateSchema.index({ "invites.token": 1 });
 
 let EstateModel: Model<EstateDocument>;
 

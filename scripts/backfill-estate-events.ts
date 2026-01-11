@@ -5,7 +5,7 @@
  *   npx tsx scripts/backfill-estate-events.ts
  */
 import "dotenv/config";
-import type { FilterQuery } from "mongoose";
+import { Types, type AnyBulkWriteOperation, type Document } from "mongoose";
 
 import { connectToDatabase } from "@/lib/db";
 import EstateEvent, {
@@ -13,6 +13,8 @@ import EstateEvent, {
   ESTATE_EVENT_TYPE_ALIASES,
   normalizeEstateEventType,
 } from "@/models/EstateEvent";
+
+type MongooseDoc = Document;
 
 const BATCH_SIZE = 500;
 
@@ -26,7 +28,7 @@ async function main() {
   // Anything that is:
   // - an alias key, OR
   // - not canonical
-  const query: FilterQuery<unknown> = {
+  const query: Record<string, unknown> = {
     $or: [{ type: { $in: aliasKeys } }, { type: { $nin: canonicalTypes } }],
   };
 
@@ -44,7 +46,7 @@ async function main() {
 
     if (!docs.length) break;
 
-    const ops = docs.map((d) => {
+    const ops: Array<AnyBulkWriteOperation<MongooseDoc> | null> = docs.map((d) => {
       const current = typeof d.type === "string" ? d.type : "";
       const next = normalizeEstateEventType(current);
 
@@ -53,13 +55,15 @@ async function main() {
 
       return {
         updateOne: {
-          filter: { _id: d._id },
+          filter: { _id: new Types.ObjectId(String(d._id)) },
           update: { $set: { type: next } },
         },
       };
     });
 
-    const bulkOps = ops.filter(Boolean) as Exclude<(typeof ops)[number], null>[];
+    const bulkOps = ops.filter(
+      (op): op is AnyBulkWriteOperation<MongooseDoc> => op !== null,
+    );
     if (bulkOps.length) {
       const res = await EstateEvent.bulkWrite(bulkOps, { ordered: false });
       processed += bulkOps.length;
