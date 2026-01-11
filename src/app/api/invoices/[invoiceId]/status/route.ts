@@ -6,6 +6,8 @@ import { connectToDatabase } from "@/lib/db";
 import { getEstateAccess } from "@/lib/estateAccess";
 import { Invoice, type InvoiceStatus } from "@/models/Invoice";
 import { Estate } from "@/models/Estate";
+import { User } from "@/models/User";
+import { EntitlementError, requirePro } from "@/lib/entitlements";
 import { logEstateEvent } from "@/lib/estateEvents";
 import { logActivity } from "@/lib/activity";
 import {
@@ -87,6 +89,26 @@ export async function PATCH(req: NextRequest, ctx: RouteContext): Promise<Respon
   }
 
   await connectToDatabase();
+
+  // Billing enforcement: changing invoice status is Pro-only
+  const user = await User.findById(session.user.id).lean().exec();
+  if (!user) {
+    return jsonErr("Unauthorized", 401, "UNAUTHORIZED", { headers });
+  }
+
+  try {
+    requirePro(
+      user as unknown as {
+        subscriptionPlanId?: string | null;
+        subscriptionStatus?: string | null;
+      },
+    );
+  } catch (e) {
+    if (e instanceof EntitlementError) {
+      return jsonErr("Pro subscription required", 402, e.code, { headers });
+    }
+    throw e;
+  }
 
   const invoice = await Invoice.findById(new Types.ObjectId(invoiceId));
 

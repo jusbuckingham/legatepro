@@ -9,11 +9,10 @@ import { connectToDatabase } from "@/lib/db";
 import {
   jsonErr,
   jsonOk,
-  jsonUnauthorized,
   noStoreHeaders,
   safeErrorMessage,
 } from "@/lib/apiResponse";
-import { User, UserDocument } from "@/models/User";
+import { User } from "@/models/User";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -129,7 +128,9 @@ export async function POST() {
 
   try {
     const session = await auth();
-    if (!session?.user?.id) return jsonUnauthorized();
+    if (!session?.user?.id) {
+      return jsonErr("Unauthorized", 401, "UNAUTHORIZED", { headers });
+    }
 
     // Add per-user rate limit key for better protection (in addition to the coarse bucket above).
     const userRl = checkRateLimit(`portal:user:${session.user.id}`);
@@ -145,32 +146,40 @@ export async function POST() {
 
     await connectToDatabase();
 
-    const user: UserDocument | null = await User.findById(session.user.id);
+    const user = await User.findById(session.user.id).lean().exec();
     if (!user) return jsonErr("User not found", 404, "NOT_FOUND", { headers });
 
     const stripe = getStripe();
 
-    const u = user as unknown as {
-      stripeCustomerId?: string | null;
-      save: () => Promise<unknown>;
-    };
+    let stripeCustomerId = (user as unknown as { stripeCustomerId?: string | null })
+      .stripeCustomerId;
 
     // If the user hasn't created a Stripe customer yet, create one now.
-    if (!u.stripeCustomerId) {
+    if (!stripeCustomerId) {
       const customer = await stripe.customers.create({
-        email: user.email,
-        name: [user.firstName, user.lastName].filter(Boolean).join(" ") || undefined,
+        email: (user as unknown as { email?: string | null }).email || undefined,
+        name:
+          [
+            (user as unknown as { firstName?: string | null }).firstName,
+            (user as unknown as { lastName?: string | null }).lastName,
+          ]
+            .filter(Boolean)
+            .join(" ") || undefined,
         metadata: {
-          userId: idToString(user._id),
+          userId: idToString((user as unknown as { _id?: unknown })._id),
         },
       });
 
-      u.stripeCustomerId = customer.id;
-      await u.save();
+      stripeCustomerId = customer.id;
+
+      await User.updateOne(
+        { _id: (user as unknown as { _id?: unknown })._id },
+        { $set: { stripeCustomerId } },
+      ).exec();
     }
 
     // Guard against corrupted/invalid values
-    if (!u.stripeCustomerId || !u.stripeCustomerId.startsWith("cus_")) {
+    if (!stripeCustomerId || !stripeCustomerId.startsWith("cus_")) {
       return jsonErr("Billing is not configured for this user.", 409, "BILLING_NOT_READY", {
         headers,
       });
@@ -188,7 +197,7 @@ export async function POST() {
 
     // NOTE: Stripe Billing Portal must be enabled in the Stripe Dashboard.
     const portal = await stripe.billingPortal.sessions.create({
-      customer: u.stripeCustomerId,
+      customer: stripeCustomerId,
       return_url: returnUrl,
     });
 

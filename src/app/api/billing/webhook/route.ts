@@ -173,7 +173,7 @@ export async function POST(req: NextRequest) {
     }
 
     const rawBody = await req.text();
-    if (rawBody.length > MAX_WEBHOOK_BODY_BYTES) {
+    if (Buffer.byteLength(rawBody, "utf8") > MAX_WEBHOOK_BODY_BYTES) {
       return jsonErr("Payload too large", 413, "PAYLOAD_TOO_LARGE", { headers });
     }
 

@@ -1,9 +1,11 @@
-// src/app/api/rent/route.ts
-// Rent Payments API (list, create)
+// src/app/api/rent/[id]/route.ts
+// Rent Payments API (read, update, delete a single payment)
 
 import { NextRequest } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import { RentPayment } from "@/models/RentPayment";
+import { User } from "@/models/User";
+import { EntitlementError, requirePro } from "@/lib/entitlements";
 import { auth } from "@/lib/auth";
 import {
   jsonErr,
@@ -16,77 +18,60 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: NextRequest): Promise<Response> {
+type RouteParams = { params: Promise<{ id: string }> };
+
+function parseDate(value: unknown): Date | null {
+  if (value instanceof Date) {
+    return isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value === "string" || typeof value === "number") {
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
+export async function GET(_request: NextRequest, ctx: RouteParams): Promise<Response> {
+  const headers = noStoreHeaders();
+
   try {
-    const headers = noStoreHeaders();
     const session = await auth();
     if (!session?.user?.id) return jsonUnauthorized();
 
-    const { searchParams } = new URL(request.url);
-
-    const limitParam = Number(searchParams.get("limit"));
-    const limit = Number.isFinite(limitParam) ? Math.min(limitParam, 100) : 25;
-
-    const cursor = searchParams.get("cursor");
-    const fromDateParam = searchParams.get("fromDate");
-    const toDateParam = searchParams.get("toDate");
+    const { id } = await ctx.params;
+    if (!id || !requireObjectIdLike(id)) {
+      return jsonErr("Invalid id", 400, "BAD_REQUEST", { headers });
+    }
 
     await connectToDatabase();
 
-    const ownerId = session.user.id;
+    const payment = await RentPayment.findOne({ _id: id, ownerId: session.user.id }).lean();
 
-    const query: Record<string, unknown> = { ownerId };
-
-    if (cursor && requireObjectIdLike(cursor)) {
-      query._id = { $lt: cursor };
+    if (!payment) {
+      return jsonErr("Not found", 404, "NOT_FOUND", { headers });
     }
-
-    if (fromDateParam || toDateParam) {
-      const range: Record<string, Date> = {};
-      if (fromDateParam) {
-        const d = new Date(fromDateParam);
-        if (!isNaN(d.getTime())) range.$gte = d;
-      }
-      if (toDateParam) {
-        const d = new Date(toDateParam);
-        if (!isNaN(d.getTime())) range.$lte = d;
-      }
-      if (Object.keys(range).length > 0) {
-        query.paymentDate = range;
-      }
-    }
-
-    const payments = await RentPayment.find(query)
-      .sort({ _id: -1 })
-      .limit(limit + 1)
-      .lean();
-
-    const hasMore = payments.length > limit;
-    const sliced = hasMore ? payments.slice(0, limit) : payments;
-    const nextCursor = hasMore ? String(sliced[sliced.length - 1]._id) : null;
 
     return jsonOk(
-      {
-        payments: sliced.map(p => ({ ...p, _id: String(p._id) })),
-        nextCursor,
-      },
-      { headers }
+      { payment: { ...payment, _id: String(payment._id) } },
+      { headers },
     );
   } catch (error) {
-    console.error("GET /api/rent error:", safeErrorMessage(error));
-    return jsonErr("Unable to load rent payments", 500, "INTERNAL_ERROR", { headers: noStoreHeaders() });
+    console.error("GET /api/rent/[id] error:", safeErrorMessage(error));
+    return jsonErr("Unable to load rent payment", 500, "INTERNAL_ERROR", { headers });
   }
 }
 
-export async function POST(request: NextRequest): Promise<Response> {
+export async function PATCH(request: NextRequest, ctx: RouteParams): Promise<Response> {
+  const headers = noStoreHeaders();
+
   try {
-    const headers = noStoreHeaders();
     const session = await auth();
     if (!session?.user?.id) return jsonUnauthorized();
 
-    await connectToDatabase();
-
-    const ownerId = session.user.id;
+    const { id } = await ctx.params;
+    if (!id || !requireObjectIdLike(id)) {
+      return jsonErr("Invalid id", 400, "BAD_REQUEST", { headers });
+    }
 
     let payload: unknown;
     try {
@@ -101,57 +86,125 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     const body = payload as Record<string, unknown>;
 
-    const tenantName = body.tenantName;
-    const paymentDate = body.paymentDate;
-    const amount = body.amount;
-    const notes = body.notes;
-    const isPaid = body.isPaid;
-    const periodMonth = body.periodMonth;
-    const periodYear = body.periodYear;
-    const method = body.method;
-    const reference = body.reference;
+    // Only allow specific fields to be updated
+    const update: Record<string, unknown> = {};
 
-    if (!tenantName || !paymentDate || amount == null) {
-      return jsonErr("Missing required fields", 400, "BAD_REQUEST", { headers });
+    if ("tenantName" in body) update.tenantName = body.tenantName;
+    if ("notes" in body) update.notes = body.notes;
+    if ("isPaid" in body) update.isPaid = Boolean(body.isPaid);
+    if ("periodMonth" in body) update.periodMonth = body.periodMonth;
+    if ("periodYear" in body) update.periodYear = body.periodYear;
+    if ("method" in body) update.method = body.method;
+    if ("reference" in body) update.reference = body.reference;
+
+    if ("amount" in body) {
+      const amountNum = Number(body.amount);
+      if (!Number.isFinite(amountNum)) {
+        return jsonErr("Invalid amount", 400, "BAD_REQUEST", { headers });
+      }
+      update.amount = amountNum;
     }
 
-    let paymentDateObj: Date;
-    if (paymentDate instanceof Date) {
-      paymentDateObj = paymentDate;
-    } else if (typeof paymentDate === "string" || typeof paymentDate === "number") {
-      paymentDateObj = new Date(paymentDate);
-    } else {
-      return jsonErr("Invalid payment date", 400, "BAD_REQUEST", { headers });
+    if ("paymentDate" in body) {
+      const d = parseDate(body.paymentDate);
+      if (!d) {
+        return jsonErr("Invalid payment date", 400, "BAD_REQUEST", { headers });
+      }
+      update.paymentDate = d;
     }
 
-    if (isNaN(paymentDateObj.getTime())) {
-      return jsonErr("Invalid payment date", 400, "BAD_REQUEST", { headers });
+    if (Object.keys(update).length === 0) {
+      return jsonErr("No updates provided", 400, "BAD_REQUEST", { headers });
     }
 
-    const amountNum = Number(amount);
-    if (!Number.isFinite(amountNum)) {
-      return jsonErr("Invalid amount", 400, "BAD_REQUEST", { headers });
+    await connectToDatabase();
+
+    // Billing enforcement: editing rent payments is Pro-only
+    const user = await User.findById(session.user.id).lean().exec();
+    if (!user) {
+      return jsonUnauthorized();
     }
 
-    const newPayment = await RentPayment.create({
-      ownerId,
-      tenantName,
-      paymentDate: paymentDateObj,
-      amount: amountNum,
-      notes,
-      isPaid: Boolean(isPaid),
-      periodMonth,
-      periodYear,
-      method,
-      reference,
-    });
+    try {
+      requirePro(
+        user as unknown as {
+          subscriptionPlanId?: string | null;
+          subscriptionStatus?: string | null;
+        },
+      );
+    } catch (e) {
+      if (e instanceof EntitlementError) {
+        return jsonErr("Pro subscription required", 402, e.code, { headers });
+      }
+      throw e;
+    }
+
+    const updated = await RentPayment.findOneAndUpdate(
+      { _id: id, ownerId: session.user.id },
+      { $set: update },
+      { new: true },
+    ).lean();
+
+    if (!updated) {
+      return jsonErr("Not found", 404, "NOT_FOUND", { headers });
+    }
 
     return jsonOk(
-      { payment: { ...newPayment.toObject(), _id: String(newPayment._id) } },
-      { headers }
+      { payment: { ...updated, _id: String((updated as { _id: unknown })._id) } },
+      { headers },
     );
   } catch (error) {
-    console.error("POST /api/rent error:", safeErrorMessage(error));
-    return jsonErr("Unable to create rent payment", 500, "INTERNAL_ERROR", { headers: noStoreHeaders() });
+    console.error("PATCH /api/rent/[id] error:", safeErrorMessage(error));
+    return jsonErr("Unable to update rent payment", 500, "INTERNAL_ERROR", { headers });
+  }
+}
+
+export async function DELETE(_request: NextRequest, ctx: RouteParams): Promise<Response> {
+  const headers = noStoreHeaders();
+
+  try {
+    const session = await auth();
+    if (!session?.user?.id) return jsonUnauthorized();
+
+    const { id } = await ctx.params;
+    if (!id || !requireObjectIdLike(id)) {
+      return jsonErr("Invalid id", 400, "BAD_REQUEST", { headers });
+    }
+
+    await connectToDatabase();
+
+    // Billing enforcement: deleting rent payments is Pro-only
+    const user = await User.findById(session.user.id).lean().exec();
+    if (!user) {
+      return jsonUnauthorized();
+    }
+
+    try {
+      requirePro(
+        user as unknown as {
+          subscriptionPlanId?: string | null;
+          subscriptionStatus?: string | null;
+        },
+      );
+    } catch (e) {
+      if (e instanceof EntitlementError) {
+        return jsonErr("Pro subscription required", 402, e.code, { headers });
+      }
+      throw e;
+    }
+
+    const deleted = await RentPayment.findOneAndDelete({ _id: id, ownerId: session.user.id }).lean();
+
+    if (!deleted) {
+      return jsonErr("Not found", 404, "NOT_FOUND", { headers });
+    }
+
+    return jsonOk(
+      { deleted: true, id },
+      { headers },
+    );
+  } catch (error) {
+    console.error("DELETE /api/rent/[id] error:", safeErrorMessage(error));
+    return jsonErr("Unable to delete rent payment", 500, "INTERNAL_ERROR", { headers });
   }
 }

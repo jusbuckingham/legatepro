@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
+import { User } from "@/models/User";
+import { EntitlementError, requirePro } from "@/lib/entitlements";
 import { auth } from "@/lib/auth";
 import { getEstateAccess } from "@/lib/estateAccess";
 import {
@@ -134,6 +136,28 @@ export async function PUT(req: NextRequest, context: RouteContext) {
   }
 
   await connectToDatabase();
+
+  // Billing enforcement: editing invoices is Pro-only
+  const user = await User.findById(session.user.id).lean().exec();
+  if (!user) {
+    return jsonUnauthorized();
+  }
+
+  try {
+    requirePro(
+      user as unknown as {
+        subscriptionPlanId?: string | null;
+        subscriptionStatus?: string | null;
+      },
+    );
+  } catch (e) {
+    if (e instanceof EntitlementError) {
+      return jsonErr("Pro subscription required", 402, e.code, {
+        headers: noStoreHeaders(),
+      });
+    }
+    throw e;
+  }
 
   const body = (await req.json()) as {
     status?: string;
@@ -334,6 +358,28 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
   }
 
   await connectToDatabase();
+
+  // Billing enforcement: deleting invoices is Pro-only
+  const user = await User.findById(session.user.id).lean().exec();
+  if (!user) {
+    return jsonUnauthorized();
+  }
+
+  try {
+    requirePro(
+      user as unknown as {
+        subscriptionPlanId?: string | null;
+        subscriptionStatus?: string | null;
+      },
+    );
+  } catch (e) {
+    if (e instanceof EntitlementError) {
+      return jsonErr("Pro subscription required", 402, e.code, {
+        headers: noStoreHeaders(),
+      });
+    }
+    throw e;
+  }
 
   const { invoiceId } = await context.params;
 

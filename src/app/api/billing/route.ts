@@ -12,11 +12,10 @@ import { assertEnv } from "@/lib/assertEnv";
 import {
   jsonErr,
   jsonOk,
-  jsonUnauthorized,
   noStoreHeaders,
   safeErrorMessage,
 } from "@/lib/apiResponse";
-import { User, UserDocument } from "@/models/User";
+import { User } from "@/models/User";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -159,7 +158,10 @@ function checkRateLimit(
 // --- Request parsing ---
 const MAX_JSON_BODY_BYTES = 25_000;
 
-async function readJsonBody(req: NextRequest): Promise<
+async function readJsonBody(
+  req: NextRequest,
+  headers: Headers,
+): Promise<
   | { ok: true; planId: string }
   | { ok: false; res: ReturnType<typeof jsonErr> }
 > {
@@ -167,14 +169,14 @@ async function readJsonBody(req: NextRequest): Promise<
   if (!contentType.toLowerCase().includes("application/json")) {
     return {
       ok: false,
-      res: jsonErr("Content-Type must be application/json", 415, "UNSUPPORTED_MEDIA_TYPE"),
+      res: jsonErr("Content-Type must be application/json", 415, "UNSUPPORTED_MEDIA_TYPE", { headers }),
     };
   }
 
   try {
     const raw = await req.text();
     if (raw.length > MAX_JSON_BODY_BYTES) {
-      return { ok: false, res: jsonErr("Request body too large", 413, "PAYLOAD_TOO_LARGE") };
+      return { ok: false, res: jsonErr("Request body too large", 413, "PAYLOAD_TOO_LARGE", { headers }) };
     }
 
     const parsed: unknown = raw ? JSON.parse(raw) : null;
@@ -185,7 +187,7 @@ async function readJsonBody(req: NextRequest): Promise<
 
     return { ok: true, planId };
   } catch {
-    return { ok: false, res: jsonErr("Invalid JSON", 400, "BAD_REQUEST") };
+    return { ok: false, res: jsonErr("Invalid JSON", 400, "BAD_REQUEST", { headers }) };
   }
 }
 
@@ -197,11 +199,11 @@ export async function GET() {
 
   try {
     const session = await auth();
-    if (!session?.user?.id) return jsonUnauthorized();
+    if (!session?.user?.id) return jsonErr("Unauthorized", 401, "UNAUTHORIZED", { headers });
 
     await connectToDatabase();
 
-    const user: UserDocument | null = await User.findById(session.user.id);
+    const user = await User.findById(session.user.id).lean().exec();
     if (!user) {
       return jsonErr("User not found", 404, "NOT_FOUND", { headers });
     }
@@ -259,9 +261,9 @@ export async function POST(req: NextRequest) {
 
   try {
     const session = await auth();
-    if (!session?.user?.id) return jsonUnauthorized();
+    if (!session?.user?.id) return jsonErr("Unauthorized", 401, "UNAUTHORIZED", { headers });
 
-    const parsed = await readJsonBody(req);
+    const parsed = await readJsonBody(req, headers);
     if (!parsed.ok) return parsed.res;
 
     const planId = parsed.planId;
@@ -279,7 +281,7 @@ export async function POST(req: NextRequest) {
 
     await connectToDatabase();
 
-    const user: UserDocument | null = await User.findById(session.user.id);
+    const user = await User.findById(session.user.id).lean().exec();
     if (!user) return jsonErr("User not found", 404, "NOT_FOUND", { headers });
 
     const stripe = getStripe();

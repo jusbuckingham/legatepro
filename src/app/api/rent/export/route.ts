@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
+import { getEstateAccess } from "@/lib/estateAccess";
 import { EntitlementError, requireFeature } from "@/lib/entitlements";
 import {
   jsonErr,
@@ -8,7 +9,7 @@ import {
   noStoreHeaders,
   safeErrorMessage,
 } from "@/lib/apiResponse";
-import { User, UserDocument } from "@/models/User";
+import { User } from "@/models/User";
 import { Types } from "mongoose";
 
 import { connectToDatabase } from "@/lib/db";
@@ -52,6 +53,16 @@ function buildEstateIdQuery(
   return estateId;
 }
 
+type EstateAccessFlags = { ok?: boolean; canAccess?: boolean };
+
+function getAccessFlag(value: unknown): boolean | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const v = value as EstateAccessFlags;
+  if (typeof v.ok === "boolean") return v.ok;
+  if (typeof v.canAccess === "boolean") return v.canAccess;
+  return undefined;
+}
+
 export async function GET(request: NextRequest) {
   const headersNoStore = noStoreHeaders();
 
@@ -61,7 +72,7 @@ export async function GET(request: NextRequest) {
 
     await connectToDatabase();
 
-    const user: UserDocument | null = await User.findById(session.user.id);
+    const user = await User.findById(session.user.id).lean().exec();
     if (!user) {
       return jsonErr("User not found", 404, "NOT_FOUND", { headers: headersNoStore });
     }
@@ -86,6 +97,18 @@ export async function GET(request: NextRequest) {
 
     if (!estateId) {
       return jsonErr("Missing estateId", 400, "BAD_REQUEST", { headers: headersNoStore });
+    }
+
+    // Security: ensure the user can access this estate before exporting data
+    const access = await getEstateAccess({ estateId, session });
+
+    // `getEstateAccess` returns an EstateAccess object or null in this codebase.
+    // Some callers expose an `ok` or `canAccess` flag; treat missing/false as denied.
+    const flag = getAccessFlag(access);
+    const denied = !access || flag === false;
+
+    if (denied) {
+      return jsonErr("Forbidden", 403, "FORBIDDEN", { headers: headersNoStore });
     }
 
     // Pull all rent payments for this estate
