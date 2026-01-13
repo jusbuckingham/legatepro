@@ -1,6 +1,6 @@
 // src/app/api/auth/[...nextauth]/route.ts
 import NextAuth from "next-auth";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { authOptions as baseAuthOptions } from "@/auth.config";
 
@@ -61,26 +61,18 @@ function envErrorResponse(missing: string[]): Response {
   return res;
 }
 
-type NextAuthRouteContext = {
-  params: {
-    nextauth?: string[];
-  };
-};
-
-export async function GET(req: Request, ctx: NextAuthRouteContext) {
+export async function GET(req: NextRequest) {
   const missing = missingRequiredEnv();
   if (missing.length > 0) return envErrorResponse(missing);
 
-  // Pass the route context so NextAuth can resolve the `[...nextauth]` param.
-  const res = await handler(req, ctx);
+  const res = await handler(req);
   return applySecurityHeaders(res);
 }
 
-export async function POST(req: Request, ctx: NextAuthRouteContext) {
+export async function POST(req: NextRequest) {
   const missing = missingRequiredEnv();
   if (missing.length > 0) return envErrorResponse(missing);
 
-  // Pass the route context so NextAuth can resolve the `[...nextauth]` param.
-  const res = await handler(req, ctx);
+  const res = await handler(req);
   return applySecurityHeaders(res);
 }
