@@ -61,18 +61,26 @@ function envErrorResponse(missing: string[]): Response {
   return res;
 }
 
-export async function GET(req: Request) {
+type NextAuthRouteContext = {
+  params: {
+    nextauth?: string[];
+  };
+};
+
+export async function GET(req: Request, ctx: NextAuthRouteContext) {
   const missing = missingRequiredEnv();
   if (missing.length > 0) return envErrorResponse(missing);
 
-  const res = await handler(req);
+  // Pass the route context so NextAuth can resolve the `[...nextauth]` param.
+  const res = await handler(req, ctx);
   return applySecurityHeaders(res);
 }
 
-export async function POST(req: Request) {
+export async function POST(req: Request, ctx: NextAuthRouteContext) {
   const missing = missingRequiredEnv();
   if (missing.length > 0) return envErrorResponse(missing);
 
-  const res = await handler(req);
+  // Pass the route context so NextAuth can resolve the `[...nextauth]` param.
+  const res = await handler(req, ctx);
   return applySecurityHeaders(res);
 }
