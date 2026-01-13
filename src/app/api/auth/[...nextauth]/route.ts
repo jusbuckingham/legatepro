@@ -9,6 +9,11 @@ export const authOptions = baseAuthOptions;
 // NextAuth relies on Node.js APIs; keep this route on the Node runtime.
 export const runtime = "nodejs";
 
+// Explicit config export to prevent Edge execution in all environments
+export const config = {
+  runtime: "nodejs",
+};
+
 // Auth routes are inherently dynamic.
 export const dynamic = "force-dynamic";
 
