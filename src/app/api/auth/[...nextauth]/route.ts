@@ -1,10 +1,9 @@
 // src/app/api/auth/[...nextauth]/route.ts
 import NextAuth from "next-auth";
+import { authOptions } from "@/auth.config";
 
-import { authOptions as baseAuthOptions } from "@/auth.config";
-
-// Re-export for other server routes (e.g. getServerSession).
-export const authOptions = baseAuthOptions;
+// Required for Credentials provider + adapters
+export const runtime = "nodejs";
 
 const handler = NextAuth(authOptions);
 

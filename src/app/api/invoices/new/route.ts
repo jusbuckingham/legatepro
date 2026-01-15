@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import type { NextAuthOptions } from "next-auth";
 
-import { authOptions as rawAuthOptions } from "@/app/api/auth/[...nextauth]/route";
+import { authOptions } from "@/auth.config";
 import { connectToDatabase } from "@/lib/db";
 import { EntitlementError, requirePro } from "@/lib/entitlements";
 
@@ -42,7 +41,7 @@ function jsonErr(error: string, status = 400, code = "BAD_REQUEST") {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(rawAuthOptions as unknown as NextAuthOptions);
+  const session = await getServerSession(authOptions);
   const userId = session?.user?.id;
 
   if (!userId) {
