@@ -2,7 +2,7 @@
 // Thin wrapper around next-auth's getServerSession for server-side auth (v4 compatible).
 
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/auth.config";
+import authOptions from "@/auth.config";
 export { authOptions };
 
 export async function auth() {
