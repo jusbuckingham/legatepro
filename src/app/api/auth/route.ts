@@ -1,38 +1,42 @@
 // src/app/api/auth/route.ts
-// Temporary, minimal auth endpoint for LegatePro MVP.
-// In production, replace this with a real auth solution (NextAuth, Clerk, custom JWT, etc.).
+// Current-user endpoint (NextAuth-backed).
+// NOTE: We keep this as a convenience endpoint for the app UI, but it MUST NOT create demo users.
 
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+
+import { authOptions } from "@/lib/auth";
 import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { User } from "@/models/User";
 
 // GET /api/auth
-// Returns a mock "current user" for development.
+// Returns the current authenticated user (safe fields only).
 export async function GET(): Promise<NextResponse> {
   try {
+    const session = await getServerSession(authOptions);
+
+    const email = session?.user?.email ?? null;
+    if (!email) {
+      return NextResponse.json(
+        { ok: false, error: "Unauthorized" },
+        {
+          status: 401,
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        }
+      );
+    }
+
     await connectToDatabase();
 
-    const demoEmail = process.env.LEGATEPRO_DEMO_EMAIL || "demo@legatepro.test";
-
-    // Try to load a demo user
-    let user = serializeMongoDoc(await User.findOne({ email: demoEmail }).lean());
-
-    // If the demo user doesn't exist yet, create it.
-    if (!user) {
-      const created = await User.create({
-        email: demoEmail,
-        firstName: "Demo",
-        lastName: "User",
-        authProvider: "password",
-        onboardingCompleted: false,
-      });
-      user = serializeMongoDoc(created);
-    }
+    const userDoc = await User.findOne({ email }).lean();
+    const user = userDoc ? serializeMongoDoc(userDoc) : null;
 
     // Only send safe fields to the client
     const safeUser = {
       id: user?.id ?? "",
-      email: user?.email ?? demoEmail,
+      email,
       firstName: user?.firstName ?? null,
       lastName: user?.lastName ?? null,
       onboardingCompleted: user?.onboardingCompleted ?? false,

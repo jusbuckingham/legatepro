@@ -1,6 +1,6 @@
 // src/app/api/auth/[...nextauth]/route.ts
 import NextAuth from "next-auth";
-import { authOptions } from "@/auth.config";
+import authOptions from "@/auth.config";
 
 // Required for Credentials provider + adapters
 export const runtime = "nodejs";
