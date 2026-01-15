@@ -2,9 +2,6 @@
 import type { NextAuthOptions, Session, User as NextAuthUser } from "next-auth";
 import type { JWT } from "next-auth/jwt";
 import Credentials from "next-auth/providers/credentials";
-import { connectToDatabase } from "@/lib/db";
-import { User } from "@/models/User";
-import { compare } from "bcryptjs";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -15,39 +12,49 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" }
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) return null;
+        try {
+          if (!credentials?.email || !credentials?.password) return null;
 
-        const normalizedEmail = String(credentials.email).trim().toLowerCase();
+          const normalizedEmail = String(credentials.email).trim().toLowerCase();
 
-        await connectToDatabase();
+          // Lazy-load server-only modules to avoid edge/bundling issues
+          const [{ connectToDatabase }, { User }, { compare }] = await Promise.all([
+            import("@/lib/db"),
+            import("@/models/User"),
+            import("bcryptjs")
+          ]);
 
-        const user = (await User.findOne({ email: normalizedEmail })
-          .select("+password")
-          .lean()) as
-          | {
-              _id: { toString(): string } | string;
-              firstName?: string;
-              lastName?: string;
-              email: string;
-              password?: string;
-            }
-          | null;
+          await connectToDatabase();
 
-        if (!user || !user.password) {
+          const user = (await User.findOne({ email: normalizedEmail })
+            .select("+password")
+            .lean()) as
+            | {
+                _id: { toString(): string } | string;
+                firstName?: string;
+                lastName?: string;
+                email: string;
+                password?: string;
+              }
+            | null;
+
+          if (!user || !user.password) return null;
+
+          const isValid = await compare(String(credentials.password), user.password);
+          if (!isValid) return null;
+
+          const fullName =
+            [user.firstName, user.lastName].filter(Boolean).join(" ") || undefined;
+
+          return {
+            id: typeof user._id === "string" ? user._id : user._id.toString(),
+            name: fullName,
+            email: user.email
+          };
+        } catch {
+          // Do not leak auth errors to the client
           return null;
         }
-
-        const isValid = await compare(credentials.password, user.password);
-        if (!isValid) return null;
-
-        const fullName =
-          [user.firstName, user.lastName].filter(Boolean).join(" ") || undefined;
-
-        return {
-          id: typeof user._id === "string" ? user._id : user._id.toString(),
-          name: fullName,
-          email: user.email
-        };
       }
     })
   ],
@@ -59,6 +66,8 @@ export const authOptions: NextAuthOptions = {
   pages: {
     signIn: "/login"
   },
+
+  secret: process.env.NEXTAUTH_SECRET,
 
   callbacks: {
     async jwt({
