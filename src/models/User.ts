@@ -5,7 +5,10 @@ import { serializeMongoDoc } from "@/lib/db";
 export interface IUser {
   // Authentication identifiers
   email: string;
-  password?: string; // hashed password for credentials auth
+  // Credentials auth (bcrypt hash)
+  // NOTE: `password` kept only for backward-compat migrations.
+  passwordHash?: string;
+  password?: string;
   authProvider?: "google" | "apple" | "password" | "github" | "magiclink";
   providerId?: string; // e.g. Google sub, Apple id, etc.
 
@@ -45,7 +48,12 @@ const UserSchema = new Schema<UserDocument>(
       },
     },
 
-    password: { type: String, required: false },
+    // Credentials auth (bcrypt hash)
+    passwordHash: { type: String, required: false, select: false },
+
+    // Backward-compat (older records may have `password`)
+    password: { type: String, required: false, select: false },
+
     authProvider: {
       type: String,
       enum: ["google", "apple", "password", "github", "magiclink"],
@@ -80,8 +88,9 @@ UserSchema.virtual("fullName").get(function (this: UserDocument) {
 
 const userTransform = (_doc: unknown, ret: unknown) => {
   const out = serializeMongoDoc(ret) as Record<string, unknown>;
-  // Never leak hashed password
+  // Never leak password hashes
   delete (out as { password?: unknown }).password;
+  delete (out as { passwordHash?: unknown }).passwordHash;
   return out;
 };
 

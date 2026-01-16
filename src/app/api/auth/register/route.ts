@@ -18,7 +18,7 @@ export async function POST(req: Request) {
     const body = (await req.json()) as RegisterBody;
 
     const email = body.email?.trim().toLowerCase();
-    const password = body.password ?? "";
+    const password = body.password?.trim() ?? "";
 
     if (!email || !password) {
       return NextResponse.json(

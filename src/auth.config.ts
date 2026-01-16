@@ -13,23 +13,38 @@ type AppToken = JWT & {
   name?: string;
 };
 
+const isProd = process.env.NODE_ENV === "production";
+const debugEnabled = process.env.NEXTAUTH_DEBUG === "true" || !isProd;
+
+function maskEmail(email: string): string {
+  const [user, domain] = email.split("@");
+  if (!user || !domain) return "***";
+  const left = user.slice(0, 2);
+  const right = user.length > 2 ? user.slice(-1) : "";
+  return `${left}***${right}@${domain}`;
+}
+
 export const authOptions: NextAuthOptions = {
   // IMPORTANT: must be set in production (Vercel)
   secret: process.env.NEXTAUTH_SECRET,
 
-  // Turn on logs so Vercel tells us exactly why credentials fail
-  debug: true,
-  logger: {
-    error(code, meta) {
-      console.error("[nextauth][error]", code, meta);
-    },
-    warn(code) {
-      console.warn("[nextauth][warn]", code);
-    },
-    debug(code, meta) {
-      console.log("[nextauth][debug]", code, meta);
-    },
-  },
+  // Enable verbose auth diagnostics locally; opt-in on Vercel with NEXTAUTH_DEBUG=true
+  debug: debugEnabled,
+  ...(debugEnabled
+    ? {
+        logger: {
+          error(code, meta) {
+            console.error("[nextauth][error]", code, meta);
+          },
+          warn(code) {
+            console.warn("[nextauth][warn]", code);
+          },
+          debug(code, meta) {
+            console.log("[nextauth][debug]", code, meta);
+          },
+        },
+      }
+    : {}),
 
   session: {
     strategy: "jwt",
@@ -47,6 +62,10 @@ export const authOptions: NextAuthOptions = {
           const email = credentials?.email?.trim().toLowerCase();
           const password = credentials?.password ?? "";
 
+          if (isProd && !process.env.NEXTAUTH_SECRET) {
+            console.error("[auth] NEXTAUTH_SECRET is missing in production");
+          }
+
           if (!email || !password) {
             console.warn("[auth] missing email/password");
             return null;
@@ -62,7 +81,7 @@ export const authOptions: NextAuthOptions = {
             .lean();
 
           if (!userDoc) {
-            console.warn("[auth] user not found", { email });
+            console.warn("[auth] user not found", { email: isProd ? maskEmail(email) : email });
             return null;
           }
 
@@ -76,13 +95,13 @@ export const authOptions: NextAuthOptions = {
 
           const hash = doc.passwordHash ?? doc.password;
           if (!hash) {
-            console.error("[auth] user missing password hash field", { email });
+            console.error("[auth] user missing password hash field", { email: isProd ? maskEmail(email) : email });
             return null;
           }
 
           const ok = await bcrypt.compare(password, hash);
           if (!ok) {
-            console.warn("[auth] bad password", { email });
+            console.warn("[auth] bad password", { email: isProd ? maskEmail(email) : email });
             return null;
           }
 
