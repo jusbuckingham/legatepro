@@ -49,10 +49,14 @@ const UserSchema = new Schema<UserDocument>(
     },
 
     // Credentials auth (bcrypt hash)
-    passwordHash: { type: String, required: false, select: false },
+    // NOTE: We intentionally allow this field to be selected by default because
+    // our Credentials `authorize()` uses `.lean()` and does not call `.select("+passwordHash")`.
+    // We still prevent accidental leakage by stripping these fields in `toJSON`/`toObject` below.
+    passwordHash: { type: String, required: false },
 
     // Backward-compat (older records may have `password`)
-    password: { type: String, required: false, select: false },
+    // Kept for one-time migration on successful login.
+    password: { type: String, required: false },
 
     authProvider: {
       type: String,

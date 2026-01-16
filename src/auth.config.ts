@@ -93,16 +93,41 @@ export const authOptions: NextAuthOptions = {
             password?: string;
           };
 
-          const hash = doc.passwordHash ?? doc.password;
-          if (!hash) {
-            console.error("[auth] user missing password hash field", { email: isProd ? maskEmail(email) : email });
+          // Prefer the canonical field: passwordHash.
+          // If we still have legacy `password` (which historically stored a bcrypt hash),
+          // we can authenticate with it once and then migrate it to `passwordHash`.
+          const passwordHash = doc.passwordHash;
+          const legacyHash = doc.password;
+
+          const hashToCheck = passwordHash ?? legacyHash;
+          if (!hashToCheck) {
+            console.error("[auth] user missing password hash field", {
+              email: isProd ? maskEmail(email) : email,
+            });
             return null;
           }
 
-          const ok = await bcrypt.compare(password, hash);
+          const ok = await bcrypt.compare(password, hashToCheck);
           if (!ok) {
             console.warn("[auth] bad password", { email: isProd ? maskEmail(email) : email });
             return null;
+          }
+
+          // One-time migration: if the user authenticated via legacy `password`,
+          // persist it under `passwordHash` and remove `password`.
+          if (!passwordHash && legacyHash) {
+            try {
+              await User.updateOne(
+                { _id: doc._id },
+                { $set: { passwordHash: legacyHash }, $unset: { password: "" } }
+              ).exec();
+              console.log("[auth] migrated legacy password -> passwordHash", {
+                email: isProd ? maskEmail(email) : email,
+              });
+            } catch (e) {
+              console.warn("[auth] failed to migrate legacy password field", e);
+              // Do not fail login if migration fails.
+            }
           }
 
           return {
