@@ -3,26 +3,20 @@
 
 export type PlanId = "free" | "pro";
 
-export type SubscriptionStatus =
-  | "free"
-  | "inactive"
-  | "active"
-  | "trialing"
-  | "past_due"
-  | "canceled"
-  | "unpaid"
-  | "incomplete"
-  | "incomplete_expired"
-  | "paused"
-  | string;
+// Keep this intentionally narrow so we don't accidentally persist/assume unknown statuses.
+// These values should match what we store on the User document.
+export type SubscriptionStatus = "active" | "trialing" | "past_due" | "canceled";
 
 export type EntitlementsUser = {
   id?: string;
   email?: string;
-  // The plan the user is on (our internal plan id)
-  subscriptionPlanId?: PlanId | string | null;
+
+  // Our internal plan id (optional; if absent we derive from subscriptionStatus)
+  subscriptionPlanId?: PlanId | null;
+
   // Normalized subscription status synced from Stripe webhook
   subscriptionStatus?: SubscriptionStatus | null;
+
   // Stripe ids (optional)
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
@@ -30,7 +24,7 @@ export type EntitlementsUser = {
 
 export type Entitlements = {
   planId: PlanId;
-  status: SubscriptionStatus;
+  status: SubscriptionStatus | null;
 
   // Paid + in-good-standing
   isActive: boolean;
@@ -51,6 +45,8 @@ export type Entitlements = {
   };
 };
 
+// Consider "active" only when the subscription is in good standing.
+// NOTE: We intentionally do NOT include "past_due" here.
 const ACTIVE_STATUSES = new Set<SubscriptionStatus>(["active", "trialing"]);
 
 const PLAN_LIMITS: Record<PlanId, Entitlements["limits"]> = {
@@ -83,24 +79,37 @@ function normalizePlanId(planId: unknown): PlanId {
   return planId === "pro" ? "pro" : "free";
 }
 
-function normalizeStatus(status: unknown): SubscriptionStatus {
-  if (!status) return "inactive";
+function normalizeStatus(status: unknown): SubscriptionStatus | null {
+  // Treat missing/invalid as "no subscription" (free gating).
+  if (!status) return null;
   const s = String(status);
-  return s as SubscriptionStatus;
+
+  if (s === "active") return "active";
+  if (s === "trialing") return "trialing";
+  if (s === "past_due") return "past_due";
+  if (s === "canceled") return "canceled";
+
+  return null;
 }
 
 /**
  * Compute entitlements from a user doc / session snapshot.
  */
 export function getEntitlements(user: EntitlementsUser | null | undefined): Entitlements {
-  const planId = normalizePlanId(user?.subscriptionPlanId);
   const status = normalizeStatus(user?.subscriptionStatus);
 
+  // Plan comes from our explicit plan id if present, otherwise derive from status.
+  // This lets us gate correctly even if older users don't have subscriptionPlanId yet.
+  const planId: PlanId = user?.subscriptionPlanId
+    ? normalizePlanId(user.subscriptionPlanId)
+    : status === "active" || status === "trialing"
+      ? "pro"
+      : "free";
+
   // Paid plans are only considered “active” when status is good.
-  const isActive = planId !== "free" && ACTIVE_STATUSES.has(status);
+  const isActive = planId !== "free" && status !== null && ACTIVE_STATUSES.has(status);
   const canUsePro = planId === "pro" && isActive;
 
-  // Features/limits should follow the plan, but also be safe when subscription is not active.
   // If a paid subscription is not active (past_due/canceled/etc), treat as free for gating.
   const effectivePlan: PlanId = canUsePro ? "pro" : "free";
 
@@ -129,7 +138,10 @@ export function canInviteCollaborators(user: EntitlementsUser | null | undefined
   return getEntitlements(user).features.collaboratorInvites;
 }
 
-export function canCreateAnotherEstate(user: EntitlementsUser | null | undefined, currentEstateCount: number): boolean {
+export function canCreateAnotherEstate(
+  user: EntitlementsUser | null | undefined,
+  currentEstateCount: number
+): boolean {
   const ent = getEntitlements(user);
   return currentEstateCount < ent.limits.estates;
 }
@@ -181,15 +193,16 @@ export function getUpgradeReason(user: EntitlementsUser | null | undefined): str
   // Already entitled
   if (ent.canUsePro) return null;
 
-  // Free plan
-  if (ent.planId === "free") return "Upgrade to Pro to unlock this feature.";
+  // No subscription (free gating)
+  if (ent.planId === "free" || ent.status === null) {
+    return "Upgrade to Pro to unlock this feature.";
+  }
 
   // Non-active paid statuses
-  if (ent.status === "past_due") return "Your subscription is past due. Update payment method to continue.";
-  if (ent.status === "canceled") return "Your subscription is canceled. Resubscribe to continue.";
-  if (ent.status === "inactive") return "Activate your subscription to continue.";
-  if (ent.status === "unpaid") return "Your subscription is unpaid. Update payment method to continue.";
-  if (ent.status === "paused") return "Your subscription is paused. Resume to continue.";
+  if (ent.status === "past_due")
+    return "Your subscription is past due. Update your payment method to continue.";
+  if (ent.status === "canceled")
+    return "Your subscription is canceled. Resubscribe to continue.";
 
   return "Subscription required to continue.";
 }

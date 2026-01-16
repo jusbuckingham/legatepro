@@ -16,9 +16,13 @@ export const runtime = "nodejs";
 const ALLOWED_EVENT_TYPES = new Set<string>([
   "checkout.session.completed",
   "customer.subscription.created",
-  "customer.subscription.updated",
   "customer.subscription.deleted",
+  "customer.subscription.paused",
+  "customer.subscription.resumed",
+  "customer.subscription.updated",
   "invoice.payment_failed",
+  "invoice.payment_succeeded",
+  "invoice.paid",
 ]);
 
 const MAX_WEBHOOK_BODY_BYTES = 1_000_000; // 1MB
@@ -85,13 +89,17 @@ function getStripe() {
   });
 }
 
-function getPlanIdFromPriceId(priceId: string | null | undefined): string {
+function getPlanIdFromPriceId(priceId: string | null | undefined): "free" | "pro" {
+  // If we can’t identify a price, treat as free.
   if (!priceId) return "free";
 
-  const pro = process.env.STRIPE_PRICE_PRO_MONTHLY;
-  if (pro && priceId === pro) return "pro";
+  // If you have a single paid plan, any recognized price id should be considered “pro”.
+  // If STRIPE_PRICE_PRO_MONTHLY is not set, still treat any price id as pro.
+  const proMonthly = process.env.STRIPE_PRICE_PRO_MONTHLY;
+  if (!proMonthly) return "pro";
 
-  return "free";
+  // If you later add annual pricing, extend this mapping.
+  return priceId === proMonthly ? "pro" : "pro";
 }
 
 async function findUserForEvent(event: Stripe.Event): Promise<UserDocument | null> {
@@ -130,22 +138,38 @@ async function updateUserSubscriptionFromSubscription(
   const planId = getPlanIdFromPriceId(priceId);
   const status = subscription.status;
 
-  // We intentionally keep this mapping simple.
-  // You can expand later for trials, past_due gating, annual plans, etc.
-  const normalizedStatus =
-    status === "active" || status === "trialing" ? "active" : status === "canceled" ? "canceled" : status;
+  const normalizedStatus: "active" | "trialing" | "past_due" | "canceled" =
+    status === "active"
+      ? "active"
+      : status === "trialing"
+        ? "trialing"
+        : status === "past_due" ||
+            status === "unpaid" ||
+            status === "paused" ||
+            status === "incomplete" ||
+            status === "incomplete_expired"
+          ? "past_due"
+          : "canceled";
 
   const u = user as unknown as {
-    subscriptionStatus?: string;
+    subscriptionStatus?: string | null;
     stripeSubscriptionId?: string | null;
     stripeCustomerId?: string | null;
     subscriptionPlanId?: string;
     save: () => Promise<unknown>;
   };
 
-  u.subscriptionStatus = planId === "free" ? "free" : normalizedStatus;
-  u.subscriptionPlanId = planId;
-  u.stripeSubscriptionId = subscription.id;
+  // NOTE: Our User schema does NOT allow "free" in subscriptionStatus.
+  // Free users are represented by subscriptionPlanId="free" and subscriptionStatus=null.
+  if (normalizedStatus === "canceled") {
+    u.subscriptionStatus = null;
+    u.subscriptionPlanId = "free";
+    u.stripeSubscriptionId = null;
+  } else {
+    u.subscriptionStatus = planId === "free" ? null : normalizedStatus;
+    u.subscriptionPlanId = planId;
+    u.stripeSubscriptionId = subscription.id;
+  }
 
   // Ensure we persist customer id if present
   if (typeof subscription.customer === "string") {
@@ -226,14 +250,42 @@ export async function POST(req: NextRequest) {
       }
 
       case "customer.subscription.created":
-      case "customer.subscription.updated":
-      case "customer.subscription.deleted": {
+      case "customer.subscription.updated": {
         const subscription = event.data.object as Stripe.Subscription;
 
         const user = await findUserForEvent(event);
         if (!user) break;
 
         await updateUserSubscriptionFromSubscription(user, subscription);
+        break;
+      }
+
+      case "customer.subscription.deleted": {
+        const subscription = event.data.object as Stripe.Subscription;
+
+        // Try the usual lookup first (metadata userId or customerId).
+        let user = await findUserForEvent(event);
+
+        // Fallback: if metadata/customer mapping is missing, try by stored subscription id.
+        if (!user) {
+          user = await User.findOne({ stripeSubscriptionId: subscription.id } as never);
+        }
+
+        if (!user) break;
+
+        // Treat deletion as a downgrade to free.
+        const u = user as unknown as {
+          subscriptionStatus?: string | null;
+          stripeSubscriptionId?: string | null;
+          subscriptionPlanId?: string;
+          save: () => Promise<unknown>;
+        };
+
+        u.subscriptionStatus = null;
+        u.subscriptionPlanId = "free";
+        u.stripeSubscriptionId = null;
+
+        await u.save();
         break;
       }
 
@@ -268,6 +320,44 @@ export async function POST(req: NextRequest) {
           } catch (err) {
             console.error(
               "Stripe subscription retrieve failed (invoice.payment_failed):",
+              safeErrorMessage(err),
+            );
+          }
+        }
+
+        break;
+      }
+
+      case "invoice.payment_succeeded":
+      case "invoice.paid": {
+        // If the user was past_due, payment success should generally restore them.
+        const invoiceObj = event.data.object as unknown;
+
+        const customerIdRaw = (invoiceObj as { customer?: unknown })?.customer;
+        const customerId =
+          typeof customerIdRaw === "string"
+            ? customerIdRaw
+            : (customerIdRaw as { id?: string } | null)?.id;
+
+        const subscriptionIdRaw = (invoiceObj as { subscription?: unknown })?.subscription;
+        const subscriptionId =
+          typeof subscriptionIdRaw === "string"
+            ? subscriptionIdRaw
+            : (subscriptionIdRaw as { id?: string } | null)?.id;
+
+        if (subscriptionId) {
+          try {
+            const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+            const user =
+              (await User.findOne({ stripeCustomerId: customerId ?? null } as never)) ||
+              (await User.findOne({ stripeSubscriptionId: subscription.id } as never));
+
+            if (user) {
+              await updateUserSubscriptionFromSubscription(user, subscription);
+            }
+          } catch (err) {
+            console.error(
+              "Stripe subscription retrieve failed (invoice.payment_succeeded/invoice.paid):",
               safeErrorMessage(err),
             );
           }

@@ -3,6 +3,7 @@
 
 import Stripe from "stripe";
 
+import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { assertEnv } from "@/lib/assertEnv";
 import { connectToDatabase } from "@/lib/db";
@@ -22,17 +23,32 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 30;
 const attempts = new Map<string, { count: number; resetAt: number }>();
 
-function getClientKey(): string {
-  // Portal is auth-gated; we rate limit primarily by user id (fallback to UA).
-  // We can't access req headers here (no req param), so keep this conservative.
-  // If you want IP-based limiting too, change POST signature to accept NextRequest.
-  return "portal";
+function cleanupRateLimitMap(now: number) {
+  // Best-effort cleanup; keep it tiny and fast.
+  if (attempts.size < 500) return;
+  for (const [k, v] of attempts) {
+    if (v.resetAt <= now) attempts.delete(k);
+  }
+}
+
+function getClientKey(req: NextRequest): string {
+  // Portal is auth-gated; we still apply a lightweight client-based limiter to reduce abuse.
+  // Prefer the edge-provided IP header when available.
+  const ip =
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("x-real-ip")?.trim() ||
+    "unknown";
+
+  const ua = req.headers.get("user-agent")?.slice(0, 128) ?? "";
+
+  return `portal:ip:${ip}:ua:${ua}`;
 }
 
 function checkRateLimit(
   key: string,
 ): { ok: true } | { ok: false; retryAfterSeconds: number } {
   const now = Date.now();
+  cleanupRateLimitMap(now);
   const entry = attempts.get(key);
 
   if (!entry || entry.resetAt <= now) {
@@ -109,16 +125,18 @@ function addSecurityHeaders(headers: Headers) {
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Referrer-Policy", "same-origin");
   headers.set("X-Frame-Options", "DENY");
+  headers.set("Cross-Origin-Resource-Policy", "same-origin");
+  headers.set("Cross-Origin-Opener-Policy", "same-origin");
 }
 
 // POST /api/billing/portal
 // Returns a Stripe billing portal url for the authenticated user.
-export async function POST() {
+export async function POST(req: NextRequest) {
   const headers = new Headers(noStoreHeaders());
   addSecurityHeaders(headers);
 
   // Rate limit (best-effort). We include the user id once we have it.
-  const rl = checkRateLimit(getClientKey());
+  const rl = checkRateLimit(getClientKey(req));
   if (!rl.ok) {
     headers.set("Retry-After", String(rl.retryAfterSeconds));
     return jsonErr("Too many requests. Please try again shortly.", 429, "RATE_LIMITED", {
@@ -133,7 +151,7 @@ export async function POST() {
     }
 
     // Add per-user rate limit key for better protection (in addition to the coarse bucket above).
-    const userRl = checkRateLimit(`portal:user:${session.user.id}`);
+    const userRl = checkRateLimit(`portal:user:${session.user.id}:${getClientKey(req)}`);
     if (!userRl.ok) {
       headers.set("Retry-After", String(userRl.retryAfterSeconds));
       return jsonErr(

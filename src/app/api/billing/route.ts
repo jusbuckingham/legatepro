@@ -208,7 +208,20 @@ export async function GET() {
       return jsonErr("User not found", 404, "NOT_FOUND", { headers });
     }
 
-    const planId = user.subscriptionStatus ?? "free";
+    const rawStatus = (user.subscriptionStatus ?? null) as string | null;
+
+    // Back-compat: some code paths historically stored a planId (e.g. "pro"/"free") in `subscriptionStatus`.
+    // Newer Stripe-backed paths store Stripe subscription statuses (e.g. "active", "trialing", "past_due", "canceled").
+    function derivePlanId(status: string | null): "free" | "pro" {
+      const s = (status ?? "").toLowerCase();
+      if (s === "pro") return "pro";
+      if (s === "free" || !s) return "free";
+      if (s === "active" || s === "trialing" || s === "past_due") return "pro";
+      return "free";
+    }
+
+    const planId = derivePlanId(rawStatus);
+
     const plan = PLAN_METADATA[planId] ?? PLAN_METADATA.free;
 
     const customer = {
@@ -227,7 +240,12 @@ export async function GET() {
       price: plan.price,
       currency: plan.currency,
       interval: plan.interval,
-      status: planId === "free" ? "inactive" : "active",
+      status:
+        rawStatus && ["active", "trialing", "past_due", "canceled"].includes(String(rawStatus))
+          ? String(rawStatus)
+          : planId === "free"
+            ? "inactive"
+            : "active",
       managedByStripe: true,
     };
 
@@ -281,7 +299,7 @@ export async function POST(req: NextRequest) {
 
     await connectToDatabase();
 
-    const user = await User.findById(session.user.id).lean().exec();
+    const user = await User.findById(session.user.id).exec();
     if (!user) return jsonErr("User not found", 404, "NOT_FOUND", { headers });
 
     const stripe = getStripe();
@@ -290,14 +308,18 @@ export async function POST(req: NextRequest) {
     const u = user as unknown as {
       stripeCustomerId?: string | null;
       save: () => Promise<unknown>;
+      _id: unknown;
+      email: string;
+      firstName?: string | null;
+      lastName?: string | null;
     };
 
     if (!u.stripeCustomerId) {
       const customer = await stripe.customers.create({
-        email: user.email,
-        name: [user.firstName, user.lastName].filter(Boolean).join(" ") || undefined,
+        email: u.email,
+        name: [u.firstName, u.lastName].filter(Boolean).join(" ") || undefined,
         metadata: {
-          userId: idToString(user._id),
+          userId: idToString(u._id),
         },
       });
       u.stripeCustomerId = customer.id;
@@ -330,7 +352,7 @@ export async function POST(req: NextRequest) {
       cancel_url: cancelUrl,
       // Important: don't trust client state—webhook will finalize subscription status.
       metadata: {
-        userId: idToString(user._id),
+        userId: idToString(u._id),
         planId,
       },
     });
