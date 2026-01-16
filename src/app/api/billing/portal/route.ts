@@ -57,7 +57,10 @@ function checkRateLimit(
   }
 
   if (entry.count >= RATE_LIMIT_MAX) {
-    return { ok: false, retryAfterSeconds: Math.max(1, Math.ceil((entry.resetAt - now) / 1000)) };
+    return {
+      ok: false,
+      retryAfterSeconds: Math.max(1, Math.ceil((entry.resetAt - now) / 1000)),
+    };
   }
 
   entry.count += 1;
@@ -66,7 +69,11 @@ function checkRateLimit(
 }
 
 function isProd(): boolean {
-  return process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
+  return (
+    process.env.NODE_ENV === "production" ||
+    process.env.VERCEL_ENV === "production" ||
+    Boolean(process.env.VERCEL)
+  );
 }
 
 function getStripe() {
@@ -84,6 +91,7 @@ function getStripe() {
 
 function getAppUrl(): string {
   const url =
+    process.env.NEXT_PUBLIC_BASE_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.NEXTAUTH_URL ||
     process.env.VERCEL_URL ||
@@ -127,6 +135,10 @@ function addSecurityHeaders(headers: Headers) {
   headers.set("X-Frame-Options", "DENY");
   headers.set("Cross-Origin-Resource-Policy", "same-origin");
   headers.set("Cross-Origin-Opener-Policy", "same-origin");
+  headers.set(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(), payment=()",
+  );
 }
 
 // POST /api/billing/portal
@@ -136,7 +148,8 @@ export async function POST(req: NextRequest) {
   addSecurityHeaders(headers);
 
   // Rate limit (best-effort). We include the user id once we have it.
-  const rl = checkRateLimit(getClientKey(req));
+  const clientKey = getClientKey(req);
+  const rl = checkRateLimit(clientKey);
   if (!rl.ok) {
     headers.set("Retry-After", String(rl.retryAfterSeconds));
     return jsonErr("Too many requests. Please try again shortly.", 429, "RATE_LIMITED", {
@@ -151,7 +164,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Add per-user rate limit key for better protection (in addition to the coarse bucket above).
-    const userRl = checkRateLimit(`portal:user:${session.user.id}:${getClientKey(req)}`);
+    const userRl = checkRateLimit(`portal:user:${session.user.id}:${clientKey}`);
     if (!userRl.ok) {
       headers.set("Retry-After", String(userRl.retryAfterSeconds));
       return jsonErr(
@@ -197,7 +210,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Guard against corrupted/invalid values
-    if (!stripeCustomerId || !stripeCustomerId.startsWith("cus_")) {
+    if (!stripeCustomerId || !/^cus_[A-Za-z0-9]+$/.test(stripeCustomerId)) {
       return jsonErr("Billing is not configured for this user.", 409, "BILLING_NOT_READY", {
         headers,
       });

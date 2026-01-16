@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 import { connectToDatabase } from "@/lib/db";
 import { Invoice } from "@/models/Invoice";
 import { User } from "@/models/User";
-import { EntitlementError, requirePro } from "@/lib/entitlements";
+import { EntitlementError, requirePro, type EntitlementsUser, type PlanId } from "@/lib/entitlements";
 import { auth } from "@/lib/auth";
 import { getEstateAccess } from "@/lib/estateAccess";
 import {
@@ -62,6 +62,23 @@ function coerceStatus(value: unknown): InvoiceStatus | undefined {
     return trimmed as InvoiceStatus;
   }
   return undefined;
+}
+
+function toEntitlementsUser(user: unknown): EntitlementsUser {
+  const rec = (user ?? {}) as Record<string, unknown>;
+
+  const subscriptionPlanIdRaw = rec.subscriptionPlanId;
+  const subscriptionStatusRaw = rec.subscriptionStatus;
+
+  const subscriptionPlanId =
+    typeof subscriptionPlanIdRaw === "string" ? subscriptionPlanIdRaw : null;
+  const subscriptionStatus =
+    typeof subscriptionStatusRaw === "string" ? subscriptionStatusRaw : null;
+
+  return {
+    subscriptionPlanId: subscriptionPlanId as PlanId | null,
+    subscriptionStatus,
+  } as EntitlementsUser;
 }
 
 /**
@@ -144,12 +161,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
   }
 
   try {
-    requirePro(
-      user as unknown as {
-        subscriptionPlanId?: string | null;
-        subscriptionStatus?: string | null;
-      },
-    );
+    requirePro(toEntitlementsUser(user));
   } catch (e) {
     if (e instanceof EntitlementError) {
       return jsonErr("Pro subscription required", 402, e.code, {
@@ -366,12 +378,7 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
   }
 
   try {
-    requirePro(
-      user as unknown as {
-        subscriptionPlanId?: string | null;
-        subscriptionStatus?: string | null;
-      },
-    );
+    requirePro(toEntitlementsUser(user));
   } catch (e) {
     if (e instanceof EntitlementError) {
       return jsonErr("Pro subscription required", 402, e.code, {

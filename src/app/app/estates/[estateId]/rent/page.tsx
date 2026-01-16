@@ -3,7 +3,13 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
-import { getEntitlements, getUpgradeReason } from "@/lib/entitlements";
+import {
+  getEntitlements,
+  getUpgradeReason,
+  type EntitlementsUser,
+  type PlanId,
+  type SubscriptionStatus,
+} from "@/lib/entitlements";
 import { User } from "@/models/User";
 import { RentPayment } from "@/models/RentPayment";
 
@@ -59,6 +65,19 @@ function formatPeriod(month: number, year: number): string {
   });
 }
 
+function coercePlanId(value: unknown): PlanId | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== "string") return undefined;
+  // PlanId is a string union; we coerce at the boundary.
+  return value as PlanId;
+}
+
+function coerceSubscriptionStatus(value: unknown): SubscriptionStatus | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== "string") return undefined;
+  return value as SubscriptionStatus;
+}
+
 export default async function EstateRentLedgerPage({ params, searchParams }: PageProps) {
   const { estateId } = await params;
 
@@ -82,14 +101,20 @@ export default async function EstateRentLedgerPage({ params, searchParams }: Pag
   await connectToDatabase();
 
   const userDoc = await User.findById(session.user.id).lean().exec();
-  const ent = getEntitlements(userDoc as unknown as {
-    subscriptionPlanId?: string | null;
-    subscriptionStatus?: string | null;
-  });
-  const upgradeReason = getUpgradeReason(userDoc as unknown as {
-    subscriptionPlanId?: string | null;
-    subscriptionStatus?: string | null;
-  });
+
+  // Keep entitlement extraction explicit and reusable (lean doc typing varies across environments)
+  const rawUser = userDoc as unknown as {
+    subscriptionPlanId?: unknown;
+    subscriptionStatus?: unknown;
+  };
+
+  const entUser: EntitlementsUser = {
+    subscriptionPlanId: coercePlanId(rawUser.subscriptionPlanId),
+    subscriptionStatus: coerceSubscriptionStatus(rawUser.subscriptionStatus),
+  };
+
+  const ent = getEntitlements(entUser);
+  const upgradeReason = getUpgradeReason(entUser);
   const exportHref = `/api/rent/export?estateId=${encodeURIComponent(estateId)}`;
 
   const docs = (await RentPayment.find({ estateId })

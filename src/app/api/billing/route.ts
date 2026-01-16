@@ -52,7 +52,11 @@ const PLAN_METADATA: Record<
 
 // --- Security helpers ---
 function isProd(): boolean {
-  return process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
+  return (
+    process.env.NODE_ENV === "production" ||
+    process.env.VERCEL_ENV === "production" ||
+    Boolean(process.env.VERCEL)
+  );
 }
 
 function headersNoStore(): Headers {
@@ -64,6 +68,10 @@ function addSecurityHeaders(headers: Headers) {
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Referrer-Policy", "same-origin");
   headers.set("X-Frame-Options", "DENY");
+  headers.set(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+  );
 }
 
 function getStripe() {
@@ -83,6 +91,7 @@ function getAppUrl(): string {
   // Prefer an explicit app url in prod.
   // Fallbacks are fine for local/dev.
   const url =
+    process.env.NEXT_PUBLIC_BASE_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.NEXTAUTH_URL ||
     process.env.VERCEL_URL ||
@@ -327,7 +336,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Guard against corrupted/invalid values.
-    if (!u.stripeCustomerId || !u.stripeCustomerId.startsWith("cus_")) {
+    const customerId = (u.stripeCustomerId ?? "").trim();
+    if (!customerId || !customerId.startsWith("cus_")) {
       return jsonErr("Billing is not configured for this user.", 409, "BILLING_NOT_READY", {
         headers,
       });
@@ -345,7 +355,7 @@ export async function POST(req: NextRequest) {
 
     const checkout = await stripe.checkout.sessions.create({
       mode: "subscription",
-      customer: u.stripeCustomerId,
+      customer: customerId,
       line_items: [{ price: process.env[priceEnv] as string, quantity: 1 }],
       allow_promotion_codes: true,
       success_url: successUrl,
@@ -355,6 +365,7 @@ export async function POST(req: NextRequest) {
         userId: idToString(u._id),
         planId,
       },
+      client_reference_id: idToString(u._id),
     });
 
     if (!checkout.url) {

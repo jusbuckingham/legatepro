@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
 import { getEstateAccess } from "@/lib/estateAccess";
-import { EntitlementError, requireFeature } from "@/lib/entitlements";
+import { EntitlementError, requireFeature, toEntitlementsUser } from "@/lib/entitlements";
 import {
   jsonErr,
   jsonUnauthorized,
@@ -70,6 +70,7 @@ export async function GET(request: NextRequest) {
     const session = await auth();
     if (!session?.user?.id) return jsonUnauthorized();
 
+
     await connectToDatabase();
 
     const user = await User.findById(session.user.id).lean().exec();
@@ -79,10 +80,7 @@ export async function GET(request: NextRequest) {
 
     try {
       requireFeature(
-        user as unknown as {
-          subscriptionPlanId?: string | null;
-          subscriptionStatus?: string | null;
-        },
+        toEntitlementsUser(user),
         "exports"
       );
     } catch (e) {

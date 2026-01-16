@@ -5,7 +5,7 @@ export type PlanId = "free" | "pro";
 
 // Keep this intentionally narrow so we don't accidentally persist/assume unknown statuses.
 // These values should match what we store on the User document.
-export type SubscriptionStatus = "active" | "trialing" | "past_due" | "canceled";
+export type SubscriptionStatus = "free" | "active" | "trialing" | "past_due" | "canceled";
 
 export type EntitlementsUser = {
   id?: string;
@@ -21,6 +21,44 @@ export type EntitlementsUser = {
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
 };
+
+/**
+ * Coerce a loose DB/user snapshot into the strict EntitlementsUser shape.
+ * This avoids repeating `as unknown as ...` casts across routes.
+ */
+export function toEntitlementsUser(
+  user: Record<string, unknown> | null | undefined
+): EntitlementsUser {
+  const u = user ?? {};
+
+  const subscriptionPlanIdRaw =
+    typeof u.subscriptionPlanId === "string" ? u.subscriptionPlanId : null;
+
+  const subscriptionStatusRaw =
+    typeof u.subscriptionStatus === "string" ? u.subscriptionStatus : null;
+
+  const stripeCustomerIdRaw =
+    typeof u.stripeCustomerId === "string" ? u.stripeCustomerId : null;
+
+  const stripeSubscriptionIdRaw =
+    typeof u.stripeSubscriptionId === "string" ? u.stripeSubscriptionId : null;
+
+  return {
+    id: typeof u.id === "string" ? u.id : undefined,
+    email: typeof u.email === "string" ? u.email : undefined,
+
+    // DB values are strings; normalize to our narrow unions.
+    subscriptionPlanId: subscriptionPlanIdRaw
+      ? (subscriptionPlanIdRaw as PlanId)
+      : null,
+    subscriptionStatus: subscriptionStatusRaw
+      ? (subscriptionStatusRaw as SubscriptionStatus)
+      : null,
+
+    stripeCustomerId: stripeCustomerIdRaw,
+    stripeSubscriptionId: stripeSubscriptionIdRaw,
+  };
+}
 
 export type Entitlements = {
   planId: PlanId;
@@ -84,6 +122,7 @@ function normalizeStatus(status: unknown): SubscriptionStatus | null {
   if (!status) return null;
   const s = String(status);
 
+  if (s === "free") return "free";
   if (s === "active") return "active";
   if (s === "trialing") return "trialing";
   if (s === "past_due") return "past_due";
@@ -194,7 +233,7 @@ export function getUpgradeReason(user: EntitlementsUser | null | undefined): str
   if (ent.canUsePro) return null;
 
   // No subscription (free gating)
-  if (ent.planId === "free" || ent.status === null) {
+  if (ent.planId === "free" || ent.status === null || ent.status === "free") {
     return "Upgrade to Pro to unlock this feature.";
   }
 

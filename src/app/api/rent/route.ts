@@ -2,12 +2,19 @@
 // Unified Rent Payments API for LegatePro
 
 import { NextRequest, NextResponse } from "next/server";
+import { Types } from "mongoose";
 
 import { auth } from "../../../lib/auth";
 import { connectToDatabase, serializeMongoDoc } from "../../../lib/db";
 import { RentPayment } from "../../../models/RentPayment";
 import { User } from "../../../models/User";
-import { EntitlementError, requirePro } from "../../../lib/entitlements";
+import {
+  EntitlementError,
+  requirePro,
+  type EntitlementsUser,
+  type PlanId,
+  type SubscriptionStatus,
+} from "../../../lib/entitlements";
 import { getEstateAccess } from "../../../lib/estateAccess";
 
 type RentPaymentLean = {
@@ -24,12 +31,33 @@ type RentPaymentLean = {
 
 const noStore = { "cache-control": "no-store" } as const;
 
-function isValidObjectId(id: string): boolean {
-  return /^[a-f\d]{24}$/i.test(id);
+function isValidObjectId(id: string) {
+  return Types.ObjectId.isValid(id);
 }
 
-function escapeRegex(input: string): string {
+function escapeRegex(input: string) {
+  // Escape regex special characters for safe use in $regex
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Stripe-aligned subscription statuses. We coerce through SubscriptionStatus to keep EntitlementsUser strongly typed.
+const KNOWN_SUBSCRIPTION_STATUSES = new Set<SubscriptionStatus>([
+  "active",
+  "trialing",
+  "past_due",
+  "canceled",
+  "incomplete",
+  "incomplete_expired",
+  "unpaid",
+  "paused",
+].map((s) => s as SubscriptionStatus));
+
+function coerceSubscriptionStatus(value: unknown): SubscriptionStatus | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== "string") return undefined;
+  return KNOWN_SUBSCRIPTION_STATUSES.has(value as SubscriptionStatus)
+    ? (value as SubscriptionStatus)
+    : undefined;
 }
 
 /** ------------------------------------------------------------------------
@@ -71,9 +99,20 @@ export async function GET(request: NextRequest) {
     const q = searchParams.get("q")?.trim() || "";
     const qSafe = q ? escapeRegex(q) : "";
 
-    const filter: Record<string, unknown> = { ownerId };
+    const filter: Record<string, unknown> = {};
 
-    if (estateId) filter.estateId = estateId;
+    // If an estate is specified, allow reads for collaborators too (guarded by access)
+    if (estateId) {
+      const access = await getEstateAccess({ estateId, session });
+      if (!access) {
+        return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403, headers: noStore });
+      }
+      filter.estateId = estateId;
+    } else {
+      // Without an estate scope, default to the signed-in user's own records
+      filter.ownerId = ownerId;
+    }
+
     if (propertyId) filter.propertyId = propertyId;
 
     if (paid === "true") filter.isPaid = true;
@@ -179,12 +218,20 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      requirePro(
-        user as unknown as {
-          subscriptionPlanId?: string | null;
-          subscriptionStatus?: string | null;
-        },
-      );
+      const planIdRaw = (user as { subscriptionPlanId?: unknown }).subscriptionPlanId;
+      const statusRaw = (user as { subscriptionStatus?: unknown }).subscriptionStatus;
+
+      const entUser: EntitlementsUser = {
+        subscriptionPlanId:
+          typeof planIdRaw === "string"
+            ? (planIdRaw as PlanId)
+            : planIdRaw === null
+              ? null
+              : undefined,
+        subscriptionStatus: coerceSubscriptionStatus(statusRaw),
+      };
+
+      requirePro(entUser);
     } catch (e) {
       if (e instanceof EntitlementError) {
         return NextResponse.json(

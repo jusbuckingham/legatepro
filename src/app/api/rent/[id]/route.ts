@@ -5,7 +5,7 @@ import { NextRequest } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import { RentPayment } from "@/models/RentPayment";
 import { User } from "@/models/User";
-import { EntitlementError, requirePro } from "@/lib/entitlements";
+import { EntitlementError, requirePro, toEntitlementsUser } from "@/lib/entitlements";
 import { auth } from "@/lib/auth";
 import {
   jsonErr,
@@ -126,12 +126,7 @@ export async function PATCH(request: NextRequest, ctx: RouteParams): Promise<Res
     }
 
     try {
-      requirePro(
-        user as unknown as {
-          subscriptionPlanId?: string | null;
-          subscriptionStatus?: string | null;
-        },
-      );
+      requirePro(toEntitlementsUser(user));
     } catch (e) {
       if (e instanceof EntitlementError) {
         return jsonErr("Pro subscription required", 402, e.code, { headers });
@@ -180,12 +175,7 @@ export async function DELETE(_request: NextRequest, ctx: RouteParams): Promise<R
     }
 
     try {
-      requirePro(
-        user as unknown as {
-          subscriptionPlanId?: string | null;
-          subscriptionStatus?: string | null;
-        },
-      );
+      requirePro(toEntitlementsUser(user));
     } catch (e) {
       if (e instanceof EntitlementError) {
         return jsonErr("Pro subscription required", 402, e.code, { headers });

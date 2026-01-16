@@ -7,7 +7,7 @@ import { getEstateAccess } from "@/lib/estateAccess";
 import { Invoice, type InvoiceStatus } from "@/models/Invoice";
 import { Estate } from "@/models/Estate";
 import { User } from "@/models/User";
-import { EntitlementError, requirePro } from "@/lib/entitlements";
+import { EntitlementError, requirePro, toEntitlementsUser } from "@/lib/entitlements";
 import { logEstateEvent } from "@/lib/estateEvents";
 import { logActivity } from "@/lib/activity";
 import {
@@ -97,12 +97,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext): Promise<Respon
   }
 
   try {
-    requirePro(
-      user as unknown as {
-        subscriptionPlanId?: string | null;
-        subscriptionStatus?: string | null;
-      },
-    );
+    requirePro(toEntitlementsUser(user));
   } catch (e) {
     if (e instanceof EntitlementError) {
       return jsonErr("Pro subscription required", 402, e.code, { headers });
