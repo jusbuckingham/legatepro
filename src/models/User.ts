@@ -1,5 +1,5 @@
 // src/models/User.ts
-import mongoose, { Schema, Document, Model } from "mongoose";
+import mongoose, { Schema, Document } from "mongoose";
 import { serializeMongoDoc } from "@/lib/db";
 
 export interface IUser {
@@ -20,7 +20,7 @@ export interface IUser {
   // Billing / subscription
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
-  subscriptionStatus?: "active" | "past_due" | "canceled" | "trialing";
+  subscriptionStatus?: "free" | "trialing" | "active" | "past_due" | "canceled";
 
   // App metadata
   onboardingCompleted?: boolean;
@@ -74,8 +74,9 @@ const UserSchema = new Schema<UserDocument>(
     stripeSubscriptionId: { type: String },
     subscriptionStatus: {
       type: String,
-      enum: ["active", "past_due", "canceled", "trialing"],
-      default: "trialing",
+      enum: ["free", "trialing", "active", "past_due", "canceled"],
+      default: "free",
+      required: true,
     },
 
     onboardingCompleted: { type: Boolean, default: false },
@@ -106,12 +107,6 @@ UserSchema.set("toObject", {
   transform: userTransform,
 });
 
-let UserModel: Model<UserDocument>;
-
-try {
-  UserModel = mongoose.model<UserDocument>("User");
-} catch {
-  UserModel = mongoose.model<UserDocument>("User", UserSchema);
-}
-
-export const User = UserModel;
+export const User =
+  (mongoose.models.User as mongoose.Model<UserDocument>) ||
+  mongoose.model<UserDocument>("User", UserSchema);
