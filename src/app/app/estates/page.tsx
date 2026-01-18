@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 import EstateEvent from "@/models/EstateEvent";
+import { User } from "@/models/User";
 
 type EstateListItem = {
   _id: string | { toString(): string };
@@ -85,16 +86,39 @@ async function getEstates(userId: string): Promise<EstateListItem[]> {
   });
 }
 
-export default async function EstatesPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+export default async function EstatesPage({
+  searchParams,
+}: {
+  searchParams?: Record<string, string | string[] | undefined>;
+}) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login?callbackUrl=/app/estates");
 
   const estates = await getEstates(session.user.id);
 
-  const hasEstates = Array.isArray(estates) && estates.length > 0;
+  // --- Billing enforcement (UI) ---
+  // Free plan: 1 owned estate max. Pro: unlimited. Collaborator estates do NOT count toward the limit.
+  // Note: `getEstates()` already connects to the DB, but we may need additional queries here.
+  await connectToDatabase();
 
-  const sp = searchParams ? await searchParams : undefined;
-  const createdFlag = sp?.created;
+  const user = await User.findById(session.user.id).lean().exec();
+
+  const rawPlanId = (user as unknown as { subscriptionPlanId?: unknown } | null)?.subscriptionPlanId;
+  const rawStatus = (user as unknown as { subscriptionStatus?: unknown } | null)?.subscriptionStatus;
+
+  const planId = typeof rawPlanId === "string" ? rawPlanId.toLowerCase() : "";
+  const status = typeof rawStatus === "string" ? rawStatus.toLowerCase() : "";
+
+  const PRO_STATUSES = new Set(["active", "trialing", "past_due"]);
+  const isPro = planId === "pro" || status === "pro" || PRO_STATUSES.has(status);
+
+  const ownedEstatesCount = isPro ? 0 : await Estate.countDocuments({ ownerId: session.user.id });
+
+  const hasEstates = Array.isArray(estates) && estates.length > 0;
+  const hasReachedFreeLimit = !isPro && ownedEstatesCount >= 1;
+  // --- End billing enforcement (UI) ---
+
+  const createdFlag = searchParams?.created;
   const isCreated = Array.isArray(createdFlag) ? createdFlag.includes("1") : createdFlag === "1";
 
   const hasAnyActivity = Array.isArray(estates)
@@ -147,12 +171,21 @@ export default async function EstatesPage({ searchParams }: { searchParams?: Pro
           >
             Back to dashboard
           </Link>
-          <Link
-            href="/app/estates/new"
-            className="inline-flex h-10 items-center justify-center rounded-xl border border-emerald-500 bg-emerald-500/10 px-4 text-sm font-medium text-emerald-200 shadow-sm hover:bg-emerald-500/20"
-          >
-            + Create estate
-          </Link>
+          {!hasReachedFreeLimit ? (
+            <Link
+              href="/app/estates/new"
+              className="inline-flex h-10 items-center justify-center rounded-xl border border-emerald-500 bg-emerald-500/10 px-4 text-sm font-medium text-emerald-200 shadow-sm hover:bg-emerald-500/20"
+            >
+              + Create estate
+            </Link>
+          ) : (
+            <Link
+              href="/app/billing?reason=estate_limit"
+              className="inline-flex h-10 items-center justify-center rounded-xl border border-[#F15A43] bg-[#F15A43]/10 px-4 text-sm font-medium text-[#F15A43] shadow-sm hover:bg-[#F15A43]/20"
+            >
+              Upgrade to add more estates
+            </Link>
+          )}
         </div>
       </header>
 
@@ -204,12 +237,21 @@ export default async function EstatesPage({ searchParams }: { searchParams?: Pro
             <p className="text-sm text-slate-200">
               <span className="font-semibold text-slate-100">{estates.length}</span> estate{estates.length === 1 ? "" : "s"}
             </p>
-            <Link
-              href="/app/estates/new"
-              className="inline-flex h-9 items-center justify-center rounded-xl border border-emerald-500 bg-emerald-500/10 px-3 text-xs font-medium text-emerald-200 shadow-sm hover:bg-emerald-500/20"
-            >
-              + New estate
-            </Link>
+            {!hasReachedFreeLimit ? (
+              <Link
+                href="/app/estates/new"
+                className="inline-flex h-9 items-center justify-center rounded-xl border border-emerald-500 bg-emerald-500/10 px-3 text-xs font-medium text-emerald-200 shadow-sm hover:bg-emerald-500/20"
+              >
+                + New estate
+              </Link>
+            ) : (
+              <Link
+                href="/app/billing?reason=estate_limit"
+                className="inline-flex h-9 items-center justify-center rounded-xl border border-[#F15A43] bg-[#F15A43]/10 px-3 text-xs font-medium text-[#F15A43] shadow-sm hover:bg-[#F15A43]/20"
+              >
+                Upgrade to add more estates
+              </Link>
+            )}
           </div>
           {/* Mobile cards */}
           <div className="grid gap-3 sm:hidden">

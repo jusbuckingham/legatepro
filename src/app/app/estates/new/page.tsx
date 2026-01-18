@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getApiErrorMessage, safeJson } from "@/lib/utils";
+import { safeJson } from "@/lib/utils";
 
 interface EstateFormState {
   name: string;
@@ -27,12 +27,80 @@ const initialFormState: EstateFormState = {
   notes: "",
 };
 
+// --- Helper types and functions ---
+type PlanId = "free" | "pro";
+
+const BILLING_LIMIT_URL = "/app/billing?reason=estate_limit";
+
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return Boolean(value) && typeof value === "object";
+}
+
+function coercePlanId(input: unknown): PlanId | null {
+  return input === "free" || input === "pro" ? input : null;
+}
+
+function parseBillingPlanId(payload: unknown): PlanId | null {
+  if (!isRecord(payload)) return null;
+
+  const data = isRecord(payload.data) ? payload.data : null;
+  const subscriptionFromData = data && isRecord(data.subscription) ? data.subscription : null;
+  const subscriptionTop = isRecord(payload.subscription) ? payload.subscription : null;
+
+  const planId =
+    (subscriptionFromData ? subscriptionFromData.planId : undefined) ??
+    (subscriptionTop ? subscriptionTop.planId : undefined);
+
+  return coercePlanId(planId);
+}
+
+function parseEstatesCount(payload: unknown): number | null {
+  if (!isRecord(payload)) return null;
+
+  const direct = payload.estates;
+  const data = isRecord(payload.data) ? payload.data : null;
+  const nested1 = data ? (data as UnknownRecord).estates : undefined;
+  const nested2 = data ? (data as UnknownRecord).items : undefined;
+
+  const arr = Array.isArray(direct)
+    ? direct
+    : Array.isArray(nested1)
+      ? nested1
+      : Array.isArray(nested2)
+        ? nested2
+        : null;
+
+  if (arr) return arr.length;
+
+  const count =
+    payload.count ??
+    (data ? (data as UnknownRecord).count : undefined) ??
+    (data ? (data as UnknownRecord).total : undefined);
+
+  return typeof count === "number" ? count : null;
+}
+
+function computeRequiresUpgrade(planId: PlanId | null, count: number | null): boolean {
+  if (planId !== "free") return false;
+  if (count == null) return false;
+  return count >= 1;
+}
+
 export default function NewEstatePage() {
   const router = useRouter();
+  const upgradeUrl = useMemo(() => BILLING_LIMIT_URL, []);
+  const redirectedRef = useRef(false);
   const [form, setForm] = useState<EstateFormState>(initialFormState);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof EstateFormState, string>>>({});
+
+  // Keep this state type as "free" | "pro" | null
+  const [billingPlanId, setBillingPlanId] = useState<"free" | "pro" | null>(null);
+  const [estatesCount, setEstatesCount] = useState<number | null>(null);
+  const [requiresUpgrade, setRequiresUpgrade] = useState(false);
 
   const trimmed = useMemo(() => {
     return {
@@ -47,6 +115,57 @@ export default function NewEstatePage() {
     } satisfies EstateFormState;
   }, [form]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        // Billing snapshot
+        const billingRes = await fetch("/api/billing", {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+
+        const billingJson: unknown = await safeJson(billingRes);
+        const planId = billingRes.ok ? parseBillingPlanId(billingJson) : null;
+
+        if (!cancelled) {
+          setBillingPlanId(planId);
+        }
+
+        // Existing estates (best-effort)
+        const estatesRes = await fetch("/api/estates", {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+
+        const estatesJson: unknown = await safeJson(estatesRes);
+        const count = estatesRes.ok ? parseEstatesCount(estatesJson) : null;
+
+        if (!cancelled) {
+          setEstatesCount(count);
+
+          const shouldUpgrade = computeRequiresUpgrade(planId, count);
+          setRequiresUpgrade(shouldUpgrade);
+
+          // Hard redirect: free users hitting /new after already having an estate
+          if (shouldUpgrade && !redirectedRef.current) {
+            redirectedRef.current = true;
+            // Use a stable target to avoid effect dependency churn.
+            router.replace(upgradeUrl);
+          }
+        }
+      } catch {
+        // Non-fatal: keep UI usable; server will enforce.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router, upgradeUrl]);
   function handleChange(
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) {
@@ -86,6 +205,11 @@ export default function NewEstatePage() {
 
     if (!validate()) return;
 
+    if (requiresUpgrade) {
+      router.replace(upgradeUrl);
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -106,12 +230,17 @@ export default function NewEstatePage() {
         }),
       });
 
-      const data = ((await safeJson(res)) ?? null) as
+      // Extended typing for API response
+      const rawJson: unknown = await safeJson(res);
+      const data = (rawJson ?? null) as
         | {
             ok?: boolean;
             error?: string;
             message?: string;
             estate?: { _id?: string };
+            code?: string;
+            upgradeUrl?: string;
+            meta?: { limit?: number; current?: number; planId?: string | null; status?: string | null };
           }
         | null;
 
@@ -122,17 +251,29 @@ export default function NewEstatePage() {
           ? data.message
           : null;
 
+      // 402 Payment Required: upgrade flow
+      if (res.status === 402) {
+        setRequiresUpgrade(true);
+        setBillingPlanId((prev) => prev ?? "free");
+
+        if (typeof data?.meta?.current === "number") {
+          setEstatesCount(data.meta.current);
+        }
+
+        router.replace(upgradeUrl);
+        return;
+      }
+
       if (!res.ok || data?.ok === false) {
-        const msg = apiError ?? (await getApiErrorMessage(res));
-        throw new Error(msg || "Unable to create estate. Please try again.");
+        const msg = apiError ?? "Unable to create estate. Please try again.";
+        throw new Error(msg);
       }
 
       const estateId = data?.estate?._id;
-
       if (estateId) {
-        router.push(`/app/estates/${estateId}?created=1`);
+        window.location.assign(`/app/estates/${estateId}?created=1`);
       } else {
-        router.push("/app/estates?created=1");
+        window.location.assign("/app/estates?created=1");
       }
     } catch (err) {
       console.error("Error creating estate", err);
@@ -176,7 +317,37 @@ export default function NewEstatePage() {
           <li>You’ll be able to add <span className="text-slate-200">tasks, documents, time, and invoices</span> after creation.</li>
         </ul>
       </div>
+      {billingPlanId && typeof estatesCount === "number" ? (
+        <p className="text-[11px] text-slate-500">
+          Plan: <span className="text-slate-300">{billingPlanId}</span> • Estates: <span className="text-slate-300">{estatesCount}</span>
+        </p>
+      ) : null}
+      {requiresUpgrade ? (
+        <div className="rounded-xl border border-[#F15A43]/50 bg-[#F15A43]/10 p-4 text-xs text-[#fbd0c8]">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="font-semibold text-slate-50">Upgrade required to create another estate</p>
+              <p className="mt-1 text-[11px] text-slate-200/80">
+                The Starter plan includes <span className="font-semibold text-slate-50">1 active estate workspace</span>.
+                Upgrade to Pro to create unlimited estates.
+              </p>
+              {billingPlanId === "free" && typeof estatesCount === "number" ? (
+                <p className="mt-1 text-[11px] text-slate-200/70">Detected: {estatesCount} existing estate workspace{estatesCount === 1 ? "" : "s"}.</p>
+              ) : null}
+            </div>
 
+            <div className="flex flex-col gap-2 sm:items-end">
+              <Link
+                href={BILLING_LIMIT_URL}
+                className="inline-flex items-center justify-center rounded-md bg-[#F15A43] px-3 py-2 text-xs font-semibold text-slate-950 shadow-sm hover:bg-[#f26b56]"
+              >
+                Upgrade to Pro
+              </Link>
+              <p className="text-[11px] text-slate-200/70">You can still view and manage your existing estate.</p>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <form
         onSubmit={handleSubmit}
         aria-busy={isSubmitting}
@@ -379,7 +550,7 @@ export default function NewEstatePage() {
             disabled={isSubmitting}
             className="inline-flex w-full items-center justify-center rounded-md bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-emerald-500"
           >
-            {isSubmitting ? "Creating…" : "Create estate"}
+            {requiresUpgrade ? "Upgrade to create another estate" : isSubmitting ? "Creating…" : "Create estate"}
           </button>
 
           <div className="flex flex-wrap items-center justify-between gap-2">
