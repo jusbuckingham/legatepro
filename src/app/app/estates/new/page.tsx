@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { safeJson } from "@/lib/utils";
@@ -90,8 +90,35 @@ function computeRequiresUpgrade(planId: PlanId | null, count: number | null): bo
 
 export default function NewEstatePage() {
   const router = useRouter();
-  const upgradeUrl = useMemo(() => BILLING_LIMIT_URL, []);
+  const upgradeUrlRef = useRef(BILLING_LIMIT_URL);
   const redirectedRef = useRef(false);
+
+  const getUpgradeUrlFromResponse = useCallback(
+    (res: Response, json: unknown): string => {
+      const headerUrl = res.headers.get("x-legatepro-upgrade-url");
+      if (headerUrl && headerUrl.startsWith("/")) return headerUrl;
+
+      if (
+        isRecord(json) &&
+        typeof json.upgradeUrl === "string" &&
+        json.upgradeUrl.startsWith("/")
+      ) {
+        return json.upgradeUrl;
+      }
+
+      return upgradeUrlRef.current;
+    },
+    [],
+  );
+
+  const redirectToUpgrade = useCallback(
+    (target?: string) => {
+      if (redirectedRef.current) return;
+      redirectedRef.current = true;
+      router.replace(target || upgradeUrlRef.current);
+    },
+    [router],
+  );
   const [form, setForm] = useState<EstateFormState>(initialFormState);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,15 +144,25 @@ export default function NewEstatePage() {
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
 
     (async () => {
       try {
+        const upgradeUrl = upgradeUrlRef.current;
+
         // Billing snapshot
         const billingRes = await fetch("/api/billing", {
           method: "GET",
           headers: { Accept: "application/json" },
           cache: "no-store",
+          signal: controller.signal,
         });
+
+        if (billingRes.status === 401) {
+          // Session expired / not logged in
+          if (!cancelled) router.replace(`/login?next=${encodeURIComponent("/app/estates/new")}`);
+          return;
+        }
 
         const billingJson: unknown = await safeJson(billingRes);
         const planId = billingRes.ok ? parseBillingPlanId(billingJson) : null;
@@ -139,7 +176,13 @@ export default function NewEstatePage() {
           method: "GET",
           headers: { Accept: "application/json" },
           cache: "no-store",
+          signal: controller.signal,
         });
+
+        if (estatesRes.status === 401) {
+          if (!cancelled) router.replace(`/login?next=${encodeURIComponent("/app/estates/new")}`);
+          return;
+        }
 
         const estatesJson: unknown = await safeJson(estatesRes);
         const count = estatesRes.ok ? parseEstatesCount(estatesJson) : null;
@@ -151,10 +194,8 @@ export default function NewEstatePage() {
           setRequiresUpgrade(shouldUpgrade);
 
           // Hard redirect: free users hitting /new after already having an estate
-          if (shouldUpgrade && !redirectedRef.current) {
-            redirectedRef.current = true;
-            // Use a stable target to avoid effect dependency churn.
-            router.replace(upgradeUrl);
+          if (shouldUpgrade) {
+            redirectToUpgrade(upgradeUrl);
           }
         }
       } catch {
@@ -164,8 +205,9 @@ export default function NewEstatePage() {
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [router, upgradeUrl]);
+  }, [router, redirectToUpgrade]);
   function handleChange(
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) {
@@ -206,7 +248,7 @@ export default function NewEstatePage() {
     if (!validate()) return;
 
     if (requiresUpgrade) {
-      router.replace(upgradeUrl);
+      redirectToUpgrade();
       return;
     }
 
@@ -251,6 +293,11 @@ export default function NewEstatePage() {
           ? data.message
           : null;
 
+      if (res.status === 401) {
+        router.replace(`/login?next=${encodeURIComponent("/app/estates/new")}`);
+        return;
+      }
+
       // 402 Payment Required: upgrade flow
       if (res.status === 402) {
         setRequiresUpgrade(true);
@@ -260,7 +307,8 @@ export default function NewEstatePage() {
           setEstatesCount(data.meta.current);
         }
 
-        router.replace(upgradeUrl);
+        const target = getUpgradeUrlFromResponse(res, rawJson);
+        redirectToUpgrade(target);
         return;
       }
 
@@ -547,7 +595,7 @@ export default function NewEstatePage() {
         <div className="space-y-3">
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || requiresUpgrade}
             className="inline-flex w-full items-center justify-center rounded-md bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-emerald-500"
           >
             {requiresUpgrade ? "Upgrade to create another estate" : isSubmitting ? "Creating…" : "Create estate"}

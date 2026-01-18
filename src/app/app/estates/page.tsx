@@ -4,11 +4,15 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
-import EstateEvent from "@/models/EstateEvent";
+import EstateEventModel from "@/models/EstateEvent";
 import { User } from "@/models/User";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 type EstateListItem = {
-  _id: string | { toString(): string };
+  _id: string;
+  ownerId?: string;
   name?: string;
   estateName?: string;
   caseNumber?: string;
@@ -33,6 +37,13 @@ function formatShortDate(value: string | Date | null | undefined): string {
   }
 }
 
+type EstateEventLean = {
+  estateId: string;
+  createdAt: string | Date | null;
+  summary: string | null;
+  type: string | null;
+};
+
 async function getEstates(userId: string): Promise<EstateListItem[]> {
   await connectToDatabase();
 
@@ -41,41 +52,55 @@ async function getEstates(userId: string): Promise<EstateListItem[]> {
     $or: [{ ownerId: userId }, { "collaborators.userId": userId }],
   })
     .sort({ createdAt: -1 })
-    .lean();
+    .lean()
+    .exec();
 
-  const estateItems = estates as EstateListItem[];
+  const estateItems: EstateListItem[] = (estates as unknown[]).map((e) => {
+    const doc = e as Record<string, unknown>;
+    const rawId = doc._id;
+    const id =
+      typeof rawId === "string"
+        ? rawId
+        : String((rawId as { toString?: () => string })?.toString?.() ?? "");
 
-  const estateIds = estateItems
-    .map((e) => (typeof e._id === "string" ? e._id : e._id?.toString?.() ?? ""))
-    .filter((id): id is string => Boolean(id));
+    return {
+      ...(doc as unknown as Omit<EstateListItem, "_id">),
+      _id: id,
+    };
+  });
+
+  const estateIds = estateItems.map((e) => e._id).filter(Boolean);
 
   if (estateIds.length === 0) return estateItems;
 
   // EstateEvent.estateId is stored as a string in this project
-  const events = await EstateEvent.find(
+  const events = (await EstateEventModel.find(
     { estateId: { $in: estateIds } },
     { estateId: 1, createdAt: 1, summary: 1, type: 1 }
   )
     .sort({ createdAt: -1 })
     .lean()
-    .exec();
+    .exec()) as unknown as EstateEventLean[];
 
-  const latestByEstateId = new Map<string, { createdAt?: string | Date | null; summary?: string | null; type?: string | null }>();
+  const latestByEstateId = new Map<
+    string,
+    { createdAt: string | Date | null; summary: string | null; type: string | null }
+  >();
 
   for (const ev of events) {
-    const evEstateId = typeof (ev as { estateId?: unknown }).estateId === "string" ? (ev as { estateId: string }).estateId : null;
+    const evEstateId = typeof ev.estateId === "string" ? ev.estateId : "";
     if (!evEstateId) continue;
     if (latestByEstateId.has(evEstateId)) continue;
 
     latestByEstateId.set(evEstateId, {
-      createdAt: (ev as { createdAt?: string | Date | null }).createdAt ?? null,
-      summary: (ev as { summary?: string | null }).summary ?? null,
-      type: (ev as { type?: string | null }).type ?? null,
+      createdAt: ev.createdAt ?? null,
+      summary: ev.summary ?? null,
+      type: ev.type ?? null,
     });
   }
 
   return estateItems.map((e) => {
-    const id = typeof e._id === "string" ? e._id : e._id?.toString?.() ?? "";
+    const id = e._id;
     const latest = latestByEstateId.get(id);
     return {
       ...e,
@@ -89,36 +114,52 @@ async function getEstates(userId: string): Promise<EstateListItem[]> {
 export default async function EstatesPage({
   searchParams,
 }: {
-  searchParams?: Record<string, string | string[] | undefined>;
+  // Next.js (App Router) may provide `searchParams` as a Promise in newer versions.
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const session = await auth();
-  if (!session?.user?.id) redirect("/login?callbackUrl=/app/estates");
+  if (!session?.user?.id) redirect(`/login?callbackUrl=${encodeURIComponent("/app/estates")}`);
 
   const estates = await getEstates(session.user.id);
+  const ownedEstates = Array.isArray(estates)
+    ? estates.filter((e) => e.ownerId === session.user.id)
+    : [];
 
   // --- Billing enforcement (UI) ---
   // Free plan: 1 owned estate max. Pro: unlimited. Collaborator estates do NOT count toward the limit.
-  // Note: `getEstates()` already connects to the DB, but we may need additional queries here.
-  await connectToDatabase();
-
+  // Note: `getEstates()` already connects to the DB.
   const user = await User.findById(session.user.id).lean().exec();
 
+  // Default to free if we can't load the user for any reason.
   const rawPlanId = (user as unknown as { subscriptionPlanId?: unknown } | null)?.subscriptionPlanId;
   const rawStatus = (user as unknown as { subscriptionStatus?: unknown } | null)?.subscriptionStatus;
 
-  const planId = typeof rawPlanId === "string" ? rawPlanId.toLowerCase() : "";
-  const status = typeof rawStatus === "string" ? rawStatus.toLowerCase() : "";
+  const planId = typeof rawPlanId === "string" ? rawPlanId.toLowerCase() : "free";
+  const status = typeof rawStatus === "string" ? rawStatus.toLowerCase() : null;
 
+  // Stripe-like statuses that should be treated as Pro access.
   const PRO_STATUSES = new Set(["active", "trialing", "past_due"]);
-  const isPro = planId === "pro" || status === "pro" || PRO_STATUSES.has(status);
+  const isPro = planId === "pro" || status === "pro" || (status ? PRO_STATUSES.has(status) : false);
 
-  const ownedEstatesCount = isPro ? 0 : await Estate.countDocuments({ ownerId: session.user.id });
+  // Free plan: 1 *owned* estate max. Collaborator estates do NOT count toward the limit.
+  // We already fetched all estates above, so we can compute the owned count without another DB round-trip.
+  const ownedEstatesCount = ownedEstates.length;
 
   const hasEstates = Array.isArray(estates) && estates.length > 0;
   const hasReachedFreeLimit = !isPro && ownedEstatesCount >= 1;
+
+  const planLabel = isPro ? "Pro" : "Starter";
+  const planHint = isPro
+    ? "Unlimited estates"
+    : hasReachedFreeLimit
+      ? `Free plan: 1/1 estates used`
+      : "Free plan: 1 estate included";
+
+  const showUserLoadWarning = !user;
   // --- End billing enforcement (UI) ---
 
-  const createdFlag = searchParams?.created;
+  const createdFlag = resolvedSearchParams?.created;
   const isCreated = Array.isArray(createdFlag) ? createdFlag.includes("1") : createdFlag === "1";
 
   const hasAnyActivity = Array.isArray(estates)
@@ -127,6 +168,14 @@ export default async function EstatesPage({
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8">
+      {showUserLoadWarning ? (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-100 shadow-sm">
+          <p className="text-sm font-semibold text-amber-100">Account lookup warning</p>
+          <p className="mt-0.5 text-[11px] text-amber-100/80">
+            We couldn’t load your user record. Billing enforcement will default to Starter until this is resolved.
+          </p>
+        </div>
+      ) : null}
       {isCreated ? (
         <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-100 shadow-sm">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -138,7 +187,7 @@ export default async function EstatesPage({
             </div>
             {hasEstates ? (
               <Link
-                href={`/app/estates/${(typeof estates[0]._id === "string" ? estates[0]._id : estates[0]._id?.toString?.() ?? "")}`}
+                href={`/app/estates/${(ownedEstates[0]?._id ?? estates[0]?._id) as string}`}
                 className="inline-flex h-9 items-center justify-center rounded-xl bg-emerald-500 px-3 text-xs font-semibold text-slate-950 shadow-sm hover:bg-emerald-400"
               >
                 Open newest estate
@@ -158,7 +207,20 @@ export default async function EstatesPage({
       ) : null}
       <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Estates</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-2xl font-semibold tracking-tight">Estates</h2>
+            <span
+              className={[
+                "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
+                isPro
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+                  : "border-slate-700 bg-slate-950/40 text-slate-300",
+              ].join(" ")}
+              title={planHint}
+            >
+              {planLabel}
+            </span>
+          </div>
           <p className="text-sm text-slate-400">
             Matter-centric view of everything tied to each probate estate: properties, tasks, notes,
             invoices, rent, contacts, and documents.
@@ -188,6 +250,24 @@ export default async function EstatesPage({
           )}
         </div>
       </header>
+      {hasReachedFreeLimit ? (
+        <div className="rounded-2xl border border-[#F15A43]/40 bg-[#F15A43]/10 p-4 text-xs text-slate-100 shadow-sm">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-100">You’ve reached the free plan limit</p>
+              <p className="mt-0.5 text-[11px] text-slate-200/80">
+                Starter includes <span className="font-semibold">1 owned estate</span>. Upgrade to Pro to create more estates.
+              </p>
+            </div>
+            <Link
+              href="/app/billing?reason=estate_limit"
+              className="inline-flex h-9 items-center justify-center rounded-xl border border-[#F15A43] bg-[#F15A43] px-3 text-xs font-semibold text-slate-950 shadow-sm hover:bg-[#f26b56]"
+            >
+              Upgrade to Pro
+            </Link>
+          </div>
+        </div>
+      ) : null}
 
       {!hasEstates ? (
         <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 p-6 shadow-sm sm:p-8">
@@ -198,15 +278,27 @@ export default async function EstatesPage({
             <p className="mt-3 text-sm font-semibold text-slate-100">No estates yet</p>
             <p className="mt-1 text-xs text-slate-400">
               Start by creating an estate. Then track tasks, notes, documents, invoices, rent, and contacts in one place.
+              {hasReachedFreeLimit ? (
+                <span className="block pt-1 text-[#F15A43]">You’ve reached the Starter limit (1 owned estate). Upgrade to add more.</span>
+              ) : null}
             </p>
 
             <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
-              <Link
-                href="/app/estates/new"
-                className="inline-flex h-10 items-center justify-center rounded-xl border border-emerald-500 bg-emerald-500/10 px-4 text-sm font-medium text-emerald-200 shadow-sm hover:bg-emerald-500/20"
-              >
-                + Create your first estate
-              </Link>
+              {!hasReachedFreeLimit ? (
+                <Link
+                  href="/app/estates/new"
+                  className="inline-flex h-10 items-center justify-center rounded-xl border border-emerald-500 bg-emerald-500/10 px-4 text-sm font-medium text-emerald-200 shadow-sm hover:bg-emerald-500/20"
+                >
+                  + Create your first estate
+                </Link>
+              ) : (
+                <Link
+                  href="/app/billing?reason=estate_limit"
+                  className="inline-flex h-10 items-center justify-center rounded-xl border border-[#F15A43] bg-[#F15A43]/10 px-4 text-sm font-medium text-[#F15A43] shadow-sm hover:bg-[#F15A43]/20"
+                >
+                  Upgrade to add more estates
+                </Link>
+              )}
               <Link
                 href="/app"
                 className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-950/40 px-4 text-sm font-medium text-slate-200 shadow-sm hover:bg-slate-900/40"
@@ -236,6 +328,8 @@ export default async function EstatesPage({
           <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 shadow-sm">
             <p className="text-sm text-slate-200">
               <span className="font-semibold text-slate-100">{estates.length}</span> estate{estates.length === 1 ? "" : "s"}
+              <span className="mx-2 text-slate-600">•</span>
+              <span className="text-xs text-slate-400">{planHint}</span>
             </p>
             {!hasReachedFreeLimit ? (
               <Link
@@ -256,7 +350,7 @@ export default async function EstatesPage({
           {/* Mobile cards */}
           <div className="grid gap-3 sm:hidden">
             {estates.map((estate: EstateListItem) => {
-              const id = estate._id?.toString?.() ?? String(estate._id ?? "");
+              const id = estate._id;
               const name = estate.name || estate.estateName || "Untitled estate";
               const caseNumber = estate.caseNumber || estate.courtCaseNumber || "—";
               const status = estate.status || "Draft";
@@ -339,7 +433,7 @@ export default async function EstatesPage({
               </thead>
               <tbody>
                 {estates.map((estate: EstateListItem) => {
-                  const id = estate._id?.toString?.() ?? String(estate._id ?? "");
+                  const id = estate._id;
                   const name = estate.name || estate.estateName || "Untitled estate";
                   const caseNumber = estate.caseNumber || estate.courtCaseNumber || "—";
                   const status = estate.status || "Draft";

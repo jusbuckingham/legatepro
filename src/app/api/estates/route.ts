@@ -1,5 +1,5 @@
 // src/app/api/estates/route.ts
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
@@ -30,8 +30,9 @@ type CreateEstateBody = Partial<{
   notes: string;
 }>;
 
+/* --------------------------------- helpers -------------------------------- */
+
 function headersNoStore(): Headers {
-  // normalize HeadersInit -> Headers so we can safely mutate
   return new Headers(noStoreHeaders());
 }
 
@@ -42,14 +43,6 @@ function addSecurityHeaders(headers: Headers) {
   headers.set(
     "Permissions-Policy",
     "camera=(), microphone=(), geolocation=(), interest-cohort=()",
-  );
-}
-
-function isProd(): boolean {
-  return (
-    process.env.NODE_ENV === "production" ||
-    process.env.VERCEL_ENV === "production" ||
-    Boolean(process.env.VERCEL)
   );
 }
 
@@ -68,10 +61,6 @@ function getUserPlanSnapshot(user: unknown): {
   const planIdRaw = normalizeStr(rawPlanId).toLowerCase();
   const status = normalizeStr(rawStatus).toLowerCase() || null;
 
-  // IMPORTANT:
-  // - Preferred: subscriptionPlanId = "pro"
-  // - Back-compat: subscriptionStatus used to store "pro"/"free"
-  // - Stripe statuses: treat active-ish as Pro
   const PRO_STRIPE_STATUSES = new Set(["active", "trialing", "past_due"]);
 
   const isPro =
@@ -129,10 +118,8 @@ async function readJsonBody(
   }
 }
 
-/**
- * GET /api/estates
- * List estates owned by the logged-in user
- */
+/* ----------------------------------- GET ---------------------------------- */
+
 export async function GET() {
   const headers = headersNoStore();
   addSecurityHeaders(headers);
@@ -145,27 +132,23 @@ export async function GET() {
   try {
     await connectToDatabase();
 
-    // IMPORTANT: scope to ownerId (Estate.ownerId is a string)
     const estatesRaw = await Estate.find({ ownerId: session.user.id })
       .sort({ createdAt: -1 })
       .lean()
       .exec();
 
-    const estates = estatesRaw.map((e) => serializeMongoDoc(e));
-
-    return jsonOk({ estates }, { headers });
+    return jsonOk(
+      { estates: estatesRaw.map(serializeMongoDoc) },
+      { headers },
+    );
   } catch (error) {
-    console.error("[GET /api/estates] Error:", safeErrorMessage(error));
-    return jsonErr("Failed to fetch estates", 500, "INTERNAL_ERROR", {
-      headers,
-    });
+    console.error("[GET /api/estates]", safeErrorMessage(error));
+    return jsonErr("Failed to fetch estates", 500, "INTERNAL_ERROR", { headers });
   }
 }
 
-/**
- * POST /api/estates
- * Create a new estate owned by the logged-in user
- */
+/* ----------------------------------- POST --------------------------------- */
+
 export async function POST(req: NextRequest) {
   const headers = headersNoStore();
   addSecurityHeaders(headers);
@@ -178,17 +161,9 @@ export async function POST(req: NextRequest) {
   const parsed = await readJsonBody(req, headers);
   if (!parsed.ok) return parsed.res;
 
-  const body = parsed.body;
-
   try {
     await connectToDatabase();
 
-    // --- Billing enforcement ---
-    // Free plan: 1 estate max. Pro plan: unlimited.
-    // We treat a user as "Pro" if either:
-    // - subscriptionPlanId is "pro" (preferred)
-    // - OR subscriptionStatus is one of Stripe's active-ish statuses
-    // - OR legacy back-compat: subscriptionStatus was historically set to "pro"
     const user = await User.findById(session.user.id).lean().exec();
     if (!user) {
       return jsonErr("User not found", 404, "NOT_FOUND", { headers });
@@ -197,35 +172,33 @@ export async function POST(req: NextRequest) {
     const plan = getUserPlanSnapshot(user);
 
     if (!plan.isPro) {
-      const estateCount = await Estate.countDocuments({ ownerId: session.user.id });
+      const estateCount = await Estate.countDocuments({
+        ownerId: session.user.id,
+      }).exec();
+
       if (estateCount >= 1) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: "Free plan supports 1 estate. Upgrade to Pro to create more.",
-            code: "PAYMENT_REQUIRED",
-            data: {
-              upgradeUrl: "/app/billing",
-              limit: 1,
-              current: estateCount,
-              planId: plan.planId,
-              status: plan.status,
-              env: isProd() ? "prod" : "dev",
-            },
-          },
-          { status: 402, headers },
+        headers.set("X-LegatePro-Upgrade-Url", "/app/billing");
+        headers.set("X-LegatePro-Plan-Id", plan.planId);
+        headers.set("X-LegatePro-Plan-Limit", "1");
+        headers.set("X-LegatePro-Plan-Current", String(estateCount));
+        if (plan.status) {
+          headers.set("X-LegatePro-Subscription-Status", plan.status);
+        }
+
+        return jsonErr(
+          "Free plan supports 1 estate. Upgrade to Pro to create more.",
+          402,
+          "PAYMENT_REQUIRED",
+          { headers },
         );
       }
     }
-    // --- End billing enforcement ---
 
-    const payload = {
-      ...body,
+    const estateDoc = await Estate.create({
+      ...parsed.body,
       ownerId: session.user.id,
-      status: body.status ?? "OPEN",
-    };
-
-    const estateDoc = await Estate.create(payload);
+      status: parsed.body.status ?? "OPEN",
+    });
 
     try {
       await logEstateEvent({
@@ -237,13 +210,13 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       console.warn("[ESTATE_CREATED] log failed:", safeErrorMessage(err));
     }
-
-    const estate = serializeMongoDoc(estateDoc);
-    return jsonOk({ estate }, { headers, status: 201 });
-  } catch (error) {
-    console.error("[POST /api/estates] Error:", safeErrorMessage(error));
-    return jsonErr("Failed to create estate", 500, "INTERNAL_ERROR", {
+    // Return a 201 Created with our no-store + security headers.
+    return new Response(JSON.stringify({ ok: true, estate: serializeMongoDoc(estateDoc) }), {
+      status: 201,
       headers,
     });
+  } catch (error) {
+    console.error("[POST /api/estates]", safeErrorMessage(error));
+    return jsonErr("Failed to create estate", 500, "INTERNAL_ERROR", { headers });
   }
 }
