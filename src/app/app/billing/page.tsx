@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const PLANS = [
   {
@@ -34,7 +34,16 @@ const PLANS = [
     ],
     highlight: true,
   },
-] as const;
+];
+
+type BillingPlan = {
+  id: string;
+  name: string;
+  price: number;
+  currency: string;
+  interval: "month" | "year";
+  stripePriceEnv?: string;
+};
 
 type BillingSnapshot = {
   customer: {
@@ -50,22 +59,10 @@ type BillingSnapshot = {
     price: number;
     currency: string;
     interval: "month" | "year";
-    status: string;
+    status: string; // "active" | "trialing" | "past_due" | "canceled" | "inactive" ...
     managedByStripe: boolean;
   };
-};
-
-type ApiOk<T> = { ok: true; data: T };
-type ApiErr = { ok: false; error?: string; code?: string };
-
-type Banner =
-  | { kind: "success"; title: string; message?: string }
-  | { kind: "warning"; title: string; message?: string }
-  | { kind: "error"; title: string; message?: string };
-
-type Toast = {
-  kind: "success" | "warning" | "error";
-  message: string;
+  plans: BillingPlan[];
 };
 
 async function fetchBilling(): Promise<BillingSnapshot> {
@@ -75,11 +72,17 @@ async function fetchBilling(): Promise<BillingSnapshot> {
     cache: "no-store",
   });
 
-  const json = (await res.json()) as ApiOk<BillingSnapshot> | ApiErr;
-  if (!res.ok || !json?.ok) {
-    throw new Error((json as ApiErr)?.error || "Failed to load billing");
+  const json = (await res.json()) as {
+    ok: boolean;
+    data?: BillingSnapshot;
+    error?: string;
+  };
+
+  if (!res.ok || !json.ok || !json.data) {
+    throw new Error(json.error || "Failed to load billing");
   }
-  return (json as ApiOk<BillingSnapshot>).data;
+
+  return json.data;
 }
 
 async function startCheckout(planId: string): Promise<string> {
@@ -89,11 +92,17 @@ async function startCheckout(planId: string): Promise<string> {
     body: JSON.stringify({ planId }),
   });
 
-  const json = (await res.json()) as ApiOk<{ url: string }> | ApiErr;
-  if (!res.ok || !json?.ok || !(json as ApiOk<{ url: string }>).data?.url) {
-    throw new Error((json as ApiErr)?.error || "Failed to start checkout");
+  const json = (await res.json()) as {
+    ok: boolean;
+    data?: { url?: string };
+    error?: string;
+  };
+
+  if (!res.ok || !json.ok || !json.data?.url) {
+    throw new Error(json.error || "Failed to start checkout");
   }
-  return (json as ApiOk<{ url: string }>).data.url;
+
+  return json.data.url;
 }
 
 async function startPortal(): Promise<string> {
@@ -102,105 +111,76 @@ async function startPortal(): Promise<string> {
     headers: { Accept: "application/json" },
   });
 
-  const json = (await res.json()) as ApiOk<{ url: string }> | ApiErr;
-  if (!res.ok || !json?.ok || !(json as ApiOk<{ url: string }>).data?.url) {
-    throw new Error((json as ApiErr)?.error || "Failed to open portal");
+  const json = (await res.json()) as {
+    ok: boolean;
+    data?: { url?: string };
+    error?: string;
+  };
+
+  if (!res.ok || !json.ok || !json.data?.url) {
+    throw new Error(json.error || "Failed to open customer portal");
   }
-  return (json as ApiOk<{ url: string }>).data.url;
+
+  return json.data.url;
 }
 
-function normalizeStatus(raw: string | null | undefined): string {
-  const s = String(raw ?? "").trim().toLowerCase();
-  return s || "unknown";
-}
+type Banner = {
+  kind: "success" | "warning" | "info";
+  title: string;
+  message: string;
+  actions?: Array<{ label: string; onClick: () => void; variant?: "primary" | "secondary" }>;
+};
 
-function statusLabel(status: string): string {
-  switch (status) {
-    case "active":
-      return "Active";
-    case "trialing":
-      return "Trial";
-    case "past_due":
-      return "Past due";
-    case "canceled":
-      return "Canceled";
-    case "incomplete":
-      return "Incomplete";
-    case "unpaid":
-      return "Unpaid";
-    case "paused":
-      return "Paused";
-    case "inactive":
-      return "Inactive";
-    default:
-      return "Unknown";
-  }
-}
-
-function statusBadgeClass(status: string): string {
-  if (status === "active" || status === "trialing") {
-    return "border-emerald-500/30 bg-emerald-950/30 text-emerald-200";
-  }
-  if (status === "past_due" || status === "unpaid" || status === "incomplete") {
-    return "border-amber-500/30 bg-amber-950/30 text-amber-200";
-  }
-  if (status === "canceled") {
-    return "border-slate-700 bg-slate-950/40 text-slate-300";
-  }
-  return "border-slate-700 bg-slate-950/40 text-slate-300";
-}
-
-function BannerBox({
-  banner,
-  onDismiss,
-}: {
-  banner: Banner;
-  onDismiss?: () => void;
-}) {
-  const base = "rounded-md border p-3 text-sm";
-  const cls =
+function BannerBox({ banner, onDismiss }: { banner: Banner; onDismiss: () => void }) {
+  const styles =
     banner.kind === "success"
-      ? "border-emerald-500/30 bg-emerald-950/30 text-emerald-100"
+      ? "border-emerald-500/30 bg-emerald-950/20 text-emerald-100"
       : banner.kind === "warning"
-        ? "border-amber-500/30 bg-amber-950/30 text-amber-100"
-        : "border-red-500/30 bg-red-950/30 text-red-200";
+        ? "border-amber-500/30 bg-amber-950/20 text-amber-100"
+        : "border-slate-700 bg-slate-950/40 text-slate-200";
+
+  const titleColor =
+    banner.kind === "success"
+      ? "text-emerald-200"
+      : banner.kind === "warning"
+        ? "text-amber-200"
+        : "text-slate-200";
 
   return (
-    <div className={`${base} ${cls}`}>
+    <div className={`rounded-2xl border p-4 shadow-sm ${styles}`}>
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="font-semibold">{banner.title}</div>
-          {banner.message ? (
-            <div className="mt-0.5 text-xs opacity-90">{banner.message}</div>
+        <div className="min-w-0">
+          <div className={`text-sm font-semibold ${titleColor}`}>{banner.title}</div>
+          <p className="mt-1 text-xs opacity-90">{banner.message}</p>
+
+          {banner.actions?.length ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {banner.actions.map((a) => (
+                <button
+                  key={a.label}
+                  type="button"
+                  onClick={a.onClick}
+                  className={
+                    a.variant === "primary"
+                      ? "inline-flex items-center justify-center rounded-md bg-[#F15A43] px-3 py-2 text-xs font-semibold text-slate-950 shadow-sm hover:bg-[#f26b56]"
+                      : "inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs font-medium text-slate-200 shadow-sm hover:bg-slate-900/80"
+                  }
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
           ) : null}
         </div>
-        {onDismiss ? (
-          <button
-            type="button"
-            onClick={onDismiss}
-            className="rounded px-2 py-1 text-xs hover:bg-white/5"
-            aria-label="Dismiss"
-          >
-            ✕
-          </button>
-        ) : null}
+
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="rounded-md border border-slate-700 bg-slate-900/60 px-2 py-1 text-[11px] font-medium text-slate-200 hover:bg-slate-900/80"
+        >
+          Dismiss
+        </button>
       </div>
-    </div>
-  );
-}
-
-function ToastBar({ toast }: { toast: Toast }) {
-  const base = "fixed bottom-4 right-4 z-50 max-w-sm rounded-md border px-3 py-2 text-xs shadow-lg";
-  const cls =
-    toast.kind === "success"
-      ? "border-emerald-500/30 bg-emerald-950/90 text-emerald-100"
-      : toast.kind === "warning"
-        ? "border-amber-500/30 bg-amber-950/90 text-amber-100"
-        : "border-red-500/30 bg-red-950/90 text-red-200";
-
-  return (
-    <div role="status" aria-live="polite" className={`${base} ${cls}`}>
-      {toast.message}
     </div>
   );
 }
@@ -211,170 +191,323 @@ export default function BillingPage() {
 
   const [snapshot, setSnapshot] = useState<BillingSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [banner, setBanner] = useState<Banner | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [busyPlanId, setBusyPlanId] = useState<string | null>(null);
   const [busyPortal, setBusyPortal] = useState(false);
-  const [toast, setToast] = useState<Toast | null>(null);
+  const [banner, setBanner] = useState<Banner | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await fetchBilling();
-      setSnapshot(data);
-    } catch (e) {
-      setBanner({
-        kind: "error",
-        title: "Billing unavailable",
-        message: e instanceof Error ? e.message : "Failed to load billing",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const hasShownReturnBannerRef = useRef(false);
 
-  const showToast = useCallback((t: Toast) => {
-    setToast(t);
-    window.setTimeout(() => setToast(null), 4500);
+  const refreshBilling = useCallback(async () => {
+    const data = await fetchBilling();
+    setSnapshot(data);
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
 
-  // Post-checkout return UX
-  useEffect(() => {
-    const success = searchParams.get("success");
-    const canceled = searchParams.get("canceled");
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await fetchBilling();
+        if (!cancelled) setSnapshot(data);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load billing");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
 
-    if (success === "1") {
-      setBanner({
-        kind: "success",
-        title: "You’re all set",
-        message: "Subscription update received. Refreshing your plan status…",
-      });
-      showToast({ kind: "success", message: "✅ Plan updated — verifying with Stripe…" });
-      void load();
-      router.replace("/app/billing");
-      return;
-    }
-
-    if (canceled === "1") {
-      setBanner({
-        kind: "warning",
-        title: "Checkout canceled",
-        message: "No charges were made. You can upgrade any time.",
-      });
-      showToast({ kind: "warning", message: "Checkout canceled — no charges were made." });
-      router.replace("/app/billing");
-    }
-  }, [load, router, searchParams, showToast]);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const currentPlanId = snapshot?.subscription?.planId ?? "free";
-  const currentPlanLabel = useMemo(() => {
-    return (PLANS.find((p) => p.id === currentPlanId) ?? PLANS[0]).name;
-  }, [currentPlanId]);
+  const currentStatus = snapshot?.subscription?.status ?? "inactive";
+  const isPro = currentPlanId === "pro";
+  const isBillingLive = Boolean(snapshot);
 
-  const subStatus = normalizeStatus(snapshot?.subscription?.status);
+  // Plan object used in the header box
+  const currentPlan = useMemo(
+    () => PLANS.find((p) => p.id === currentPlanId) ?? PLANS[0],
+    [currentPlanId],
+  );
 
-  const portalCtaLabel = useMemo(() => {
-    if (!snapshot) return "Open Stripe portal";
-    if (subStatus === "past_due" || subStatus === "unpaid" || subStatus === "incomplete") {
-      return "Fix payment";
+  const successParam = searchParams.get("success");
+  const canceledParam = searchParams.get("canceled");
+
+  // Post-Stripe return UX:
+  // - show banner
+  // - refresh snapshot so UI updates immediately
+  // - optionally clean URL (remove params)
+  useEffect(() => {
+    if (hasShownReturnBannerRef.current) return;
+
+    const cameFromStripe = successParam === "1" || canceledParam === "1";
+    if (!cameFromStripe) return;
+
+    hasShownReturnBannerRef.current = true;
+
+    (async () => {
+      try {
+        // Refresh first so banner can reflect final state
+        await refreshBilling();
+
+        if (successParam === "1") {
+          setBanner({
+            kind: "success",
+            title: "Upgrade complete",
+            message: "You’re all set. Your subscription is active and managed through Stripe.",
+            actions: [
+              {
+                label: "Manage subscription",
+                variant: "secondary",
+                onClick: async () => {
+                  try {
+                    setBusyPortal(true);
+                    const url = await startPortal();
+                    window.location.assign(url);
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : "Failed to open customer portal");
+                  } finally {
+                    setBusyPortal(false);
+                  }
+                },
+              },
+              {
+                label: "Go to estates",
+                variant: "primary",
+                onClick: () => router.push("/app/estates"),
+              },
+            ],
+          });
+        } else if (canceledParam === "1") {
+          setBanner({
+            kind: "warning",
+            title: "Checkout canceled",
+            message:
+              "No worries — you weren’t charged. You can upgrade anytime, and your current plan stays the same.",
+            actions: [
+              {
+                label: "Try again",
+                variant: "primary",
+                onClick: () => {
+                  // keep user on page; they can click upgrade
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                },
+              },
+            ],
+          });
+        }
+      } catch {
+        setBanner({
+          kind: "info",
+          title: "Back from Stripe",
+          message:
+            "We couldn’t refresh billing status automatically. Try refreshing the page in a moment.",
+        });
+      } finally {
+        // Clean the URL so refreshes/bookmarks don’t keep showing the banner
+        router.replace("/app/billing");
+      }
+    })();
+  }, [successParam, canceledParam, refreshBilling, router]);
+
+  const statusLabel = useMemo(() => {
+    const s = String(currentStatus || "").toLowerCase();
+    if (!isBillingLive) return "Loading…";
+    if (isPro) {
+      if (s === "active") return "Active";
+      if (s === "trialing") return "Trial";
+      if (s === "past_due") return "Past due";
+      if (s === "canceled") return "Canceled";
+      return "Pro";
     }
-    return "Manage subscription";
-  }, [snapshot, subStatus]);
+    return "Free";
+  }, [currentStatus, isBillingLive, isPro]);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8 p-6">
-      {toast ? <ToastBar toast={toast} /> : null}
-      <header className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-2xl font-semibold text-slate-50">
-            Billing &amp; Subscription
-          </h1>
-          <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/40 px-2 py-0.5 text-[11px] font-medium text-slate-300">
-            Current: {currentPlanLabel}
-          </span>
-          <span
-            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusBadgeClass(
-              subStatus,
-            )}`}
-            title={`Subscription status: ${subStatus}`}
-          >
-            {statusLabel(subStatus)}
-          </span>
+    <div className="mx-auto max-w-5xl space-y-6 p-4 md:p-6 lg:p-8">
+      {banner ? <BannerBox banner={banner} onDismiss={() => setBanner(null)} /> : null}
+
+      {/* Header */}
+      <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
+              Billing &amp; Subscription
+            </h1>
+            <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/40 px-2 py-0.5 text-[11px] font-medium text-slate-300">
+              Beta
+            </span>
+          </div>
+
+          <p className="max-w-2xl text-sm text-slate-400">
+            Manage your LegatePro plan and Stripe subscription. You’ll always see a clear upgrade step before anything
+            changes.
+          </p>
+
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            <Link
+              href="/app/settings"
+              className="text-xs font-medium text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+            >
+              Back to settings
+            </Link>
+            <span className="text-xs text-slate-600">•</span>
+            <Link
+              href="/app"
+              className="text-xs font-medium text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+            >
+              Go to dashboard
+            </Link>
+          </div>
         </div>
-        <p className="text-sm text-slate-400">
-          Manage your LegatePro plan. Upgrades are handled securely through Stripe.
-        </p>
-        <div className="flex gap-3 text-xs">
-          <Link href="/app" className="text-slate-300 hover:underline">
-            Dashboard
-          </Link>
-          <Link href="/app/settings" className="text-slate-300 hover:underline">
-            Settings
-          </Link>
+
+        <div className="w-full max-w-sm rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-4 text-emerald-100 shadow-sm">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-300">
+                Current plan
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-50">{currentPlan.name}</div>
+              <div className="mt-1 text-[11px] text-emerald-200/80">Status: {statusLabel}</div>
+            </div>
+
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  setLoading(true);
+                  setError(null);
+                  await refreshBilling();
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : "Failed to refresh billing");
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              className="rounded-md border border-slate-700 bg-slate-900/60 px-2 py-1 text-[11px] font-medium text-slate-200 hover:bg-slate-900/80 disabled:opacity-60"
+              disabled={loading}
+              title="Refresh billing status"
+            >
+              Refresh
+            </button>
+          </div>
+
+          <p className="mt-2 text-xs text-emerald-200/80">
+            {loading
+              ? "Loading your billing status…"
+              : error
+                ? `Billing unavailable: ${error}`
+                : "Subscriptions are managed securely through Stripe."}
+          </p>
+
+          <div className="mt-3 flex flex-col gap-2">
+            <button
+              type="button"
+              disabled={!isBillingLive || busyPortal}
+            onClick={async () => {
+              try {
+                setBusyPortal(true);
+                const url = await startPortal();
+                window.location.assign(url);
+              } catch (err) {
+                setError(err instanceof Error ? err.message : "Failed to open customer portal");
+              } finally {
+                setBusyPortal(false);
+              }
+            }}
+              className="inline-flex w-full items-center justify-center rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs font-medium text-slate-200 shadow-sm hover:bg-slate-900/80 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busyPortal ? "Opening portal…" : "Customer portal"}
+            </button>
+
+            {!isBillingLive ? (
+              <p className="text-[11px] text-emerald-200/70">
+                Connect Stripe to enable the customer portal (update payment methods, cancel, download invoices).
+              </p>
+            ) : null}
+          </div>
         </div>
       </header>
 
-      {banner ? <BannerBox banner={banner} onDismiss={() => setBanner(null)} /> : null}
-
+      {/* Plans */}
       <section className="grid gap-6 md:grid-cols-2">
         {PLANS.map((plan) => {
           const isCurrent = plan.id === currentPlanId;
+          const isProCard = plan.highlight;
 
           return (
             <div
               key={plan.id}
-              className={`rounded-xl border p-5 ${
-                plan.highlight ? "border-[#F15A43]" : "border-slate-800"
-              }`}
+              className={[
+                "relative flex h-full flex-col rounded-2xl border bg-slate-950/40 p-5 shadow-sm",
+                isProCard
+                  ? "border-[#F15A43]/70 shadow-[0_0_0_1px_rgba(241,90,67,0.45)]"
+                  : "border-slate-800",
+              ].join(" ")}
             >
-              <h2 className="text-lg font-semibold text-slate-50">{plan.name}</h2>
-              <p className="mt-1 text-xs text-slate-400">{plan.tagline}</p>
+              {isProCard && (
+                <div className="absolute -top-2 right-4 rounded-full bg-[#F15A43] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-950 shadow">
+                  Most popular
+                </div>
+              )}
 
-              <div className="mt-3 flex items-baseline gap-1">
+              <div className="mb-4">
+                <h2 className="text-lg font-semibold text-slate-50">{plan.name}</h2>
+                <p className="mt-1 text-xs text-slate-400">{plan.tagline}</p>
+              </div>
+
+              <div className="mb-4 flex items-baseline gap-1">
                 <span className="text-2xl font-semibold text-slate-50">{plan.price}</span>
                 <span className="text-xs text-slate-400">{plan.cadence}</span>
               </div>
 
-              <ul className="mt-4 space-y-2 text-xs text-slate-300">
-                {plan.features.map((f) => (
-                  <li key={f}>✓ {f}</li>
+              <ul className="mb-5 space-y-2 text-xs text-slate-300">
+                {plan.features.map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <span
+                      className={`mt-[3px] inline-flex h-4 w-4 items-center justify-center rounded-full border text-[10px] ${
+                        isProCard ? "border-[#F15A43]/80 text-[#F15A43]" : "border-slate-600 text-slate-300"
+                      }`}
+                    >
+                      ✓
+                    </span>
+                    <span>{item}</span>
+                  </li>
                 ))}
               </ul>
 
-              <div className="mt-5">
+              <div className="mt-auto">
                 {isCurrent ? (
                   <button
+                    type="button"
+                    className="inline-flex w-full items-center justify-center rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs font-medium text-slate-200 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
                     disabled
-                    className="w-full rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs text-slate-300"
                   >
                     Current plan
                   </button>
                 ) : (
                   <button
-                    disabled={loading || busyPlanId === plan.id}
+                    type="button"
+                    disabled={!isBillingLive || busyPlanId === plan.id || (isPro && plan.id === "pro")}
                     onClick={async () => {
                       try {
-                        setBanner(null);
                         setBusyPlanId(plan.id);
                         const url = await startCheckout(plan.id);
                         window.location.assign(url);
-                      } catch (e) {
-                        setBanner({
-                          kind: "error",
-                          title: "Checkout failed",
-                          message: e instanceof Error ? e.message : "Unable to start checkout",
-                        });
-                        showToast({ kind: "error", message: "Checkout failed — please try again." });
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : "Failed to start checkout");
                       } finally {
                         setBusyPlanId(null);
                       }
                     }}
-                    className="w-full rounded-md bg-[#F15A43] px-3 py-2 text-xs font-semibold text-black hover:bg-[#f26b56] disabled:opacity-60"
+                    className="inline-flex w-full items-center justify-center rounded-md border border-[#F15A43]/80 bg-[#F15A43] px-3 py-2 text-xs font-semibold text-slate-950 shadow-sm hover:bg-[#f26b56] disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {busyPlanId === plan.id ? "Redirecting…" : "Upgrade"}
+                    {busyPlanId === plan.id ? "Redirecting…" : "Upgrade to Pro"}
                   </button>
                 )}
               </div>
@@ -383,46 +516,46 @@ export default function BillingPage() {
         })}
       </section>
 
-      <section className="rounded-xl border border-slate-800 p-4">
+      {/* Invoices */}
+      <section className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-slate-100">Customer portal</h2>
-            <p className="mt-1 text-xs text-slate-400">
-              Update payment methods, cancel subscriptions, and download invoices.
+            <h2 className="text-sm font-semibold text-slate-100">Invoices &amp; receipts</h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {loading
+                ? "Loading billing history…"
+                : isBillingLive
+                  ? "Receipts live in Stripe’s customer portal."
+                  : "Connect billing to download receipts."}
             </p>
           </div>
 
           <button
             type="button"
-            disabled={!snapshot || busyPortal}
+            disabled={!isBillingLive || busyPortal}
             onClick={async () => {
               try {
-                setBanner(null);
                 setBusyPortal(true);
                 const url = await startPortal();
                 window.location.assign(url);
-              } catch (e) {
-                setBanner({
-                  kind: "error",
-                  title: "Portal unavailable",
-                  message: e instanceof Error ? e.message : "Unable to open portal",
-                });
-                showToast({ kind: "error", message: "Unable to open Stripe portal." });
+              } catch (err) {
+                setError(err instanceof Error ? err.message : "Failed to open customer portal");
               } finally {
                 setBusyPortal(false);
               }
             }}
-            className="mt-1 inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-xs font-medium text-slate-200 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {busyPortal ? "Opening…" : portalCtaLabel}
+            {busyPortal ? "Opening…" : "View invoices in portal"}
           </button>
         </div>
 
-        {!snapshot ? (
-          <p className="mt-3 text-[11px] text-slate-500">
-            Billing isn’t configured yet for this environment, or your account hasn’t been initialized.
+        <div className="mt-3 rounded-xl border border-dashed border-slate-800 bg-slate-950/40 p-4">
+          <p className="text-sm font-medium text-slate-100">Stripe portal</p>
+          <p className="mt-1 text-xs text-slate-400">
+            Update payment method, cancel/reactivate, and download invoices — all handled securely by Stripe.
           </p>
-        ) : null}
+        </div>
       </section>
     </div>
   );

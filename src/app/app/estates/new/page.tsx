@@ -35,7 +35,7 @@ const BILLING_LIMIT_URL = "/app/billing?reason=estate_limit";
 type UnknownRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is UnknownRecord {
-  return Boolean(value) && typeof value === "object";
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function coercePlanId(input: unknown): PlanId | null {
@@ -96,13 +96,17 @@ export default function NewEstatePage() {
   const getUpgradeUrlFromResponse = useCallback(
     (res: Response, json: unknown): string => {
       const headerUrl = res.headers.get("x-legatepro-upgrade-url");
-      if (headerUrl && headerUrl.startsWith("/")) return headerUrl;
+      if (headerUrl && headerUrl.startsWith("/")) {
+        upgradeUrlRef.current = headerUrl;
+        return headerUrl;
+      }
 
       if (
         isRecord(json) &&
         typeof json.upgradeUrl === "string" &&
         json.upgradeUrl.startsWith("/")
       ) {
+        upgradeUrlRef.current = json.upgradeUrl;
         return json.upgradeUrl;
       }
 
@@ -148,8 +152,6 @@ export default function NewEstatePage() {
 
     (async () => {
       try {
-        const upgradeUrl = upgradeUrlRef.current;
-
         // Billing snapshot
         const billingRes = await fetch("/api/billing", {
           method: "GET",
@@ -195,11 +197,13 @@ export default function NewEstatePage() {
 
           // Hard redirect: free users hitting /new after already having an estate
           if (shouldUpgrade) {
-            redirectToUpgrade(upgradeUrl);
+            redirectToUpgrade();
           }
         }
-      } catch {
+      } catch (err) {
         // Non-fatal: keep UI usable; server will enforce.
+        // Ignore abort errors to avoid noise during navigation.
+        if (err instanceof DOMException && err.name === "AbortError") return;
       }
     })();
 

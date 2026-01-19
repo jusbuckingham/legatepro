@@ -662,7 +662,11 @@ export default async function EstateOverviewPage({ params }: PageProps) {
               </p>
               <div className="mt-2">
                 <Link
-                  href={`/app/estates/${estateId}/tasks${canEdit ? "#add-task" : ""}`}
+                  href={
+                    canEdit
+                      ? `/app/estates/${estateId}/tasks#add-task`
+                      : `/app/estates/${estateId}/tasks`
+                  }
                   className="text-xs font-medium text-blue-600 hover:underline"
                 >
                   {canEdit ? "Add a task" : "View tasks"}
@@ -715,7 +719,11 @@ export default async function EstateOverviewPage({ params }: PageProps) {
                 </Link>
                 {canEdit ? (
                   <Link
-                    href={`/app/estates/${estateId}/documents#add-document`}
+                    href={
+                      canEdit
+                        ? `/app/estates/${estateId}/documents#add-document`
+                        : `/app/estates/${estateId}/documents`
+                    }
                     className="text-xs font-medium text-gray-700 hover:underline"
                   >
                     Add document
@@ -742,7 +750,11 @@ export default async function EstateOverviewPage({ params }: PageProps) {
                 </Link>
                 {canEdit ? (
                   <Link
-                    href={`/app/estates/${estateId}/notes#add-note`}
+                    href={
+                      canEdit
+                        ? `/app/estates/${estateId}/notes#add-note`
+                        : `/app/estates/${estateId}/notes`
+                    }
                     className="text-xs font-medium text-gray-700 hover:underline"
                   >
                     Add note
@@ -753,24 +765,49 @@ export default async function EstateOverviewPage({ params }: PageProps) {
           </div>
 
           <div className="mt-4 flex flex-wrap gap-3 text-[11px] text-gray-500">
-            <Link
-              href={`/app/estates/${estateId}/contacts/new`}
-              className="font-medium text-blue-600 hover:underline"
-            >
-              Add a contact
-            </Link>
-            <Link
-              href={`/app/estates/${estateId}/properties/new`}
-              className="font-medium text-blue-600 hover:underline"
-            >
-              Add a property
-            </Link>
-            <Link
-              href={`/app/estates/${estateId}/rent/new`}
-              className="font-medium text-blue-600 hover:underline"
-            >
-              Record rent
-            </Link>
+            {canEdit ? (
+              <>
+                <Link
+                  href={`/app/estates/${estateId}/contacts/new`}
+                  className="font-medium text-blue-600 hover:underline"
+                >
+                  Add a contact
+                </Link>
+                <Link
+                  href={`/app/estates/${estateId}/properties/new`}
+                  className="font-medium text-blue-600 hover:underline"
+                >
+                  Add a property
+                </Link>
+                <Link
+                  href={`/app/estates/${estateId}/rent/new`}
+                  className="font-medium text-blue-600 hover:underline"
+                >
+                  Record rent
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link
+                  href={`/app/estates/${estateId}/contacts`}
+                  className="font-medium text-blue-600 hover:underline"
+                >
+                  View contacts
+                </Link>
+                <Link
+                  href={`/app/estates/${estateId}/properties`}
+                  className="font-medium text-blue-600 hover:underline"
+                >
+                  View properties
+                </Link>
+                <Link
+                  href={`/app/estates/${estateId}/rent`}
+                  className="font-medium text-blue-600 hover:underline"
+                >
+                  View rent
+                </Link>
+              </>
+            )}
           </div>
         </section>
       ) : null}
