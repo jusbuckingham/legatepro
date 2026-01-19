@@ -2,6 +2,8 @@
 import { DeletePropertyButton } from "@/components/estate/DeletePropertyButton";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import mongoose from "mongoose";
+
 import { connectToDatabase } from "@/lib/db";
 import { EstateProperty } from "@/models/EstateProperty";
 import { auth } from "@/lib/auth";
@@ -9,19 +11,34 @@ import { Estate } from "@/models/Estate";
 
 type EstatePropertyItem = {
   _id: string | { toString(): string };
-  name?: string;
-  label?: string;
-  type?: string;
-  address?: string;
+  nickname?: string;
+  streetAddress?: string;
+  unit?: string;
   city?: string;
   state?: string;
+  postalCode?: string;
+  propertyType?: string;
+  isRented?: boolean;
+  isPrimaryResidence?: boolean;
+  purchasePrice?: number;
   estimatedValue?: number;
   ownershipPercentage?: number;
+  notes?: string;
   createdAt?: string | Date;
 };
 
 interface PageProps {
   params: { estateId: string };
+}
+
+function isValidObjectId(value: string): boolean {
+  return mongoose.Types.ObjectId.isValid(value);
+}
+
+function normalizeObjectId(value: string): string | null {
+  const v = value.trim();
+  if (!v || v.length !== 24) return null;
+  return isValidObjectId(v) ? v : null;
 }
 
 async function getProperties(
@@ -30,7 +47,12 @@ async function getProperties(
 ): Promise<{ notFound: boolean; estateName: string; properties: EstatePropertyItem[] }> {
   await connectToDatabase();
 
-  const estate = await Estate.findOne({ _id: estateId, ownerId: userId })
+  const estateObjectId = normalizeObjectId(estateId);
+  if (!estateObjectId) {
+    return { notFound: true, estateName: "", properties: [] };
+  }
+
+  const estate = await Estate.findOne({ _id: estateObjectId, ownerId: userId })
     .select({ displayName: 1, name: 1, estateName: 1 })
     .lean()
     .exec();
@@ -46,12 +68,29 @@ async function getProperties(
     (estate as unknown as { displayName?: string; name?: string; estateName?: string }).estateName ||
     "Estate";
 
-  const properties = await EstateProperty.find({ estateId })
+  const properties = await EstateProperty.find({ estateId: estateObjectId, ownerId: userId })
+    .select({
+      _id: 1,
+      nickname: 1,
+      streetAddress: 1,
+      unit: 1,
+      city: 1,
+      state: 1,
+      postalCode: 1,
+      propertyType: 1,
+      isRented: 1,
+      isPrimaryResidence: 1,
+      purchasePrice: 1,
+      estimatedValue: 1,
+      ownershipPercentage: 1,
+      notes: 1,
+      createdAt: 1,
+    })
     .sort({ createdAt: -1 })
     .lean()
     .exec();
 
-  return { notFound: false, estateName, properties: properties as EstatePropertyItem[] };
+  return { notFound: false, estateName, properties: properties as unknown as EstatePropertyItem[] };
 }
 
 export default async function EstatePropertiesPage({ params }: PageProps) {
@@ -236,11 +275,23 @@ export default async function EstatePropertiesPage({ params }: PageProps) {
                       ? property._id
                       : property._id?.toString?.() ?? "";
 
-                  const name = property.name || property.label || "Untitled property";
-                  const type = property.type || "—";
+                  const name =
+                    property.nickname ||
+                    property.streetAddress ||
+                    "Untitled property";
+
+                  const type = property.propertyType || "—";
+
                   const location = [property.city, property.state]
                     .filter(Boolean)
                     .join(", ");
+
+                  const addressLine = [
+                    property.streetAddress,
+                    property.unit ? `#${property.unit}` : undefined,
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
 
                   return (
                     <tr key={id} className="hover:bg-slate-900/60">
@@ -254,12 +305,13 @@ export default async function EstatePropertiesPage({ params }: PageProps) {
                           </Link>
                         </div>
                         <div className="mt-0.5 text-[11px] text-slate-500">
-                          {property.address || "No address"}
+                          {addressLine || "No address"}
                         </div>
                       </td>
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-900/40 px-2 py-1 text-[11px] text-slate-200">
                           {type}
+                          {property.isRented ? " • Rented" : ""}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-slate-300">

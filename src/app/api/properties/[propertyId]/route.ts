@@ -1,9 +1,10 @@
+// src/app/api/properties/[propertyId]/route.ts
+
 import { NextRequest, NextResponse } from "next/server";
 import { isValidObjectId } from "mongoose";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
-
 import { noStoreHeaders, safeErrorMessage } from "@/lib/apiResponse";
 import { Estate } from "@/models/Estate";
 import { EstateProperty } from "@/models/EstateProperty";
@@ -17,7 +18,10 @@ function buildHeaders(): Headers {
   h.set("X-Content-Type-Options", "nosniff");
   h.set("Referrer-Policy", "same-origin");
   h.set("X-Frame-Options", "DENY");
-  h.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()");
+  h.set(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+  );
   return h;
 }
 
@@ -49,7 +53,10 @@ function cleanPhone(value: unknown, maxLen = 32): string | undefined {
   return cleaned.length ? cleaned : undefined;
 }
 
-function cleanNumber(value: unknown, opts?: { min?: number; max?: number }): number | undefined {
+function cleanNumber(
+  value: unknown,
+  opts?: { min?: number; max?: number },
+): number | undefined {
   let n: number | undefined;
 
   if (typeof value === "number" && Number.isFinite(value)) n = value;
@@ -67,12 +74,11 @@ function cleanNumber(value: unknown, opts?: { min?: number; max?: number }): num
   return n;
 }
 
-
 function cleanObjectId(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const s = value.trim();
   if (!s) return undefined;
-  if (s.length != 24) return undefined;
+  if (s.length !== 24) return undefined;
   return isValidObjectId(s) ? s : undefined;
 }
 
@@ -81,12 +87,18 @@ const MAX_JSON_BODY_BYTES = 25_000;
 async function readJsonObject(
   request: NextRequest,
   headers: Headers,
-): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false; res: NextResponse }> {
+): Promise<
+  | { ok: true; body: Record<string, unknown> }
+  | { ok: false; res: NextResponse }
+> {
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("application/json")) {
     return {
       ok: false,
-      res: json({ ok: false, error: "Content-Type must be application/json" }, { status: 415, headers }),
+      res: json(
+        { ok: false, error: "Content-Type must be application/json" },
+        { status: 415, headers },
+      ),
     };
   }
 
@@ -95,7 +107,10 @@ async function readJsonObject(
     if (raw.length > MAX_JSON_BODY_BYTES) {
       return {
         ok: false,
-        res: json({ ok: false, error: "Request body too large" }, { status: 413, headers }),
+        res: json(
+          { ok: false, error: "Request body too large" },
+          { status: 413, headers },
+        ),
       };
     }
 
@@ -103,7 +118,10 @@ async function readJsonObject(
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return {
         ok: false,
-        res: json({ ok: false, error: "Invalid JSON" }, { status: 400, headers }),
+        res: json(
+          { ok: false, error: "Invalid JSON" },
+          { status: 400, headers },
+        ),
       };
     }
 
@@ -115,7 +133,6 @@ async function readJsonObject(
     };
   }
 }
-
 
 interface UpdatePropertyPayload {
   estateId: string;
@@ -155,7 +172,9 @@ async function getPropertyAndVerifyOwner(
   const property = await EstateProperty.findOne(query).lean().exec();
   if (!property) return null;
 
-  const propEstateId = String((property as unknown as { estateId?: unknown }).estateId ?? "");
+  const propEstateId = String(
+    (property as unknown as { estateId?: unknown }).estateId ?? "",
+  );
   if (!propEstateId) return null;
 
   const ok = await assertEstateOwner(propEstateId, userId);
@@ -173,16 +192,14 @@ export async function GET(
   { params }: { params: Promise<{ propertyId: string }> },
 ): Promise<Response> {
   const headers = buildHeaders();
+
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return json(
-        { ok: false, error: "Unauthorized" },
-        { status: 401, headers },
-      );
+      return json({ ok: false, error: "Unauthorized" }, { status: 401, headers });
     }
-    const { propertyId } = await params;
 
+    const { propertyId } = await params;
     const propertyIdClean = cleanObjectId(propertyId);
     if (!propertyIdClean) {
       return json({ ok: false, error: "Invalid Property ID" }, { status: 400, headers });
@@ -197,8 +214,7 @@ export async function GET(
 
     await connectToDatabase();
 
-    // If estateId is provided, we enforce it AND enforce ownership.
-    // Return 404 for any mismatch to avoid leaking existence.
+    // If estateId is provided, enforce ownership. Return 404 to avoid leaking existence.
     if (estateId) {
       const ok = await assertEstateOwner(estateId, session.user.id);
       if (!ok) {
@@ -206,22 +222,20 @@ export async function GET(
       }
     }
 
-    const propertyOut = await getPropertyAndVerifyOwner(propertyIdClean, session.user.id, estateId);
+    const propertyOut = await getPropertyAndVerifyOwner(
+      propertyIdClean,
+      session.user.id,
+      estateId,
+    );
 
     if (!propertyOut) {
-      return json(
-        { ok: false, error: "Property not found" },
-        { status: 404, headers },
-      );
+      return json({ ok: false, error: "Property not found" }, { status: 404, headers });
     }
 
     return json({ ok: true, data: { property: propertyOut } }, { status: 200, headers });
   } catch (error) {
     console.error("Error fetching property:", safeErrorMessage(error));
-    return json(
-      { ok: false, error: "Failed to fetch property" },
-      { status: 500, headers }
-    );
+    return json({ ok: false, error: "Failed to fetch property" }, { status: 500, headers });
   }
 }
 
@@ -234,16 +248,14 @@ export async function PUT(
   { params }: { params: Promise<{ propertyId: string }> },
 ): Promise<Response> {
   const headers = buildHeaders();
+
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return json(
-        { ok: false, error: "Unauthorized" },
-        { status: 401, headers },
-      );
+      return json({ ok: false, error: "Unauthorized" }, { status: 401, headers });
     }
-    const { propertyId } = await params;
 
+    const { propertyId } = await params;
     const propertyIdClean = cleanObjectId(propertyId);
     if (!propertyIdClean) {
       return json({ ok: false, error: "Invalid Property ID" }, { status: 400, headers });
@@ -282,10 +294,7 @@ export async function PUT(
 
     const ownsEstate = await assertEstateOwner(estateIdClean, session.user.id);
     if (!ownsEstate) {
-      return json(
-        { ok: false, error: "Not found" },
-        { status: 404, headers },
-      );
+      return json({ ok: false, error: "Not found" }, { status: 404, headers });
     }
 
     const update: Record<string, unknown> = {
@@ -307,60 +316,50 @@ export async function PUT(
     };
 
     // Remove undefined keys so we don't overwrite with undefined
-    Object.keys(update).forEach((key) => {
-      if (update[key] === undefined) {
-        delete update[key];
-      }
-    });
+    for (const key of Object.keys(update)) {
+      if (update[key] === undefined) delete update[key];
+    }
 
     const property = await EstateProperty.findOneAndUpdate(
       { _id: propertyIdClean, estateId: estateIdClean, ownerId: session.user.id },
       { $set: update },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     )
       .lean()
       .exec();
-    const propertyOut = property ? serializeMongoDoc(property) : null;
 
+    const propertyOut = property ? serializeMongoDoc(property) : null;
     if (!propertyOut) {
       return json(
         { ok: false, error: "Property not found or does not belong to this estate" },
-        { status: 404, headers }
+        { status: 404, headers },
       );
     }
 
-    return json(
-      { ok: true, data: { property: propertyOut } },
-      { status: 200, headers }
-    );
+    return json({ ok: true, data: { property: propertyOut } }, { status: 200, headers });
   } catch (error) {
     console.error("Error updating property:", safeErrorMessage(error));
-    return json(
-      { ok: false, error: "Failed to update property" },
-      { status: 500, headers }
-    );
+    return json({ ok: false, error: "Failed to update property" }, { status: 500, headers });
   }
 }
 
 /**
  * DELETE /api/properties/[propertyId]?estateId=...
- * (Optional) Remove a property from an estate.
+ * Remove a property from an estate.
  */
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ propertyId: string }> },
 ): Promise<Response> {
   const headers = buildHeaders();
+
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return json(
-        { ok: false, error: "Unauthorized" },
-        { status: 401, headers },
-      );
+      return json({ ok: false, error: "Unauthorized" }, { status: 401, headers });
     }
-    const { propertyId } = await params;
 
+    const { propertyId } = await params;
     const propertyIdClean = cleanObjectId(propertyId);
     if (!propertyIdClean) {
       return json({ ok: false, error: "Invalid Property ID" }, { status: 400, headers });
@@ -373,7 +372,6 @@ export async function DELETE(
     if (!estateId) {
       return json({ ok: false, error: "Estate ID is required" }, { status: 400, headers });
     }
-
     if (estateIdRaw && !estateId) {
       return json({ ok: false, error: "Invalid Estate ID" }, { status: 400, headers });
     }
@@ -392,24 +390,18 @@ export async function DELETE(
     })
       .lean()
       .exec();
-    const deletedOut = result ? serializeMongoDoc(result) : null;
 
+    const deletedOut = result ? serializeMongoDoc(result) : null;
     if (!deletedOut) {
       return json(
         { ok: false, error: "Property not found or already deleted" },
-        { status: 404, headers }
+        { status: 404, headers },
       );
     }
 
-    return json(
-      { ok: true, data: { success: true } },
-      { status: 200, headers }
-    );
+    return json({ ok: true, data: { success: true } }, { status: 200, headers });
   } catch (error) {
     console.error("Error deleting property:", safeErrorMessage(error));
-    return json(
-      { ok: false, error: "Failed to delete property" },
-      { status: 500, headers }
-    );
+    return json({ ok: false, error: "Failed to delete property" }, { status: 500, headers });
   }
 }
