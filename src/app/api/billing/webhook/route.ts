@@ -1,104 +1,44 @@
 // src/app/api/billing/webhook/route.ts
-// Stripe webhook handler (signature-verified) to keep subscription state in sync.
+// Stripe webhook handler (authoritative source of subscription status)
+// - Verifies Stripe signature using raw request body
+// - Idempotent processing (stores processed Stripe event IDs)
+// - Updates User.subscriptionStatus + User.subscriptionPlanId
 
+import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
-import { NextRequest } from "next/server";
 import mongoose from "mongoose";
 
-import { assertEnv } from "@/lib/assertEnv";
 import { connectToDatabase } from "@/lib/db";
-import { jsonErr, jsonOk, noStoreHeaders, safeErrorMessage } from "@/lib/apiResponse";
-import { User, UserDocument } from "@/models/User";
+import { assertEnv } from "@/lib/assertEnv";
+import { noStoreHeaders, safeErrorMessage } from "@/lib/apiResponse";
+import { User } from "@/models/User";
 
-export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-function addSecurityHeaders(headers: Headers) {
-  headers.set("X-Content-Type-Options", "nosniff");
-  headers.set("Referrer-Policy", "same-origin");
-  headers.set("X-Frame-Options", "DENY");
-  headers.set(
-    "Permissions-Policy",
-    "camera=(), microphone=(), geolocation=(), interest-cohort=()",
-  );
-}
+export const dynamic = "force-dynamic";
 
 function buildHeaders(): Headers {
   const h = new Headers(noStoreHeaders());
-  addSecurityHeaders(h);
+  h.set("X-Content-Type-Options", "nosniff");
+  h.set("Referrer-Policy", "same-origin");
+  h.set("X-Frame-Options", "DENY");
+  h.set(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+  );
   return h;
 }
 
-const ALLOWED_EVENT_TYPES = new Set<string>([
-  "checkout.session.completed",
-  "customer.subscription.created",
-  "customer.subscription.deleted",
-  "customer.subscription.paused",
-  "customer.subscription.resumed",
-  "customer.subscription.updated",
-  "invoice.payment_failed",
-  "invoice.payment_succeeded",
-  "invoice.paid",
-]);
-
-const MAX_WEBHOOK_BODY_BYTES = 1_000_000; // 1MB
-const WEBHOOK_EVENT_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
-
-let ensuredWebhookIndexes: Promise<void> | null = null;
-
-function isDuplicateKeyError(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  if (!("code" in err)) return false;
-  const code = (err as { code?: unknown }).code;
-  return code === 11000;
+function json(
+  body: Record<string, unknown>,
+  opts: { status?: number; headers?: HeadersInit } = {},
+): NextResponse {
+  const headers = opts.headers ? new Headers(opts.headers) : buildHeaders();
+  return NextResponse.json(body, { status: opts.status ?? 200, headers });
 }
 
-async function ensureWebhookIndexes() {
-  if (ensuredWebhookIndexes) return ensuredWebhookIndexes;
-
-  ensuredWebhookIndexes = (async () => {
-    const db = mongoose.connection.db;
-    if (!db) return;
-
-    const col = db.collection<{ eventId: string; type: string; createdAt: Date }>(
-      "stripe_webhook_events",
-    );
-
-    // Idempotency via unique Stripe event id
-    await col.createIndex({ eventId: 1 }, { unique: true });
-
-    // TTL to keep the idempotency table bounded
-    await col.createIndex({ createdAt: 1 }, { expireAfterSeconds: WEBHOOK_EVENT_TTL_SECONDS });
-  })();
-
-  return ensuredWebhookIndexes;
-}
-
-async function markEventProcessed(eventId: string, eventType: string): Promise<"new" | "duplicate"> {
-  const db = mongoose.connection.db;
-  if (!db) return "new";
-
-  const col = db.collection<{ eventId: string; type: string; createdAt: Date }>(
-    "stripe_webhook_events",
-  );
-
-  try {
-    await col.insertOne({ eventId, type: eventType, createdAt: new Date() });
-    return "new";
-  } catch (err) {
-    // Duplicate key => already processed
-    if (isDuplicateKeyError(err)) return "duplicate";
-    throw err;
-  }
-}
-
-function safeTrim(s: string | null | undefined): string {
-  return typeof s === "string" ? s.trim() : "";
-}
-
-function getStripe() {
+function getStripe(): Stripe {
   assertEnv([
-    { key: "STRIPE_SECRET_KEY", hint: "Stripe secret key for server-side billing" },
+    { key: "STRIPE_SECRET_KEY", hint: "Stripe secret key for webhook verification" },
     { key: "STRIPE_WEBHOOK_SECRET", hint: "Stripe webhook signing secret" },
   ]);
 
@@ -107,293 +47,215 @@ function getStripe() {
   });
 }
 
-function getPlanIdFromPriceId(priceId: string | null | undefined): "free" | "pro" {
-  // If we can’t identify a price, treat as free.
-  if (!priceId) return "free";
+// --- Minimal persistence for idempotency ---
+const StripeWebhookEventSchema = new mongoose.Schema(
+  {
+    _id: { type: String, required: true }, // Stripe event id
+    type: { type: String, required: true },
+    created: { type: Number, required: true },
+    livemode: { type: Boolean, required: true },
+    processedAt: { type: Date, required: true },
+    objectId: { type: String, required: false },
+  },
+  { collection: "stripe_webhook_events", versionKey: false },
+);
 
-  // If you have a single paid plan, any recognized price id should be considered “pro”.
-  // If STRIPE_PRICE_PRO_MONTHLY is not set, still treat any price id as pro.
-  const proMonthly = process.env.STRIPE_PRICE_PRO_MONTHLY;
-  if (!proMonthly) return "pro";
+type StripeWebhookEventDoc = mongoose.InferSchemaType<typeof StripeWebhookEventSchema>;
 
-  // If you later add annual pricing, extend this mapping.
-  return priceId === proMonthly ? "pro" : "pro";
+function StripeWebhookEventModel(): mongoose.Model<StripeWebhookEventDoc> {
+  return (
+    (mongoose.models.StripeWebhookEvent as mongoose.Model<StripeWebhookEventDoc> | undefined) ??
+    mongoose.model<StripeWebhookEventDoc>("StripeWebhookEvent", StripeWebhookEventSchema)
+  );
 }
 
-async function findUserForEvent(event: Stripe.Event): Promise<UserDocument | null> {
-  // Priority 1: metadata userId (we set this on checkout session + customer)
-  const obj = event.data.object as unknown;
-
-  const userId =
-    (obj as { metadata?: Record<string, string> })?.metadata?.userId ||
-    (obj as { client_reference_id?: string | null })?.client_reference_id ||
-    null;
-
-  if (userId) {
-    const byId = await User.findById(userId);
-    if (byId) return byId;
-  }
-
-  // Priority 2: customer id → user.stripeCustomerId
-  const customerId = (obj as { customer?: string | Stripe.Customer | null })?.customer;
-  const customerIdStr = typeof customerId === "string" ? customerId : customerId?.id;
-
-  if (customerIdStr) {
-    const byCustomer = await User.findOne({ stripeCustomerId: customerIdStr } as never);
-    if (byCustomer) return byCustomer;
-  }
-
-  return null;
+async function alreadyProcessed(eventId: string): Promise<boolean> {
+  const Model = StripeWebhookEventModel();
+  const existing = await Model.findById(eventId).select({ _id: 1 }).lean().exec();
+  return Boolean(existing);
 }
 
-async function updateUserSubscriptionFromSubscription(
-  user: UserDocument,
-  subscription: Stripe.Subscription,
-) {
-  const firstItem = subscription.items?.data?.[0];
-  const priceId = firstItem?.price?.id ?? null;
-
-  const planId = getPlanIdFromPriceId(priceId);
-  const status = subscription.status;
-
-  const normalizedStatus: "active" | "trialing" | "past_due" | "canceled" =
-    status === "active"
-      ? "active"
-      : status === "trialing"
-        ? "trialing"
-        : status === "past_due" ||
-            status === "unpaid" ||
-            status === "paused" ||
-            status === "incomplete" ||
-            status === "incomplete_expired"
-          ? "past_due"
-          : "canceled";
-
-  const u = user as unknown as {
-    subscriptionStatus?: string | null;
-    stripeSubscriptionId?: string | null;
-    stripeCustomerId?: string | null;
-    subscriptionPlanId?: string;
-    save: () => Promise<unknown>;
-  };
-
-  // NOTE: Our User schema does NOT allow "free" in subscriptionStatus.
-  // Free users are represented by subscriptionPlanId="free" and subscriptionStatus=null.
-  if (normalizedStatus === "canceled") {
-    u.subscriptionStatus = null;
-    u.subscriptionPlanId = "free";
-    u.stripeSubscriptionId = null;
-  } else {
-    u.subscriptionStatus = planId === "free" ? null : normalizedStatus;
-    u.subscriptionPlanId = planId;
-    u.stripeSubscriptionId = subscription.id;
-  }
-
-  // Ensure we persist customer id if present
-  if (typeof subscription.customer === "string") {
-    u.stripeCustomerId = subscription.customer;
-  }
-
-  await u.save();
+async function markProcessed(params: {
+  eventId: string;
+  type: string;
+  created: number;
+  livemode: boolean;
+  objectId?: string | null;
+}): Promise<void> {
+  const Model = StripeWebhookEventModel();
+  await Model.create({
+    _id: params.eventId,
+    type: params.type,
+    created: params.created,
+    livemode: params.livemode,
+    processedAt: new Date(),
+    objectId: params.objectId ?? undefined,
+  });
 }
 
-export async function POST(req: NextRequest) {
+function cleanString(value: unknown, maxLen = 256): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const s = value.trim();
+  if (!s) return undefined;
+  return s.length > maxLen ? s.slice(0, maxLen) : s;
+}
+
+function inferPlanIdFromSubscription(subscription: Stripe.Subscription): "pro" | "free" {
+  const proPriceId = cleanString(process.env.STRIPE_PRICE_PRO_MONTHLY, 200);
+  const items = subscription.items?.data ?? [];
+  const priceIds = items.map((i) => i.price?.id).filter(Boolean) as string[];
+
+  if (proPriceId && priceIds.includes(proPriceId)) return "pro";
+  return "free";
+}
+
+function normalizeStatus(status: string | null | undefined): string | null {
+  if (!status) return null;
+  return String(status).toLowerCase();
+}
+
+async function updateUserSubscription(params: {
+  userId?: string | null;
+  stripeCustomerId?: string | null;
+  subscriptionStatus: string | null;
+  planId: "pro" | "free";
+}): Promise<void> {
+  const { userId, stripeCustomerId, subscriptionStatus, planId } = params;
+
+  const query: Record<string, unknown> = {};
+  if (userId) query._id = userId;
+  else if (stripeCustomerId) query.stripeCustomerId = stripeCustomerId;
+
+  if (!Object.keys(query).length) return;
+
+  await User.updateOne(
+    query,
+    {
+      $set: {
+        subscriptionPlanId: planId,
+        subscriptionStatus,
+      },
+    },
+  ).exec();
+}
+
+async function handleCheckoutSessionCompleted(
+  stripe: Stripe,
+  session: Stripe.Checkout.Session,
+): Promise<void> {
+  const userId = cleanString(session.metadata?.userId, 64) ?? null;
+  const stripeCustomerId =
+    typeof session.customer === "string" ? session.customer : session.customer?.id ?? null;
+
+  const subscriptionId =
+    typeof session.subscription === "string"
+      ? session.subscription
+      : session.subscription?.id ?? null;
+
+  if (!subscriptionId) return;
+
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+  const status = normalizeStatus(subscription.status);
+  const planId = inferPlanIdFromSubscription(subscription);
+
+  await updateUserSubscription({ userId, stripeCustomerId, subscriptionStatus: status, planId });
+}
+
+async function handleSubscriptionChange(subscription: Stripe.Subscription): Promise<void> {
+  const stripeCustomerId =
+    typeof subscription.customer === "string"
+      ? subscription.customer
+      : subscription.customer?.id ?? null;
+
+  const status = normalizeStatus(subscription.status);
+  const planId = inferPlanIdFromSubscription(subscription);
+
+  await updateUserSubscription({ stripeCustomerId, subscriptionStatus: status, planId });
+}
+
+async function handleSubscriptionDeleted(subscription: Stripe.Subscription): Promise<void> {
+  const stripeCustomerId =
+    typeof subscription.customer === "string"
+      ? subscription.customer
+      : subscription.customer?.id ?? null;
+
+  await updateUserSubscription({
+    stripeCustomerId,
+    subscriptionStatus: "canceled",
+    planId: "free",
+  });
+}
+
+export async function POST(request: NextRequest): Promise<Response> {
   const headers = buildHeaders();
 
   try {
+    const signature = request.headers.get("stripe-signature");
+    if (!signature) {
+      return json({ ok: false, error: "Missing Stripe signature" }, { status: 400, headers });
+    }
+
+    const rawBody = await request.text();
     const stripe = getStripe();
-
-    const sig = safeTrim(req.headers.get("stripe-signature"));
-    if (!sig) {
-      return jsonErr("Missing stripe-signature header", 400, "BAD_REQUEST", { headers });
-    }
-
-    // Stripe sends JSON; we still must verify the signature using the raw body.
-    const contentType = safeTrim(req.headers.get("content-type"));
-    if (contentType && !contentType.toLowerCase().includes("application/json")) {
-      return jsonErr("Unsupported Content-Type", 415, "UNSUPPORTED_MEDIA_TYPE", { headers });
-    }
-
-    const rawBody = await req.text();
-    if (Buffer.byteLength(rawBody, "utf8") > MAX_WEBHOOK_BODY_BYTES) {
-      return jsonErr("Payload too large", 413, "PAYLOAD_TOO_LARGE", { headers });
-    }
+    const secret = process.env.STRIPE_WEBHOOK_SECRET as string;
 
     let event: Stripe.Event;
     try {
-      event = stripe.webhooks.constructEvent(
-        rawBody,
-        sig,
-        process.env.STRIPE_WEBHOOK_SECRET as string,
-      );
+      event = stripe.webhooks.constructEvent(rawBody, signature, secret);
     } catch (err) {
-      console.error("Stripe webhook signature verification failed:", safeErrorMessage(err));
-      return jsonErr("Invalid signature", 400, "BAD_REQUEST", { headers });
-    }
-
-    // Fast ignore: only handle events we explicitly support.
-    if (!ALLOWED_EVENT_TYPES.has(event.type)) {
-      return jsonOk({ received: true, ignored: true }, { headers });
+      console.warn("[stripe:webhook] signature verification failed:", safeErrorMessage(err));
+      return json({ ok: false, error: "Invalid signature" }, { status: 400, headers });
     }
 
     await connectToDatabase();
-    await ensureWebhookIndexes();
 
-    // Idempotency: drop duplicate deliveries.
-    const processed = await markEventProcessed(event.id, event.type);
-    if (processed === "duplicate") {
-      return jsonOk({ received: true, duplicate: true }, { headers });
+    if (await alreadyProcessed(event.id)) {
+      return json({ ok: true, received: true, duplicate: true }, { status: 200, headers });
     }
 
-    // Handle only the events we care about.
-    switch (event.type) {
-      case "checkout.session.completed": {
-        // On completion, Stripe will also emit subscription events; we can use this to backfill customer id.
-        const session = event.data.object as Stripe.Checkout.Session;
-
-        const user = await findUserForEvent(event);
-        if (!user) break;
-
-        const u = user as unknown as {
-          stripeCustomerId?: string | null;
-          save: () => Promise<unknown>;
-        };
-
-        if (!u.stripeCustomerId && typeof session.customer === "string") {
-          u.stripeCustomerId = session.customer;
-          await u.save();
+    try {
+      switch (event.type) {
+        case "checkout.session.completed": {
+          const session = event.data.object as Stripe.Checkout.Session;
+          await handleCheckoutSessionCompleted(stripe, session);
+          break;
         }
-
-        break;
-      }
-
-      case "customer.subscription.created":
-      case "customer.subscription.updated": {
-        const subscription = event.data.object as Stripe.Subscription;
-
-        const user = await findUserForEvent(event);
-        if (!user) break;
-
-        await updateUserSubscriptionFromSubscription(user, subscription);
-        break;
-      }
-
-      case "customer.subscription.deleted": {
-        const subscription = event.data.object as Stripe.Subscription;
-
-        // Try the usual lookup first (metadata userId or customerId).
-        let user = await findUserForEvent(event);
-
-        // Fallback: if metadata/customer mapping is missing, try by stored subscription id.
-        if (!user) {
-          user = await User.findOne({ stripeSubscriptionId: subscription.id } as never);
+        case "customer.subscription.created":
+        case "customer.subscription.updated": {
+          const subscription = event.data.object as Stripe.Subscription;
+          await handleSubscriptionChange(subscription);
+          break;
         }
-
-        if (!user) break;
-
-        // Treat deletion as a downgrade to free.
-        const u = user as unknown as {
-          subscriptionStatus?: string | null;
-          stripeSubscriptionId?: string | null;
-          subscriptionPlanId?: string;
-          save: () => Promise<unknown>;
-        };
-
-        u.subscriptionStatus = null;
-        u.subscriptionPlanId = "free";
-        u.stripeSubscriptionId = null;
-
-        await u.save();
-        break;
-      }
-
-      case "invoice.payment_failed": {
-        // Optional: mark user as past_due if you want strict gating.
-        // Stripe's TS types vary; treat invoice as unknown and safely pluck customer/subscription.
-        const invoiceObj = event.data.object as unknown;
-
-        const customerIdRaw = (invoiceObj as { customer?: unknown })?.customer;
-        const customerId =
-          typeof customerIdRaw === "string"
-            ? customerIdRaw
-            : (customerIdRaw as { id?: string } | null)?.id;
-
-        const subscriptionIdRaw = (invoiceObj as { subscription?: unknown })?.subscription;
-        const subscriptionId =
-          typeof subscriptionIdRaw === "string"
-            ? subscriptionIdRaw
-            : (subscriptionIdRaw as { id?: string } | null)?.id;
-
-        // Best effort: if we can fetch the subscription, update the user's persisted status.
-        if (subscriptionId) {
-          try {
-            const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-            const user =
-              (await User.findOne({ stripeCustomerId: customerId ?? null } as never)) ||
-              (await User.findOne({ stripeSubscriptionId: subscription.id } as never));
-
-            if (user) {
-              await updateUserSubscriptionFromSubscription(user, subscription);
-            }
-          } catch (err) {
-            console.error(
-              "Stripe subscription retrieve failed (invoice.payment_failed):",
-              safeErrorMessage(err),
-            );
-          }
+        case "customer.subscription.deleted": {
+          const subscription = event.data.object as Stripe.Subscription;
+          await handleSubscriptionDeleted(subscription);
+          break;
         }
-
-        break;
+        // Other events can be safely ignored here.
+        default:
+          break;
       }
 
-      case "invoice.payment_succeeded":
-      case "invoice.paid": {
-        // If the user was past_due, payment success should generally restore them.
-        const invoiceObj = event.data.object as unknown;
+      const objectId =
+        typeof (event.data.object as { id?: unknown })?.id === "string"
+          ? String((event.data.object as { id: string }).id)
+          : null;
 
-        const customerIdRaw = (invoiceObj as { customer?: unknown })?.customer;
-        const customerId =
-          typeof customerIdRaw === "string"
-            ? customerIdRaw
-            : (customerIdRaw as { id?: string } | null)?.id;
+      await markProcessed({
+        eventId: event.id,
+        type: event.type,
+        created: event.created,
+        livemode: event.livemode,
+        objectId,
+      });
 
-        const subscriptionIdRaw = (invoiceObj as { subscription?: unknown })?.subscription;
-        const subscriptionId =
-          typeof subscriptionIdRaw === "string"
-            ? subscriptionIdRaw
-            : (subscriptionIdRaw as { id?: string } | null)?.id;
-
-        if (subscriptionId) {
-          try {
-            const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-            const user =
-              (await User.findOne({ stripeCustomerId: customerId ?? null } as never)) ||
-              (await User.findOne({ stripeSubscriptionId: subscription.id } as never));
-
-            if (user) {
-              await updateUserSubscriptionFromSubscription(user, subscription);
-            }
-          } catch (err) {
-            console.error(
-              "Stripe subscription retrieve failed (invoice.payment_succeeded/invoice.paid):",
-              safeErrorMessage(err),
-            );
-          }
-        }
-
-        break;
-      }
-
-      default:
-        // ignore other event types
-        break;
+      return json({ ok: true, received: true }, { status: 200, headers });
+    } catch (err) {
+      console.error("[stripe:webhook] handler error:", safeErrorMessage(err));
+      return json({ ok: false, error: "Webhook handler error" }, { status: 500, headers });
     }
-
-    // Stripe only needs a 2xx.
-    return jsonOk({ received: true }, { headers });
   } catch (error) {
-    console.error("POST /api/billing/webhook error:", safeErrorMessage(error));
-    // Stripe will retry on 5xx; return 500 only for truly unexpected failures.
-    return jsonErr("Webhook handler failed", 500, "INTERNAL_ERROR", { headers });
+    console.error("[stripe:webhook] unexpected error:", safeErrorMessage(error));
+    return json({ ok: false, error: "Webhook error" }, { status: 500, headers });
   }
 }
