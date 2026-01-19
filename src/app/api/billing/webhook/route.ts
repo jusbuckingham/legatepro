@@ -13,6 +13,22 @@ import { User, UserDocument } from "@/models/User";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+function addSecurityHeaders(headers: Headers) {
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Referrer-Policy", "same-origin");
+  headers.set("X-Frame-Options", "DENY");
+  headers.set(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+  );
+}
+
+function buildHeaders(): Headers {
+  const h = new Headers(noStoreHeaders());
+  addSecurityHeaders(h);
+  return h;
+}
+
 const ALLOWED_EVENT_TYPES = new Set<string>([
   "checkout.session.completed",
   "customer.subscription.created",
@@ -62,7 +78,9 @@ async function markEventProcessed(eventId: string, eventType: string): Promise<"
   const db = mongoose.connection.db;
   if (!db) return "new";
 
-  const col = db.collection<{ eventId: string; type: string; createdAt: Date }>("stripe_webhook_events");
+  const col = db.collection<{ eventId: string; type: string; createdAt: Date }>(
+    "stripe_webhook_events",
+  );
 
   try {
     await col.insertOne({ eventId, type: eventType, createdAt: new Date() });
@@ -180,7 +198,7 @@ async function updateUserSubscriptionFromSubscription(
 }
 
 export async function POST(req: NextRequest) {
-  const headers = noStoreHeaders();
+  const headers = buildHeaders();
 
   try {
     const stripe = getStripe();

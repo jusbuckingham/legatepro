@@ -5,7 +5,6 @@ import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 import EstateEvent from "@/models/EstateEvent";
-const EstateEventModel = EstateEvent;
 import { User } from "@/models/User";
 
 export const runtime = "nodejs";
@@ -88,7 +87,7 @@ async function getEstates(userId: string): Promise<EstateListItem[]> {
   if (estateIds.length === 0) return estateItems;
 
   // EstateEvent.estateId is stored as a string in this project
-  const events = (await EstateEventModel.find(
+  const events = (await EstateEvent.find(
     { estateId: { $in: estateIds } },
     { estateId: 1, createdAt: 1, summary: 1, type: 1 }
   )
