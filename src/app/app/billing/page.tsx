@@ -63,6 +63,11 @@ type Banner =
   | { kind: "warning"; title: string; message?: string }
   | { kind: "error"; title: string; message?: string };
 
+type Toast = {
+  kind: "success" | "warning" | "error";
+  message: string;
+};
+
 async function fetchBilling(): Promise<BillingSnapshot> {
   const res = await fetch("/api/billing", {
     method: "GET",
@@ -184,6 +189,22 @@ function BannerBox({
   );
 }
 
+function ToastBar({ toast }: { toast: Toast }) {
+  const base = "fixed bottom-4 right-4 z-50 max-w-sm rounded-md border px-3 py-2 text-xs shadow-lg";
+  const cls =
+    toast.kind === "success"
+      ? "border-emerald-500/30 bg-emerald-950/90 text-emerald-100"
+      : toast.kind === "warning"
+        ? "border-amber-500/30 bg-amber-950/90 text-amber-100"
+        : "border-red-500/30 bg-red-950/90 text-red-200";
+
+  return (
+    <div role="status" aria-live="polite" className={`${base} ${cls}`}>
+      {toast.message}
+    </div>
+  );
+}
+
 export default function BillingPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -193,6 +214,7 @@ export default function BillingPage() {
   const [banner, setBanner] = useState<Banner | null>(null);
   const [busyPlanId, setBusyPlanId] = useState<string | null>(null);
   const [busyPortal, setBusyPortal] = useState(false);
+  const [toast, setToast] = useState<Toast | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -210,6 +232,11 @@ export default function BillingPage() {
     }
   }, []);
 
+  const showToast = useCallback((t: Toast) => {
+    setToast(t);
+    window.setTimeout(() => setToast(null), 4500);
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -225,6 +252,7 @@ export default function BillingPage() {
         title: "You’re all set",
         message: "Subscription update received. Refreshing your plan status…",
       });
+      showToast({ kind: "success", message: "✅ Plan updated — verifying with Stripe…" });
       void load();
       router.replace("/app/billing");
       return;
@@ -236,9 +264,10 @@ export default function BillingPage() {
         title: "Checkout canceled",
         message: "No charges were made. You can upgrade any time.",
       });
+      showToast({ kind: "warning", message: "Checkout canceled — no charges were made." });
       router.replace("/app/billing");
     }
-  }, [load, router, searchParams]);
+  }, [load, router, searchParams, showToast]);
 
   const currentPlanId = snapshot?.subscription?.planId ?? "free";
   const currentPlanLabel = useMemo(() => {
@@ -257,6 +286,7 @@ export default function BillingPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 p-6">
+      {toast ? <ToastBar toast={toast} /> : null}
       <header className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-2xl font-semibold text-slate-50">
@@ -337,6 +367,7 @@ export default function BillingPage() {
                           title: "Checkout failed",
                           message: e instanceof Error ? e.message : "Unable to start checkout",
                         });
+                        showToast({ kind: "error", message: "Checkout failed — please try again." });
                       } finally {
                         setBusyPlanId(null);
                       }
@@ -376,6 +407,7 @@ export default function BillingPage() {
                   title: "Portal unavailable",
                   message: e instanceof Error ? e.message : "Unable to open portal",
                 });
+                showToast({ kind: "error", message: "Unable to open Stripe portal." });
               } finally {
                 setBusyPortal(false);
               }

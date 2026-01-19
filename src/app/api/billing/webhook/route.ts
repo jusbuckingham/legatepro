@@ -129,6 +129,8 @@ function inferPlanIdFromSubscription(subscription: Stripe.Subscription): "pro" |
   const priceIds = items.map((i) => i.price?.id).filter(Boolean) as string[];
 
   if (proPriceId && priceIds.includes(proPriceId)) return "pro";
+
+  // If price id isn't configured yet, still default to free (safer).
   return "free";
 }
 
@@ -204,6 +206,13 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription): Pro
   });
 }
 
+const HANDLED_EVENT_TYPES = new Set<string>([
+  "checkout.session.completed",
+  "customer.subscription.created",
+  "customer.subscription.updated",
+  "customer.subscription.deleted",
+]);
+
 export async function POST(request: NextRequest): Promise<Response> {
   const headers = buildHeaders();
 
@@ -235,6 +244,24 @@ export async function POST(request: NextRequest): Promise<Response> {
       return json({ ok: true, received: true, duplicate: true }, { status: 200, headers });
     }
 
+    // If it's an event we don't care about, still mark as processed to reduce retries.
+    if (!HANDLED_EVENT_TYPES.has(event.type)) {
+      const objectId =
+        typeof (event.data.object as { id?: unknown })?.id === "string"
+          ? String((event.data.object as { id: string }).id)
+          : null;
+
+      await markProcessed({
+        eventId: event.id,
+        type: event.type,
+        created: event.created,
+        livemode: event.livemode,
+        objectId,
+      });
+
+      return json({ ok: true, received: true, ignored: true }, { status: 200, headers });
+    }
+
     try {
       switch (event.type) {
         case "checkout.session.completed": {
@@ -253,7 +280,6 @@ export async function POST(request: NextRequest): Promise<Response> {
           await handleSubscriptionDeleted(subscription);
           break;
         }
-        // Other events can be safely ignored here.
         default:
           break;
       }
