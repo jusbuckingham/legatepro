@@ -1,8 +1,11 @@
 // src/app/app/estates/[estateId]/properties/page.tsx
 import { DeletePropertyButton } from "@/components/estate/DeletePropertyButton";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { connectToDatabase } from "@/lib/db";
 import { EstateProperty } from "@/models/EstateProperty";
+import { auth } from "@/lib/auth";
+import { Estate } from "@/models/Estate";
 
 type EstatePropertyItem = {
   _id: string | { toString(): string };
@@ -18,55 +21,86 @@ type EstatePropertyItem = {
 };
 
 interface PageProps {
-  params: Promise<{ estateId: string }>;
+  params: { estateId: string };
 }
 
-async function getProperties(estateId: string): Promise<EstatePropertyItem[]> {
+async function getProperties(
+  estateId: string,
+  userId: string,
+): Promise<{ notFound: boolean; estateName: string; properties: EstatePropertyItem[] }> {
   await connectToDatabase();
+
+  const estate = await Estate.findOne({ _id: estateId, ownerId: userId })
+    .select({ displayName: 1, name: 1, estateName: 1 })
+    .lean()
+    .exec();
+
+  if (!estate) {
+    return { notFound: true, estateName: "", properties: [] };
+  }
+
+  const estateName =
+    (estate as unknown as { displayName?: string; name?: string; estateName?: string })
+      .displayName ||
+    (estate as unknown as { displayName?: string; name?: string; estateName?: string }).name ||
+    (estate as unknown as { displayName?: string; name?: string; estateName?: string }).estateName ||
+    "Estate";
+
   const properties = await EstateProperty.find({ estateId })
     .sort({ createdAt: -1 })
-    .lean();
-  return properties as EstatePropertyItem[];
-}
+    .lean()
+    .exec();
 
-function formatCurrency(value?: number): string {
-  if (value == null || Number.isNaN(value)) return "—";
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      maximumFractionDigits: 0
-    }).format(value);
-  } catch {
-    return String(value);
-  }
-}
-
-function formatDate(value?: string | Date): string {
-  if (!value) return "—";
-  try {
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return "—";
-    return d.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric"
-    });
-  } catch {
-    return "—";
-  }
+  return { notFound: false, estateName, properties: properties as EstatePropertyItem[] };
 }
 
 export default async function EstatePropertiesPage({ params }: PageProps) {
-  const { estateId } = await params;
-  const properties = await getProperties(estateId);
+  const { estateId } = params;
 
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+
+  const result = await getProperties(estateId, session.user.id);
+  if (result.notFound) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <Link href="/app/estates" className="hover:text-slate-200">
+            Estates
+          </Link>
+          <span className="text-slate-700">/</span>
+          <span className="text-slate-300">Properties</span>
+        </div>
+
+        <div className="rounded-xl border border-dashed border-slate-800 bg-slate-950/60 p-6">
+          <p className="text-sm font-medium text-slate-200">Estate not found</p>
+          <p className="mt-2 text-xs text-slate-500">
+            This estate doesn&apos;t exist or you don&apos;t have access to it.
+          </p>
+          <div className="mt-4">
+            <Link
+              href="/app/estates"
+              className="inline-flex items-center rounded-lg border border-slate-800 bg-slate-950/60 px-4 py-2 text-xs font-medium text-slate-100 hover:bg-slate-900"
+            >
+              Back to estates
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const { estateName, properties } = result;
   const hasProperties = properties.length > 0;
 
-  const totalEstimatedValue = properties.reduce((sum, p) => sum + (p.estimatedValue ?? 0), 0);
+  const totalEstimatedValue = properties.reduce(
+    (sum, p) => sum + (p.estimatedValue ?? 0),
+    0,
+  );
   const avgOwnership =
     properties.length > 0
-      ? properties.reduce((sum, p) => sum + (p.ownershipPercentage ?? 0), 0) / properties.length
+      ? properties.reduce((sum, p) => sum + (p.ownershipPercentage ?? 0), 0) /
+        properties.length
       : 0;
 
   return (
@@ -78,7 +112,7 @@ export default async function EstatePropertiesPage({ params }: PageProps) {
         </Link>
         <span className="text-slate-700">/</span>
         <Link href={`/app/estates/${estateId}`} className="hover:text-slate-200">
-          Estate
+          {estateName}
         </Link>
         <span className="text-slate-700">/</span>
         <span className="text-slate-300">Properties</span>
@@ -94,7 +128,7 @@ export default async function EstatePropertiesPage({ params }: PageProps) {
             Estate properties & assets
           </h1>
           <p className="text-sm text-slate-400">
-            Track houses, parcels, vehicles, and accounts tied to this estate.
+            Track houses, parcels, vehicles, and accounts tied to {estateName}.
           </p>
         </div>
 
@@ -271,4 +305,32 @@ export default async function EstatePropertiesPage({ params }: PageProps) {
       )}
     </div>
   );
+}
+
+function formatCurrency(value?: number): string {
+  if (typeof value !== "number" || Number.isNaN(value)) return "—";
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0,
+    }).format(value);
+  } catch {
+    return `$${Math.round(value).toLocaleString("en-US")}`;
+  }
+}
+
+function formatDate(value?: string | Date): string {
+  if (!value) return "—";
+  const d = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(d.getTime())) return "—";
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+    }).format(d);
+  } catch {
+    return d.toISOString().slice(0, 10);
+  }
 }

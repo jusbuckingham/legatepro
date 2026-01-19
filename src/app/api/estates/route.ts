@@ -211,10 +211,15 @@ export async function POST(req: NextRequest) {
       console.warn("[ESTATE_CREATED] log failed:", safeErrorMessage(err));
     }
     // Return a 201 Created with our no-store + security headers.
-    return new Response(JSON.stringify({ ok: true, estate: serializeMongoDoc(estateDoc) }), {
-      status: 201,
-      headers,
-    });
+    headers.set("Content-Type", "application/json; charset=utf-8");
+
+    return new Response(
+      JSON.stringify({ ok: true, estate: serializeMongoDoc(estateDoc) }),
+      {
+        status: 201,
+        headers,
+      },
+    );
   } catch (error) {
     console.error("[POST /api/estates]", safeErrorMessage(error));
     return jsonErr("Failed to create estate", 500, "INTERNAL_ERROR", { headers });
