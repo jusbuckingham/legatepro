@@ -83,14 +83,22 @@ async function markProcessed(params: {
   objectId?: string | null;
 }): Promise<void> {
   const Model = StripeWebhookEventModel();
-  await Model.create({
-    _id: params.eventId,
-    type: params.type,
-    created: params.created,
-    livemode: params.livemode,
-    processedAt: new Date(),
-    objectId: params.objectId ?? undefined,
-  });
+
+  // Upsert to avoid race-condition duplicates under concurrent deliveries.
+  await Model.updateOne(
+    { _id: params.eventId },
+    {
+      $setOnInsert: {
+        _id: params.eventId,
+        type: params.type,
+        created: params.created,
+        livemode: params.livemode,
+        processedAt: new Date(),
+        objectId: params.objectId ?? undefined,
+      },
+    },
+    { upsert: true },
+  ).exec();
 }
 
 function cleanString(value: unknown, maxLen = 256): string | undefined {
@@ -100,18 +108,28 @@ function cleanString(value: unknown, maxLen = 256): string | undefined {
   return s.length > maxLen ? s.slice(0, maxLen) : s;
 }
 
+function normalizeStatus(status: string | null | undefined): string | null {
+  if (!status) return null;
+  return String(status).toLowerCase();
+}
+
+function isProStatus(status: string | null | undefined): boolean {
+  const s = normalizeStatus(status);
+  // Treat these as "paid/allowed" states.
+  // Everything else (canceled, unpaid, incomplete, etc.) should be considered free.
+  return s === "active" || s === "trialing" || s === "past_due";
+}
+
 function inferPlanIdFromSubscription(subscription: Stripe.Subscription): "pro" | "free" {
+  // Only allow Pro when the subscription is in an allowed state.
+  if (!isProStatus(subscription.status)) return "free";
+
   const proPriceId = cleanString(process.env.STRIPE_PRICE_PRO_MONTHLY, 200);
   const items = subscription.items?.data ?? [];
   const priceIds = items.map((i) => i.price?.id).filter(Boolean) as string[];
 
   if (proPriceId && priceIds.includes(proPriceId)) return "pro";
   return "free";
-}
-
-function normalizeStatus(status: string | null | undefined): string | null {
-  if (!status) return null;
-  return String(status).toLowerCase();
 }
 
 async function updateUserSubscription(params: {
@@ -205,6 +223,10 @@ export async function POST(request: NextRequest): Promise<Response> {
     } catch (err) {
       console.warn("[stripe:webhook] signature verification failed:", safeErrorMessage(err));
       return json({ ok: false, error: "Invalid signature" }, { status: 400, headers });
+    }
+
+    if (!event?.id || !event?.type) {
+      return json({ ok: false, error: "Malformed event" }, { status: 400, headers });
     }
 
     await connectToDatabase();

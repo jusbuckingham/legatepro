@@ -120,6 +120,16 @@ function safeReturnUrl(appUrl: string): string | null {
   }
 }
 
+function getPortalReturnUrl(): string | null {
+  // Optional override for portal return URL (useful if your app URL differs across environments)
+  const override = process.env.STRIPE_PORTAL_RETURN_URL;
+  if (override && override.trim()) {
+    return safeReturnUrl(override.trim());
+  }
+
+  return safeReturnUrl(getAppUrl());
+}
+
 function idToString(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value === "number") return String(value);
@@ -216,26 +226,79 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const appUrl = getAppUrl();
-    const returnUrl = safeReturnUrl(appUrl);
+    const returnUrl = getPortalReturnUrl();
     if (!returnUrl) {
       // Avoid leaking env details in prod.
       const message = isProd()
         ? "Billing is not configured."
-        : `Invalid app URL configuration: ${appUrl}`;
+        : `Invalid return URL configuration (check NEXT_PUBLIC_BASE_URL/NEXTAUTH_URL/VERCEL_URL or STRIPE_PORTAL_RETURN_URL): ${
+            process.env.STRIPE_PORTAL_RETURN_URL || getAppUrl()
+          }`;
       return jsonErr(message, 500, "CONFIG_ERROR", { headers });
     }
 
     // NOTE: Stripe Billing Portal must be enabled in the Stripe Dashboard.
-    const portal = await stripe.billingPortal.sessions.create({
-      customer: stripeCustomerId,
-      return_url: returnUrl,
-    });
+    // If a stored Stripe customer id is stale/invalid, recreate it once and retry.
+    let portal: Stripe.Response<Stripe.BillingPortal.Session> | null = null;
 
-    if (!portal.url) {
-      return jsonErr("Unable to create customer portal session", 500, "INTERNAL_ERROR", {
-        headers,
+    try {
+      portal = await stripe.billingPortal.sessions.create({
+        customer: stripeCustomerId,
+        return_url: returnUrl,
       });
+    } catch (err) {
+      const msg = safeErrorMessage(err);
+
+      // Common failure: stored customer id no longer exists (e.g., test data reset)
+      if (msg.toLowerCase().includes("no such customer")) {
+        try {
+          const customer = await stripe.customers.create({
+            email: (user as unknown as { email?: string | null }).email || undefined,
+            name:
+              [
+                (user as unknown as { firstName?: string | null }).firstName,
+                (user as unknown as { lastName?: string | null }).lastName,
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined,
+            metadata: {
+              userId: idToString((user as unknown as { _id?: unknown })._id),
+            },
+          });
+
+          stripeCustomerId = customer.id;
+
+          await User.updateOne(
+            { _id: (user as unknown as { _id?: unknown })._id },
+            { $set: { stripeCustomerId } },
+          ).exec();
+
+          portal = await stripe.billingPortal.sessions.create({
+            customer: stripeCustomerId,
+            return_url: returnUrl,
+          });
+        } catch (retryErr) {
+          console.error("POST /api/billing/portal retry error:", safeErrorMessage(retryErr));
+          return jsonErr(
+            "Unable to open customer portal",
+            500,
+            "INTERNAL_ERROR",
+            { headers },
+          );
+        }
+      } else {
+        console.error("POST /api/billing/portal error:", msg);
+        return jsonErr("Unable to open customer portal", 500, "INTERNAL_ERROR", { headers });
+      }
+    }
+
+    if (!portal?.url) {
+      return jsonErr(
+        "Unable to create customer portal session",
+        500,
+        "INTERNAL_ERROR",
+        { headers },
+      );
     }
 
     return jsonOk({ url: portal.url }, { headers });
