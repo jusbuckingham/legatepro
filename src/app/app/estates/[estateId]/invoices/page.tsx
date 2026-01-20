@@ -1,6 +1,7 @@
 // src/app/app/estates/[estateId]/invoices/page.tsx
 import Link from "next/link";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 
 import { getApiErrorMessage, safeJson } from "@/lib/utils";
 import { auth } from "@/lib/auth";
@@ -9,6 +10,8 @@ import CreateInvoiceForm from "./CreateInvoiceForm";
 import InvoiceStatusButtons from "./InvoiceStatusButtons";
 
 import { requireEstateAccess } from "@/lib/estateAccess";
+
+export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: { estateId: string };
@@ -141,18 +144,16 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
 
   const session = await auth();
   if (!session?.user?.id) {
-    // keep behavior consistent with other app pages
-    return (
-      <div className="p-6 text-slate-200">
-        <p>You must be signed in to view invoices.</p>
-      </div>
-    );
+    redirect(`/login?callbackUrl=/app/estates/${encodeURIComponent(estateId)}/invoices`);
   }
 
   // Access control (redirects / throws inside helper as appropriate)
   const access = await requireEstateAccess({ estateId, userId: session.user.id });
   const role = access.role;
   const canEdit = role !== "VIEWER";
+
+  const forbidden =
+    typeof searchParams?.forbidden === "string" ? searchParams.forbidden === "1" : false;
 
   // --- GET filters from searchParams
   let searchQuery = "";
@@ -227,7 +228,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
   );
 
   // Filter form action URL
-  const filterAction = `/app/estates/${estateId}/invoices`;
+  const filterAction = `/app/estates/${encodeURIComponent(estateId)}/invoices`;
 
   return (
     <div className="space-y-6 p-6">
@@ -238,7 +239,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
             <Link href="/app/estates" className="hover:underline text-slate-400">Estates</Link>
             <span className="mx-1">/</span>
             <Link href={`/app/estates/${estateId}`} className="hover:underline text-slate-400">
-              {estateId}
+              Estate
             </Link>
             <span className="mx-1">/</span>
             <span className="text-slate-500">Invoices</span>
@@ -259,6 +260,25 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
           )}
         </div>
       </header>
+
+      {forbidden && (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-rose-100">Action blocked</div>
+              <div className="mt-1 text-xs text-rose-100/80">
+                You don’t have edit permissions for this estate. Request access from the owner to create, edit, or update invoice statuses.
+              </div>
+            </div>
+            <Link
+              href={`/app/estates/${estateId}?requestAccess=1`}
+              className="inline-flex items-center justify-center rounded-md border border-rose-500/30 bg-slate-950/60 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-slate-900/50"
+            >
+              Request edit access
+            </Link>
+          </div>
+        </div>
+      )}
 
       {error ? (
         <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4">

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
+import { requireEstateAccess } from "@/lib/estateAccess";
 import { Estate } from "@/models/Estate";
 import { Contact, ContactDocument } from "@/models/Contact";
 
@@ -22,18 +23,16 @@ interface ContactListItem {
   phone?: string;
 }
 
-async function loadEstateAndContacts(estateId: string, ownerId: string) {
+async function loadEstateAndContacts(estateId: string) {
   await connectToDatabase();
 
-  const estate = await Estate.findOne(
-    ownerId ? { _id: estateId, ownerId } : { _id: estateId }
-  ).lean();
+  const estate = await Estate.findOne({ _id: estateId }).lean();
 
   if (!estate) {
     return null;
   }
 
-  const contactDocs = await Contact.find({ estateId, ownerId })
+  const contactDocs = await Contact.find({ estateId })
     .sort({ createdAt: -1 })
     .lean<ContactDocument[]>();
 
@@ -69,7 +68,10 @@ export default async function EstateContactsPage({
     redirect("/login?callbackUrl=/app");
   }
 
-  const data = await loadEstateAndContacts(estateId, session.user.id);
+  const access = await requireEstateAccess({ estateId, userId: session.user.id });
+  const canEdit = access.role !== "VIEWER";
+
+  const data = await loadEstateAndContacts(estateId);
 
   if (!data) {
     notFound();
@@ -96,13 +98,41 @@ export default async function EstateContactsPage({
             <span className="font-medium">{estateDisplayName}</span>
           </p>
         </div>
-        <Link
-          href={`/app/estates/${estateId}/contacts/new`}
-          className="inline-flex items-center rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
-        >
-          Add contact
-        </Link>
+        {canEdit ? (
+          <Link
+            href={`/app/estates/${estateId}/contacts/new`}
+            className="inline-flex items-center rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
+          >
+            Add contact
+          </Link>
+        ) : (
+          <Link
+            href={`/app/estates/${estateId}?requestAccess=1`}
+            className="inline-flex items-center rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
+          >
+            Request edit access
+          </Link>
+        )}
       </div>
+
+      {!canEdit ? (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-medium">Viewer access</p>
+              <p className="text-xs text-amber-200">
+                You can view contacts for this estate, but you can’t add or edit them.
+              </p>
+            </div>
+            <Link
+              href={`/app/estates/${estateId}?requestAccess=1`}
+              className="mt-2 inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-xs font-medium text-amber-100 hover:bg-amber-500/25 md:mt-0"
+            >
+              Request edit access
+            </Link>
+          </div>
+        </div>
+      ) : null}
 
       {contacts.length === 0 ? (
         <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
@@ -161,12 +191,14 @@ export default async function EstateContactsPage({
                       >
                         View
                       </Link>
-                      <Link
-                        href={`/app/estates/${estateId}/contacts/${contact._id}/edit`}
-                        className="text-muted-foreground hover:underline"
-                      >
-                        Edit
-                      </Link>
+                      {canEdit ? (
+                        <Link
+                          href={`/app/estates/${estateId}/contacts/${contact._id}/edit`}
+                          className="text-muted-foreground hover:underline"
+                        >
+                          Edit
+                        </Link>
+                      ) : null}
                     </div>
                   </td>
                 </tr>
