@@ -5,9 +5,10 @@ import { redirect } from "next/navigation";
 import mongoose from "mongoose";
 
 import { connectToDatabase } from "@/lib/db";
-import { EstateProperty } from "@/models/EstateProperty";
 import { auth } from "@/lib/auth";
+import { requireEstateAccess } from "@/lib/estateAccess";
 import { Estate } from "@/models/Estate";
+import { EstateProperty } from "@/models/EstateProperty";
 
 type EstatePropertyItem = {
   _id: string | { toString(): string };
@@ -43,7 +44,6 @@ function normalizeObjectId(value: string): string | null {
 
 async function getProperties(
   estateId: string,
-  userId: string,
 ): Promise<{ notFound: boolean; estateName: string; properties: EstatePropertyItem[] }> {
   await connectToDatabase();
 
@@ -52,7 +52,7 @@ async function getProperties(
     return { notFound: true, estateName: "", properties: [] };
   }
 
-  const estate = await Estate.findOne({ _id: estateObjectId, ownerId: userId })
+  const estate = await Estate.findOne({ _id: estateObjectId })
     .select({ displayName: 1, name: 1, estateName: 1 })
     .lean()
     .exec();
@@ -68,7 +68,7 @@ async function getProperties(
     (estate as unknown as { displayName?: string; name?: string; estateName?: string }).estateName ||
     "Estate";
 
-  const properties = await EstateProperty.find({ estateId: estateObjectId, ownerId: userId })
+  const properties = await EstateProperty.find({ estateId: estateObjectId })
     .select({
       _id: 1,
       nickname: 1,
@@ -99,7 +99,10 @@ export default async function EstatePropertiesPage({ params }: PageProps) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  const result = await getProperties(estateId, session.user.id);
+  const access = await requireEstateAccess({ estateId, userId: session.user.id });
+  const canEdit = access.role !== "VIEWER";
+
+  const result = await getProperties(estateId);
   if (result.notFound) {
     return (
       <div className="space-y-6">
@@ -178,12 +181,21 @@ export default async function EstatePropertiesPage({ params }: PageProps) {
           >
             Back to estate
           </Link>
-          <Link
-            href={`/app/estates/${estateId}/properties/new`}
-            className="inline-flex items-center rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 font-medium text-emerald-100 hover:bg-emerald-500/20"
-          >
-            Add property
-          </Link>
+          {canEdit ? (
+            <Link
+              href={`/app/estates/${estateId}/properties/new`}
+              className="inline-flex items-center rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 font-medium text-emerald-100 hover:bg-emerald-500/20"
+            >
+              Add property
+            </Link>
+          ) : (
+            <Link
+              href={`/app/estates/${estateId}?requestAccess=1`}
+              className="inline-flex items-center rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 font-medium text-slate-100 hover:bg-slate-900"
+            >
+              Request edit access
+            </Link>
+          )}
         </div>
       </div>
 
@@ -225,6 +237,25 @@ export default async function EstatePropertiesPage({ params }: PageProps) {
           </p>
         </div>
       </div>
+
+      {!canEdit ? (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-medium">Viewer access</p>
+              <p className="text-xs text-amber-200">
+                You can view the property inventory, but you can’t add, edit, or remove properties.
+              </p>
+            </div>
+            <Link
+              href={`/app/estates/${estateId}?requestAccess=1`}
+              className="mt-2 inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-xs font-medium text-amber-100 hover:bg-amber-500/25 md:mt-0"
+            >
+              Request edit access
+            </Link>
+          </div>
+        </div>
+      ) : null}
 
       {!hasProperties ? (
         <div className="rounded-xl border border-dashed border-slate-800 bg-slate-950/60 p-6 text-center">
@@ -334,17 +365,21 @@ export default async function EstatePropertiesPage({ params }: PageProps) {
                           >
                             View
                           </Link>
-                          <Link
-                            href={`/app/estates/${estateId}/properties/${id}/edit`}
-                            className="rounded-lg border border-slate-800 bg-slate-950/60 px-2.5 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-900"
-                          >
-                            Edit
-                          </Link>
-                          <DeletePropertyButton
-                            estateId={estateId}
-                            propertyId={id}
-                            propertyTitle={name}
-                          />
+                          {canEdit ? (
+                            <>
+                              <Link
+                                href={`/app/estates/${estateId}/properties/${id}/edit`}
+                                className="rounded-lg border border-slate-800 bg-slate-950/60 px-2.5 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-900"
+                              >
+                                Edit
+                              </Link>
+                              <DeletePropertyButton
+                                estateId={estateId}
+                                propertyId={id}
+                                propertyTitle={name}
+                              />
+                            </>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
