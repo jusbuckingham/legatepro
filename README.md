@@ -8,14 +8,22 @@
   <img src="https://img.shields.io/badge/Status-Private%20Beta-orange" />
 </p>
 
-**A modern, elegant, role‑aware probate management platform.**
+**A modern, elegant, role‑aware probate management platform — with built‑in estate intelligence.**
 
-LegatePro is a next‑generation probate administration system designed to streamline estate management for Personal Representatives (executors), attorneys, and fiduciaries.  
-With structured workflows, automation, and AI‑assisted guidance, LegatePro aims to become the *TurboTax for probate* — accurate, compliant, and built for real‑world estate complexity.
+LegatePro is a next‑generation probate administration system designed to guide Personal Representatives (executors), attorneys, and fiduciaries through every stage of estate administration.
+
+Instead of disconnected spreadsheets, PDFs, and email threads, LegatePro provides a structured, court‑aware workspace that shows *what’s done, what’s missing, and what needs attention next* — all in one place.
 
 ---
 
 ## ✨ Core Features (MVP & Beyond)
+
+### 📊 Estate Readiness Score (Foundational)
+- Automatically calculates how complete an estate is across documents, tasks, properties, expenses, invoices, and contacts
+- Highlights missing or at‑risk areas before they become court issues
+- Designed to answer one critical question at a glance:
+  **“How ready is this estate right now?”**
+- Serves as the backbone for future AI recommendations and alerts
 
 ### 📂 Estate Management  
 - Create & manage multiple estates  
@@ -39,7 +47,7 @@ With structured workflows, automation, and AI‑assisted guidance, LegatePro aim
 - Automated totals and summaries  
 
 ### 🧾 Document Index  
-- Unified index for all estate-related documents  
+- Court‑ready index for all estate‑related documents  
 - Subject tagging (Banking, Auto, Insurance, Medical, etc.)  
 - Sensitive document flag with filtered views  
 - Fast search, filtering, and preview from estate overview  
@@ -78,6 +86,26 @@ With structured workflows, automation, and AI‑assisted guidance, LegatePro aim
 - Invite lifecycle events (sent, accepted, revoked)
 - Grouped by day (Today / Yesterday / dates)
 - Copy-friendly invite links surfaced directly in timeline
+
+---
+
+## 🤖 AI Assistance (Planned)
+
+LegatePro uses AI as *strategic assistance*, not automation theater. AI features are designed to reduce risk, surface blind spots, and explain complexity — never to replace legal judgment.
+
+Planned capabilities include:
+
+- **Next‑Step Recommendations**
+  - Context‑aware guidance based on estate progress, deadlines, and missing data
+
+- **Document Classification & Tagging**
+  - Auto‑suggest subjects, tags, and sensitivity flags when indexing documents
+
+- **Plain‑English Legal Explanations**
+  - Inline explanations for probate terms, filings, and requirements
+
+- **Risk Detection & Warnings**
+  - Flags missing filings, overdue tasks, or inconsistencies before court submission
 
 ---
 
@@ -191,10 +219,10 @@ Every workflow is modeled from actual estate administration:
 rent ledgers, funeral invoices, PR timecards, utilities, legal filings.
 
 ### **3. AI as Strategic Assistance**  
-AI will enhance—not replace—human judgment through:  
-- Smart recommendations  
-- Auto‑drafted documents  
-- Context‑aware insights  
+AI will enhance — not replace — human judgment by:
+- Surfacing what’s missing or at risk
+- Explaining complex probate concepts in plain language
+- Suggesting next actions based on real estate data
 
 ---
 
@@ -212,6 +240,7 @@ Brand direction aligns with trust, clarity, and professional legal tech standard
 
 ## 📌 Roadmap
 
+- [ ] Estate Readiness Score (cross‑module progress & risk signal)
 - [x] Full CRUD tasks
 - [x] Expense module
 - [x] Document index + sensitive docs
