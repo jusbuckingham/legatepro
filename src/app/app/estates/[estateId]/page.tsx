@@ -571,6 +571,24 @@ export default async function EstateOverviewPage({ params }: PageProps) {
               Activity
             </Link>
             <Link
+              href={`/app/estates/${estateId}/contacts`}
+              className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              Contacts
+            </Link>
+            <Link
+              href={`/app/estates/${estateId}/properties`}
+              className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              Properties
+            </Link>
+            <Link
+              href={`/app/estates/${estateId}/rent`}
+              className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              Rent
+            </Link>
+            <Link
               href={`/app/estates/${estateId}/invoices`}
               className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
             >

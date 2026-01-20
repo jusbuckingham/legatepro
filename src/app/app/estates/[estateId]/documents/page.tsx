@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 
 import { auth } from "@/lib/auth";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
@@ -71,6 +72,21 @@ function buildDocumentsUrl(
 
 export const dynamic = "force-dynamic";
 
+async function getBaseUrl(): Promise<string> {
+  // Prefer explicit env var for predictable behavior in server actions.
+  const envUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL;
+  if (envUrl) return envUrl.replace(/\/$/, "");
+
+  // Fall back to request headers (works on Vercel / reverse proxies).
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  const proto = h.get("x-forwarded-proto") ?? "http";
+  if (host) return `${proto}://${host}`;
+
+  // Final fallback for local dev.
+  return "http://localhost:3000";
+}
+
 /* -------------------- Server Actions -------------------- */
 
 async function createDocumentEntry(formData: FormData): Promise<void> {
@@ -107,19 +123,22 @@ async function createDocumentEntry(formData: FormData): Promise<void> {
     )
   );
   
-  const res = await fetch(`/api/estates/${encodeURIComponent(estateId)}/documents`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      label,
-      subject,
-      location,
-      url,
-      tags,
-      notes,
-      isSensitive,
-    }),
-  });
+  const res = await fetch(
+    `${await getBaseUrl()}/api/estates/${encodeURIComponent(estateId)}/documents`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        label,
+        subject,
+        location,
+        url,
+        tags,
+        notes,
+        isSensitive,
+      }),
+    }
+  );
 
   if (!res.ok) {
     redirect(`/app/estates/${estateId}/documents?error=create_failed`);
@@ -145,7 +164,7 @@ async function deleteDocument(formData: FormData): Promise<void> {
   }
 
   const res = await fetch(
-    `/api/estates/${encodeURIComponent(estateId)}/documents/${encodeURIComponent(documentId)}`,
+    `${await getBaseUrl()}/api/estates/${encodeURIComponent(estateId)}/documents/${encodeURIComponent(documentId)}`,
     { method: "DELETE" },
   );
 
@@ -154,6 +173,7 @@ async function deleteDocument(formData: FormData): Promise<void> {
   }
 
   revalidatePath(`/app/estates/${estateId}/documents`);
+  redirect(`/app/estates/${estateId}/documents`);
 }
 
 /* -------------------- Page -------------------- */
@@ -202,7 +222,7 @@ export default async function EstateDocumentsPage({
 
   const apiUrl = new URL(
     `/api/estates/${encodeURIComponent(estateId)}/documents`,
-    "http://localhost",
+    await getBaseUrl(),
   );
 
   if (searchQuery) apiUrl.searchParams.set("q", searchQuery);
@@ -210,17 +230,18 @@ export default async function EstateDocumentsPage({
   if (tagFilter) apiUrl.searchParams.set("tag", tagFilter);
   if (canViewSensitive && sensitiveOnly) apiUrl.searchParams.set("sensitive", "1");
 
-  const res = await fetch(apiUrl.toString().replace("http://localhost", ""), {
+  const res = await fetch(apiUrl.toString(), {
     method: "GET",
     headers: { accept: "application/json" },
     cache: "no-store",
   });
 
-  const data = (await res.json()) as {
-    ok: boolean;
-    documents?: EstateDocumentLean[];
-    error?: string;
-  };
+  let data: { ok: boolean; documents?: EstateDocumentLean[]; error?: string } = { ok: false };
+  try {
+    data = (await res.json()) as { ok: boolean; documents?: EstateDocumentLean[]; error?: string };
+  } catch {
+    // Ignore JSON parse errors; `data.ok` will remain false.
+  }
 
   const docs = res.ok && data.ok && Array.isArray(data.documents) ? data.documents : [];
 

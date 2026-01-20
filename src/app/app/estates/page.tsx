@@ -1,5 +1,6 @@
 // src/app/app/estates/page.tsx
 import Link from "next/link";
+
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
@@ -26,6 +27,24 @@ type EstateListItem = {
   lastActivityType?: string | null;
 };
 
+function SearchIcon(props: { className?: string; "aria-hidden"?: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={props.className}
+      aria-hidden={props["aria-hidden"]}
+    >
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </svg>
+  );
+}
+
 function formatShortDate(value: string | Date | null | undefined): string {
   if (!value) return "—";
   try {
@@ -43,6 +62,20 @@ type EstateEventLean = {
   summary: string | null;
   type: string | null;
 };
+
+function getParamString(
+  params: Record<string, string | string[] | undefined> | undefined,
+  key: string,
+): string | undefined {
+  if (!params) return undefined;
+  const v = params[key];
+  if (Array.isArray(v)) return v[0];
+  return v;
+}
+
+function normalizeSearch(s: string | undefined): string {
+  return (s ?? "").trim().toLowerCase();
+}
 
 async function getEstates(userId: string): Promise<EstateListItem[]> {
   await connectToDatabase();
@@ -176,6 +209,39 @@ export default async function EstatesPage({
   // Free plan: 1 *owned* estate max. Collaborator estates do NOT count toward the limit.
   // We already fetched all estates above, so we can compute the owned count without another DB round-trip.
   const ownedEstatesCount = ownedEstates.length;
+  const sharedEstates = Array.isArray(estates)
+    ? estates.filter((e) => e.ownerId !== session.user.id)
+    : [];
+
+  const sharedEstatesCount = sharedEstates.length;
+
+  const createdFlag = getParamString(resolvedSearchParams, "created");
+  const isCreated = createdFlag === "1";
+
+  // Server-side search
+  const q = normalizeSearch(getParamString(resolvedSearchParams, "q"));
+
+  const visibleEstates = (Array.isArray(estates) ? estates : []).filter((e) => {
+    if (!q) return true;
+
+    const haystack = [
+      e.name,
+      e.estateName,
+      e.caseNumber,
+      e.courtCaseNumber,
+      e.county,
+      e.jurisdiction,
+      e.lastActivitySummary,
+      e.lastActivityType,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    return haystack.includes(q);
+  });
+
+  const hasVisibleEstates = visibleEstates.length > 0;
 
   const hasEstates = Array.isArray(estates) && estates.length > 0;
   const hasReachedFreeLimit = !isPro && ownedEstatesCount >= 1;
@@ -190,8 +256,6 @@ export default async function EstatesPage({
   const showUserLoadWarning = !user;
   // --- End billing enforcement (UI) ---
 
-  const createdFlag = resolvedSearchParams?.created;
-  const isCreated = Array.isArray(createdFlag) ? createdFlag.includes("1") : createdFlag === "1";
 
   const hasAnyActivity = Array.isArray(estates)
     ? estates.some((e) => Boolean(e.lastActivityAt || e.lastActivitySummary))
@@ -276,6 +340,26 @@ export default async function EstatesPage({
           >
             Back to dashboard
           </Link>
+          <form
+            action="/app/estates"
+            method="get"
+            className="flex h-10 items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/40 px-3 shadow-sm"
+          >
+            <SearchIcon className="h-4 w-4 text-slate-500" aria-hidden />
+            <input
+              name="q"
+              defaultValue={q}
+              placeholder="Search estates…"
+              className="h-9 w-44 bg-transparent text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none sm:w-56"
+              aria-label="Search estates"
+            />
+            <button
+              type="submit"
+              className="inline-flex h-8 items-center justify-center rounded-lg border border-slate-800 bg-slate-900/40 px-2 text-[11px] font-semibold text-slate-200 hover:bg-slate-900"
+            >
+              Search
+            </button>
+          </form>
 
           {!hasReachedFreeLimit ? (
             <Link
@@ -370,9 +454,50 @@ export default async function EstatesPage({
         </div>
       ) : (
         <div className="space-y-3">
+          {!hasVisibleEstates ? (
+            <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 p-6 shadow-sm sm:p-8">
+              <div className="mx-auto max-w-2xl text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-slate-800 bg-slate-900/40">
+                  <span className="text-lg">🔎</span>
+                </div>
+                <p className="mt-3 text-sm font-semibold text-slate-100">No results</p>
+                <p className="mt-1 text-xs text-slate-400">Try adjusting your search.</p>
+
+                <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
+                  <Link
+                    href="/app/estates"
+                    className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-950/40 px-4 text-sm font-medium text-slate-200 shadow-sm hover:bg-slate-900/40"
+                  >
+                    Clear search
+                  </Link>
+                  {!hasReachedFreeLimit ? (
+                    <Link
+                      href="/app/estates/new"
+                      className="inline-flex h-10 items-center justify-center rounded-xl border border-emerald-500 bg-emerald-500/10 px-4 text-sm font-medium text-emerald-200 shadow-sm hover:bg-emerald-500/20"
+                    >
+                      + Create estate
+                    </Link>
+                  ) : (
+                    <Link
+                      href="/app/billing?reason=estate_limit"
+                      className="inline-flex h-10 items-center justify-center rounded-xl border border-[#F15A43] bg-[#F15A43]/10 px-4 text-sm font-medium text-[#F15A43] shadow-sm hover:bg-[#F15A43]/20"
+                    >
+                      Upgrade to add more estates
+                    </Link>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
           <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 shadow-sm">
             <p className="text-sm text-slate-200">
-              <span className="font-semibold text-slate-100">{estates.length}</span> estate{estates.length === 1 ? "" : "s"}
+              <span className="font-semibold text-slate-100">{visibleEstates.length}</span> estate{visibleEstates.length === 1 ? "" : "s"}
+              <span className="mx-2 text-slate-600">•</span>
+              <span className="text-xs text-slate-400">
+                Owned: <span className="font-semibold text-slate-200">{ownedEstatesCount}</span>
+                <span className="mx-1 text-slate-600">·</span>
+                Shared: <span className="font-semibold text-slate-200">{sharedEstatesCount}</span>
+              </span>
               <span className="mx-2 text-slate-600">•</span>
               <span className="text-xs text-slate-400">{planHint}</span>
             </p>
@@ -395,7 +520,7 @@ export default async function EstatesPage({
 
           {/* Mobile cards */}
           <div className="grid gap-3 sm:hidden">
-            {estates.map((estate: EstateListItem) => {
+            {visibleEstates.map((estate: EstateListItem) => {
               const id = estate._id;
               const name = estate.name || estate.estateName || "Untitled estate";
               const caseNumber = estate.caseNumber || estate.courtCaseNumber || "—";
@@ -429,9 +554,26 @@ export default async function EstatesPage({
                       ) : null}
                     </div>
 
-                    <span className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-200">
-                      {status}
-                    </span>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <span className="rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-200">
+                        {status}
+                      </span>
+                      <span
+                        className={[
+                          "rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
+                          estate.ownerId === session.user.id
+                            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+                            : "border-slate-700 bg-slate-950/40 text-slate-300",
+                        ].join(" ")}
+                        title={
+                          estate.ownerId === session.user.id
+                            ? "You own this estate"
+                            : "You’re a collaborator on this estate"
+                        }
+                      >
+                        {estate.ownerId === session.user.id ? "Owner" : "Shared"}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -479,7 +621,7 @@ export default async function EstatesPage({
                 </tr>
               </thead>
               <tbody>
-                {estates.map((estate: EstateListItem) => {
+                {visibleEstates.map((estate: EstateListItem) => {
                   const id = estate._id;
                   const name = estate.name || estate.estateName || "Untitled estate";
                   const caseNumber = estate.caseNumber || estate.courtCaseNumber || "—";
@@ -492,7 +634,24 @@ export default async function EstatesPage({
                     <tr key={id} className="border-t border-slate-900/80 hover:bg-slate-900/40">
                       <td className="px-4 py-3 align-middle">
                         <div className="flex flex-col">
-                          <span className="text-sm font-medium text-slate-100">{name}</span>
+                          <span className="flex items-center gap-2 text-sm font-medium text-slate-100">
+                            {name}
+                            <span
+                              className={[
+                                "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                                estate.ownerId === session.user.id
+                                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+                                  : "border-slate-700 bg-slate-950/40 text-slate-300",
+                              ].join(" ")}
+                              title={
+                                estate.ownerId === session.user.id
+                                  ? "You own this estate"
+                                  : "You’re a collaborator on this estate"
+                              }
+                            >
+                              {estate.ownerId === session.user.id ? "Owner" : "Shared"}
+                            </span>
+                          </span>
                           {estate.county || estate.jurisdiction ? (
                             <span className="text-xs text-slate-500">{estate.county || estate.jurisdiction}</span>
                           ) : null}
