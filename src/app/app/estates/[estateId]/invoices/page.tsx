@@ -335,7 +335,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
 
       {/* Create/readonly info */}
       {canEdit ? (
-        <section id="create-invoice" className="scroll-mt-24">
+        <section id="add-invoice" className="scroll-mt-24">
           <CreateInvoiceForm estateId={estateId} />
         </section>
       ) : (
@@ -346,6 +346,33 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
           </p>
         </section>
       )}
+
+      {/* Anchor for readiness deep-links (expenses) */}
+      <section id="add-expense" className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+        <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-100">Add an expense</p>
+            <p className="text-xs text-slate-400">
+              Expenses will appear alongside invoices in your estate accounting.
+            </p>
+          </div>
+          {canEdit ? (
+            <Link
+              href={`${filterAction}#add-invoice`}
+              className="mt-2 inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/15 md:mt-0"
+            >
+              Add expense
+            </Link>
+          ) : (
+            <Link
+              href={`/app/estates/${estateId}?requestAccess=1`}
+              className="mt-2 inline-flex items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-500/15 md:mt-0"
+            >
+              Request edit access
+            </Link>
+          )}
+        </div>
+      </section>
 
       {/* Invoices list section */}
       <section className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
@@ -446,7 +473,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
               <div className="mt-5 flex flex-wrap justify-center gap-2">
                 {canEdit ? (
                   <Link
-                    href={`${filterAction}#create-invoice`}
+                    href={`${filterAction}#add-invoice`}
                     className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-400"
                   >
                     Create invoice

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { EstateReadinessResult } from "@/lib/estate/readiness";
 
@@ -31,23 +31,89 @@ function scoreTone(score: number) {
   return "text-rose-700";
 }
 
+function toTimeLabel(date: Date | null) {
+  if (!date) return "—";
+  try {
+    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  } catch {
+    return "—";
+  }
+}
+
+function actionHrefForSignal(estateId: string, signalKey: string): string {
+  const key = signalKey.toLowerCase();
+
+  // Heuristic: if the signal key suggests something is missing, try to jump to the “add” section.
+  const looksMissing =
+    key.startsWith("missing") ||
+    key.includes("missing_") ||
+    key.includes("_missing") ||
+    key.includes("no_") ||
+    key.includes("none_") ||
+    key.includes("empty_") ||
+    key.includes("requires_") ||
+    key.includes("need_");
+
+  const estateBase = `/app/estates/${encodeURIComponent(estateId)}`;
+
+  // Documents
+  if (key.includes("document") || key.startsWith("docs") || key.startsWith("documents")) {
+    return looksMissing ? `${estateBase}/documents#add-document` : `${estateBase}/documents`;
+  }
+
+  // Tasks
+  if (key.includes("task") || key.startsWith("tasks")) {
+    return looksMissing ? `${estateBase}/tasks#add-task` : `${estateBase}/tasks`;
+  }
+
+  // Properties
+  if (key.includes("property") || key.startsWith("properties")) {
+    return looksMissing ? `${estateBase}/properties#add-property` : `${estateBase}/properties`;
+  }
+
+  // Contacts
+  if (key.includes("contact") || key.startsWith("contacts")) {
+    return looksMissing ? `${estateBase}/contacts#add-contact` : `${estateBase}/contacts`;
+  }
+
+  // Finances (Invoices / Expenses)
+  if (key.includes("invoice")) {
+    return looksMissing ? `${estateBase}/invoices#add-invoice` : `${estateBase}/invoices`;
+  }
+
+  if (key.includes("expense")) {
+    // Expenses are indexed on the invoices page; anchor to the expense section.
+    return `${estateBase}/invoices#add-expense`;
+  }
+
+  if (key.includes("finance") || key.startsWith("finances")) {
+    return looksMissing ? `${estateBase}/invoices#add-invoice` : `${estateBase}/invoices`;
+  }
+
+  // Default: documents is usually the fastest way to move readiness forward.
+  return looksMissing ? `${estateBase}/documents#add-document` : `${estateBase}/documents`;
+}
+
 export default function EstateReadinessCardClient(props: { estateId: string }) {
   const { estateId } = props;
 
   const [loading, setLoading] = useState(true);
   const [readiness, setReadiness] = useState<EstateReadinessResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const endpoint = useMemo(
     () => `/api/estates/${encodeURIComponent(estateId)}/readiness`,
     [estateId],
   );
 
-  useEffect(() => {
-    let alive = true;
+  const loadReadiness = useCallback(
+    async (opts?: { silent?: boolean; signal?: AbortSignal }) => {
+      const silent = opts?.silent ?? false;
 
-    async function run() {
-      setLoading(true);
+      if (!silent) setLoading(true);
+      setIsRefreshing(silent);
       setError(null);
 
       try {
@@ -55,42 +121,73 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
           method: "GET",
           headers: { accept: "application/json" },
           cache: "no-store",
+          signal: opts?.signal,
         });
 
         const data = (await res.json()) as ReadinessApiResponse;
 
-        const isOk = (payload: ReadinessApiResponse): payload is { ok: true; readiness: EstateReadinessResult } | { ok: true; result: EstateReadinessResult } => {
+        const isOk = (
+          payload: ReadinessApiResponse,
+        ): payload is
+          | { ok: true; readiness: EstateReadinessResult }
+          | { ok: true; result: EstateReadinessResult } => {
           return typeof payload === "object" && payload !== null && "ok" in payload && payload.ok === true;
         };
 
         if (!res.ok || !isOk(data)) {
           setReadiness(null);
-          if (data && typeof data === "object" && "ok" in data && (data as { ok: boolean }).ok === false && "error" in data) {
+
+          // Safely extract an error string when present
+          if (
+            data &&
+            typeof data === "object" &&
+            "ok" in data &&
+            (data as { ok: boolean }).ok === false &&
+            "error" in data
+          ) {
             const errVal = (data as { ok: false; error?: string }).error;
             setError(errVal ?? "readiness_unavailable");
           } else {
             setError("readiness_unavailable");
           }
+
           return;
         }
 
         const r = "readiness" in data ? data.readiness : "result" in data ? data.result : null;
         setReadiness(r ?? null);
+        setLastUpdatedAt(new Date());
       } catch (e) {
-        if (!alive) return;
+        // Abort is expected on unmount
+        if (e instanceof DOMException && e.name === "AbortError") return;
+
         setReadiness(null);
         setError(e instanceof Error ? e.message : "readiness_unavailable");
       } finally {
-        if (!alive) return;
-        setLoading(false);
+        if (!silent) setLoading(false);
+        setIsRefreshing(false);
       }
-    }
+    },
+    [endpoint],
+  );
 
-    run();
-    return () => {
-      alive = false;
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void loadReadiness({ silent: false, signal: controller.signal });
+
+    const onFocus = () => {
+      // Silent refresh on focus (premium feel)
+      void loadReadiness({ silent: true });
     };
-  }, [endpoint]);
+
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      controller.abort();
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [loadReadiness]);
 
   // Skeleton
   if (loading) {
@@ -127,12 +224,25 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
               Readiness could not be calculated{error ? ` (${error})` : ""}. Refresh or try again.
             </p>
           </div>
-          <Link
-            href={`/app/estates/${encodeURIComponent(estateId)}/documents`}
-            className="text-xs font-medium text-blue-600 hover:underline"
-          >
-            Improve readiness →
-          </Link>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void loadReadiness({ silent: false })}
+              className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+              disabled={loading}
+              aria-busy={loading}
+              title="Refresh readiness"
+            >
+              Refresh
+            </button>
+
+            <Link
+              href={`/app/estates/${encodeURIComponent(estateId)}/documents`}
+              className="text-xs font-medium text-blue-600 hover:underline"
+            >
+              Improve readiness →
+            </Link>
+          </div>
         </div>
       </section>
     );
@@ -176,12 +286,78 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
               );
             })}
           </div>
+
+          {/* Top actions */}
+          {(readiness.signals.missing.length > 0 || readiness.signals.atRisk.length > 0) && (
+            <div className="mt-4 rounded-md border border-gray-200 bg-white p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[11px] font-semibold uppercase text-gray-600">Top actions</div>
+                <span className="text-[11px] text-gray-500">Based on missing + at-risk signals</span>
+              </div>
+
+              <ul className="mt-2 space-y-2">
+                {[
+                  ...readiness.signals.missing
+                    .slice(0, 3)
+                    .map((s) => ({ ...s, kind: "missing" as const })),
+                  ...readiness.signals.atRisk
+                    .slice(0, 2)
+                    .map((s) => ({ ...s, kind: "risk" as const })),
+                ].map((s) => (
+                  <li
+                    key={`${s.kind}:${s.key}`}
+                    className="flex items-start justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={
+                            s.kind === "missing"
+                              ? "inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700"
+                              : "inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                          }
+                        >
+                          {s.kind === "missing" ? "Missing" : "At risk"}
+                        </span>
+                        <span className="truncate text-xs font-medium text-gray-900">{s.label}</span>
+                      </div>
+                    </div>
+
+                    <Link
+                      href={actionHrefForSignal(estateId, s.key)}
+                      className="shrink-0 text-xs font-medium text-blue-600 hover:underline"
+                    >
+                      Fix →
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         <div className="flex shrink-0 flex-col items-end gap-2">
           <div className={`text-4xl font-semibold leading-none ${scoreTone(score)}`}>
             {score}%
           </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void loadReadiness({ silent: true })}
+              className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+              aria-busy={isRefreshing}
+              disabled={isRefreshing}
+              title="Refresh readiness"
+            >
+              {isRefreshing ? "Refreshing…" : "Refresh"}
+            </button>
+
+            <span className="text-[11px] text-gray-500">
+              Updated: <span className="font-medium text-gray-700">{toTimeLabel(lastUpdatedAt)}</span>
+            </span>
+          </div>
+
           <Link
             href={`/app/estates/${encodeURIComponent(estateId)}/documents`}
             className="text-xs font-medium text-blue-600 hover:underline"

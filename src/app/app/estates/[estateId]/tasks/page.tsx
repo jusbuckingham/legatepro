@@ -325,7 +325,7 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
               </Link>
             ) : (
               <Link
-                href="#new-task"
+                href="#add-task"
                 className="inline-flex items-center justify-center rounded-md bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800"
               >
                 New task
@@ -388,7 +388,7 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
 
       {/* New task form */}
       <section
-        id="new-task"
+        id="add-task"
         className="space-y-3 scroll-mt-24 rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
       >
         <div className="flex items-center justify-between gap-3">
@@ -565,7 +565,7 @@ export default async function EstateTasksPage({ params, searchParams }: PageProp
                 </Link>
               ) : (
                 <Link
-                  href="#new-task"
+                  href="#add-task"
                   className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100"
                 >
                   New task

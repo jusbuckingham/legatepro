@@ -199,6 +199,37 @@ export default async function EstatePropertiesPage({ params }: PageProps) {
         </div>
       </div>
 
+      {/* Anchor for readiness deep-links */}
+      <section
+        id="add-property"
+        className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3"
+      >
+        <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-100">Add a property</p>
+            <p className="text-xs text-slate-400">
+              Track houses, parcels, vehicles, and other assets tied to this estate.
+            </p>
+          </div>
+
+          {canEdit ? (
+            <Link
+              href={`/app/estates/${estateId}/properties/new`}
+              className="mt-2 inline-flex items-center justify-center rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-100 hover:bg-emerald-500/20 md:mt-0"
+            >
+              Add property
+            </Link>
+          ) : (
+            <Link
+              href={`/app/estates/${estateId}?requestAccess=1`}
+              className="mt-2 inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/15 md:mt-0"
+            >
+              Request edit access
+            </Link>
+          )}
+        </div>
+      </section>
+
       {/* Summary cards */}
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">

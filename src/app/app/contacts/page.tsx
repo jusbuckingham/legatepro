@@ -103,6 +103,27 @@ export default async function ContactsPage({ searchParams }: PageProps) {
         }
       />
 
+      {/* Anchor for readiness deep-links */}
+      <section
+        id="add-contact"
+        className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 sm:p-5"
+      >
+        <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-100">Add a contact</p>
+            <p className="text-xs text-slate-400">
+              Create executors, heirs, attorneys, vendors, and other people so you can link them to estates.
+            </p>
+          </div>
+          <Link
+            href="/app/contacts/new"
+            className="mt-2 inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-500/20 md:mt-0"
+          >
+            Create contact
+          </Link>
+        </div>
+      </section>
+
       {/* Filters */}
       <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 sm:p-5">
         <form className="flex flex-wrap items-end gap-3 sm:gap-4" method="GET">

@@ -115,6 +115,37 @@ export default async function EstateContactsPage({
         )}
       </div>
 
+      {/* Anchor for readiness deep-links */}
+      <section
+        id="add-contact"
+        className="rounded-lg border border-border bg-background px-4 py-3"
+      >
+        <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-foreground">Add a contact</p>
+            <p className="text-xs text-muted-foreground">
+              Create heirs, attorneys, creditors, vendors, and other key people so you can link them to estate activity.
+            </p>
+          </div>
+
+          {canEdit ? (
+            <Link
+              href={`/app/estates/${estateId}/contacts/new`}
+              className="mt-2 inline-flex items-center justify-center rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 md:mt-0"
+            >
+              Add contact
+            </Link>
+          ) : (
+            <Link
+              href={`/app/estates/${estateId}?requestAccess=1`}
+              className="mt-2 inline-flex items-center justify-center rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-muted md:mt-0"
+            >
+              Request edit access
+            </Link>
+          )}
+        </div>
+      </section>
+
       {!canEdit ? (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
           <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
