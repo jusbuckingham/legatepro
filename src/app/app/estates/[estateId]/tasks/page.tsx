@@ -119,8 +119,7 @@ async function updateTaskStatus(formData: FormData): Promise<void> {
 
   const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
   if (access.role === "VIEWER") {
-    revalidatePath(`/app/estates/${estateId}/tasks`);
-    return;
+    redirect(`/app/estates/${estateId}/tasks?forbidden=1`);
   }
 
   await connectToDatabase();
@@ -140,6 +139,7 @@ async function updateTaskStatus(formData: FormData): Promise<void> {
   await EstateTask.findOneAndUpdate({ _id: taskId, estateId }, update);
 
   revalidatePath(`/app/estates/${estateId}/tasks`);
+  redirect(`/app/estates/${estateId}/tasks`);
 }
 
 /**
@@ -160,8 +160,7 @@ async function deleteTask(formData: FormData): Promise<void> {
 
   const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
   if (access.role === "VIEWER") {
-    revalidatePath(`/app/estates/${estateId}/tasks`);
-    return;
+    redirect(`/app/estates/${estateId}/tasks?forbidden=1`);
   }
 
   await connectToDatabase();
@@ -172,6 +171,7 @@ async function deleteTask(formData: FormData): Promise<void> {
   });
 
   revalidatePath(`/app/estates/${estateId}/tasks`);
+  redirect(`/app/estates/${estateId}/tasks`);
 }
 
 export default async function EstateTasksPage({ params, searchParams }: PageProps) {
