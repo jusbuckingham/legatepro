@@ -3,6 +3,7 @@ import { redirect, notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { getEstateAccess } from "@/lib/validators";
+import EstateReadinessCardClient from "@/lib/estate/EstateReadinessCardClient";
 import { Estate } from "@/models/Estate";
 import { Invoice } from "@/models/Invoice";
 import { EstateDocument } from "@/models/EstateDocument";
@@ -277,6 +278,7 @@ export default async function EstateOverviewPage({ params }: PageProps) {
   if (!estateDoc) {
     notFound();
   }
+
 
   /** INVOICES → clean rows */
   const invoices: DashboardInvoice[] = invoiceDocs.map((doc) => {
@@ -635,6 +637,10 @@ export default async function EstateOverviewPage({ params }: PageProps) {
           </div>
         </div>
       </header>
+
+      {/* Estate readiness */}
+      <EstateReadinessCardClient estateId={estateId} />
+
       {isEstateEmpty ? (
         <section className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
