@@ -22,6 +22,14 @@ type ActivityResponse = {
   nextCursor?: string | null;
 };
 
+async function safeJson<T>(res: Response): Promise<T | null> {
+  try {
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
 function formatWhen(value?: string | Date) {
   if (!value) return "";
   const d = typeof value === "string" ? new Date(value) : value;
@@ -100,6 +108,8 @@ export default function EstateActivityPage({
 
   const [typeFilter, setTypeFilter] = useState<string>("ALL");
 
+  const viewerBlocked = error?.toLowerCase().includes("viewer access") ?? false;
+
   const baseUrl = useMemo(
     () => `/api/estates/${encodeURIComponent(estateId)}/activity`,
     [estateId]
@@ -132,10 +142,24 @@ export default function EstateActivityPage({
         cache: "no-store",
       });
 
-      const data = (await res.json()) as ActivityResponse;
+      const data = await safeJson<ActivityResponse>(res);
 
-      if (!res.ok || !data.ok) {
-        setError(data.error ?? `Failed to load activity (${res.status})`);
+      if (res.status === 401) {
+        setError("You’re not signed in. Please refresh and sign in again.");
+        setEvents([]);
+        setNextCursor(null);
+        return;
+      }
+
+      if (res.status === 403) {
+        setError("You don’t have access to this estate’s activity.");
+        setEvents([]);
+        setNextCursor(null);
+        return;
+      }
+
+      if (!res.ok || !data?.ok) {
+        setError(data?.error ?? `Failed to load activity (${res.status})`);
         setEvents([]);
         setNextCursor(null);
         return;
@@ -165,10 +189,20 @@ export default function EstateActivityPage({
         cache: "no-store",
       });
 
-      const data = (await res.json()) as ActivityResponse;
+      const data = await safeJson<ActivityResponse>(res);
 
-      if (!res.ok || !data.ok) {
-        setError(data.error ?? `Failed to load more activity (${res.status})`);
+      if (res.status === 401) {
+        setError("You’re not signed in. Please refresh and sign in again.");
+        return;
+      }
+
+      if (res.status === 403) {
+        setError("You don’t have access to load more activity for this estate.");
+        return;
+      }
+
+      if (!res.ok || !data?.ok) {
+        setError(data?.error ?? `Failed to load more activity (${res.status})`);
         return;
       }
 
@@ -202,10 +236,20 @@ export default function EstateActivityPage({
         body: JSON.stringify({ note: trimmed }),
       });
 
-      const data = (await res.json()) as { ok?: boolean; error?: string };
+      const data = await safeJson<{ ok?: boolean; error?: string }>(res);
 
-      if (!res.ok || data.ok === false) {
-        setError(data.error ?? `Failed to add note (${res.status})`);
+      if (res.status === 401) {
+        setError("You’re not signed in. Please refresh and sign in again.");
+        return;
+      }
+
+      if (res.status === 403) {
+        setError("Viewer access: you can’t add notes to the activity timeline.");
+        return;
+      }
+
+      if (!res.ok || data?.ok === false) {
+        setError(data?.error ?? `Failed to add note (${res.status})`);
         return;
       }
 
@@ -302,14 +346,14 @@ export default function EstateActivityPage({
           placeholder="Write a note that will appear in the activity timeline…"
           className="mt-3 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
           rows={3}
-          disabled={saving || loading}
+          disabled={saving || loading || viewerBlocked}
         />
 
         <div className="mt-3 flex justify-end">
           <button
             type="button"
             onClick={() => void addNote()}
-            disabled={saving || loading || noteText.trim().length === 0}
+            disabled={saving || loading || viewerBlocked || noteText.trim().length === 0}
             className="h-10 rounded-md bg-black px-4 text-sm font-medium text-white disabled:opacity-50"
           >
             Add note
