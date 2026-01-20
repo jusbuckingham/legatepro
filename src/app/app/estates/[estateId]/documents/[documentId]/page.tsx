@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 
@@ -114,6 +115,7 @@ async function deleteDocument(formData: FormData): Promise<void> {
     estateId,
   });
 
+  revalidatePath(`/app/estates/${estateId}/documents`);
   redirect(`/app/estates/${estateId}/documents?deleted=1`);
 }
 
@@ -402,7 +404,7 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
             </Link>
 
             <Link
-              href={`/app/estates/${estateId}/documents$${(() => {
+              href={`/app/estates/${estateId}/documents${(() => {
                 const subjectValue = typeof doc.subject === "string" ? doc.subject.trim() : "";
                 if (!subjectValue) return "";
                 return `?${new URLSearchParams({ subject: subjectValue }).toString()}`;

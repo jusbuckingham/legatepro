@@ -105,7 +105,7 @@ async function createDocumentEntry(formData: FormData): Promise<void> {
 
   const session = await auth();
   if (!session?.user?.id) {
-    redirect("/login?callbackUrl=/app");
+    redirect(`/login?callbackUrl=/app/estates/${encodeURIComponent(estateId)}/documents`);
   }
 
   const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
@@ -156,7 +156,9 @@ async function deleteDocument(formData: FormData): Promise<void> {
   if (typeof estateId !== "string" || typeof documentId !== "string") return;
 
   const session = await auth();
-  if (!session?.user?.id) return;
+  if (!session?.user?.id) {
+    redirect(`/login?callbackUrl=/app/estates/${encodeURIComponent(estateId)}/documents`);
+  }
 
   const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
   if (access.role === "VIEWER") {
@@ -214,7 +216,7 @@ export default async function EstateDocumentsPage({
     sensitiveOnly = sensitive === "1" || sensitive === "true" || sensitive === "on";
   }
 
-  const forbidden = sp?.forbidden === "1";
+  const forbidden = firstParam(sp?.forbidden) === "1";
 
   if (!canViewSensitive) {
     sensitiveOnly = false;

@@ -8,6 +8,8 @@ import { auth } from "@/lib/auth";
 import { EstateDocument } from "@/models/EstateDocument";
 import { requireEstateEditAccess } from "@/lib/estateAccess";
 
+export const dynamic = "force-dynamic";
+
 interface PageProps {
   params: Promise<{
     estateId: string;
@@ -79,7 +81,7 @@ async function updateDocument(formData: FormData): Promise<void> {
   // Permission check (OWNER/EDITOR can edit)
   const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
   if (access.role === "VIEWER") {
-    redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
+    redirect(`/app/estates/${estateId}/documents?forbidden=1`);
   }
 
   const tags = Array.from(
@@ -146,7 +148,7 @@ export default async function EditDocumentPage({ params, searchParams }: PagePro
   }
 
   if (role === "VIEWER") {
-    redirect(`/app/estates/${estateId}/documents/${documentId}?forbidden=1`);
+    redirect(`/app/estates/${estateId}/documents?forbidden=1`);
   }
 
   const doc = await EstateDocument.findOne({
@@ -196,7 +198,7 @@ export default async function EditDocumentPage({ params, searchParams }: PagePro
         <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
           <div className="font-medium">Action blocked</div>
           <div className="mt-1 text-xs text-rose-200">
-            You don’t have edit permissions for this estate.
+            You don’t have edit permissions for this estate. Request access from the owner to make changes.
           </div>
         </div>
       ) : null}
