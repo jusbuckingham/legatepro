@@ -25,6 +25,56 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
+type SignalWithKind =
+  | (EstateReadinessResult["signals"]["missing"][number] & { kind: "missing" })
+  | (EstateReadinessResult["signals"]["atRisk"][number] & { kind: "risk" });
+
+function severityRankLocal(severity: string): number {
+  switch (severity) {
+    case "high":
+      return 3;
+    case "medium":
+      return 2;
+    case "low":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+function rankTopActions(signals: SignalWithKind[]): SignalWithKind[] {
+  return [...signals].sort((a, b) => {
+    const sev = severityRankLocal(b.severity) - severityRankLocal(a.severity);
+    if (sev !== 0) return sev;
+
+    const countA = typeof a.count === "number" ? a.count : 0;
+    const countB = typeof b.count === "number" ? b.count : 0;
+    const cnt = countB - countA;
+    if (cnt !== 0) return cnt;
+
+    // Missing before at-risk when tied.
+    if (a.kind !== b.kind) return a.kind === "missing" ? -1 : 1;
+
+    return a.label.localeCompare(b.label);
+  });
+}
+
+type PlainSignal = EstateReadinessResult["signals"]["missing"][number];
+
+function rankSignals(signals: PlainSignal[]): PlainSignal[] {
+  return [...signals].sort((a, b) => {
+    const sev = severityRankLocal(b.severity) - severityRankLocal(a.severity);
+    if (sev !== 0) return sev;
+
+    const countA = typeof a.count === "number" ? a.count : 0;
+    const countB = typeof b.count === "number" ? b.count : 0;
+    const cnt = countB - countA;
+    if (cnt !== 0) return cnt;
+
+    return a.label.localeCompare(b.label);
+  });
+}
+
 function scoreTone(score: number) {
   if (score >= 85) return "text-emerald-700";
   if (score >= 65) return "text-amber-700";
@@ -189,6 +239,32 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
     };
   }, [loadReadiness]);
 
+  const score = clamp(Math.round(readiness?.score ?? 0), 0, 100);
+
+  const topActions = useMemo(() => {
+    const missing = (readiness?.signals?.missing ?? []).map((s) => ({
+      ...s,
+      kind: "missing" as const,
+    }));
+
+    const risk = (readiness?.signals?.atRisk ?? []).map((s) => ({
+      ...s,
+      kind: "risk" as const,
+    }));
+
+    return rankTopActions([...missing, ...risk]).slice(0, 5);
+  }, [readiness]);
+
+  const rankedMissing = useMemo(
+    () => rankSignals(readiness?.signals?.missing ?? []).slice(0, 6),
+    [readiness],
+  );
+
+  const rankedAtRisk = useMemo(
+    () => rankSignals(readiness?.signals?.atRisk ?? []).slice(0, 6),
+    [readiness],
+  );
+
   // Skeleton
   if (loading) {
     return (
@@ -248,8 +324,6 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
     );
   }
 
-  const score = clamp(Math.round(readiness.score), 0, 100);
-
   return (
     <section className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -288,7 +362,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
           </div>
 
           {/* Top actions */}
-          {(readiness.signals.missing.length > 0 || readiness.signals.atRisk.length > 0) && (
+          {topActions.length > 0 && (
             <div className="mt-4 rounded-md border border-gray-200 bg-white p-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-[11px] font-semibold uppercase text-gray-600">Top actions</div>
@@ -296,14 +370,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
               </div>
 
               <ul className="mt-2 space-y-2">
-                {[
-                  ...readiness.signals.missing
-                    .slice(0, 3)
-                    .map((s) => ({ ...s, kind: "missing" as const })),
-                  ...readiness.signals.atRisk
-                    .slice(0, 2)
-                    .map((s) => ({ ...s, kind: "risk" as const })),
-                ].map((s) => (
+                {topActions.map((s) => (
                   <li
                     key={`${s.kind}:${s.key}`}
                     className="flex items-start justify-between gap-3"
@@ -399,7 +466,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                 <div className="mt-2 text-xs text-gray-500">Nothing missing detected.</div>
               ) : (
                 <ul className="mt-2 space-y-1">
-                  {readiness.signals.missing.slice(0, 6).map((s) => (
+                  {rankedMissing.map((s) => (
                     <li
                       key={s.key}
                       className={[
@@ -436,7 +503,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                 <div className="mt-2 text-xs text-gray-500">No risks detected.</div>
               ) : (
                 <ul className="mt-2 space-y-1">
-                  {readiness.signals.atRisk.slice(0, 6).map((s) => (
+                  {rankedAtRisk.map((s) => (
                     <li
                       key={s.key}
                       className={[
