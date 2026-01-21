@@ -12,6 +12,10 @@ export interface ReadinessSignal {
   key: string;
   label: string;
   severity: 'low' | 'medium' | 'high';
+  /** Optional short explanation shown under the label in the UI */
+  reason?: string;
+  /** Optional count used for aggregated signals */
+  count?: number;
 }
 
 export interface EstateReadinessBreakdown {
@@ -73,10 +77,33 @@ type ExpenseLike = unknown;
 
 // Helper constants for required document subjects and their metadata
 const REQUIRED_DOCUMENT_SUBJECTS: string[] = ['LEGAL', 'BANKING', 'PROPERTY'];
-const DOCUMENT_SUBJECT_METADATA: Record<string, { label: string; severity: 'low' | 'medium' | 'high' }> = {
-  LEGAL:   { label: 'Legal documents (Will, POA, etc.)', severity: 'high' },
-  BANKING: { label: 'Banking information documents', severity: 'medium' },
-  PROPERTY:{ label: 'Property ownership documents', severity: 'medium' },
+const DOCUMENT_SUBJECT_METADATA: Record<
+  string,
+  {
+    shortLabel: string;
+    label: string;
+    examples: string;
+    severity: 'low' | 'medium' | 'high';
+  }
+> = {
+  LEGAL: {
+    shortLabel: 'Legal docs',
+    label: 'Legal documents',
+    examples: 'Will/trust, Letters of Authority/Administration, court orders, attorney filings',
+    severity: 'high',
+  },
+  BANKING: {
+    shortLabel: 'Banking docs',
+    label: 'Banking information',
+    examples: 'Account statements, beneficiary forms, bank correspondence, estate account setup docs',
+    severity: 'medium',
+  },
+  PROPERTY: {
+    shortLabel: 'Property docs',
+    label: 'Property ownership',
+    examples: 'Deeds, titles, insurance, mortgage statements, tax bills, HOA docs',
+    severity: 'medium',
+  },
 };
 
 // Helper function to calculate document readiness score and signals
@@ -111,21 +138,24 @@ function calculateDocumentReadiness(documents: DocLike[]): { score: number; raw:
   // Assemble signals for missing document categories
   const missingSignals: ReadinessSignal[] = [];
   for (const missing of missingDocumentSubjects) {
-    if (DOCUMENT_SUBJECT_METADATA[missing]) {
-      // Prefix "No " and lower-case the first letter of the label for readability
-      const meta = DOCUMENT_SUBJECT_METADATA[missing];
-      const labelText = `No ${meta.label.charAt(0).toLowerCase()}${meta.label.slice(1)}`; 
+    const meta = DOCUMENT_SUBJECT_METADATA[missing];
+    const key = `missing_${missing.toLowerCase()}_documents`;
+
+    if (meta) {
       missingSignals.push({
-        key: `missing${missing.charAt(0) + missing.slice(1).toLowerCase()}Doc`,
-        label: labelText,
+        key,
+        label: `Add ${meta.label}`,
+        reason: meta.examples,
         severity: meta.severity,
+        count: 1,
       });
     } else {
-      // For any missing subject not in metadata, provide a generic signal
       missingSignals.push({
-        key: `missing${missing.charAt(0) + missing.slice(1).toLowerCase()}Doc`,
-        label: `No ${missing.charAt(0).toUpperCase() + missing.slice(1).toLowerCase()} documents on record`,
+        key,
+        label: `Add ${missing.charAt(0).toUpperCase() + missing.slice(1).toLowerCase()} documents`,
+        reason: 'Add at least one document for this category so it’s easy to assemble a court packet later.',
         severity: 'medium',
+        count: 1,
       });
     }
   }
@@ -163,9 +193,11 @@ function calculateTaskReadiness(tasks: TaskLike[]): { score: number; raw: Pick<E
       },
       signals: {
         missing: [{
-          key: 'noTasks',
-          label: 'No tasks have been created for the estate',
+          key: 'no_tasks',
+          label: 'Create your first tasks',
+          reason: 'Start with inventory, notify banks, secure property, and track deadlines.',
           severity: 'medium',
+          count: 1,
         }],
         atRisk: [],  // no atRisk since no tasks exist to be overdue
       },
@@ -266,9 +298,11 @@ function calculateContactReadiness(contacts: ContactLike[]): { score: number; ra
   if (totalContacts === 0) {
     contactsScore = 0;
     missingSignals.push({
-      key: 'noContacts',
-      label: 'No contacts added to the estate',
+      key: 'no_contacts',
+      label: 'Add key contacts',
+      reason: 'Add heirs, attorneys, banks, creditors, and vendors so you can link tasks and payments.',
       severity: 'high',
+      count: 1,
     });
   } else {
     contactsScore = 15;
@@ -293,9 +327,11 @@ function calculateFinanceReadiness(invoices: InvoiceLike[], expenses: ExpenseLik
   if (totalFinancialRecords === 0) {
     financesScore = 0;
     missingSignals.push({
-      key: 'noFinances',
-      label: 'No financial records (invoices or expenses) recorded',
+      key: 'no_finances',
+      label: 'Add an invoice or expense',
+      reason: 'Track bills, reimbursements, and estate payments so your final accounting is faster.',
       severity: 'medium',
+      count: 1,
     });
   } else {
     financesScore = 15;

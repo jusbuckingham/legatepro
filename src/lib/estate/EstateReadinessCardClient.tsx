@@ -319,8 +319,24 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                         >
                           {s.kind === "missing" ? "Missing" : "At risk"}
                         </span>
-                        <span className="truncate text-xs font-medium text-gray-900">{s.label}</span>
+
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="min-w-0 truncate text-xs font-medium text-gray-900">
+                            {s.label}
+                          </span>
+                          {typeof s.count === "number" && s.count > 1 ? (
+                            <span className="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700">
+                              {s.count}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
+
+                      {s.reason ? (
+                        <div className="mt-0.5 truncate text-[11px] text-gray-500" title={s.reason}>
+                          {s.reason}
+                        </div>
+                      ) : null}
                     </div>
 
                     <Link
@@ -395,7 +411,19 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                           : "border-gray-200 bg-white text-gray-800",
                       ].join(" ")}
                     >
-                      {s.label}
+                      <div className="flex items-start justify-between gap-2">
+                        <span>{s.label}</span>
+                        {typeof s.count === "number" && s.count > 1 ? (
+                          <span className="inline-flex shrink-0 items-center rounded-full bg-white/60 px-2 py-0.5 text-[11px] font-medium">
+                            {s.count}
+                          </span>
+                        ) : null}
+                      </div>
+                      {s.reason ? (
+                        <div className="mt-0.5 text-[11px] opacity-80" title={s.reason}>
+                          {s.reason}
+                        </div>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
@@ -420,7 +448,19 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                           : "border-gray-200 bg-white text-gray-800",
                       ].join(" ")}
                     >
-                      {s.label}
+                      <div className="flex items-start justify-between gap-2">
+                        <span>{s.label}</span>
+                        {typeof s.count === "number" && s.count > 1 ? (
+                          <span className="inline-flex shrink-0 items-center rounded-full bg-white/60 px-2 py-0.5 text-[11px] font-medium">
+                            {s.count}
+                          </span>
+                        ) : null}
+                      </div>
+                      {s.reason ? (
+                        <div className="mt-0.5 text-[11px] opacity-80" title={s.reason}>
+                          {s.reason}
+                        </div>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
