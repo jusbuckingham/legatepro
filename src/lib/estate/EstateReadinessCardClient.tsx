@@ -111,6 +111,24 @@ function toTimeLabel(date: Date | null) {
   }
 }
 
+function toRelativeAgeLabel(from: Date | null, now: Date = new Date()): string {
+  if (!from) return "—";
+  const ms = now.getTime() - from.getTime();
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}s ago`;
+
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+
+  const hr = Math.floor(min / 60);
+  if (hr < 48) return `${hr}h ago`;
+
+  const day = Math.floor(hr / 24);
+  return `${day}d ago`;
+}
+
 function actionHrefForSignal(estateId: string, signalKey: string): string {
   const key = signalKey.toLowerCase();
 
@@ -349,6 +367,18 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
         : "inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800",
     };
   }, [plan]);
+
+  const planGeneratedAt = useMemo(() => {
+    if (!plan?.generatedAt) return null;
+    const d = new Date(plan.generatedAt);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }, [plan]);
+
+  const planIsOutdated = useMemo(() => {
+    if (!planGeneratedAt) return false;
+    if (!lastUpdatedAt) return false;
+    return lastUpdatedAt.getTime() > planGeneratedAt.getTime();
+  }, [lastUpdatedAt, planGeneratedAt]);
 
   useEffect(() => {
     if (loading) return;
@@ -613,8 +643,19 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
             )}
 
             {plan ? (
-              <div className="mt-2 text-[11px] text-gray-500">
-                Generated: <span className="font-medium text-gray-700">{new Date(plan.generatedAt).toLocaleString()}</span>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+                <span title={planGeneratedAt ? planGeneratedAt.toLocaleString() : plan.generatedAt}>
+                  Generated: <span className="font-medium text-gray-700">{toRelativeAgeLabel(planGeneratedAt)}</span>
+                </span>
+
+                {planIsOutdated ? (
+                  <span
+                    className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                    title="Readiness changed since this plan was generated. Regenerate to refresh next steps."
+                  >
+                    Plan may be outdated
+                  </span>
+                ) : null}
               </div>
             ) : null}
           </div>
