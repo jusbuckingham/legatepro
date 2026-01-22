@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHash } from "crypto";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
@@ -8,10 +9,59 @@ import {
   buildReadinessPlanMessages,
   safeParseReadinessPlan,
 } from "@/lib/ai/readinessPlan";
+import { Estate } from "@/models/Estate";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 const AI_PROVIDER = process.env.OPENAI_API_KEY ? "openai" : null;
+
+const PLAN_TTL_MS = 24 * 60 * 60 * 1000;
+
+function safeIsoDate(value: unknown): Date | null {
+  if (typeof value !== "string") return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function isFreshWithinTtl(generatedAtIso: unknown, now: Date = new Date()): boolean {
+  const d = safeIsoDate(generatedAtIso);
+  if (!d) return false;
+  return now.getTime() - d.getTime() <= PLAN_TTL_MS;
+}
+
+function snapshotSignals(readiness: EstateReadinessLike): {
+  missing: ReadinessSignalLike[];
+  atRisk: ReadinessSignalLike[];
+} {
+  const missing = Array.isArray(readiness?.signals?.missing) ? readiness.signals!.missing! : [];
+  const atRisk = Array.isArray(readiness?.signals?.atRisk) ? readiness.signals!.atRisk! : [];
+
+  // Keep snapshot small and stable.
+  const pick = (s: ReadinessSignalLike): ReadinessSignalLike => ({
+    key: String(s.key),
+    label: String(s.label),
+    severity: s.severity,
+    reason: typeof s.reason === "string" ? s.reason : undefined,
+    count: typeof s.count === "number" ? s.count : undefined,
+  });
+
+  return {
+    missing: missing.map(pick),
+    atRisk: atRisk.map(pick),
+  };
+}
+
+function hashSnapshot(snapshot: { missing: ReadinessSignalLike[]; atRisk: ReadinessSignalLike[] }): string {
+  // Stable hash for diffing: sort by key then stringify.
+  const stable = {
+    missing: [...snapshot.missing].sort((a, b) => String(a.key).localeCompare(String(b.key))),
+    atRisk: [...snapshot.atRisk].sort((a, b) => String(a.key).localeCompare(String(b.key))),
+  };
+
+  const json = JSON.stringify(stable);
+  return createHash("sha256").update(json).digest("hex");
+}
 
 async function generatePlanWithAI(params: {
   estateId: string;
@@ -248,6 +298,8 @@ export async function GET(
 ) {
   try {
     const { estateId } = await context.params;
+    const url = new URL(_req.url);
+    const refresh = url.searchParams.get("refresh") === "1";
 
     const session = await auth();
     if (!session?.user?.id) {
@@ -258,10 +310,54 @@ export async function GET(
 
     await requireEstateAccess({ estateId, userId: session.user.id });
 
+    if (!refresh) {
+      const existingEstate = await Estate.findById(estateId).select("readinessPlan");
+      const existingPlan = existingEstate?.readinessPlan as unknown;
+
+      if (existingPlan && typeof existingPlan === "object") {
+        const p = existingPlan as {
+          estateId?: unknown;
+          generatedAt?: unknown;
+          generator?: unknown;
+          steps?: unknown;
+        };
+
+        if (
+          typeof p.estateId === "string" &&
+          typeof p.generatedAt === "string" &&
+          typeof p.generator === "string" &&
+          Array.isArray(p.steps)
+        ) {
+          // TTL guard: auto-regenerate if plan is stale.
+          if (isFreshWithinTtl(p.generatedAt)) {
+            return NextResponse.json({ ok: true, plan: existingPlan }, { status: 200 });
+          }
+        }
+      }
+    }
+
     const readiness = (await getEstateReadiness(estateId)) as unknown as EstateReadinessLike;
 
+    const signalsSnapshot = snapshotSignals(readiness);
+    const inputHash = hashSnapshot(signalsSnapshot);
+
     const aiPlan = await generatePlanWithAI({ estateId, readiness });
-    const plan = aiPlan ?? buildPlanFromReadiness(estateId, readiness);
+    const basePlan = aiPlan ?? buildPlanFromReadiness(estateId, readiness);
+
+    // Persist extra metadata for diffing/history later.
+    const plan = {
+      ...basePlan,
+      meta: {
+        inputHash,
+        signals: signalsSnapshot,
+      },
+    };
+
+    await Estate.findByIdAndUpdate(
+      estateId,
+      { $set: { readinessPlan: plan } },
+      { new: false },
+    );
 
     return NextResponse.json({ ok: true, plan }, { status: 200 });
   } catch (err) {

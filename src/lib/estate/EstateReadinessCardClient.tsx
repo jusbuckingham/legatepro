@@ -27,9 +27,7 @@ type ReadinessPlan = {
   steps: ReadinessPlanStep[];
 };
 
-type ReadinessPlanApiResponse =
-  | { ok: true; plan: ReadinessPlan }
-  | { ok: false; error?: string };
+type ReadinessPlanApiResponse = { ok: true; plan: ReadinessPlan } | { ok: false; error?: string };
 
 const MODULES: Array<{
   key: keyof EstateReadinessResult["breakdown"];
@@ -41,6 +39,37 @@ const MODULES: Array<{
   { key: "contacts", label: "Contacts" },
   { key: "finances", label: "Finances" },
 ];
+
+
+const PLAN_TTL_MS = 24 * 60 * 60 * 1000;
+const PLAN_SNAPSHOT_STORAGE_PREFIX = "legatepro:readinessPlanSnapshot:";
+
+type PlanStepSnapshot = {
+  id: string;
+  title: string;
+  severity: ReadinessPlanStep["severity"];
+  href?: string;
+  kind?: ReadinessPlanStep["kind"];
+};
+
+type PlanSnapshot = {
+  estateId: string;
+  generatedAt: string;
+  steps: PlanStepSnapshot[];
+};
+
+type PlanDiff = {
+  hasPrevious: boolean;
+  added: PlanStepSnapshot[];
+  removed: PlanStepSnapshot[];
+  severityChanged: Array<{
+    id: string;
+    title: string;
+    from: ReadinessPlanStep["severity"];
+    to: ReadinessPlanStep["severity"];
+  }>;
+  totalChanges: number;
+};
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -61,6 +90,95 @@ function severityRankLocal(severity: string): number {
     default:
       return 0;
   }
+}
+
+function safeJsonParse<T>(value: string | null): T | null {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
+
+function snapshotFromPlan(plan: ReadinessPlan): PlanSnapshot {
+  return {
+    estateId: plan.estateId,
+    generatedAt: plan.generatedAt,
+    steps: (plan.steps ?? []).map((s) => ({
+      id: s.id,
+      title: s.title,
+      severity: s.severity,
+      href: s.href,
+      kind: s.kind,
+    })),
+  };
+}
+
+function diffPlans(current: ReadinessPlan | null, previous: PlanSnapshot | null): PlanDiff {
+  if (!current) {
+    return {
+      hasPrevious: Boolean(previous),
+      added: [],
+      removed: [],
+      severityChanged: [],
+      totalChanges: 0,
+    };
+  }
+
+  const curSteps: PlanStepSnapshot[] = (current.steps ?? []).map((s) => ({
+    id: s.id,
+    title: s.title,
+    severity: s.severity,
+  }));
+
+  const prevSteps = previous?.steps ?? [];
+
+  const curMap = new Map(curSteps.map((s) => [s.id, s] as const));
+  const prevMap = new Map(prevSteps.map((s) => [s.id, s] as const));
+
+  const added: PlanStepSnapshot[] = [];
+  const removed: PlanStepSnapshot[] = [];
+  const severityChanged: PlanDiff["severityChanged"] = [];
+
+  for (const [id, cur] of curMap.entries()) {
+    const prev = prevMap.get(id);
+    if (!prev) {
+      added.push(cur);
+      continue;
+    }
+    if (prev.severity !== cur.severity) {
+      severityChanged.push({ id, title: cur.title, from: prev.severity, to: cur.severity });
+    }
+  }
+
+  for (const [id, prev] of prevMap.entries()) {
+    if (!curMap.has(id)) removed.push(prev);
+  }
+
+  severityChanged.sort(
+    (a, b) => severityRankLocal(b.to) - severityRankLocal(a.to) || a.title.localeCompare(b.title),
+  );
+
+  added.sort(
+    (a, b) =>
+      severityRankLocal(b.severity) - severityRankLocal(a.severity) || a.title.localeCompare(b.title),
+  );
+
+  removed.sort(
+    (a, b) =>
+      severityRankLocal(b.severity) - severityRankLocal(a.severity) || a.title.localeCompare(b.title),
+  );
+
+  const totalChanges = added.length + removed.length + severityChanged.length;
+
+  return {
+    hasPrevious: Boolean(previous),
+    added,
+    removed,
+    severityChanged,
+    totalChanges,
+  };
 }
 
 function rankTopActions(signals: SignalWithKind[]): SignalWithKind[] {
@@ -129,6 +247,41 @@ function toRelativeAgeLabel(from: Date | null, now: Date = new Date()): string {
   return `${day}d ago`;
 }
 
+function actionHrefForPlanStepTitle(estateId: string, title: string): string {
+  const t = title.toLowerCase();
+  const estateBase = `/app/estates/${encodeURIComponent(estateId)}`;
+
+  if (t.includes("document") || t.includes("upload") || t.includes("will") || t.includes("trust")) {
+    return `${estateBase}/documents`;
+  }
+  if (t.includes("task") || t.includes("checklist") || t.includes("todo")) {
+    return `${estateBase}/tasks`;
+  }
+  if (t.includes("property") || t.includes("home") || t.includes("house") || t.includes("deed")) {
+    return `${estateBase}/properties`;
+  }
+  if (
+    t.includes("contact") ||
+    t.includes("beneficiar") ||
+    t.includes("heir") ||
+    t.includes("attorney") ||
+    t.includes("lawyer")
+  ) {
+    return `${estateBase}/contacts`;
+  }
+  if (
+    t.includes("invoice") ||
+    t.includes("expense") ||
+    t.includes("bill") ||
+    t.includes("payment") ||
+    t.includes("finance")
+  ) {
+    return `${estateBase}/invoices`;
+  }
+
+  return `${estateBase}/documents`;
+}
+
 function actionHrefForSignal(estateId: string, signalKey: string): string {
   const key = signalKey.toLowerCase();
 
@@ -191,9 +344,12 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
   const [plan, setPlan] = useState<ReadinessPlan | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
   const [isPlanLoading, setIsPlanLoading] = useState(false);
+  const [isPlanAutoRefreshing, setIsPlanAutoRefreshing] = useState(false);
+  const [previousPlanSnapshot, setPreviousPlanSnapshot] = useState<PlanSnapshot | null>(null);
 
   const endpoint = useMemo(
     () => `/api/estates/${encodeURIComponent(estateId)}/readiness`,
@@ -205,7 +361,13 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
     [estateId],
   );
 
+  const planSnapshotStorageKey = useMemo(
+    () => `${PLAN_SNAPSHOT_STORAGE_PREFIX}${encodeURIComponent(estateId)}`,
+    [estateId],
+  );
+
   const didAutoPlanRef = useRef<string | null>(null);
+  const didAutoPlanRefreshRef = useRef<string | null>(null);
 
   const loadReadiness = useCallback(
     async (opts?: { silent?: boolean; signal?: AbortSignal }) => {
@@ -227,10 +389,13 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
 
         const isOk = (
           payload: ReadinessApiResponse,
-        ): payload is
-          | { ok: true; readiness: EstateReadinessResult }
-          | { ok: true; result: EstateReadinessResult } => {
-          return typeof payload === "object" && payload !== null && "ok" in payload && payload.ok === true;
+        ): payload is { ok: true; readiness: EstateReadinessResult } | { ok: true; result: EstateReadinessResult } => {
+          return (
+            typeof payload === "object" &&
+            payload !== null &&
+            "ok" in payload &&
+            payload.ok === true
+          );
         };
 
         if (!res.ok || !isOk(data)) {
@@ -270,42 +435,57 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
     [endpoint],
   );
 
-  const loadPlan = useCallback(async () => {
-    setIsPlanLoading(true);
-    setPlanError(null);
+  const loadPlan = useCallback(
+    async (opts?: { refresh?: boolean; reason?: "manual" | "auto" }) => {
+      setIsPlanLoading(true);
+      setIsPlanAutoRefreshing(opts?.reason === "auto");
+      setPlanError(null);
 
-    try {
-      const res = await fetch(planEndpoint, {
-        method: "GET",
-        headers: { accept: "application/json" },
-        cache: "no-store",
-      });
+      try {
+        const res = await fetch(`${planEndpoint}${opts?.refresh ? "?refresh=1" : ""}`, {
+          method: "GET",
+          headers: { accept: "application/json" },
+          cache: "no-store",
+        });
 
-      const data = (await res.json()) as ReadinessPlanApiResponse;
+        const data = (await res.json()) as ReadinessPlanApiResponse;
 
-      if (!res.ok || !data || typeof data !== "object" || ("ok" in data && data.ok === false)) {
-        const errVal =
-          data && typeof data === "object" && "error" in data
-            ? (data as { ok: false; error?: string }).error
-            : undefined;
+        if (!res.ok || !data || typeof data !== "object" || ("ok" in data && data.ok === false)) {
+          const errVal =
+            data && typeof data === "object" && "error" in data
+              ? (data as { ok: false; error?: string }).error
+              : undefined;
+          setPlan(null);
+          setPlanError(errVal ?? "plan_unavailable");
+          return;
+        }
+
+        if ("plan" in data && data.plan) {
+          const nextPlan = data.plan;
+          setPlan(nextPlan);
+
+          // Persist snapshot for diffing
+          if (typeof window !== "undefined") {
+            const existing = safeJsonParse<PlanSnapshot>(window.localStorage.getItem(planSnapshotStorageKey));
+            if (existing && existing.estateId === estateId) {
+              setPreviousPlanSnapshot(existing);
+            }
+            window.localStorage.setItem(planSnapshotStorageKey, JSON.stringify(snapshotFromPlan(nextPlan)));
+          }
+        } else {
+          setPlan(null);
+          setPlanError("plan_unavailable");
+        }
+      } catch (e) {
         setPlan(null);
-        setPlanError(errVal ?? "plan_unavailable");
-        return;
+        setPlanError(e instanceof Error ? e.message : "plan_unavailable");
+      } finally {
+        setIsPlanLoading(false);
+        setIsPlanAutoRefreshing(false);
       }
-
-      if ("plan" in data && data.plan) {
-        setPlan(data.plan);
-      } else {
-        setPlan(null);
-        setPlanError("plan_unavailable");
-      }
-    } catch (e) {
-      setPlan(null);
-      setPlanError(e instanceof Error ? e.message : "plan_unavailable");
-    } finally {
-      setIsPlanLoading(false);
-    }
-  }, [planEndpoint]);
+    },
+    [planEndpoint, estateId, planSnapshotStorageKey],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -314,6 +494,15 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
     setPlan(null);
     setPlanError(null);
     didAutoPlanRef.current = null;
+
+    // Load previous plan snapshot for diffing
+    if (typeof window !== "undefined") {
+      const stored = safeJsonParse<PlanSnapshot>(window.localStorage.getItem(planSnapshotStorageKey));
+      if (stored && stored.estateId === estateId) setPreviousPlanSnapshot(stored);
+      else setPreviousPlanSnapshot(null);
+    } else {
+      setPreviousPlanSnapshot(null);
+    }
 
     const onFocus = () => {
       // Silent refresh on focus (premium feel)
@@ -328,7 +517,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
       controller.abort();
       window.removeEventListener("focus", onFocus);
     };
-  }, [loadReadiness]);
+  }, [loadReadiness, estateId, planSnapshotStorageKey]);
 
   const score = clamp(Math.round(readiness?.score ?? 0), 0, 100);
 
@@ -380,6 +569,36 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
     return lastUpdatedAt.getTime() > planGeneratedAt.getTime();
   }, [lastUpdatedAt, planGeneratedAt]);
 
+  const planIsStale = useMemo(() => {
+    if (!planGeneratedAt) return false;
+    return Date.now() - planGeneratedAt.getTime() > PLAN_TTL_MS;
+  }, [planGeneratedAt]);
+
+  const planDiff = useMemo(() => diffPlans(plan, previousPlanSnapshot), [plan, previousPlanSnapshot]);
+
+  const planStepChanges = useMemo(() => {
+    const added = new Map<string, PlanStepSnapshot>();
+    for (const s of planDiff.added) added.set(s.id, s);
+
+    const severityChanged = new Map<
+      string,
+      { from: ReadinessPlanStep["severity"]; to: ReadinessPlanStep["severity"] }
+    >();
+    for (const c of planDiff.severityChanged) severityChanged.set(c.id, { from: c.from, to: c.to });
+
+    return { added, severityChanged };
+  }, [planDiff.added, planDiff.severityChanged]);
+
+  const severityDeltaLabel = useCallback(
+    (from: ReadinessPlanStep["severity"], to: ReadinessPlanStep["severity"]) => {
+      const d = severityRankLocal(to) - severityRankLocal(from);
+      if (d > 0) return { text: "Severity ↑", tone: "up" as const };
+      if (d < 0) return { text: "Severity ↓", tone: "down" as const };
+      return { text: "Severity", tone: "same" as const };
+    },
+    [],
+  );
+
   useEffect(() => {
     if (loading) return;
     if (!readiness) return;
@@ -390,8 +609,41 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
     if (didAutoPlanRef.current === estateId) return;
 
     didAutoPlanRef.current = estateId;
-    void loadPlan();
+    void loadPlan({ reason: "auto" });
   }, [estateId, loading, readiness, plan, isPlanLoading, loadPlan]);
+
+  useEffect(() => {
+    if (!plan) return;
+    if (!planIsStale) return;
+    if (isPlanLoading) return;
+
+    // Only auto-refresh once per stale plan version.
+    const key = `${estateId}:${plan.generatedAt}`;
+    if (didAutoPlanRefreshRef.current === key) return;
+    didAutoPlanRefreshRef.current = key;
+
+    const run = () => {
+      void loadPlan({ refresh: true, reason: "auto" });
+    };
+
+    // Prefer idle time; fallback to a short timeout.
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      const ric = (
+        window as unknown as {
+          requestIdleCallback: (cb: () => void, opts?: { timeout?: number }) => number;
+        }
+      ).requestIdleCallback;
+      const cancel = (window as unknown as { cancelIdleCallback?: (id: number) => void })
+        .cancelIdleCallback;
+      const id = ric(run, { timeout: 2000 });
+      return () => {
+        if (cancel) cancel(id);
+      };
+    }
+
+    const t = globalThis.setTimeout(run, 1200);
+    return () => globalThis.clearTimeout(t);
+  }, [estateId, plan, planIsStale, isPlanLoading, loadPlan]);
 
   // Skeleton
   if (loading) {
@@ -472,10 +724,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
           <div className="mt-3 grid gap-2">
             {MODULES.map(({ key, label }) => {
               const item = readiness.breakdown[key];
-              const pct =
-                item.max > 0
-                  ? clamp(Math.round((item.score / item.max) * 100), 0, 100)
-                  : 0;
+              const pct = item.max > 0 ? clamp(Math.round((item.score / item.max) * 100), 0, 100) : 0;
 
               return (
                 <div key={key} className="grid grid-cols-[90px_1fr_42px] items-center gap-2">
@@ -499,10 +748,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
 
               <ul className="mt-2 space-y-2">
                 {topActions.map((s) => (
-                  <li
-                    key={`${s.kind}:${s.key}`}
-                    className="flex items-start justify-between gap-3"
-                  >
+                  <li key={`${s.kind}:${s.key}`} className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span
@@ -516,9 +762,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                         </span>
 
                         <div className="flex min-w-0 items-center gap-2">
-                          <span className="min-w-0 truncate text-xs font-medium text-gray-900">
-                            {s.label}
-                          </span>
+                          <span className="min-w-0 truncate text-xs font-medium text-gray-900">{s.label}</span>
                           {typeof s.count === "number" && s.count > 1 ? (
                             <span className="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700">
                               {s.count}
@@ -557,20 +801,23 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                   </span>
                 ) : null}
               </div>
+
               <button
                 type="button"
-                onClick={() => void loadPlan()}
+                onClick={() => void loadPlan({ refresh: Boolean(plan), reason: "manual" })}
                 className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
                 aria-busy={isPlanLoading}
                 disabled={isPlanLoading}
-                title="Generate a 5-step plan"
+                title={plan ? "Regenerate plan (forces refresh)" : "Generate a 5-step plan"}
               >
                 {isPlanLoading ? "Generating…" : plan ? "Regenerate" : "Generate"}
               </button>
             </div>
 
             {planError ? (
-              <div className="mt-2 text-xs text-rose-700">Could not generate plan{planError ? ` (${planError})` : ""}.</div>
+              <div className="mt-2 text-xs text-rose-700">
+                Could not generate plan{planError ? ` (${planError})` : ""}.
+              </div>
             ) : null}
 
             {!plan ? (
@@ -582,7 +829,17 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
             ) : (
               <ul className="mt-2 space-y-2">
                 {plan.steps.map((step) => (
-                  <li key={step.id} className="flex items-start justify-between gap-3">
+                  <li
+                    key={step.id}
+                    className={[
+                      "flex items-start justify-between gap-3 rounded-md p-1",
+                      planStepChanges.added.has(step.id)
+                        ? "bg-slate-50"
+                        : planStepChanges.severityChanged.has(step.id)
+                        ? "bg-amber-50"
+                        : "",
+                    ].join(" ")}
+                  >
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span
@@ -594,13 +851,44 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                               : "inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800"
                           }
                         >
-                          {step.kind === "missing" ? "Missing" : step.kind === "risk" ? "At risk" : "General"}
+                          {step.kind === "missing"
+                            ? "Missing"
+                            : step.kind === "risk"
+                            ? "At risk"
+                            : "General"}
                         </span>
 
-                        <div className="flex min-w-0 items-center gap-2">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
                           <span className="min-w-0 truncate text-xs font-medium text-gray-900">
                             {step.title}
                           </span>
+
+                          {planStepChanges.added.has(step.id) ? (
+                            <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                              New
+                            </span>
+                          ) : null}
+
+                          {planStepChanges.severityChanged.has(step.id) ? (() => {
+                            const ch = planStepChanges.severityChanged.get(step.id);
+                            if (!ch) return null;
+                            const meta = severityDeltaLabel(ch.from, ch.to);
+                            const cls =
+                              meta.tone === "up"
+                                ? "inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-800"
+                                : meta.tone === "down"
+                                ? "inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800"
+                                : "inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700";
+                            return (
+                              <span
+                                className={cls}
+                                title={`Severity changed: ${ch.from} → ${ch.to}`}
+                              >
+                                {meta.text}
+                              </span>
+                            );
+                          })() : null}
+
                           {typeof step.count === "number" && step.count > 1 ? (
                             <span className="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700">
                               {step.count}
@@ -620,7 +908,8 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
 
                             <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-gray-500">
                               <span>
-                                Severity: <span className="font-medium text-gray-700">{step.severity}</span>
+                                Severity:{" "}
+                                <span className="font-medium text-gray-700">{step.severity}</span>
                               </span>
                               <span>
                                 Type: <span className="font-medium text-gray-700">{step.kind}</span>
@@ -642,10 +931,41 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
               </ul>
             )}
 
+            {/* Resolved items since last plan */}
+            {planDiff.hasPrevious && planDiff.removed.length > 0 ? (
+              <details className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-2">
+                <summary className="cursor-pointer text-[11px] font-medium text-gray-700">
+                  Resolved since last plan
+                  <span className="ml-2 font-normal text-gray-500">({planDiff.removed.length})</span>
+                </summary>
+
+                <ul className="mt-2 space-y-1">
+                  {planDiff.removed.slice(0, 5).map((s) => {
+                    const href = s.href ?? actionHrefForPlanStepTitle(estateId, s.title);
+                    return (
+                      <li key={s.id} className="flex items-start justify-between gap-2">
+                        <Link href={href} className="text-[11px] text-gray-800 hover:underline">
+                          <span className="font-medium">{s.title}</span>
+                          <span className="ml-1 text-gray-500">({s.severity})</span>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                {planDiff.removed.length > 5 ? (
+                  <div className="mt-2 text-[11px] text-gray-500">Showing top 5 resolved items.</div>
+                ) : null}
+              </details>
+            ) : null}
+
             {plan ? (
               <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
                 <span title={planGeneratedAt ? planGeneratedAt.toLocaleString() : plan.generatedAt}>
-                  Generated: <span className="font-medium text-gray-700">{toRelativeAgeLabel(planGeneratedAt)}</span>
+                  Generated:{" "}
+                  <span className="font-medium text-gray-700">
+                    {toRelativeAgeLabel(planGeneratedAt)}
+                  </span>
                 </span>
 
                 {planIsOutdated ? (
@@ -656,15 +976,92 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                     Plan may be outdated
                   </span>
                 ) : null}
+
+                {planIsStale ? (
+                  <span
+                    className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                    title="This plan is older than 24 hours. The server will refresh it automatically soon, but you can regenerate now."
+                  >
+                    {isPlanAutoRefreshing ? "Refreshing plan…" : "Plan is stale"}
+                  </span>
+                ) : null}
+
+                {planDiff.hasPrevious && planDiff.totalChanges > 0 ? (
+                  <span
+                    className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700"
+                    title="Compared to your previous plan"
+                  >
+                    {planDiff.totalChanges} change{planDiff.totalChanges === 1 ? "" : "s"} since last plan
+                  </span>
+                ) : null}
               </div>
+            ) : null}
+
+            {planDiff.hasPrevious && planDiff.totalChanges > 0 ? (
+              <details className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-2">
+                <summary className="cursor-pointer text-[11px] font-medium text-gray-700">
+                  What changed?
+                  <span className="ml-2 font-normal text-gray-500">
+                    {planDiff.added.length} new, {planDiff.severityChanged.length} severity update
+                    {planDiff.severityChanged.length === 1 ? "" : "s"}, {planDiff.removed.length} resolved
+                  </span>
+                </summary>
+
+                <div className="mt-2 space-y-2 text-[11px] text-gray-700">
+                  {planDiff.added.length > 0 ? (
+                    <div>
+                      <div className="font-semibold text-gray-800">New</div>
+                      <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                        {planDiff.added.slice(0, 5).map((s) => (
+                          <li key={s.id}>
+                            <span className="font-medium">{s.title}</span>
+                            <span className="ml-1 text-gray-500">({s.severity})</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  {planDiff.severityChanged.length > 0 ? (
+                    <div>
+                      <div className="font-semibold text-gray-800">Severity changes</div>
+                      <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                        {planDiff.severityChanged.slice(0, 5).map((c) => (
+                          <li key={c.id}>
+                            <span className="font-medium">{c.title}</span>
+                            <span className="ml-1 text-gray-500">
+                              ({c.from} → {c.to})
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  {planDiff.removed.length > 0 ? (
+                    <div>
+                      <div className="font-semibold text-gray-800">Resolved</div>
+                      <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                        {planDiff.removed.slice(0, 5).map((s) => (
+                          <li key={s.id}>
+                            <span className="font-medium">{s.title}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  {planDiff.added.length > 5 || planDiff.severityChanged.length > 5 || planDiff.removed.length > 5 ? (
+                    <div className="text-gray-500">Showing top 5 per section.</div>
+                  ) : null}
+                </div>
+              </details>
             ) : null}
           </div>
         </div>
 
         <div className="flex shrink-0 flex-col items-end gap-2">
-          <div className={`text-4xl font-semibold leading-none ${scoreTone(score)}`}>
-            {score}%
-          </div>
+          <div className={`text-4xl font-semibold leading-none ${scoreTone(score)}`}>{score}%</div>
 
           <div className="flex items-center gap-3">
             <button
@@ -679,7 +1076,8 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
             </button>
 
             <span className="text-[11px] text-gray-500">
-              Updated: <span className="font-medium text-gray-700">{toTimeLabel(lastUpdatedAt)}</span>
+              Updated:{" "}
+              <span className="font-medium text-gray-700">{toTimeLabel(lastUpdatedAt)}</span>
             </span>
           </div>
 

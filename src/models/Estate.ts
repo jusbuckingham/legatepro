@@ -75,6 +75,9 @@ export interface IEstate {
 
   status?: "OPEN" | "CLOSED";
 
+  // Cached readiness copilot plan (persisted for fast reloads + diffing)
+  readinessPlan?: unknown;
+
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -176,6 +179,11 @@ const EstateSchema = new Schema<EstateDocument>(
       default: "OPEN",
       set: (val: string | undefined) => (typeof val === "string" ? val.toUpperCase() : val),
     },
+
+    readinessPlan: {
+      type: Schema.Types.Mixed,
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -204,7 +212,6 @@ EstateSchema.index({ "collaborators.userId": 1, updatedAt: -1 });
 
 // Fast invite lookups by email + status
 EstateSchema.index({ "invites.email": 1, "invites.status": 1 });
-
 
 let EstateModel: Model<EstateDocument>;
 
