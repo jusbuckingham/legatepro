@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { EstateReadinessResult } from "@/lib/estate/readiness";
 
@@ -187,6 +187,8 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
     [estateId],
   );
 
+  const didAutoPlanRef = useRef<string | null>(null);
+
   const loadReadiness = useCallback(
     async (opts?: { silent?: boolean; signal?: AbortSignal }) => {
       const silent = opts?.silent ?? false;
@@ -293,6 +295,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
     void loadReadiness({ silent: false, signal: controller.signal });
     setPlan(null);
     setPlanError(null);
+    didAutoPlanRef.current = null;
 
     const onFocus = () => {
       // Silent refresh on focus (premium feel)
@@ -346,6 +349,19 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
         : "inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800",
     };
   }, [plan]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!readiness) return;
+    if (isPlanLoading) return;
+    if (plan) return;
+
+    // Only run once per estateId unless user explicitly regenerates.
+    if (didAutoPlanRef.current === estateId) return;
+
+    didAutoPlanRef.current = estateId;
+    void loadPlan();
+  }, [estateId, loading, readiness, plan, isPlanLoading, loadPlan]);
 
   // Skeleton
   if (loading) {
