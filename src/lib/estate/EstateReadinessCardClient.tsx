@@ -580,9 +580,24 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                       </div>
 
                       {step.details ? (
-                        <div className="mt-0.5 truncate text-[11px] text-gray-500" title={step.details}>
-                          {step.details}
-                        </div>
+                        <details className="mt-1">
+                          <summary className="cursor-pointer text-[11px] font-medium text-blue-600 hover:underline">
+                            Why this step?
+                          </summary>
+
+                          <div className="mt-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 text-[11px] text-gray-700">
+                            <div className="whitespace-pre-wrap">{step.details}</div>
+
+                            <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-gray-500">
+                              <span>
+                                Severity: <span className="font-medium text-gray-700">{step.severity}</span>
+                              </span>
+                              <span>
+                                Type: <span className="font-medium text-gray-700">{step.kind}</span>
+                              </span>
+                            </div>
+                          </div>
+                        </details>
                       ) : null}
                     </div>
 
