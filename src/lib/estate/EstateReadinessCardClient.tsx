@@ -580,7 +580,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                       </div>
 
                       {step.details ? (
-                        <details className="mt-1">
+                        <details className="mt-1" open={step.severity === "high"}>
                           <summary className="cursor-pointer text-[11px] font-medium text-blue-600 hover:underline">
                             Why this step?
                           </summary>
