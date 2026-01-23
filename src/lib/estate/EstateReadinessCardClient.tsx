@@ -429,6 +429,46 @@ function ctaLabelForStep(step: Pick<ReadinessPlanStep, "kind">): string {
   return "Open →";
 }
 
+function fallbackDetailsForStep(step: Pick<ReadinessPlanStep, "kind" | "severity" | "count" | "href" | "title">): string {
+  const moduleKey = moduleFromHref(step.href) ?? moduleFromText(step.title);
+
+  const kindPhrase =
+    step.kind === "missing"
+      ? "This is missing"
+      : step.kind === "risk"
+      ? "This is at risk"
+      : "This is a general improvement";
+
+  const severityPhrase =
+    step.severity === "high"
+      ? "High severity means it’s likely blocking progress or creating risk."
+      : step.severity === "medium"
+      ? "Medium severity means it’s worth addressing soon."
+      : "Low severity means it’s a smaller, quick win.";
+
+  const countPhrase =
+    typeof step.count === "number" && step.count > 1
+      ? `It appears to affect about ${step.count} items.`
+      : typeof step.count === "number" && step.count === 1
+      ? "It appears to affect about 1 item."
+      : "";
+
+  const modulePhrase =
+    moduleKey === "documents"
+      ? "You can usually resolve this in Documents."
+      : moduleKey === "tasks"
+      ? "You can usually resolve this in Tasks."
+      : moduleKey === "properties"
+      ? "You can usually resolve this in Properties."
+      : moduleKey === "contacts"
+      ? "You can usually resolve this in Contacts."
+      : moduleKey === "invoices"
+      ? "You can usually resolve this in Invoices/Expenses."
+      : "";
+
+  return [kindPhrase + ".", severityPhrase, countPhrase, modulePhrase].filter(Boolean).join(" ");
+}
+
 function confidenceLegendItem(conf: "high" | "medium" | "low") {
   if (conf === "high") {
     return { icon: "▲", label: "High", detail: "Multiple signals" };
@@ -463,6 +503,13 @@ function ConfidenceLegend() {
       })}
     </div>
   );
+}
+
+function isAllResolved(readiness: EstateReadinessResult | null): boolean {
+  if (!readiness) return false;
+  const missing = readiness.signals?.missing?.length ?? 0;
+  const risk = readiness.signals?.atRisk?.length ?? 0;
+  return missing === 0 && risk === 0;
 }
 
 export default function EstateReadinessCardClient(props: { estateId: string }) {
@@ -651,6 +698,8 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
   }, [loadReadiness, estateId, planSnapshotStorageKey]);
 
   const score = clamp(Math.round(readiness?.score ?? 0), 0, 100);
+
+  const allResolved = useMemo(() => isAllResolved(readiness), [readiness]);
 
   const topActions = useMemo(() => {
     const missing = (readiness?.signals?.missing ?? []).map((s) => ({
@@ -1115,7 +1164,6 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                   </span>
                 ) : null}
               </div>
-
               <button
                 type="button"
                 onClick={() => void loadPlan({ refresh: Boolean(plan), reason: "manual" })}
@@ -1127,410 +1175,449 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                 {isPlanLoading ? "Generating…" : plan ? "Regenerate" : "Generate"}
               </button>
             </div>
-            {plan ? (
-              <div className="mt-2">
-                <ConfidenceLegend />
-              </div>
-            ) : null}
 
-            {planError ? (
-              <div className="mt-2 text-xs text-rose-700">
-                Could not generate plan{planError ? ` (${planError})` : ""}.
-              </div>
-            ) : null}
+            {allResolved ? (
+              <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-semibold text-emerald-900">You’re in great shape</div>
+                    <div className="mt-0.5 text-[11px] text-emerald-800">
+                      No missing or at-risk items detected right now. Keep things maintained and you’ll stay at 100%.
+                    </div>
+                  </div>
+                  <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                    Ready
+                  </span>
+                </div>
 
-            {!plan ? (
-              <div className="mt-2 text-xs text-gray-500">
-                Get a short, prioritized checklist based on your current readiness signals.
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  <Link
+                    href={`/app/estates/${encodeURIComponent(estateId)}/documents`}
+                    className="rounded-md border border-emerald-200 bg-white px-3 py-2 text-xs font-medium text-emerald-900 hover:bg-emerald-100"
+                  >
+                    Add a new document
+                    <div className="mt-0.5 text-[11px] font-normal text-emerald-800">
+                      Wills, letters, court docs, receipts
+                    </div>
+                  </Link>
+                  <Link
+                    href={`/app/estates/${encodeURIComponent(estateId)}/tasks`}
+                    className="rounded-md border border-emerald-200 bg-white px-3 py-2 text-xs font-medium text-emerald-900 hover:bg-emerald-100"
+                  >
+                    Add a maintenance task
+                    <div className="mt-0.5 text-[11px] font-normal text-emerald-800">
+                      Follow-ups, calls, deadlines, reminders
+                    </div>
+                  </Link>
+                  <Link
+                    href={`/app/estates/${encodeURIComponent(estateId)}/properties`}
+                    className="rounded-md border border-emerald-200 bg-white px-3 py-2 text-xs font-medium text-emerald-900 hover:bg-emerald-100"
+                  >
+                    Review properties
+                    <div className="mt-0.5 text-[11px] font-normal text-emerald-800">
+                      Ownership, utilities, inspections
+                    </div>
+                  </Link>
+                  <Link
+                    href={`/app/estates/${encodeURIComponent(estateId)}/invoices`}
+                    className="rounded-md border border-emerald-200 bg-white px-3 py-2 text-xs font-medium text-emerald-900 hover:bg-emerald-100"
+                  >
+                    Add an expense
+                    <div className="mt-0.5 text-[11px] font-normal text-emerald-800">
+                      Bills and reimbursements
+                    </div>
+                  </Link>
+                </div>
+
+                <div className="mt-3 text-[11px] text-emerald-800">
+                  Tip: If anything changes, regenerate a plan to get updated next steps.
+                </div>
               </div>
-            ) : rankedPlanSteps.length === 0 ? (
-              <div className="mt-2 text-xs text-gray-500">No next steps available.</div>
             ) : (
-              <ul className="mt-2 space-y-2">
-                {rankedPlanSteps.map((step) => (
-                  <li
-                    key={step.id}
-                    className={[
-                      "flex items-start justify-between gap-3 rounded-md p-1",
-                      planStepChanges.added.has(step.id)
-                        ? "bg-slate-50"
-                        : planStepChanges.severityChanged.has(step.id)
-                        ? "bg-amber-50"
-                        : "",
-                    ].join(" ")}
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={
-                            step.kind === "missing"
-                              ? "inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700"
-                              : step.kind === "risk"
-                              ? "inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
-                              : "inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800"
-                          }
-                        >
-                          {step.kind === "missing"
-                            ? "Missing"
-                            : step.kind === "risk"
-                            ? "At risk"
-                            : "General"}
-                        </span>
-
-                        <div className="flex min-w-0 flex-wrap items-center gap-2">
-                          <span className="min-w-0 truncate text-xs font-medium text-gray-900">
-                            {step.title}
-                          </span>
-                          {(() => {
-                            const impact = planStepImpact.get(step.id);
-                            if (!impact) return null;
-
-                            const confTone =
-                              impact.confidence === "high"
-                                ? "text-gray-600"
-                                : impact.confidence === "medium"
-                                ? "text-gray-500"
-                                : "text-gray-400";
-
-                            const affected =
-                              typeof impact.affectedSignals === "number" && impact.affectedSignals > 1
-                                ? ` • ${impact.affectedSignals} items`
-                                : typeof impact.affectedSignals === "number" && impact.affectedSignals === 1
-                                ? " • 1 item"
-                                : "";
-
-                            // Inserted tooltip logic
-                            const confLabel =
-                              impact.confidence === "high"
-                                ? "High confidence"
-                                : impact.confidence === "medium"
-                                ? "Medium confidence"
-                                : "Low confidence";
-
-                            const basis =
-                              impact.confidence === "high"
-                                ? "Based on multiple readiness signals."
-                                : impact.confidence === "medium"
-                                ? "Based on limited readiness signals."
-                                : "Heuristic estimate (may change after refresh).";
-
-                            const itemCountLabel =
-                              typeof impact.affectedSignals === "number"
-                                ? impact.affectedSignals === 1
-                                  ? "1 item"
-                                  : `${impact.affectedSignals} items`
-                                : null;
-
-                            const impactLine = itemCountLabel
-                              ? `Likely impact: +${impact.estimatedScoreDelta}% readiness • ${itemCountLabel}`
-                              : `Likely impact: +${impact.estimatedScoreDelta}% readiness`;
-
-                            const tooltip = `${confLabel}. ${basis}\n${impactLine}\n\nHow this is estimated: severity + type + item count + recent changes.`;
-
-                            return (
-                              <span
-                                className={`inline-flex items-center gap-1 text-[11px] ${confTone}`}
-                                title={tooltip}
-                              >
-                                <span aria-hidden>
-                                  {impact.confidence === "high"
-                                    ? "▲"
-                                    : impact.confidence === "medium"
-                                    ? "●"
-                                    : "○"}
-                                </span>
-                                <span className="sr-only">
-                                  {impact.confidence === "high"
-                                    ? "High confidence"
-                                    : impact.confidence === "medium"
-                                    ? "Medium confidence"
-                                    : "Low confidence"}
-                                </span>
-                                <span>
-                                  Likely impact: +{impact.estimatedScoreDelta}% readiness{affected}
-                                </span>
-                              </span>
-                            );
-                          })()}
-
-                          {planStepChanges.added.has(step.id) ? (
-                            <span
-                              className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700"
-                              title="This step is new since your last plan"
-                            >
-                              New since last plan
-                            </span>
-                          ) : null}
-
-                          {planStepChanges.severityChanged.has(step.id) ? (() => {
-                            const ch = planStepChanges.severityChanged.get(step.id);
-                            if (!ch) return null;
-                            const meta = severityDeltaLabel(ch.from, ch.to);
-                            const cls =
-                              meta.tone === "up"
-                                ? "inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-800"
-                                : meta.tone === "down"
-                                ? "inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800"
-                                : "inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700";
-                            return (
-                              <span
-                                className={cls}
-                                title={`Severity changed: ${ch.from} → ${ch.to}`}
-                              >
-                                {meta.tone === "up"
-                                  ? "Risk increased"
-                                  : meta.tone === "down"
-                                  ? "Risk reduced"
-                                  : "Severity changed"}
-                              </span>
-                            );
-                          })() : null}
-
-                          {(() => {
-                            const why = changeExplanationForStep(step);
-                            if (!why) return null;
-
-                            return (
-                              <details className="group">
-                                <summary className="cursor-pointer select-none text-[11px] font-medium text-gray-500 hover:text-gray-700">
-                                  Why changed?
-                                </summary>
-                                <div className="mt-1 max-w-[560px] rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] text-gray-700">
-                                  {why}
-                                </div>
-                              </details>
-                            );
-                          })()}
-
-                          {typeof step.count === "number" && step.count > 1 ? (
-                            <span className="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700">
-                              {step.count}
-                            </span>
-                          ) : null}
-                        </div>
-                      </div>
-
-                      {step.details ? (
-                        <details className="mt-1" open={step.severity === "high"}>
-                          <summary className="cursor-pointer text-[11px] font-medium text-blue-600 hover:underline">
-                            Why this step?
-                          </summary>
-
-                          <div className="mt-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 text-[11px] text-gray-700">
-                            <div className="whitespace-pre-wrap">{step.details}</div>
-
-                            <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-gray-500">
-                              <span>
-                                Severity:{" "}
-                                <span className="font-medium text-gray-700">{step.severity}</span>
-                              </span>
-                              <span>
-                                Type: <span className="font-medium text-gray-700">{step.kind}</span>
-                              </span>
-                            </div>
-                          </div>
-                        </details>
-                      ) : null}
-                    </div>
-
-                    <Link
-                      href={resolvedHrefForPlanStep(estateId, step.href, step.title)}
-                      className="shrink-0 text-xs font-medium text-blue-600 hover:underline"
-                    >
-                      {ctaLabelForStep(step)}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {/* Resolved items since last plan */}
-            {planDiff.hasPrevious && planDiff.removed.length > 0 ? (() => {
-              const MAX_DEFAULT = 5;
-
-              const visibleResolved = showAllResolved
-                ? planDiff.removed
-                : planDiff.removed.slice(0, MAX_DEFAULT);
-
-              const resolvedTone = (k?: ReadinessPlanStep["kind"]) => {
-                if (k === "missing") return "border-slate-200 bg-white";
-                if (k === "risk") return "border-amber-200 bg-amber-50";
-                if (k === "general") return "border-emerald-200 bg-emerald-50";
-                return "border-gray-200 bg-white";
-              };
-
-              return (
-                <details className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-2">
-                  <summary className="cursor-pointer text-[11px] font-medium text-gray-700">
-                    Resolved since last plan
-                    <span className="ml-2 font-normal text-gray-500">({planDiff.removed.length})</span>
-                  </summary>
-
-                  <ul className="mt-2 space-y-1">
-                    {visibleResolved.map((s) => {
-                      const href = resolvedHrefForPlanStep(estateId, s.href, s.title);
-                      return (
-                        <li key={s.id}>
-                          <Link
-                            href={href}
-                            className={[
-                              "flex items-start justify-between gap-2 rounded-md border px-2 py-1 hover:underline",
-                              resolvedTone(s.kind),
-                            ].join(" ")}
-                          >
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700">
-                                  Resolved
-                                </span>
-                                <span className="min-w-0 truncate text-[11px] font-medium text-gray-800 line-through">
-                                  {s.title}
-                                </span>
-                                <span className="shrink-0 text-[11px] text-gray-500">({s.severity})</span>
-                              </div>
-                            </div>
-                          </Link>
-                        </li>
-                      );
-                    })}
-                  </ul>
-
-                  {planDiff.removed.length > MAX_DEFAULT ? (
-                    <div className="mt-2 flex items-center justify-between">
-                      <div className="text-[11px] text-gray-500">
-                        {showAllResolved ? "Showing all resolved items." : `Showing top ${MAX_DEFAULT} resolved items.`}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          // Prevent the details element from toggling when clicking this.
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setShowAllResolved((v) => !v);
-                        }}
-                        className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
-                      >
-                        {showAllResolved ? "Show less" : "Show all"}
-                      </button>
-                    </div>
-                  ) : null}
-                </details>
-              );
-            })() : null}
-
-            {plan ? (
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
-                <span title={planGeneratedAt ? planGeneratedAt.toLocaleString() : plan.generatedAt}>
-                  Generated:{" "}
-                  <span className="font-medium text-gray-700">
-                    {toRelativeAgeLabel(planGeneratedAt)}
-                  </span>
-                </span>
-
-                {planIsOutdated ? (
-                  <span
-                    className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
-                    title="Readiness changed since this plan was generated. Regenerate to refresh next steps."
-                  >
-                    Plan may be outdated
-                  </span>
+              <>
+                {plan ? (
+                  <div className="mt-2">
+                    <ConfidenceLegend />
+                  </div>
                 ) : null}
 
-                {planIsStale ? (
-                  <span
-                    className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
-                    title="This plan is older than 24 hours. The server will refresh it automatically soon, but you can regenerate now."
-                  >
-                    {isPlanAutoRefreshing ? "Refreshing plan…" : "Plan is stale"}
-                  </span>
+                {planError ? (
+                  <div className="mt-2 text-xs text-rose-700">
+                    Could not generate plan{planError ? ` (${planError})` : ""}.
+                  </div>
+                ) : null}
+
+                {!plan ? (
+                  <div className="mt-2 text-xs text-gray-500">
+                    Get a short, prioritized checklist based on your current readiness signals.
+                  </div>
+                ) : rankedPlanSteps.length === 0 ? (
+                  <div className="mt-2 text-xs text-gray-500">No next steps available.</div>
+                ) : (
+                  <ul className="mt-2 space-y-2">
+                    {rankedPlanSteps.map((step) => (
+                      <li
+                        key={step.id}
+                        className={[
+                          "flex items-start justify-between gap-3 rounded-md p-1",
+                          planStepChanges.added.has(step.id)
+                            ? "bg-slate-50"
+                            : planStepChanges.severityChanged.has(step.id)
+                              ? "bg-amber-50"
+                              : "",
+                        ].join(" ")}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={
+                                step.kind === "missing"
+                                  ? "inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700"
+                                  : step.kind === "risk"
+                                    ? "inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                                    : "inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800"
+                              }
+                            >
+                              {step.kind === "missing" ? "Missing" : step.kind === "risk" ? "At risk" : "General"}
+                            </span>
+
+                            <div className="flex min-w-0 flex-wrap items-center gap-2">
+                              <span className="min-w-0 truncate text-xs font-medium text-gray-900">{step.title}</span>
+
+                              {(() => {
+                                const impact = planStepImpact.get(step.id);
+                                if (!impact) return null;
+
+                                const confTone =
+                                  impact.confidence === "high"
+                                    ? "text-gray-600"
+                                    : impact.confidence === "medium"
+                                      ? "text-gray-500"
+                                      : "text-gray-400";
+
+                                const affected =
+                                  typeof impact.affectedSignals === "number" && impact.affectedSignals > 1
+                                    ? ` • ${impact.affectedSignals} items`
+                                    : typeof impact.affectedSignals === "number" && impact.affectedSignals === 1
+                                      ? " • 1 item"
+                                      : "";
+
+                                const confLabel =
+                                  impact.confidence === "high"
+                                    ? "High confidence"
+                                    : impact.confidence === "medium"
+                                      ? "Medium confidence"
+                                      : "Low confidence";
+
+                                const basis =
+                                  impact.confidence === "high"
+                                    ? "Based on multiple readiness signals."
+                                    : impact.confidence === "medium"
+                                      ? "Based on limited readiness signals."
+                                      : "Heuristic estimate (may change after refresh).";
+
+                                const itemCountLabel =
+                                  typeof impact.affectedSignals === "number"
+                                    ? impact.affectedSignals === 1
+                                      ? "1 item"
+                                      : `${impact.affectedSignals} items`
+                                    : null;
+
+                                const impactLine = itemCountLabel
+                                  ? `Likely impact: +${impact.estimatedScoreDelta}% readiness • ${itemCountLabel}`
+                                  : `Likely impact: +${impact.estimatedScoreDelta}% readiness`;
+
+                                const tooltip = `${confLabel}. ${basis}\n${impactLine}\n\nHow this is estimated: severity + type + item count + recent changes.`;
+
+                                return (
+                                  <span className={`inline-flex items-center gap-1 text-[11px] ${confTone}`} title={tooltip}>
+                                    <span aria-hidden>
+                                      {impact.confidence === "high" ? "▲" : impact.confidence === "medium" ? "●" : "○"}
+                                    </span>
+                                    <span className="sr-only">{confLabel}</span>
+                                    <span>
+                                      Likely impact: +{impact.estimatedScoreDelta}% readiness{affected}
+                                    </span>
+                                  </span>
+                                );
+                              })()}
+
+                              {planStepChanges.added.has(step.id) ? (
+                                <span
+                                  className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700"
+                                  title="This step is new since your last plan"
+                                >
+                                  New since last plan
+                                </span>
+                              ) : null}
+
+                              {planStepChanges.severityChanged.has(step.id)
+                                ? (() => {
+                                    const ch = planStepChanges.severityChanged.get(step.id);
+                                    if (!ch) return null;
+                                    const meta = severityDeltaLabel(ch.from, ch.to);
+                                    const cls =
+                                      meta.tone === "up"
+                                        ? "inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-800"
+                                        : meta.tone === "down"
+                                          ? "inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800"
+                                          : "inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700";
+
+                                    return (
+                                      <span className={cls} title={`Severity changed: ${ch.from} → ${ch.to}`}>
+                                        {meta.tone === "up"
+                                          ? "Risk increased"
+                                          : meta.tone === "down"
+                                            ? "Risk reduced"
+                                            : "Severity changed"}
+                                      </span>
+                                    );
+                                  })()
+                                : null}
+
+                              {(() => {
+                                const why = changeExplanationForStep(step);
+                                if (!why) return null;
+
+                                return (
+                                  <details className="group">
+                                    <summary className="cursor-pointer select-none text-[11px] font-medium text-gray-500 hover:text-gray-700">
+                                      Why changed?
+                                    </summary>
+                                    <div className="mt-1 max-w-[560px] rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] text-gray-700">
+                                      {why}
+                                    </div>
+                                  </details>
+                                );
+                              })()}
+
+                              {typeof step.count === "number" && step.count > 1 ? (
+                                <span className="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700">
+                                  {step.count}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          <details className="mt-1" open={step.severity === "high"}>
+                            <summary className="cursor-pointer text-[11px] font-medium text-blue-600 hover:underline">
+                              Why this step?
+                            </summary>
+
+                            <div className="mt-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 text-[11px] text-gray-700">
+                              <div className="whitespace-pre-wrap">{step.details ?? fallbackDetailsForStep(step)}</div>
+
+                              <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-gray-500">
+                                <span>
+                                  Severity: <span className="font-medium text-gray-700">{step.severity}</span>
+                                </span>
+                                <span>
+                                  Type: <span className="font-medium text-gray-700">{step.kind}</span>
+                                </span>
+                              </div>
+                            </div>
+                          </details>
+                        </div>
+
+                        <Link
+                          href={resolvedHrefForPlanStep(estateId, step.href, step.title)}
+                          className="shrink-0 text-xs font-medium text-blue-600 hover:underline"
+                        >
+                          {ctaLabelForStep(step)}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {planDiff.hasPrevious && planDiff.removed.length > 0
+                  ? (() => {
+                      const MAX_DEFAULT = 5;
+
+                      const visibleResolved = showAllResolved
+                        ? planDiff.removed
+                        : planDiff.removed.slice(0, MAX_DEFAULT);
+
+                      const resolvedTone = (k?: ReadinessPlanStep["kind"]) => {
+                        if (k === "missing") return "border-slate-200 bg-white";
+                        if (k === "risk") return "border-amber-200 bg-amber-50";
+                        if (k === "general") return "border-emerald-200 bg-emerald-50";
+                        return "border-gray-200 bg-white";
+                      };
+
+                      return (
+                        <details className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-2">
+                          <summary className="cursor-pointer text-[11px] font-medium text-gray-700">
+                            Resolved since last plan
+                            <span className="ml-2 font-normal text-gray-500">({planDiff.removed.length})</span>
+                          </summary>
+
+                          <ul className="mt-2 space-y-1">
+                            {visibleResolved.map((s) => {
+                              const href = resolvedHrefForPlanStep(estateId, s.href, s.title);
+                              return (
+                                <li key={s.id}>
+                                  <Link
+                                    href={href}
+                                    className={[
+                                      "flex items-start justify-between gap-2 rounded-md border px-2 py-1 hover:underline",
+                                      resolvedTone(s.kind),
+                                    ].join(" ")}
+                                  >
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700">
+                                          Resolved
+                                        </span>
+                                        <span className="min-w-0 truncate text-[11px] font-medium text-gray-800 line-through">
+                                          {s.title}
+                                        </span>
+                                        <span className="shrink-0 text-[11px] text-gray-500">({s.severity})</span>
+                                      </div>
+                                    </div>
+                                  </Link>
+                                </li>
+                              );
+                            })}
+                          </ul>
+
+                          {planDiff.removed.length > MAX_DEFAULT ? (
+                            <div className="mt-2 flex items-center justify-between">
+                              <div className="text-[11px] text-gray-500">
+                                {showAllResolved
+                                  ? "Showing all resolved items."
+                                  : `Showing top ${MAX_DEFAULT} resolved items.`}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setShowAllResolved((v) => !v);
+                                }}
+                                className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                              >
+                                {showAllResolved ? "Show less" : "Show all"}
+                              </button>
+                            </div>
+                          ) : null}
+                        </details>
+                      );
+                    })()
+                  : null}
+
+                {plan ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+                    <span title={planGeneratedAt ? planGeneratedAt.toLocaleString() : plan.generatedAt}>
+                      Generated: <span className="font-medium text-gray-700">{toRelativeAgeLabel(planGeneratedAt)}</span>
+                    </span>
+
+                    {planIsOutdated ? (
+                      <span
+                        className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                        title="Readiness changed since this plan was generated. Regenerate to refresh next steps."
+                      >
+                        Plan may be outdated
+                      </span>
+                    ) : null}
+
+                    {planIsStale ? (
+                      <span
+                        className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                        title="This plan is older than 24 hours. The server will refresh it automatically soon, but you can regenerate now."
+                      >
+                        {isPlanAutoRefreshing ? "Refreshing plan…" : "Plan is stale"}
+                      </span>
+                    ) : null}
+
+                    {planDiff.hasPrevious && planDiff.totalChanges > 0 ? (
+                      <span
+                        className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700"
+                        title="Compared to your previous plan"
+                      >
+                        {planDiff.totalChanges} change{planDiff.totalChanges === 1 ? "" : "s"} since last plan
+                      </span>
+                    ) : null}
+                  </div>
                 ) : null}
 
                 {planDiff.hasPrevious && planDiff.totalChanges > 0 ? (
-                  <span
-                    className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700"
-                    title="Compared to your previous plan"
-                  >
-                    {planDiff.totalChanges} change{planDiff.totalChanges === 1 ? "" : "s"} since last plan
-                  </span>
+                  <details className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-2">
+                    <summary className="cursor-pointer text-[11px] font-medium text-gray-700">
+                      What changed?
+                      <span className="ml-2 font-normal text-gray-500">
+                        {planDiff.added.length} new, {planDiff.severityChanged.length} severity update
+                        {planDiff.severityChanged.length === 1 ? "" : "s"}, {planDiff.removed.length} resolved
+                      </span>
+                    </summary>
+
+                    <div className="mt-2 space-y-2 text-[11px] text-gray-700">
+                      {planDiff.added.length > 0 ? (
+                        <div>
+                          <div className="font-semibold text-gray-800">New</div>
+                          <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                            {planDiff.added.slice(0, 5).map((s) => (
+                              <li key={s.id}>
+                                <Link
+                                  href={resolvedHrefForPlanStep(estateId, s.href, s.title)}
+                                  className="font-medium text-gray-800 hover:underline"
+                                >
+                                  {s.title}
+                                </Link>
+                                <span className="ml-1 text-gray-500">({s.severity})</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {planDiff.severityChanged.length > 0 ? (
+                        <div>
+                          <div className="font-semibold text-gray-800">Severity changes</div>
+                          <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                            {planDiff.severityChanged.slice(0, 5).map((c) => (
+                              <li key={c.id}>
+                                <Link
+                                  href={resolvedHrefForPlanStep(estateId, c.href, c.title)}
+                                  className="font-medium text-gray-800 hover:underline"
+                                >
+                                  {c.title}
+                                </Link>
+                                <span className="ml-1 text-gray-500">
+                                  ({c.from} → {c.to})
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {planDiff.removed.length > 0 ? (
+                        <div>
+                          <div className="font-semibold text-gray-800">Resolved</div>
+                          <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                            {planDiff.removed.slice(0, 5).map((s) => (
+                              <li key={s.id}>
+                                <Link
+                                  href={resolvedHrefForPlanStep(estateId, s.href, s.title)}
+                                  className="font-medium text-gray-800 hover:underline line-through"
+                                >
+                                  {s.title}
+                                </Link>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {planDiff.added.length > 5 || planDiff.severityChanged.length > 5 || planDiff.removed.length > 5 ? (
+                        <div className="text-gray-500">Showing top 5 per section.</div>
+                      ) : null}
+                    </div>
+                  </details>
                 ) : null}
-              </div>
-            ) : null}
-
-            {planDiff.hasPrevious && planDiff.totalChanges > 0 ? (
-              <details className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-2">
-                <summary className="cursor-pointer text-[11px] font-medium text-gray-700">
-                  What changed?
-                  <span className="ml-2 font-normal text-gray-500">
-                    {planDiff.added.length} new, {planDiff.severityChanged.length} severity update
-                    {planDiff.severityChanged.length === 1 ? "" : "s"}, {planDiff.removed.length} resolved
-                  </span>
-                </summary>
-
-                <div className="mt-2 space-y-2 text-[11px] text-gray-700">
-                  {planDiff.added.length > 0 ? (
-                    <div>
-                      <div className="font-semibold text-gray-800">New</div>
-                      <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                        {planDiff.added.slice(0, 5).map((s) => (
-                          <li key={s.id}>
-                            <Link
-                              href={resolvedHrefForPlanStep(estateId, s.href, s.title)}
-                              className="font-medium text-gray-800 hover:underline"
-                            >
-                              {s.title}
-                            </Link>
-                            <span className="ml-1 text-gray-500">({s.severity})</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-
-                  {planDiff.severityChanged.length > 0 ? (
-                    <div>
-                      <div className="font-semibold text-gray-800">Severity changes</div>
-                      <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                        {planDiff.severityChanged.slice(0, 5).map((c) => (
-                          <li key={c.id}>
-                            <Link
-                              href={resolvedHrefForPlanStep(estateId, c.href, c.title)}
-                              className="font-medium text-gray-800 hover:underline"
-                            >
-                              {c.title}
-                            </Link>
-                            <span className="ml-1 text-gray-500">
-                              ({c.from} → {c.to})
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-
-                  {planDiff.removed.length > 0 ? (
-                    <div>
-                      <div className="font-semibold text-gray-800">Resolved</div>
-                      <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                        {planDiff.removed.slice(0, 5).map((s) => (
-                          <li key={s.id}>
-                            <Link
-                              href={resolvedHrefForPlanStep(estateId, s.href, s.title)}
-                              className="font-medium text-gray-800 hover:underline line-through"
-                            >
-                              {s.title}
-                            </Link>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-
-                  {planDiff.added.length > 5 || planDiff.severityChanged.length > 5 || planDiff.removed.length > 5 ? (
-                    <div className="text-gray-500">Showing top 5 per section.</div>
-                  ) : null}
-                </div>
-              </details>
-            ) : null}
+              </>
+            )}
           </div>
         </div>
 
