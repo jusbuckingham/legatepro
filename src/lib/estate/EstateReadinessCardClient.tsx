@@ -429,6 +429,42 @@ function ctaLabelForStep(step: Pick<ReadinessPlanStep, "kind">): string {
   return "Open →";
 }
 
+function confidenceLegendItem(conf: "high" | "medium" | "low") {
+  if (conf === "high") {
+    return { icon: "▲", label: "High", detail: "Multiple signals" };
+  }
+  if (conf === "medium") {
+    return { icon: "●", label: "Medium", detail: "Limited signals" };
+  }
+  return { icon: "○", label: "Low", detail: "Heuristic estimate" };
+}
+
+function ConfidenceLegend() {
+  const items: Array<"high" | "medium" | "low"> = ["high", "medium", "low"];
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-500">
+      <span className="font-medium text-gray-600">Confidence:</span>
+      {items.map((c) => {
+        const meta = confidenceLegendItem(c);
+        return (
+          <span
+            key={c}
+            className="inline-flex items-center gap-1"
+            title={`${meta.label} confidence. ${meta.detail}.`}
+          >
+            <span aria-hidden>{meta.icon}</span>
+            <span>
+              {meta.label}
+              <span className="text-gray-400"> — {meta.detail}</span>
+            </span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function EstateReadinessCardClient(props: { estateId: string }) {
   const { estateId } = props;
 
@@ -1091,6 +1127,11 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                 {isPlanLoading ? "Generating…" : plan ? "Regenerate" : "Generate"}
               </button>
             </div>
+            {plan ? (
+              <div className="mt-2">
+                <ConfidenceLegend />
+              </div>
+            ) : null}
 
             {planError ? (
               <div className="mt-2 text-xs text-rose-700">
@@ -1184,7 +1225,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                               ? `Likely impact: +${impact.estimatedScoreDelta}% readiness • ${itemCountLabel}`
                               : `Likely impact: +${impact.estimatedScoreDelta}% readiness`;
 
-                            const tooltip = `${confLabel}. ${basis}\n${impactLine}`;
+                            const tooltip = `${confLabel}. ${basis}\n${impactLine}\n\nHow this is estimated: severity + type + item count + recent changes.`;
 
                             return (
                               <span
@@ -1197,6 +1238,13 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                                     : impact.confidence === "medium"
                                     ? "●"
                                     : "○"}
+                                </span>
+                                <span className="sr-only">
+                                  {impact.confidence === "high"
+                                    ? "High confidence"
+                                    : impact.confidence === "medium"
+                                    ? "Medium confidence"
+                                    : "Low confidence"}
                                 </span>
                                 <span>
                                   Likely impact: +{impact.estimatedScoreDelta}% readiness{affected}
