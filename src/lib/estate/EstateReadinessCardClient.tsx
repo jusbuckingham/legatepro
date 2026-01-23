@@ -18,6 +18,11 @@ type ReadinessPlanStep = {
   kind: "missing" | "risk" | "general";
   severity: "low" | "medium" | "high";
   count?: number;
+  impact?: {
+    estimatedScoreDelta?: number;
+    affectedSignals?: number;
+    confidence?: "low" | "medium" | "high";
+  };
 };
 
 type ReadinessPlan = {
@@ -67,6 +72,7 @@ type PlanDiff = {
     title: string;
     from: ReadinessPlanStep["severity"];
     to: ReadinessPlanStep["severity"];
+    href?: string;
   }>;
   totalChanges: number;
 };
@@ -130,6 +136,8 @@ function diffPlans(current: ReadinessPlan | null, previous: PlanSnapshot | null)
     id: s.id,
     title: s.title,
     severity: s.severity,
+    href: s.href,
+    kind: s.kind,
   }));
 
   const prevSteps = previous?.steps ?? [];
@@ -148,7 +156,13 @@ function diffPlans(current: ReadinessPlan | null, previous: PlanSnapshot | null)
       continue;
     }
     if (prev.severity !== cur.severity) {
-      severityChanged.push({ id, title: cur.title, from: prev.severity, to: cur.severity });
+      severityChanged.push({
+        id,
+        title: cur.title,
+        from: prev.severity,
+        to: cur.severity,
+        href: cur.href,
+      });
     }
   }
 
@@ -336,6 +350,85 @@ function actionHrefForSignal(estateId: string, signalKey: string): string {
   return looksMissing ? `${estateBase}/documents#add-document` : `${estateBase}/documents`;
 }
 
+function moduleFromHref(
+  href: string | undefined | null,
+):
+  | "documents"
+  | "tasks"
+  | "properties"
+  | "contacts"
+  | "invoices"
+  | null {
+  if (!href) return null;
+  if (href.includes("/documents")) return "documents";
+  if (href.includes("/tasks")) return "tasks";
+  if (href.includes("/properties")) return "properties";
+  if (href.includes("/contacts")) return "contacts";
+  if (href.includes("/invoices")) return "invoices";
+  return null;
+}
+
+
+function moduleFromText(
+  title: string,
+):
+  | "documents"
+  | "tasks"
+  | "properties"
+  | "contacts"
+  | "invoices"
+  | null {
+  const t = title.toLowerCase();
+  if (
+    t.includes("document") ||
+    t.includes("upload") ||
+    t.includes("will") ||
+    t.includes("trust")
+  )
+    return "documents";
+  if (
+    t.includes("task") ||
+    t.includes("checklist") ||
+    t.includes("todo")
+  )
+    return "tasks";
+  if (
+    t.includes("property") ||
+    t.includes("home") ||
+    t.includes("house") ||
+    t.includes("deed")
+  )
+    return "properties";
+  if (
+    t.includes("contact") ||
+    t.includes("beneficiar") ||
+    t.includes("heir") ||
+    t.includes("attorney") ||
+    t.includes("lawyer")
+  )
+    return "contacts";
+  if (
+    t.includes("invoice") ||
+    t.includes("expense") ||
+    t.includes("bill") ||
+    t.includes("payment") ||
+    t.includes("finance")
+  )
+    return "invoices";
+  return null;
+}
+
+function resolvedHrefForPlanStep(estateId: string, href: string | undefined | null, title: string): string {
+  if (href && typeof href === "string" && href.trim().length > 0) return href;
+  return actionHrefForPlanStepTitle(estateId, title);
+}
+
+function ctaLabelForStep(step: Pick<ReadinessPlanStep, "kind">): string {
+  if (step.kind === "missing") return "Add →";
+  if (step.kind === "risk") return "Review →";
+  return "Open →";
+}
+
 export default function EstateReadinessCardClient(props: { estateId: string }) {
   const { estateId } = props;
 
@@ -350,6 +443,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
   const [isPlanLoading, setIsPlanLoading] = useState(false);
   const [isPlanAutoRefreshing, setIsPlanAutoRefreshing] = useState(false);
   const [previousPlanSnapshot, setPreviousPlanSnapshot] = useState<PlanSnapshot | null>(null);
+  const [showAllResolved, setShowAllResolved] = useState(false);
 
   const endpoint = useMemo(
     () => `/api/estates/${encodeURIComponent(estateId)}/readiness`,
@@ -440,6 +534,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
       setIsPlanLoading(true);
       setIsPlanAutoRefreshing(opts?.reason === "auto");
       setPlanError(null);
+      setShowAllResolved(false);
 
       try {
         const res = await fetch(`${planEndpoint}${opts?.refresh ? "?refresh=1" : ""}`, {
@@ -535,6 +630,20 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
     return rankTopActions([...missing, ...risk]).slice(0, 5);
   }, [readiness]);
 
+  const preferredPlanModules = useMemo(() => {
+    // Use topActions as the signal for “what to do next”.
+    // Convert each signal key into a module by reusing the same routing heuristic.
+    const order: Array<"documents" | "tasks" | "properties" | "contacts" | "invoices"> = [];
+
+    for (const s of topActions) {
+      const href = actionHrefForSignal(estateId, s.key);
+      const mod = moduleFromHref(href);
+      if (mod && !order.includes(mod)) order.push(mod);
+    }
+
+    return order;
+  }, [topActions, estateId]);
+
   const rankedMissing = useMemo(
     () => rankSignals(readiness?.signals?.missing ?? []).slice(0, 6),
     [readiness],
@@ -598,6 +707,175 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
     },
     [],
   );
+
+  const changeExplanationForStep = useCallback(
+    (step: ReadinessPlanStep): string | null => {
+      const isNew = planStepChanges.added.has(step.id);
+      const ch = planStepChanges.severityChanged.get(step.id);
+
+      if (!isNew && !ch) return null;
+
+      const kindLabel =
+        step.kind === "missing" ? "missing item" : step.kind === "risk" ? "risk" : "step";
+
+      if (isNew) {
+        return `This ${kindLabel} appeared since your last plan based on your latest readiness signals.`;
+      }
+
+      if (ch) {
+        const delta = severityRankLocal(ch.to) - severityRankLocal(ch.from);
+        if (delta > 0) {
+          return `This ${kindLabel} became more urgent since your last plan (severity ${ch.from} → ${ch.to}).`;
+        }
+        if (delta < 0) {
+          return `This ${kindLabel} became less urgent since your last plan (severity ${ch.from} → ${ch.to}).`;
+        }
+        return `This ${kindLabel} changed since your last plan.`;
+      }
+
+      return null;
+    },
+    [planStepChanges.added, planStepChanges.severityChanged],
+  );
+
+  // --- Impact estimation logic ---
+  const estimateImpactForStep = useCallback(
+    (
+      step: ReadinessPlanStep,
+      opts: {
+        isNew: boolean;
+        severityDeltaUp: number;
+        preferredModuleIndex: number; // -1 if not preferred
+      },
+    ): { estimatedScoreDelta: number; affectedSignals?: number; confidence: "low" | "medium" | "high" } => {
+      // Base impact by severity
+      const base =
+        step.severity === "high" ? 8 : step.severity === "medium" ? 5 : 3;
+
+      // Missing tends to unblock more than risk, general is usually a smaller bump.
+      const kindBoost = step.kind === "missing" ? 2 : step.kind === "risk" ? 1 : 0;
+
+      // Count bonus (bounded)
+      const c = typeof step.count === "number" ? step.count : 0;
+      const countBoost = c >= 10 ? 3 : c >= 5 ? 2 : c >= 2 ? 1 : 0;
+
+      // Preferred module boost (earlier preferred modules get a slightly higher bump)
+      const preferredBoost = opts.preferredModuleIndex >= 0 ? Math.max(0, 2 - opts.preferredModuleIndex) : 0;
+
+      // New + severity delta up get a tiny nudge
+      const noveltyBoost = opts.isNew ? 1 : 0;
+      const deltaBoost = opts.severityDeltaUp > 0 ? 1 : 0;
+
+      // Total (bounded)
+      const raw = base + kindBoost + countBoost + preferredBoost + noveltyBoost + deltaBoost;
+      const estimatedScoreDelta = clamp(Math.round(raw), 1, 15);
+
+      // Confidence: higher when we have count and when kind is missing/risk.
+      const confidence: "low" | "medium" | "high" =
+        step.kind === "general"
+          ? "low"
+          : typeof step.count === "number"
+          ? step.count > 1
+            ? "high"
+            : "medium"
+          : "medium";
+
+      const affectedSignals = typeof step.count === "number" ? step.count : undefined;
+
+      return { estimatedScoreDelta, affectedSignals, confidence };
+    },
+    [],
+  );
+
+  const planStepImpact = useMemo(() => {
+    if (!plan) return new Map<string, { estimatedScoreDelta: number; affectedSignals?: number; confidence: "low" | "medium" | "high" }>();
+
+    const map = new Map<
+      string,
+      { estimatedScoreDelta: number; affectedSignals?: number; confidence: "low" | "medium" | "high" }
+    >();
+
+    const kindToModule = (s: ReadinessPlanStep) => moduleFromHref(s.href) ?? moduleFromText(s.title);
+
+    for (const s of plan.steps ?? []) {
+      const isNew = planStepChanges.added.has(s.id);
+      const deltaUp = (() => {
+        const ch = planStepChanges.severityChanged.get(s.id);
+        if (!ch) return 0;
+        return severityRankLocal(ch.to) - severityRankLocal(ch.from);
+      })();
+
+      const mod = kindToModule(s);
+      const preferredModuleIndex = mod ? preferredPlanModules.indexOf(mod) : -1;
+
+      map.set(
+        s.id,
+        estimateImpactForStep(s, {
+          isNew,
+          severityDeltaUp: deltaUp,
+          preferredModuleIndex,
+        }),
+      );
+    }
+
+    return map;
+  }, [plan, planStepChanges.added, planStepChanges.severityChanged, preferredPlanModules, estimateImpactForStep]);
+
+  const rankedPlanSteps = useMemo(() => {
+    if (!plan) return [] as ReadinessPlanStep[];
+
+    const kindRank = (k: ReadinessPlanStep["kind"]) => {
+      // Missing steps usually unblock the most progress.
+      if (k === "missing") return 3;
+      if (k === "risk") return 2;
+      return 1;
+    };
+
+    const isNew = (id: string) => planStepChanges.added.has(id);
+
+    const severityDeltaUp = (id: string) => {
+      const ch = planStepChanges.severityChanged.get(id);
+      if (!ch) return 0;
+      return severityRankLocal(ch.to) - severityRankLocal(ch.from);
+    };
+
+    const priority = (s: ReadinessPlanStep) => {
+      const sev = severityRankLocal(s.severity);
+      const k = kindRank(s.kind);
+      const n = isNew(s.id) ? 1 : 0;
+      const delta = severityDeltaUp(s.id);
+      const deltaUp = delta > 0 ? 1 : 0;
+      const stepModule = moduleFromHref(s.href) ?? moduleFromText(s.title);
+      const preferredIdx = stepModule ? preferredPlanModules.indexOf(stepModule) : -1;
+      // Earlier preferred modules should be nudged higher.
+      const moduleBoost = preferredIdx >= 0 ? Math.max(0, 5 - preferredIdx) : 0;
+
+      // Weighted so that severity dominates, then “new/changed”, then preferred module, then kind.
+      return (
+        sev * 100 +
+        n * 20 +
+        deltaUp * 10 +
+        moduleBoost * 6 +
+        k * 5 +
+        (typeof s.count === "number" ? Math.min(9, s.count) : 0)
+      );
+    };
+
+    return [...(plan.steps ?? [])].sort((a, b) => {
+      const pa = priority(a);
+      const pb = priority(b);
+      if (pb !== pa) return pb - pa;
+
+      // Stable-ish tie-breakers
+      const sev = severityRankLocal(b.severity) - severityRankLocal(a.severity);
+      if (sev !== 0) return sev;
+
+      const kd = kindRank(b.kind) - kindRank(a.kind);
+      if (kd !== 0) return kd;
+
+      return a.title.localeCompare(b.title);
+    });
+  }, [plan, planStepChanges, preferredPlanModules]);
 
   useEffect(() => {
     if (loading) return;
@@ -824,11 +1102,11 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
               <div className="mt-2 text-xs text-gray-500">
                 Get a short, prioritized checklist based on your current readiness signals.
               </div>
-            ) : plan.steps.length === 0 ? (
+            ) : rankedPlanSteps.length === 0 ? (
               <div className="mt-2 text-xs text-gray-500">No next steps available.</div>
             ) : (
               <ul className="mt-2 space-y-2">
-                {plan.steps.map((step) => (
+                {rankedPlanSteps.map((step) => (
                   <li
                     key={step.id}
                     className={[
@@ -862,10 +1140,77 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                           <span className="min-w-0 truncate text-xs font-medium text-gray-900">
                             {step.title}
                           </span>
+                          {(() => {
+                            const impact = planStepImpact.get(step.id);
+                            if (!impact) return null;
+
+                            const confTone =
+                              impact.confidence === "high"
+                                ? "text-gray-600"
+                                : impact.confidence === "medium"
+                                ? "text-gray-500"
+                                : "text-gray-400";
+
+                            const affected =
+                              typeof impact.affectedSignals === "number" && impact.affectedSignals > 1
+                                ? ` • ${impact.affectedSignals} items`
+                                : typeof impact.affectedSignals === "number" && impact.affectedSignals === 1
+                                ? " • 1 item"
+                                : "";
+
+                            // Inserted tooltip logic
+                            const confLabel =
+                              impact.confidence === "high"
+                                ? "High confidence"
+                                : impact.confidence === "medium"
+                                ? "Medium confidence"
+                                : "Low confidence";
+
+                            const basis =
+                              impact.confidence === "high"
+                                ? "Based on multiple readiness signals."
+                                : impact.confidence === "medium"
+                                ? "Based on limited readiness signals."
+                                : "Heuristic estimate (may change after refresh).";
+
+                            const itemCountLabel =
+                              typeof impact.affectedSignals === "number"
+                                ? impact.affectedSignals === 1
+                                  ? "1 item"
+                                  : `${impact.affectedSignals} items`
+                                : null;
+
+                            const impactLine = itemCountLabel
+                              ? `Likely impact: +${impact.estimatedScoreDelta}% readiness • ${itemCountLabel}`
+                              : `Likely impact: +${impact.estimatedScoreDelta}% readiness`;
+
+                            const tooltip = `${confLabel}. ${basis}\n${impactLine}`;
+
+                            return (
+                              <span
+                                className={`inline-flex items-center gap-1 text-[11px] ${confTone}`}
+                                title={tooltip}
+                              >
+                                <span aria-hidden>
+                                  {impact.confidence === "high"
+                                    ? "▲"
+                                    : impact.confidence === "medium"
+                                    ? "●"
+                                    : "○"}
+                                </span>
+                                <span>
+                                  Likely impact: +{impact.estimatedScoreDelta}% readiness{affected}
+                                </span>
+                              </span>
+                            );
+                          })()}
 
                           {planStepChanges.added.has(step.id) ? (
-                            <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
-                              New
+                            <span
+                              className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700"
+                              title="This step is new since your last plan"
+                            >
+                              New since last plan
                             </span>
                           ) : null}
 
@@ -884,10 +1229,30 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                                 className={cls}
                                 title={`Severity changed: ${ch.from} → ${ch.to}`}
                               >
-                                {meta.text}
+                                {meta.tone === "up"
+                                  ? "Risk increased"
+                                  : meta.tone === "down"
+                                  ? "Risk reduced"
+                                  : "Severity changed"}
                               </span>
                             );
                           })() : null}
+
+                          {(() => {
+                            const why = changeExplanationForStep(step);
+                            if (!why) return null;
+
+                            return (
+                              <details className="group">
+                                <summary className="cursor-pointer select-none text-[11px] font-medium text-gray-500 hover:text-gray-700">
+                                  Why changed?
+                                </summary>
+                                <div className="mt-1 max-w-[560px] rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] text-gray-700">
+                                  {why}
+                                </div>
+                              </details>
+                            );
+                          })()}
 
                           {typeof step.count === "number" && step.count > 1 ? (
                             <span className="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700">
@@ -921,10 +1286,10 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                     </div>
 
                     <Link
-                      href={step.href}
+                      href={resolvedHrefForPlanStep(estateId, step.href, step.title)}
                       className="shrink-0 text-xs font-medium text-blue-600 hover:underline"
                     >
-                      Go →
+                      {ctaLabelForStep(step)}
                     </Link>
                   </li>
                 ))}
@@ -932,32 +1297,78 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
             )}
 
             {/* Resolved items since last plan */}
-            {planDiff.hasPrevious && planDiff.removed.length > 0 ? (
-              <details className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-2">
-                <summary className="cursor-pointer text-[11px] font-medium text-gray-700">
-                  Resolved since last plan
-                  <span className="ml-2 font-normal text-gray-500">({planDiff.removed.length})</span>
-                </summary>
+            {planDiff.hasPrevious && planDiff.removed.length > 0 ? (() => {
+              const MAX_DEFAULT = 5;
 
-                <ul className="mt-2 space-y-1">
-                  {planDiff.removed.slice(0, 5).map((s) => {
-                    const href = s.href ?? actionHrefForPlanStepTitle(estateId, s.title);
-                    return (
-                      <li key={s.id} className="flex items-start justify-between gap-2">
-                        <Link href={href} className="text-[11px] text-gray-800 hover:underline">
-                          <span className="font-medium">{s.title}</span>
-                          <span className="ml-1 text-gray-500">({s.severity})</span>
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
+              const visibleResolved = showAllResolved
+                ? planDiff.removed
+                : planDiff.removed.slice(0, MAX_DEFAULT);
 
-                {planDiff.removed.length > 5 ? (
-                  <div className="mt-2 text-[11px] text-gray-500">Showing top 5 resolved items.</div>
-                ) : null}
-              </details>
-            ) : null}
+              const resolvedTone = (k?: ReadinessPlanStep["kind"]) => {
+                if (k === "missing") return "border-slate-200 bg-white";
+                if (k === "risk") return "border-amber-200 bg-amber-50";
+                if (k === "general") return "border-emerald-200 bg-emerald-50";
+                return "border-gray-200 bg-white";
+              };
+
+              return (
+                <details className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-2">
+                  <summary className="cursor-pointer text-[11px] font-medium text-gray-700">
+                    Resolved since last plan
+                    <span className="ml-2 font-normal text-gray-500">({planDiff.removed.length})</span>
+                  </summary>
+
+                  <ul className="mt-2 space-y-1">
+                    {visibleResolved.map((s) => {
+                      const href = resolvedHrefForPlanStep(estateId, s.href, s.title);
+                      return (
+                        <li key={s.id}>
+                          <Link
+                            href={href}
+                            className={[
+                              "flex items-start justify-between gap-2 rounded-md border px-2 py-1 hover:underline",
+                              resolvedTone(s.kind),
+                            ].join(" ")}
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700">
+                                  Resolved
+                                </span>
+                                <span className="min-w-0 truncate text-[11px] font-medium text-gray-800 line-through">
+                                  {s.title}
+                                </span>
+                                <span className="shrink-0 text-[11px] text-gray-500">({s.severity})</span>
+                              </div>
+                            </div>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+
+                  {planDiff.removed.length > MAX_DEFAULT ? (
+                    <div className="mt-2 flex items-center justify-between">
+                      <div className="text-[11px] text-gray-500">
+                        {showAllResolved ? "Showing all resolved items." : `Showing top ${MAX_DEFAULT} resolved items.`}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          // Prevent the details element from toggling when clicking this.
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setShowAllResolved((v) => !v);
+                        }}
+                        className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        {showAllResolved ? "Show less" : "Show all"}
+                      </button>
+                    </div>
+                  ) : null}
+                </details>
+              );
+            })() : null}
 
             {plan ? (
               <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
@@ -1014,7 +1425,12 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                       <ul className="mt-1 list-disc space-y-0.5 pl-5">
                         {planDiff.added.slice(0, 5).map((s) => (
                           <li key={s.id}>
-                            <span className="font-medium">{s.title}</span>
+                            <Link
+                              href={resolvedHrefForPlanStep(estateId, s.href, s.title)}
+                              className="font-medium text-gray-800 hover:underline"
+                            >
+                              {s.title}
+                            </Link>
                             <span className="ml-1 text-gray-500">({s.severity})</span>
                           </li>
                         ))}
@@ -1028,7 +1444,12 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                       <ul className="mt-1 list-disc space-y-0.5 pl-5">
                         {planDiff.severityChanged.slice(0, 5).map((c) => (
                           <li key={c.id}>
-                            <span className="font-medium">{c.title}</span>
+                            <Link
+                              href={resolvedHrefForPlanStep(estateId, c.href, c.title)}
+                              className="font-medium text-gray-800 hover:underline"
+                            >
+                              {c.title}
+                            </Link>
                             <span className="ml-1 text-gray-500">
                               ({c.from} → {c.to})
                             </span>
@@ -1044,7 +1465,12 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                       <ul className="mt-1 list-disc space-y-0.5 pl-5">
                         {planDiff.removed.slice(0, 5).map((s) => (
                           <li key={s.id}>
-                            <span className="font-medium">{s.title}</span>
+                            <Link
+                              href={resolvedHrefForPlanStep(estateId, s.href, s.title)}
+                              className="font-medium text-gray-800 hover:underline line-through"
+                            >
+                              {s.title}
+                            </Link>
                           </li>
                         ))}
                       </ul>
