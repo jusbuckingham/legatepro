@@ -545,6 +545,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
 
   const didAutoPlanRef = useRef<string | null>(null);
   const didAutoPlanRefreshRef = useRef<string | null>(null);
+  const didAutoPlanOutdatedRefreshRef = useRef<string | null>(null);
 
   const loadReadiness = useCallback(
     async (opts?: { silent?: boolean; signal?: AbortSignal }) => {
@@ -672,6 +673,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
     setPlan(null);
     setPlanError(null);
     didAutoPlanRef.current = null;
+    didAutoPlanOutdatedRefreshRef.current = null;
 
     // Load previous plan snapshot for diffing
     if (typeof window !== "undefined") {
@@ -965,6 +967,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
   useEffect(() => {
     if (loading) return;
     if (!readiness) return;
+    if (allResolved) return;
     if (isPlanLoading) return;
     if (plan) return;
 
@@ -973,7 +976,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
 
     didAutoPlanRef.current = estateId;
     void loadPlan({ reason: "auto" });
-  }, [estateId, loading, readiness, plan, isPlanLoading, loadPlan]);
+  }, [estateId, loading, readiness, allResolved, plan, isPlanLoading, loadPlan]);
 
   useEffect(() => {
     if (!plan) return;
@@ -1007,6 +1010,39 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
     const t = globalThis.setTimeout(run, 1200);
     return () => globalThis.clearTimeout(t);
   }, [estateId, plan, planIsStale, isPlanLoading, loadPlan]);
+
+  useEffect(() => {
+    if (!plan) return;
+    if (!planIsOutdated) return;
+    if (isPlanLoading) return;
+
+    // Only auto-refresh once per outdated plan version.
+    const key = `${estateId}:${plan.generatedAt}`;
+    if (didAutoPlanOutdatedRefreshRef.current === key) return;
+    didAutoPlanOutdatedRefreshRef.current = key;
+
+    const run = () => {
+      void loadPlan({ refresh: true, reason: "auto" });
+    };
+
+    // Prefer idle time; fallback to a short timeout.
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      const ric = (
+        window as unknown as {
+          requestIdleCallback: (cb: () => void, opts?: { timeout?: number }) => number;
+        }
+      ).requestIdleCallback;
+      const cancel = (window as unknown as { cancelIdleCallback?: (id: number) => void })
+        .cancelIdleCallback;
+      const id = ric(run, { timeout: 1500 });
+      return () => {
+        if (cancel) cancel(id);
+      };
+    }
+
+    const t = globalThis.setTimeout(run, 800);
+    return () => globalThis.clearTimeout(t);
+  }, [estateId, plan, planIsOutdated, isPlanLoading, loadPlan]);
 
   // Skeleton
   if (loading) {
