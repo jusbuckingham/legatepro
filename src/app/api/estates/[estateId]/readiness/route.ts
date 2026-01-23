@@ -3,10 +3,13 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireEstateAccess } from "@/lib/estateAccess";
 import { connectToDatabase } from "@/lib/db";
-import getEstateReadiness from "@/lib/estate/readiness";
-
+import * as readinessLib from "@/lib/estate/readiness";
 
 export const dynamic = "force-dynamic";
+
+function isObjectIdLike(value: string): boolean {
+  return /^[a-fA-F0-9]{24}$/.test(value);
+}
 
 function severityRank(severity: string): number {
   switch (severity) {
@@ -35,15 +38,55 @@ function sortSignals<T extends { severity: string; label: string; count?: number
   });
 }
 
+type ReadinessFn = (estateId: string) => Promise<unknown>;
+
+function resolveReadinessFn(): ReadinessFn | null {
+  const libUnknown: unknown = readinessLib;
+  if (!libUnknown || typeof libUnknown !== "object") return null;
+
+  const lib = libUnknown as Record<string, unknown>;
+
+  const candidateKeys = ["default", "getEstateReadiness", "calculateEstateReadiness"];
+  for (const key of candidateKeys) {
+    const v = lib[key];
+    if (typeof v === "function") return v as ReadinessFn;
+  }
+
+  return null;
+}
+
 export async function GET(
   _req: Request,
-  ctx: { params: Promise<{ estateId: string }> },
+  ctx: { params: { estateId: string } | Promise<{ estateId: string }> },
 ) {
-  const { estateId } = await ctx.params;
+  const params = await ctx.params;
+  const estateId = params?.estateId;
+
+  if (!estateId || typeof estateId !== "string") {
+    return NextResponse.json({ ok: false, error: "INVALID_ESTATE_ID" }, { status: 400 });
+  }
+
+  if (!isObjectIdLike(estateId)) {
+    return NextResponse.json({ ok: false, error: "INVALID_ESTATE_ID" }, { status: 400 });
+  }
 
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
+
+  const getEstateReadiness = resolveReadinessFn();
+  if (!getEstateReadiness) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "READINESS_FN_NOT_FOUND",
+        ...(process.env.NODE_ENV === "development"
+          ? { message: "Could not resolve readiness function export from /lib/estate/readiness" }
+          : null),
+      },
+      { status: 500 },
+    );
   }
 
   try {
@@ -51,29 +94,70 @@ export async function GET(
 
     await requireEstateAccess({ estateId, userId: session.user.id });
 
-    const readiness = await getEstateReadiness(estateId);
+    const readinessRaw = await getEstateReadiness(estateId);
+    const readiness =
+      readinessRaw && typeof readinessRaw === "object"
+        ? (readinessRaw as Record<string, unknown>)
+        : null;
+
+    if (!readiness) {
+      return NextResponse.json({ ok: false, error: "READINESS_UNAVAILABLE" }, { status: 500 });
+    }
+
+    const signals =
+      typeof readiness.signals === "object" && readiness.signals !== null
+        ? (readiness.signals as Record<string, unknown>)
+        : {};
+
+    const missing = Array.isArray(signals.missing) ? signals.missing : [];
+    const atRisk = Array.isArray(signals.atRisk) ? signals.atRisk : [];
 
     const orderedReadiness = {
       ...readiness,
       signals: {
-        ...readiness.signals,
-        missing: sortSignals(readiness.signals.missing ?? []),
-        atRisk: sortSignals(readiness.signals.atRisk ?? []),
+        ...signals,
+        missing: sortSignals(
+          missing.filter((x): x is { severity: string; label: string; count?: number } => {
+            return (
+              !!x &&
+              typeof x === "object" &&
+              typeof (x as Record<string, unknown>).severity === "string" &&
+              typeof (x as Record<string, unknown>).label === "string"
+            );
+          }),
+        ),
+        atRisk: sortSignals(
+          atRisk.filter((x): x is { severity: string; label: string; count?: number } => {
+            return (
+              !!x &&
+              typeof x === "object" &&
+              typeof (x as Record<string, unknown>).severity === "string" &&
+              typeof (x as Record<string, unknown>).label === "string"
+            );
+          }),
+        ),
       },
     };
 
     return NextResponse.json({ ok: true, readiness: orderedReadiness }, { status: 200 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "UNKNOWN_ERROR";
+    const lower = message.toLowerCase();
 
-    // If your `requireEstateAccess` throws a forbidden-ish error, normalize it here.
-    // We intentionally keep this simple and conservative.
-    if (message.toLowerCase().includes("forbidden") || message.toLowerCase().includes("unauthorized")) {
+    if (lower.includes("forbidden") || lower.includes("unauthorized") || lower.includes("not authorized")) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
+    if (lower.includes("not found")) {
+      return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+    }
+
     return NextResponse.json(
-      { ok: false, error: "SERVER_ERROR" },
+      {
+        ok: false,
+        error: "SERVER_ERROR",
+        ...(process.env.NODE_ENV === "development" ? { message } : null),
+      },
       { status: 500 },
     );
   }

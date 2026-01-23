@@ -174,10 +174,35 @@ export async function getEstateAccess(
 
   const estateObjectId = toObjectId(estateId);
 
-  const estate = await Estate.findOne({
-    _id: estateObjectId ?? estateId,
-    $or: buildEstateAccessOr(resolvedUserId),
-  }).lean<EstateLean>();
+  type EstateModelLike = {
+    findOne: (
+      filter: Record<string, unknown>
+    ) => {
+      lean: <T>() => Promise<T | null>;
+    };
+  };
+
+  const EstateModel = Estate as unknown as EstateModelLike;
+
+  // Runtime guard: if the import is accidentally a type/namespace or otherwise not a model,
+  // fail safely rather than throwing obscure Mongoose errors.
+  if (!EstateModel || typeof EstateModel.findOne !== "function") {
+    return null;
+  }
+
+  // Always query by ObjectId when possible.
+  const estateFilterId: unknown = estateObjectId ?? estateId;
+
+  let estate: EstateLean | null = null;
+  try {
+    estate = await EstateModel.findOne({
+      _id: estateFilterId,
+      $or: buildEstateAccessOr(resolvedUserId),
+    }).lean<EstateLean>();
+  } catch {
+    // Treat any cast/model errors as “no access” to avoid bubbling 500s in prod.
+    return null;
+  }
 
   if (!estate) return null;
 

@@ -191,7 +191,19 @@ export default async function EstateDocumentsPage({
     redirect(`/login?callbackUrl=/app/estates/${estateId}/documents`);
   }
 
-  const access = await requireEstateAccess({ estateId, userId: session.user.id });
+  let access: Awaited<ReturnType<typeof requireEstateAccess>>;
+  try {
+    access = await requireEstateAccess({ estateId, userId: session.user.id });
+  } catch (e) {
+    // Avoid hard 500s in production for unexpected access/query failures.
+    console.error("[EstateDocumentsPage] requireEstateAccess failed", {
+      estateId,
+      userId: session.user.id,
+      error: e instanceof Error ? e.message : String(e),
+    });
+    redirect("/app/estates?error=estate_access");
+  }
+
   const canEdit = access.role !== "VIEWER";
   const canViewSensitive = access.role !== "VIEWER";
   const canCreate = canEdit;

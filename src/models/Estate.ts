@@ -1,6 +1,7 @@
 // src/models/Estate.ts
 import mongoose, { Schema, Document, Model } from "mongoose";
 import { serializeMongoDoc } from "@/lib/db";
+import type { ReadinessPlan } from "@/lib/ai/readinessPlan";
 
 export type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
 
@@ -76,7 +77,11 @@ export interface IEstate {
   status?: "OPEN" | "CLOSED";
 
   // Cached readiness copilot plan (persisted for fast reloads + diffing)
-  readinessPlan?: unknown;
+  readinessPlan?: ReadinessPlan | null;
+
+  // Convenience fields for filtering/TTL checks without parsing Mixed
+  readinessPlanGeneratedAt?: Date;
+  readinessPlanGenerator?: string;
 
   createdAt?: Date;
   updatedAt?: Date;
@@ -184,6 +189,17 @@ const EstateSchema = new Schema<EstateDocument>(
       type: Schema.Types.Mixed,
       default: null,
     },
+    readinessPlanGeneratedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    readinessPlanGenerator: {
+      type: String,
+      default: null,
+      index: true,
+      trim: true,
+    },
   },
   {
     timestamps: true,
@@ -212,6 +228,9 @@ EstateSchema.index({ "collaborators.userId": 1, updatedAt: -1 });
 
 // Fast invite lookups by email + status
 EstateSchema.index({ "invites.email": 1, "invites.status": 1 });
+
+// Readiness plan recency lookups
+EstateSchema.index({ ownerId: 1, readinessPlanGeneratedAt: -1 });
 
 let EstateModel: Model<EstateDocument>;
 
