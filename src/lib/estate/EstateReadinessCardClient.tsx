@@ -48,6 +48,8 @@ const MODULES: Array<{
 
 const PLAN_TTL_MS = 24 * 60 * 60 * 1000;
 const PLAN_SNAPSHOT_STORAGE_PREFIX = "legatepro:readinessPlanSnapshot:";
+const PLAN_HISTORY_STORAGE_PREFIX = "legatepro:readinessPlanHistory:";
+const MAX_PLAN_HISTORY = 5;
 
 type PlanStepSnapshot = {
   id: string;
@@ -62,6 +64,8 @@ type PlanSnapshot = {
   generatedAt: string;
   steps: PlanStepSnapshot[];
 };
+
+type PlanHistory = PlanSnapshot[];
 
 type PlanDiff = {
   hasPrevious: boolean;
@@ -515,6 +519,11 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
     [estateId],
   );
 
+  const planHistoryStorageKey = useMemo(
+    () => `${PLAN_HISTORY_STORAGE_PREFIX}${encodeURIComponent(estateId)}`,
+    [estateId],
+  );
+
   const didAutoPlanRef = useRef<string | null>(null);
   const didAutoPlanRefreshRef = useRef<string | null>(null);
   const didAutoPlanOutdatedRefreshRef = useRef<string | null>(null);
@@ -632,22 +641,50 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
           const nextPlan = data.plan;
           setPlan(nextPlan);
 
-          // Persist snapshot for diffing.
+          // Persist snapshot + a small rolling history for diffing / future UX.
           // IMPORTANT: capture the *previous* snapshot BEFORE we overwrite storage.
           if (typeof window !== "undefined") {
-            const existing = safeJsonParse<PlanSnapshot>(
+            const nextSnap = snapshotFromPlan(nextPlan);
+
+            // Prefer history[0] as the previous snapshot when available.
+            const existingHistory = safeJsonParse<PlanHistory>(
+              window.localStorage.getItem(planHistoryStorageKey),
+            );
+            const prevFromHistory = Array.isArray(existingHistory)
+              ? existingHistory.find((h) => h && h.estateId === estateId)
+              : null;
+
+            const existingLatest = safeJsonParse<PlanSnapshot>(
               window.localStorage.getItem(planSnapshotStorageKey),
             );
-            if (existing && existing.estateId === estateId) {
-              setPreviousPlanSnapshot(existing);
-            } else {
-              setPreviousPlanSnapshot(null);
-            }
 
-            window.localStorage.setItem(
-              planSnapshotStorageKey,
-              JSON.stringify(snapshotFromPlan(nextPlan)),
+            const prev =
+              prevFromHistory && prevFromHistory.estateId === estateId
+                ? prevFromHistory
+                : existingLatest && existingLatest.estateId === estateId
+                  ? existingLatest
+                  : null;
+
+            setPreviousPlanSnapshot(prev);
+
+            // Update latest snapshot
+            window.localStorage.setItem(planSnapshotStorageKey, JSON.stringify(nextSnap));
+
+            // Update rolling history (dedupe by generatedAt)
+            const historyBase = Array.isArray(existingHistory) ? existingHistory : [];
+            const normalized = historyBase.filter(
+              (h) => h && h.estateId === estateId && typeof h.generatedAt === "string",
             );
+
+            const merged = [nextSnap, ...normalized].filter(
+              (snap, idx, arr) =>
+                arr.findIndex(
+                  (x) => x.generatedAt === snap.generatedAt && x.estateId === snap.estateId,
+                ) === idx,
+            );
+
+            const trimmed = merged.slice(0, MAX_PLAN_HISTORY);
+            window.localStorage.setItem(planHistoryStorageKey, JSON.stringify(trimmed));
           }
         } else {
           setPlan(null);
@@ -661,7 +698,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
         setIsPlanAutoRefreshing(false);
       }
     },
-    [planEndpoint, estateId, planSnapshotStorageKey],
+    [planEndpoint, estateId, planSnapshotStorageKey, planHistoryStorageKey],
   );
 
   useEffect(() => {
@@ -673,11 +710,20 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
     didAutoPlanRef.current = null;
     didAutoPlanOutdatedRefreshRef.current = null;
 
-    // Load previous plan snapshot for diffing
+    // Load previous plan snapshot for diffing (prefer history[0])
     if (typeof window !== "undefined") {
-      const stored = safeJsonParse<PlanSnapshot>(window.localStorage.getItem(planSnapshotStorageKey));
-      if (stored && stored.estateId === estateId) setPreviousPlanSnapshot(stored);
-      else setPreviousPlanSnapshot(null);
+      const history = safeJsonParse<PlanHistory>(window.localStorage.getItem(planHistoryStorageKey));
+      const prevFromHistory = Array.isArray(history)
+        ? history.find((h) => h && h.estateId === estateId)
+        : null;
+
+      if (prevFromHistory && prevFromHistory.estateId === estateId) {
+        setPreviousPlanSnapshot(prevFromHistory);
+      } else {
+        const stored = safeJsonParse<PlanSnapshot>(window.localStorage.getItem(planSnapshotStorageKey));
+        if (stored && stored.estateId === estateId) setPreviousPlanSnapshot(stored);
+        else setPreviousPlanSnapshot(null);
+      }
     } else {
       setPreviousPlanSnapshot(null);
     }
@@ -699,7 +745,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
       controller.abort();
       window.removeEventListener("focus", onFocus);
     };
-  }, [loadReadiness, estateId, planSnapshotStorageKey, plan, isPlanLoading, planIsOutdated, loadPlan]);
+  }, [loadReadiness, estateId, planSnapshotStorageKey, planHistoryStorageKey, plan, isPlanLoading, planIsOutdated, loadPlan]);
 
   const score = clamp(Math.round(readiness?.score ?? 0), 0, 100);
 
