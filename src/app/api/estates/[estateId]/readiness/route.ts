@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { requireEstateAccess } from "@/lib/estateAccess";
 import { connectToDatabase } from "@/lib/db";
 import * as readinessLib from "@/lib/estate/readiness";
+import { Estate } from "@/models/Estate";
 
 export const dynamic = "force-dynamic";
 
@@ -112,32 +113,58 @@ export async function GET(
     const missing = Array.isArray(signals.missing) ? signals.missing : [];
     const atRisk = Array.isArray(signals.atRisk) ? signals.atRisk : [];
 
+    const orderedMissing = sortSignals(
+      missing.filter((x): x is { severity: string; label: string; count?: number } => {
+        return (
+          !!x &&
+          typeof x === "object" &&
+          typeof (x as Record<string, unknown>).severity === "string" &&
+          typeof (x as Record<string, unknown>).label === "string"
+        );
+      }),
+    );
+
+    const orderedAtRisk = sortSignals(
+      atRisk.filter((x): x is { severity: string; label: string; count?: number } => {
+        return (
+          !!x &&
+          typeof x === "object" &&
+          typeof (x as Record<string, unknown>).severity === "string" &&
+          typeof (x as Record<string, unknown>).label === "string"
+        );
+      }),
+    );
+
     const orderedReadiness = {
       ...readiness,
       signals: {
         ...signals,
-        missing: sortSignals(
-          missing.filter((x): x is { severity: string; label: string; count?: number } => {
-            return (
-              !!x &&
-              typeof x === "object" &&
-              typeof (x as Record<string, unknown>).severity === "string" &&
-              typeof (x as Record<string, unknown>).label === "string"
-            );
-          }),
-        ),
-        atRisk: sortSignals(
-          atRisk.filter((x): x is { severity: string; label: string; count?: number } => {
-            return (
-              !!x &&
-              typeof x === "object" &&
-              typeof (x as Record<string, unknown>).severity === "string" &&
-              typeof (x as Record<string, unknown>).label === "string"
-            );
-          }),
-        ),
+        missing: orderedMissing,
+        atRisk: orderedAtRisk,
       },
     };
+
+    // Persist a lightweight summary for list badges (avoids N+1 readiness calls).
+    const scoreRaw = (orderedReadiness as Record<string, unknown>).score;
+    const score = typeof scoreRaw === "number" && Number.isFinite(scoreRaw) ? Math.round(scoreRaw) : 0;
+
+    const missingCount = orderedMissing.length;
+    const atRiskCount = orderedAtRisk.length;
+
+    await Estate.findByIdAndUpdate(
+      estateId,
+      {
+        $set: {
+          readinessSummary: {
+            score,
+            missingCount,
+            atRiskCount,
+            updatedAt: new Date(),
+          },
+        },
+      },
+      { new: false },
+    );
 
     return NextResponse.json({ ok: true, readiness: orderedReadiness }, { status: 200 });
   } catch (err) {

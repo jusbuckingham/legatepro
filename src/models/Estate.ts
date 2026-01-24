@@ -52,6 +52,14 @@ interface CompensationSettings {
   flatAmount?: number;
 }
 
+// Lightweight readiness rollup for list badges (avoids N+1 readiness calls)
+interface ReadinessSummary {
+  score: number; // 0-100
+  missingCount: number;
+  atRiskCount: number;
+  updatedAt: Date;
+}
+
 export interface IEstate {
   ownerId: string; // user who owns this estate workspace
 
@@ -84,6 +92,9 @@ export interface IEstate {
   // Convenience fields for filtering/TTL checks without parsing Mixed
   readinessPlanGeneratedAt?: Date;
   readinessPlanGenerator?: string;
+
+  // Cached readiness summary for list views
+  readinessSummary?: ReadinessSummary | null;
 
   createdAt?: Date;
   updatedAt?: Date;
@@ -120,6 +131,16 @@ const CompensationSchema = new Schema<CompensationSettings>(
     hourlyRate: { type: Number, default: 0 },
     percentageRate: { type: Number },
     flatAmount: { type: Number },
+  },
+  { _id: false }
+);
+
+const ReadinessSummarySchema = new Schema<ReadinessSummary>(
+  {
+    score: { type: Number, required: true },
+    missingCount: { type: Number, required: true },
+    atRiskCount: { type: Number, required: true },
+    updatedAt: { type: Date, required: true },
   },
   { _id: false }
 );
@@ -206,6 +227,10 @@ const EstateSchema = new Schema<EstateDocument>(
       index: true,
       trim: true,
     },
+    readinessSummary: {
+      type: ReadinessSummarySchema,
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -238,6 +263,8 @@ EstateSchema.index({ "invites.email": 1, "invites.status": 1 });
 // Readiness plan recency lookups
 
 EstateSchema.index({ ownerId: 1, readinessPlanGeneratedAt: -1 });
+
+EstateSchema.index({ ownerId: 1, "readinessSummary.score": -1 });
 
 function extractReadinessPlanMeta(plan: unknown): {
   generatedAt: Date | null;
