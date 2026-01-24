@@ -503,6 +503,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
   const [isPlanAutoRefreshing, setIsPlanAutoRefreshing] = useState(false);
   const [previousPlanSnapshot, setPreviousPlanSnapshot] = useState<PlanSnapshot | null>(null);
   const [showAllResolved, setShowAllResolved] = useState(false);
+  const [showPlanChanges, setShowPlanChanges] = useState(false);
 
   const endpoint = useMemo(
     () => `/api/estates/${encodeURIComponent(estateId)}/readiness`,
@@ -1225,14 +1226,36 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
           {/* Next steps (Copilot) */}
           <div className="mt-3 rounded-md border border-gray-200 bg-white p-3">
             <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <div className="text-[11px] font-semibold uppercase text-gray-600">Next steps</div>
+
                 {planLabel ? (
                   <span className={planLabel.className} title={planLabel.title}>
                     {planLabel.text}
                   </span>
                 ) : null}
+
+                {planDiff.hasPrevious && planDiff.totalChanges > 0 ? (
+                  <span
+                    className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700"
+                    title="Compared to your previous plan"
+                  >
+                    Plan updated · {planDiff.totalChanges} change{planDiff.totalChanges === 1 ? "" : "s"}
+                  </span>
+                ) : null}
+
+                {planDiff.hasPrevious && planDiff.totalChanges > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowPlanChanges((v) => !v)}
+                    className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                    title={showPlanChanges ? "Hide plan changes" : "View plan changes"}
+                  >
+                    {showPlanChanges ? "Hide changes" : "View changes"}
+                  </button>
+                ) : null}
               </div>
+
               <button
                 type="button"
                 onClick={() => void loadPlan({ refresh: Boolean(plan), reason: "manual" })}
@@ -1599,27 +1622,28 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                         {isPlanAutoRefreshing ? "Refreshing plan…" : "Plan is stale"}
                       </span>
                     ) : null}
-
-                    {planDiff.hasPrevious && planDiff.totalChanges > 0 ? (
-                      <span
-                        className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700"
-                        title="Compared to your previous plan"
-                      >
-                        {planDiff.totalChanges} change{planDiff.totalChanges === 1 ? "" : "s"} since last plan
-                      </span>
-                    ) : null}
                   </div>
                 ) : null}
 
-                {planDiff.hasPrevious && planDiff.totalChanges > 0 ? (
-                  <details className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-2">
-                    <summary className="cursor-pointer text-[11px] font-medium text-gray-700">
-                      What changed?
-                      <span className="ml-2 font-normal text-gray-500">
-                        {planDiff.added.length} new, {planDiff.severityChanged.length} severity update
-                        {planDiff.severityChanged.length === 1 ? "" : "s"}, {planDiff.removed.length} resolved
-                      </span>
-                    </summary>
+                {planDiff.hasPrevious && planDiff.totalChanges > 0 && showPlanChanges ? (
+                  <div className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-[11px] font-medium text-gray-700">
+                        Changes since last plan
+                        <span className="ml-2 font-normal text-gray-500">
+                          {planDiff.added.length} new, {planDiff.severityChanged.length} severity update
+                          {planDiff.severityChanged.length === 1 ? "" : "s"}, {planDiff.removed.length} resolved
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowPlanChanges(false)}
+                        className="text-[11px] font-medium text-gray-600 hover:text-gray-800"
+                        title="Hide changes"
+                      >
+                        Close
+                      </button>
+                    </div>
 
                     <div className="mt-2 space-y-2 text-[11px] text-gray-700">
                       {planDiff.added.length > 0 ? (
@@ -1684,7 +1708,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                         <div className="text-gray-500">Showing top 5 per section.</div>
                       ) : null}
                     </div>
-                  </details>
+                  </div>
                 ) : null}
               </>
             )}
