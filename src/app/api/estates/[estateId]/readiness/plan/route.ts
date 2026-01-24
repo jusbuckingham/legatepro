@@ -110,7 +110,14 @@ async function generatePlanWithAI(params: {
     const parsed = safeParseReadinessPlan(text);
     if (!parsed) return null;
 
-    return parsed;
+    const nowIso = new Date().toISOString();
+
+    return {
+      ...parsed,
+      estateId: params.estateId,
+      generatedAt: nowIso,
+      generator: "openai:gpt-4o-mini",
+    };
   } catch {
     return null;
   }
@@ -310,6 +317,11 @@ export async function GET(
 
     await requireEstateAccess({ estateId, userId: session.user.id });
 
+    // If not forcing refresh, attempt to reuse a fresh plan.
+    // We only trust a cached plan when:
+    // - it is structurally valid
+    // - it is within TTL
+    // - AND (when available) its inputHash matches the current readiness snapshot
     if (!refresh) {
       const existingEstate = await Estate.findById(estateId).select("readinessPlan");
       const existingPlan = existingEstate?.readinessPlan as unknown;
@@ -320,18 +332,32 @@ export async function GET(
           generatedAt?: unknown;
           generator?: unknown;
           steps?: unknown;
+          meta?: unknown;
         };
 
-        if (
+        const hasShape =
           typeof p.estateId === "string" &&
           typeof p.generatedAt === "string" &&
           typeof p.generator === "string" &&
-          Array.isArray(p.steps)
-        ) {
-          // TTL guard: auto-regenerate if plan is stale.
-          if (isFreshWithinTtl(p.generatedAt)) {
+          Array.isArray(p.steps);
+
+        if (hasShape && isFreshWithinTtl(p.generatedAt)) {
+          // If the plan contains an inputHash, only reuse it if readiness inputs match.
+          const meta = (p.meta ?? null) as null | { inputHash?: unknown };
+          const cachedHash = meta && typeof meta.inputHash === "string" ? meta.inputHash : null;
+
+          if (!cachedHash) {
             return NextResponse.json({ ok: true, plan: existingPlan }, { status: 200 });
           }
+
+          const readinessNow = (await getEstateReadiness(estateId)) as unknown as EstateReadinessLike;
+          const snapshotNow = snapshotSignals(readinessNow);
+          const hashNow = hashSnapshot(snapshotNow);
+
+          if (hashNow === cachedHash) {
+            return NextResponse.json({ ok: true, plan: existingPlan }, { status: 200 });
+          }
+          // If hash differs, fall through to regenerate.
         }
       }
     }

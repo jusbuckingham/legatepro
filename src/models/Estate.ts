@@ -230,7 +230,78 @@ EstateSchema.index({ "collaborators.userId": 1, updatedAt: -1 });
 EstateSchema.index({ "invites.email": 1, "invites.status": 1 });
 
 // Readiness plan recency lookups
+
 EstateSchema.index({ ownerId: 1, readinessPlanGeneratedAt: -1 });
+
+function extractReadinessPlanMeta(plan: unknown): {
+  generatedAt: Date | null;
+  generator: string | null;
+} {
+  if (!plan || typeof plan !== "object") {
+    return { generatedAt: null, generator: null };
+  }
+
+  const p = plan as { generatedAt?: unknown; generator?: unknown };
+
+  let generatedAt: Date | null = null;
+  if (p.generatedAt instanceof Date) {
+    generatedAt = p.generatedAt;
+  } else if (typeof p.generatedAt === "string") {
+    const d = new Date(p.generatedAt);
+    generatedAt = Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  const generator = typeof p.generator === "string" && p.generator.trim().length > 0 ? p.generator.trim() : null;
+
+  return { generatedAt, generator };
+}
+
+// Keep convenience fields in sync whenever readinessPlan changes
+EstateSchema.pre("save", function syncReadinessPlanMeta(next) {
+  if (!this.isModified("readinessPlan")) return next();
+
+  const { generatedAt, generator } = extractReadinessPlanMeta((this as unknown as { readinessPlan?: unknown }).readinessPlan);
+
+  (this as unknown as { readinessPlanGeneratedAt?: Date | null }).readinessPlanGeneratedAt = generatedAt;
+  (this as unknown as { readinessPlanGenerator?: string | null }).readinessPlanGenerator = generator;
+
+  next();
+});
+
+EstateSchema.pre("findOneAndUpdate", function syncReadinessPlanMetaOnUpdate(next) {
+  const update = this.getUpdate() as
+    | { $set?: Record<string, unknown>; readinessPlan?: unknown }
+    | Record<string, unknown>
+    | undefined;
+
+  if (!update) return next();
+
+  const $set = (update as { $set?: Record<string, unknown> }).$set;
+
+  const nextPlan =
+    $set && Object.prototype.hasOwnProperty.call($set, "readinessPlan")
+      ? $set.readinessPlan
+      : Object.prototype.hasOwnProperty.call(update, "readinessPlan")
+        ? (update as { readinessPlan?: unknown }).readinessPlan
+        : undefined;
+
+  if (typeof nextPlan === "undefined") return next();
+
+  const { generatedAt, generator } = extractReadinessPlanMeta(nextPlan);
+
+  // Ensure we write via $set for atomic updates
+  if ($set) {
+    $set.readinessPlanGeneratedAt = generatedAt;
+    $set.readinessPlanGenerator = generator;
+  } else {
+    (update as Record<string, unknown>).$set = {
+      readinessPlanGeneratedAt: generatedAt,
+      readinessPlanGenerator: generator,
+    };
+  }
+
+  next();
+});
 
 let EstateModel: Model<EstateDocument>;
 

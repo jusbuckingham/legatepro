@@ -261,40 +261,6 @@ function toRelativeAgeLabel(from: Date | null, now: Date = new Date()): string {
   return `${day}d ago`;
 }
 
-function actionHrefForPlanStepTitle(estateId: string, title: string): string {
-  const t = title.toLowerCase();
-  const estateBase = `/app/estates/${encodeURIComponent(estateId)}`;
-
-  if (t.includes("document") || t.includes("upload") || t.includes("will") || t.includes("trust")) {
-    return `${estateBase}/documents`;
-  }
-  if (t.includes("task") || t.includes("checklist") || t.includes("todo")) {
-    return `${estateBase}/tasks`;
-  }
-  if (t.includes("property") || t.includes("home") || t.includes("house") || t.includes("deed")) {
-    return `${estateBase}/properties`;
-  }
-  if (
-    t.includes("contact") ||
-    t.includes("beneficiar") ||
-    t.includes("heir") ||
-    t.includes("attorney") ||
-    t.includes("lawyer")
-  ) {
-    return `${estateBase}/contacts`;
-  }
-  if (
-    t.includes("invoice") ||
-    t.includes("expense") ||
-    t.includes("bill") ||
-    t.includes("payment") ||
-    t.includes("finance")
-  ) {
-    return `${estateBase}/invoices`;
-  }
-
-  return `${estateBase}/documents`;
-}
 
 function actionHrefForSignal(estateId: string, signalKey: string): string {
   const key = signalKey.toLowerCase();
@@ -418,9 +384,15 @@ function moduleFromText(
   return null;
 }
 
-function resolvedHrefForPlanStep(estateId: string, href: string | undefined | null, title: string): string {
+function resolvedHrefForPlanStep(
+  estateId: string,
+  href: string | undefined | null,
+  title: string,
+): string {
   if (href && typeof href === "string" && href.trim().length > 0) return href;
-  return actionHrefForPlanStepTitle(estateId, title);
+  // Fallback: reuse the existing signal routing heuristic.
+  // Using title text is still better than defaulting to documents for everything.
+  return actionHrefForSignal(estateId, title);
 }
 
 function ctaLabelForStep(step: Pick<ReadinessPlanStep, "kind">): string {
@@ -547,6 +519,23 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
   const didAutoPlanRefreshRef = useRef<string | null>(null);
   const didAutoPlanOutdatedRefreshRef = useRef<string | null>(null);
 
+  const planGeneratedAt = useMemo(() => {
+    if (!plan?.generatedAt) return null;
+    const d = new Date(plan.generatedAt);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }, [plan]);
+
+  const planIsOutdated = useMemo(() => {
+    if (!planGeneratedAt) return false;
+    if (!lastUpdatedAt) return false;
+    return lastUpdatedAt.getTime() > planGeneratedAt.getTime();
+  }, [lastUpdatedAt, planGeneratedAt]);
+
+  const planIsStale = useMemo(() => {
+    if (!planGeneratedAt) return false;
+    return Date.now() - planGeneratedAt.getTime() > PLAN_TTL_MS;
+  }, [planGeneratedAt]);
+
   const loadReadiness = useCallback(
     async (opts?: { silent?: boolean; signal?: AbortSignal }) => {
       const silent = opts?.silent ?? false;
@@ -643,13 +632,22 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
           const nextPlan = data.plan;
           setPlan(nextPlan);
 
-          // Persist snapshot for diffing
+          // Persist snapshot for diffing.
+          // IMPORTANT: capture the *previous* snapshot BEFORE we overwrite storage.
           if (typeof window !== "undefined") {
-            const existing = safeJsonParse<PlanSnapshot>(window.localStorage.getItem(planSnapshotStorageKey));
+            const existing = safeJsonParse<PlanSnapshot>(
+              window.localStorage.getItem(planSnapshotStorageKey),
+            );
             if (existing && existing.estateId === estateId) {
               setPreviousPlanSnapshot(existing);
+            } else {
+              setPreviousPlanSnapshot(null);
             }
-            window.localStorage.setItem(planSnapshotStorageKey, JSON.stringify(snapshotFromPlan(nextPlan)));
+
+            window.localStorage.setItem(
+              planSnapshotStorageKey,
+              JSON.stringify(snapshotFromPlan(nextPlan)),
+            );
           }
         } else {
           setPlan(null);
@@ -686,9 +684,13 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
 
     const onFocus = () => {
       // Silent refresh on focus (premium feel)
-      setPlan(null);
-      setPlanError(null);
       void loadReadiness({ silent: true });
+
+      // If a plan is already on-screen, quietly refresh it if readiness changed.
+      // (This keeps the plan in sync without nuking UI state.)
+      if (plan && !isPlanLoading && planIsOutdated) {
+        void loadPlan({ refresh: true, reason: "auto" });
+      }
     };
 
     window.addEventListener("focus", onFocus);
@@ -697,7 +699,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
       controller.abort();
       window.removeEventListener("focus", onFocus);
     };
-  }, [loadReadiness, estateId, planSnapshotStorageKey]);
+  }, [loadReadiness, estateId, planSnapshotStorageKey, plan, isPlanLoading, planIsOutdated, loadPlan]);
 
   const score = clamp(Math.round(readiness?.score ?? 0), 0, 100);
 
@@ -753,22 +755,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
     };
   }, [plan]);
 
-  const planGeneratedAt = useMemo(() => {
-    if (!plan?.generatedAt) return null;
-    const d = new Date(plan.generatedAt);
-    return Number.isNaN(d.getTime()) ? null : d;
-  }, [plan]);
 
-  const planIsOutdated = useMemo(() => {
-    if (!planGeneratedAt) return false;
-    if (!lastUpdatedAt) return false;
-    return lastUpdatedAt.getTime() > planGeneratedAt.getTime();
-  }, [lastUpdatedAt, planGeneratedAt]);
-
-  const planIsStale = useMemo(() => {
-    if (!planGeneratedAt) return false;
-    return Date.now() - planGeneratedAt.getTime() > PLAN_TTL_MS;
-  }, [planGeneratedAt]);
 
   const planDiff = useMemo(() => diffPlans(plan, previousPlanSnapshot), [plan, previousPlanSnapshot]);
 
@@ -1282,6 +1269,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                     Could not generate plan{planError ? ` (${planError})` : ""}.
                   </div>
                 ) : null}
+
 
                 {!plan ? (
                   <div className="mt-2 text-xs text-gray-500">
