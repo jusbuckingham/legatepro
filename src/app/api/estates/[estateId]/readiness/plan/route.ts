@@ -435,7 +435,7 @@ export async function GET(
     // - it is within TTL
     // - AND (when available) its inputHash matches the current readiness snapshot
     if (!refresh) {
-      const existingEstate = await Estate.findById(estateId).select("readinessPlan").lean();
+      const existingEstate = await Estate.findById(estateId).select("readinessPlan readinessPlanHistory").lean();
       const existingPlan = existingEstate?.readinessPlan as unknown;
 
       if (existingPlan && typeof existingPlan === "object") {
@@ -485,6 +485,7 @@ export async function GET(
     const basePlan = aiPlan ?? buildPlanFromReadiness(estateId, readiness);
 
     // Persist extra metadata for diffing/history later.
+    // Keep the current cached plan rich enough for reuse + diffing.
     const plan = {
       ...basePlan,
       meta: {
@@ -493,9 +494,25 @@ export async function GET(
       },
     };
 
+    // Lightweight history entry: keep it small (no full signals snapshot).
+    const historyEntry = {
+      ...basePlan,
+      meta: {
+        inputHash,
+      },
+    };
+
     await Estate.findByIdAndUpdate(
       estateId,
-      { $set: { readinessPlan: plan } },
+      {
+        $set: { readinessPlan: plan },
+        $push: {
+          readinessPlanHistory: {
+            $each: [historyEntry],
+            $slice: -5,
+          },
+        },
+      },
       { new: false },
     );
 

@@ -78,6 +78,8 @@ export interface IEstate {
 
   // Cached readiness copilot plan (persisted for fast reloads + diffing)
   readinessPlan?: ReadinessPlan | null;
+  // Lightweight plan history (most recent N plans). Stored as Mixed to avoid schema churn.
+  readinessPlanHistory?: ReadinessPlan[];
 
   // Convenience fields for filtering/TTL checks without parsing Mixed
   readinessPlanGeneratedAt?: Date;
@@ -188,6 +190,10 @@ const EstateSchema = new Schema<EstateDocument>(
     readinessPlan: {
       type: Schema.Types.Mixed,
       default: null,
+    },
+    readinessPlanHistory: {
+      type: [Schema.Types.Mixed],
+      default: [],
     },
     readinessPlanGeneratedAt: {
       type: Date,
