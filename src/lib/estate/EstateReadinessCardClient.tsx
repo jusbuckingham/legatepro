@@ -395,6 +395,8 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
   const [previousPlanSnapshot, setPreviousPlanSnapshot] = useState<PlanSnapshot | null>(null);
   const [showAllResolved, setShowAllResolved] = useState(false);
   const [showPlanChanges, setShowPlanChanges] = useState(false);
+  const [showPlanCompare, setShowPlanCompare] = useState(false);
+  const [planCompareTab, setPlanCompareTab] = useState<"summary" | "details">("summary");
 
   const endpoint = useMemo(
     () => `/api/estates/${encodeURIComponent(estateId)}/readiness`,
@@ -696,6 +698,17 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
 
 
   const planDiff = useMemo(() => diffPlans(plan, previousPlanSnapshot), [plan, previousPlanSnapshot]);
+
+  useEffect(() => {
+    if (!showPlanCompare) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowPlanCompare(false);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showPlanCompare]);
 
   const planStepChanges = useMemo(() => {
     const added = new Map<string, PlanStepSnapshot>();
@@ -1147,16 +1160,32 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                 ) : null}
               </div>
 
-              <button
-                type="button"
-                onClick={() => void loadPlan({ refresh: Boolean(plan), reason: "manual" })}
-                className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
-                aria-busy={isPlanLoading}
-                disabled={isPlanLoading}
-                title={plan ? "Regenerate plan (forces refresh)" : "Generate a 5-step plan"}
-              >
-                {isPlanLoading ? "Generating…" : plan ? "Regenerate" : "Generate"}
-              </button>
+              <div className="flex items-center gap-2">
+                {planDiff.hasPrevious ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPlanCompareTab("summary");
+                      setShowPlanCompare(true);
+                    }}
+                    className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                    title="Compare with previous plan"
+                  >
+                    Compare
+                  </button>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => void loadPlan({ refresh: Boolean(plan), reason: "manual" })}
+                  className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                  aria-busy={isPlanLoading}
+                  disabled={isPlanLoading}
+                  title={plan ? "Regenerate plan (forces refresh)" : "Generate a 5-step plan"}
+                >
+                  {isPlanLoading ? "Generating…" : plan ? "Regenerate" : "Generate"}
+                </button>
+              </div>
             </div>
 
             {allResolved ? (
@@ -1635,6 +1664,205 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
           </Link>
         </div>
       </div>
+
+      {showPlanCompare ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Compare plans"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setShowPlanCompare(false);
+          }}
+        >
+          <div className="w-full max-w-2xl rounded-lg border border-gray-200 bg-white shadow-xl">
+            <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-gray-900">Compare with previous plan</div>
+                <div className="mt-0.5 text-[11px] text-gray-500">
+                  {planDiff.hasPrevious
+                    ? `${planDiff.added.length} new • ${planDiff.severityChanged.length} severity change${
+                        planDiff.severityChanged.length === 1 ? "" : "s"
+                      } • ${planDiff.removed.length} resolved`
+                    : "No previous plan snapshot found."}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowPlanCompare(false)}
+                className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                aria-label="Close"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="px-4 py-3">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPlanCompareTab("summary")}
+                  className={
+                    planCompareTab === "summary"
+                      ? "rounded-md bg-gray-900 px-2 py-1 text-[11px] font-medium text-white"
+                      : "rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                  }
+                >
+                  Summary
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPlanCompareTab("details")}
+                  className={
+                    planCompareTab === "details"
+                      ? "rounded-md bg-gray-900 px-2 py-1 text-[11px] font-medium text-white"
+                      : "rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                  }
+                >
+                  Details
+                </button>
+              </div>
+
+              {!planDiff.hasPrevious ? (
+                <div className="mt-3 text-xs text-gray-600">
+                  Generate a plan once, then regenerate after changes to see a comparison.
+                </div>
+              ) : planDiff.totalChanges === 0 ? (
+                <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
+                  No changes detected between your previous plan snapshot and the current plan.
+                </div>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {planCompareTab === "summary" ? (
+                    <div className="space-y-3">
+                      {planDiff.added.length > 0 ? (
+                        <div>
+                          <div className="text-[11px] font-semibold uppercase text-gray-600">New</div>
+                          <ul className="mt-1 space-y-1">
+                            {planDiff.added.slice(0, 8).map((s) => (
+                              <li key={s.id} className="flex items-center justify-between gap-2">
+                                <Link
+                                  href={resolvedHrefForPlanStep(estateId, s.href, s.title)}
+                                  onClick={() => setShowPlanCompare(false)}
+                                  className="min-w-0 truncate text-xs font-medium text-gray-900 hover:underline"
+                                >
+                                  {s.title}
+                                </Link>
+                                <span className="shrink-0 text-[11px] text-gray-500">{s.severity}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {planDiff.severityChanged.length > 0 ? (
+                        <div>
+                          <div className="text-[11px] font-semibold uppercase text-gray-600">Severity changes</div>
+                          <ul className="mt-1 space-y-1">
+                            {planDiff.severityChanged.slice(0, 8).map((c) => (
+                              <li key={c.id} className="flex items-center justify-between gap-2">
+                                <Link
+                                  href={resolvedHrefForPlanStep(estateId, c.href, c.title)}
+                                  onClick={() => setShowPlanCompare(false)}
+                                  className="min-w-0 truncate text-xs font-medium text-gray-900 hover:underline"
+                                >
+                                  {c.title}
+                                </Link>
+                                <span className="shrink-0 text-[11px] text-gray-500">
+                                  {c.from} → {c.to}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {planDiff.removed.length > 0 ? (
+                        <div>
+                          <div className="text-[11px] font-semibold uppercase text-gray-600">Resolved</div>
+                          <ul className="mt-1 space-y-1">
+                            {planDiff.removed.slice(0, 8).map((s) => (
+                              <li key={s.id} className="flex items-center justify-between gap-2">
+                                <Link
+                                  href={resolvedHrefForPlanStep(estateId, s.href, s.title)}
+                                  onClick={() => setShowPlanCompare(false)}
+                                  className="min-w-0 truncate text-xs font-medium text-gray-700 hover:underline line-through"
+                                >
+                                  {s.title}
+                                </Link>
+                                <span className="shrink-0 text-[11px] text-gray-400">{s.severity}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {planDiff.added.length > 8 ||
+                      planDiff.severityChanged.length > 8 ||
+                      planDiff.removed.length > 8 ? (
+                        <div className="text-[11px] text-gray-500">Showing top 8 per section.</div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="text-xs text-gray-700">
+                        This view lists current plan steps and highlights what changed.
+                      </div>
+                      <ul className="space-y-2">
+                        {rankedPlanSteps.map((step) => {
+                          const isNew = planStepChanges.added.has(step.id);
+                          const ch = planStepChanges.severityChanged.get(step.id);
+                          const changeLabel = isNew ? "New" : ch ? `Severity: ${ch.from} → ${ch.to}` : null;
+
+                          if (!changeLabel) return null;
+
+                          return (
+                            <li key={step.id} className="rounded-md border border-gray-200 bg-gray-50 p-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="truncate text-xs font-medium text-gray-900">{step.title}</span>
+                                    <span className="inline-flex items-center rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-gray-700">
+                                      {changeLabel}
+                                    </span>
+                                  </div>
+                                  {step.details ? (
+                                    <div className="mt-1 line-clamp-2 text-[11px] text-gray-600">{step.details}</div>
+                                  ) : null}
+                                </div>
+
+                                <Link
+                                  href={resolvedHrefForPlanStep(estateId, step.href, step.title)}
+                                  onClick={() => setShowPlanCompare(false)}
+                                  className="shrink-0 text-xs font-medium text-blue-600 hover:underline"
+                                >
+                                  Open →
+                                </Link>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-t border-gray-200 px-4 py-3">
+              <div className="text-[11px] text-gray-500">Tip: regenerate after changes to keep your plan synced.</div>
+              <button
+                type="button"
+                onClick={() => setShowPlanCompare(false)}
+                className="rounded-md bg-gray-900 px-3 py-1.5 text-[11px] font-medium text-white"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {(readiness.signals.missing.length > 0 || readiness.signals.atRisk.length > 0) && (
         <details className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-3">
