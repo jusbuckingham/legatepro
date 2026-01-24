@@ -112,11 +112,44 @@ async function generatePlanWithAI(params: {
 
     const nowIso = new Date().toISOString();
 
+    const normalizedSteps: ReadinessPlanStep[] = Array.isArray((parsed as { steps?: unknown }).steps)
+      ? ((parsed as { steps?: ReadinessPlanStep[] }).steps ?? []).map((s, idx) => {
+          const title = normalizeTitle((s as { title?: unknown }).title);
+          const details = normalizeDetails((s as { details?: unknown }).details);
+          const hrefRaw = (s as { href?: unknown }).href;
+          const href = typeof hrefRaw === "string" && hrefRaw.trim().length > 0 ? hrefRaw : stepHrefForSignal(params.estateId, title);
+
+          const kindRaw = (s as { kind?: unknown }).kind;
+          const kind: ReadinessPlanStep["kind"] =
+            kindRaw === "missing" || kindRaw === "risk" || kindRaw === "general" ? kindRaw : "general";
+
+          const severityRaw = (s as { severity?: unknown }).severity;
+          const severity: ReadinessPlanStep["severity"] =
+            severityRaw === "high" || severityRaw === "medium" || severityRaw === "low" ? severityRaw : "medium";
+
+          const countRaw = (s as { count?: unknown }).count;
+          const count = typeof countRaw === "number" ? countRaw : undefined;
+
+          const idRaw = (s as { id?: unknown }).id;
+          const id = typeof idRaw === "string" && idRaw.trim().length > 0 ? idRaw : `ai:${idx}:${createHash("sha1").update(title).digest("hex").slice(0, 8)}`;
+
+          return {
+            id,
+            title,
+            details,
+            href,
+            kind,
+            severity,
+            count,
+          };
+        })
+      : [];
+
     return {
-      ...parsed,
       estateId: params.estateId,
       generatedAt: nowIso,
       generator: "openai:gpt-4o-mini",
+      steps: normalizedSteps,
     };
   } catch {
     return null;
@@ -221,13 +254,92 @@ function stepHrefForSignal(estateId: string, signalKey: string): string {
   return isMissing ? `${estateBase}/documents#add-document` : `${estateBase}/documents`;
 }
 
-function normalizeTitle(label: string): string {
-  // Keep titles short and action-oriented.
-  const trimmed = label.trim();
-  if (!trimmed) return "Take the next readiness step";
+function normalizeTitle(value: unknown): string {
+  const s = typeof value === "string" ? value.trim() : "";
+  if (!s) return "Next step";
 
-  // If label already starts with a verb like “Add …”, “Create …” keep it.
-  return trimmed;
+  // Collapse whitespace and remove trailing punctuation noise.
+  const collapsed = s.replace(/\s+/g, " ").replace(/[\s.:;-]+$/g, "");
+
+  // If it already starts with an action verb, keep it as-is.
+  return collapsed;
+}
+
+function normalizeDetails(value: unknown): string | undefined {
+  const s = typeof value === "string" ? value.trim() : "";
+  if (!s) return undefined;
+
+  // Normalize whitespace and paragraphs; keep it readable.
+  return s.replace(/\s+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
+}
+
+function normalizeCachedPlan(estateId: string, planUnknown: unknown): ReadinessPlan | null {
+  if (!planUnknown || typeof planUnknown !== "object") return null;
+
+  const p = planUnknown as {
+    estateId?: unknown;
+    generatedAt?: unknown;
+    generator?: unknown;
+    steps?: unknown;
+    meta?: unknown;
+  };
+
+  const generatedAt = typeof p.generatedAt === "string" && p.generatedAt.trim().length > 0 ? p.generatedAt : new Date().toISOString();
+  const generator = typeof p.generator === "string" && p.generator.trim().length > 0 ? p.generator : "unknown";
+
+  const stepsRaw = Array.isArray(p.steps) ? (p.steps as unknown[]) : [];
+
+  const steps: ReadinessPlanStep[] = stepsRaw.map((stepUnknown, idx) => {
+    const s = (stepUnknown ?? {}) as {
+      id?: unknown;
+      title?: unknown;
+      details?: unknown;
+      href?: unknown;
+      kind?: unknown;
+      severity?: unknown;
+      count?: unknown;
+    };
+
+    const title = normalizeTitle(s.title);
+    const details = normalizeDetails(s.details);
+
+    const hrefRaw = s.href;
+    const href = typeof hrefRaw === "string" && hrefRaw.trim().length > 0 ? hrefRaw : stepHrefForSignal(estateId, title);
+
+    const kindRaw = s.kind;
+    const kind: ReadinessPlanStep["kind"] =
+      kindRaw === "missing" || kindRaw === "risk" || kindRaw === "general" ? kindRaw : "general";
+
+    const severityRaw = s.severity;
+    const severity: ReadinessPlanStep["severity"] =
+      severityRaw === "high" || severityRaw === "medium" || severityRaw === "low" ? severityRaw : "medium";
+
+    const countRaw = s.count;
+    const count = typeof countRaw === "number" ? countRaw : undefined;
+
+    const idRaw = s.id;
+    const id = typeof idRaw === "string" && idRaw.trim().length > 0 ? idRaw : `cached:${idx}:${createHash("sha1").update(title).digest("hex").slice(0, 8)}`;
+
+    return {
+      id,
+      title,
+      details,
+      href,
+      kind,
+      severity,
+      count,
+    };
+  });
+
+  // Keep the cached estateId if it matches; otherwise force to requested estateId.
+  const outEstateId = typeof p.estateId === "string" && p.estateId === estateId ? p.estateId : estateId;
+
+  return {
+    estateId: outEstateId,
+    generatedAt,
+    generator,
+    steps,
+  };
 }
 
 function buildPlanFromReadiness(estateId: string, readiness: EstateReadinessLike): ReadinessPlan {
@@ -260,8 +372,8 @@ function buildPlanFromReadiness(estateId: string, readiness: EstateReadinessLike
 
     return {
       id: `${s.key}:${idx}`,
-      title: normalizeTitle(String(s.label)),
-      details: typeof s.reason === "string" && s.reason.trim() ? s.reason : undefined,
+      title: normalizeTitle(s.label),
+      details: normalizeDetails(s.reason),
       href,
       kind: s.kind,
       severity: (s.severity ?? "medium") as "low" | "medium" | "high",
@@ -274,16 +386,16 @@ function buildPlanFromReadiness(estateId: string, readiness: EstateReadinessLike
     steps.push(
       {
         id: "general:review-documents",
-        title: "Review your document index",
-        details: "Confirm you have court letters, IDs, banking statements, and property docs recorded.",
+        title: normalizeTitle("Review your document index"),
+        details: normalizeDetails("Confirm you have court letters, IDs, banking statements, and property docs recorded."),
         href: stepHrefForSignal(estateId, "documents"),
         kind: "general",
         severity: "low",
       },
       {
         id: "general:review-tasks",
-        title: "Confirm your next deadlines",
-        details: "Make sure key tasks are created and assigned: inventory, notices, and property security.",
+        title: normalizeTitle("Confirm your next deadlines"),
+        details: normalizeDetails("Make sure key tasks are created and assigned: inventory, notices, and property security."),
         href: stepHrefForSignal(estateId, "tasks"),
         kind: "general",
         severity: "low",
@@ -323,7 +435,7 @@ export async function GET(
     // - it is within TTL
     // - AND (when available) its inputHash matches the current readiness snapshot
     if (!refresh) {
-      const existingEstate = await Estate.findById(estateId).select("readinessPlan");
+      const existingEstate = await Estate.findById(estateId).select("readinessPlan").lean();
       const existingPlan = existingEstate?.readinessPlan as unknown;
 
       if (existingPlan && typeof existingPlan === "object") {
@@ -347,7 +459,8 @@ export async function GET(
           const cachedHash = meta && typeof meta.inputHash === "string" ? meta.inputHash : null;
 
           if (!cachedHash) {
-            return NextResponse.json({ ok: true, plan: existingPlan }, { status: 200 });
+            const normalized = normalizeCachedPlan(estateId, existingPlan);
+            return NextResponse.json({ ok: true, plan: normalized ?? existingPlan }, { status: 200 });
           }
 
           const readinessNow = (await getEstateReadiness(estateId)) as unknown as EstateReadinessLike;
@@ -355,7 +468,8 @@ export async function GET(
           const hashNow = hashSnapshot(snapshotNow);
 
           if (hashNow === cachedHash) {
-            return NextResponse.json({ ok: true, plan: existingPlan }, { status: 200 });
+            const normalized = normalizeCachedPlan(estateId, existingPlan);
+            return NextResponse.json({ ok: true, plan: normalized ?? existingPlan }, { status: 200 });
           }
           // If hash differs, fall through to regenerate.
         }
