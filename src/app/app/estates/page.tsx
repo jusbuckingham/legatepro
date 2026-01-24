@@ -25,6 +25,10 @@ type EstateListItem = {
   lastActivityAt?: string | Date | null;
   lastActivitySummary?: string | null;
   lastActivityType?: string | null;
+  readinessScore?: number;
+  readinessMissingCount?: number;
+  readinessRiskCount?: number;
+  readinessUpdatedAt?: string | Date | null;
 };
 
 function SearchIcon(props: { className?: string; "aria-hidden"?: boolean }) {
@@ -62,6 +66,109 @@ type EstateEventLean = {
   summary: string | null;
   type: string | null;
 };
+
+type ReadinessSummary = {
+  score: number;
+  missingCount: number;
+  riskCount: number;
+  updatedAt?: string | Date | null;
+};
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function readinessTone(score: number) {
+  if (score >= 85) return "border-emerald-500/40 bg-emerald-500/10 text-emerald-200";
+  if (score >= 65) return "border-amber-500/40 bg-amber-500/10 text-amber-200";
+  return "border-rose-500/40 bg-rose-500/10 text-rose-200";
+}
+
+function ReadinessBadge(props: { summary: ReadinessSummary }) {
+  const score = clamp(Math.round(props.summary.score), 0, 100);
+
+  return (
+    <span
+      className={[
+        "inline-flex items-center gap-2 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+        readinessTone(score),
+      ].join(" ")}
+      title={`Readiness: ${score}%. ${props.summary.missingCount} missing, ${props.summary.riskCount} risk${
+        props.summary.riskCount === 1 ? "" : "s"
+      }.\n\nScore is based on documents, tasks, properties, contacts, and finances.`}
+    >
+      <span className="tabular-nums">{score}%</span>
+      <span className="font-normal normal-case tracking-normal opacity-90">
+        {props.summary.missingCount} missing • {props.summary.riskCount} risk{props.summary.riskCount === 1 ? "" : "s"}
+      </span>
+    </span>
+  );
+}
+
+function extractReadinessSummary(doc: Record<string, unknown>): ReadinessSummary | null {
+  // Supports either `readinessSummary` (preferred) or `readiness` snapshot shapes.
+  const summary = doc.readinessSummary as
+    | {
+        score?: unknown;
+        missingCount?: unknown;
+        riskCount?: unknown;
+        updatedAt?: unknown;
+      }
+    | undefined;
+
+  const toNum = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
+  if (summary) {
+    const score = toNum(summary.score);
+    const missingCount = toNum(summary.missingCount);
+    const riskCount = toNum(summary.riskCount);
+    if (score !== null && missingCount !== null && riskCount !== null) {
+      const updatedAt =
+        typeof summary.updatedAt === "string" || summary.updatedAt instanceof Date
+          ? (summary.updatedAt as string | Date)
+          : null;
+
+      return {
+        score,
+        missingCount,
+        riskCount,
+        updatedAt,
+      };
+    }
+  }
+
+  const readiness = doc.readiness as
+    | {
+        score?: unknown;
+        signals?: {
+          missing?: unknown;
+          atRisk?: unknown;
+        };
+        updatedAt?: unknown;
+      }
+    | undefined;
+
+  if (readiness) {
+    const score = toNum(readiness.score);
+    const missingArr = Array.isArray(readiness.signals?.missing) ? readiness.signals!.missing! : null;
+    const riskArr = Array.isArray(readiness.signals?.atRisk) ? readiness.signals!.atRisk! : null;
+    if (score !== null && missingArr && riskArr) {
+      const updatedAt =
+        typeof readiness.updatedAt === "string" || readiness.updatedAt instanceof Date
+          ? (readiness.updatedAt as string | Date)
+          : null;
+
+      return {
+        score,
+        missingCount: missingArr.length,
+        riskCount: riskArr.length,
+        updatedAt,
+      };
+    }
+  }
+
+  return null;
+}
 
 function getParamString(
   params: Record<string, string | string[] | undefined> | undefined,
@@ -108,10 +215,16 @@ async function getEstates(userId: string): Promise<EstateListItem[]> {
           ? String((rawOwnerId as { toString?: () => string })?.toString?.() ?? "")
           : undefined;
 
+    const readinessSummary = extractReadinessSummary(doc as unknown as Record<string, unknown>);
+
     return {
       ...(doc as unknown as Omit<EstateListItem, "_id" | "ownerId">),
       _id: id,
       ownerId,
+      readinessScore: readinessSummary?.score,
+      readinessMissingCount: readinessSummary?.missingCount,
+      readinessRiskCount: readinessSummary?.riskCount,
+      readinessUpdatedAt: readinessSummary?.updatedAt ?? null,
     };
   });
 
@@ -536,7 +649,21 @@ export default async function EstatesPage({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-100">{name}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-slate-100">{name}</p>
+                        {typeof estate.readinessScore === "number" &&
+                        typeof estate.readinessMissingCount === "number" &&
+                        typeof estate.readinessRiskCount === "number" ? (
+                          <ReadinessBadge
+                            summary={{
+                              score: estate.readinessScore,
+                              missingCount: estate.readinessMissingCount,
+                              riskCount: estate.readinessRiskCount,
+                              updatedAt: estate.readinessUpdatedAt ?? null,
+                            }}
+                          />
+                        ) : null}
+                      </div>
                       <p className="mt-1 text-xs text-slate-400">
                         <span className="text-slate-500">Case:</span> {caseNumber}
                       </p>
@@ -615,6 +742,7 @@ export default async function EstatesPage({
                   <th className="px-4 py-3 font-medium">Estate</th>
                   <th className="px-4 py-3 font-medium">Case #</th>
                   <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Readiness</th>
                   <th className="px-4 py-3 font-medium">Created</th>
                   <th className="px-4 py-3 font-medium">Last activity</th>
                   <th className="px-4 py-3 font-medium text-right">Actions</th>
@@ -634,7 +762,7 @@ export default async function EstatesPage({
                     <tr key={id} className="border-t border-slate-900/80 hover:bg-slate-900/40">
                       <td className="px-4 py-3 align-middle">
                         <div className="flex flex-col">
-                          <span className="flex items-center gap-2 text-sm font-medium text-slate-100">
+                          <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-100">
                             {name}
                             <span
                               className={[
@@ -651,6 +779,18 @@ export default async function EstatesPage({
                             >
                               {estate.ownerId === session.user.id ? "Owner" : "Shared"}
                             </span>
+                            {typeof estate.readinessScore === "number" &&
+                            typeof estate.readinessMissingCount === "number" &&
+                            typeof estate.readinessRiskCount === "number" ? (
+                              <ReadinessBadge
+                                summary={{
+                                  score: estate.readinessScore,
+                                  missingCount: estate.readinessMissingCount,
+                                  riskCount: estate.readinessRiskCount,
+                                  updatedAt: estate.readinessUpdatedAt ?? null,
+                                }}
+                              />
+                            ) : null}
                           </span>
                           {estate.county || estate.jurisdiction ? (
                             <span className="text-xs text-slate-500">{estate.county || estate.jurisdiction}</span>
@@ -662,6 +802,24 @@ export default async function EstatesPage({
                         <span className="inline-flex min-w-[4.5rem] items-center justify-center rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-200">
                           {status}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 align-middle text-xs">
+                        {typeof estate.readinessScore === "number" &&
+                        typeof estate.readinessMissingCount === "number" &&
+                        typeof estate.readinessRiskCount === "number" ? (
+                          <ReadinessBadge
+                            summary={{
+                              score: estate.readinessScore,
+                              missingCount: estate.readinessMissingCount,
+                              riskCount: estate.readinessRiskCount,
+                              updatedAt: estate.readinessUpdatedAt ?? null,
+                            }}
+                          />
+                        ) : (
+                          <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                            —
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 align-middle text-sm text-slate-300">{createdLabel}</td>
                       <td className="px-4 py-3 align-middle">
