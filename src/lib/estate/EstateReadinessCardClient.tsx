@@ -4,6 +4,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { EstateReadinessResult } from "@/lib/estate/readiness";
+import {
+  diffPlans,
+  snapshotFromPlan,
+  type PlanSnapshot,
+  type PlanStepSnapshot,
+} from "@/lib/estate/readinessPlanDiff";
 
 type ReadinessApiResponse =
   | { ok: true; readiness: EstateReadinessResult }
@@ -51,35 +57,7 @@ const PLAN_SNAPSHOT_STORAGE_PREFIX = "legatepro:readinessPlanSnapshot:";
 const PLAN_HISTORY_STORAGE_PREFIX = "legatepro:readinessPlanHistory:";
 const MAX_PLAN_HISTORY = 5;
 
-type PlanStepSnapshot = {
-  id: string;
-  title: string;
-  severity: ReadinessPlanStep["severity"];
-  href?: string;
-  kind?: ReadinessPlanStep["kind"];
-};
-
-type PlanSnapshot = {
-  estateId: string;
-  generatedAt: string;
-  steps: PlanStepSnapshot[];
-};
-
 type PlanHistory = PlanSnapshot[];
-
-type PlanDiff = {
-  hasPrevious: boolean;
-  added: PlanStepSnapshot[];
-  removed: PlanStepSnapshot[];
-  severityChanged: Array<{
-    id: string;
-    title: string;
-    from: ReadinessPlanStep["severity"];
-    to: ReadinessPlanStep["severity"];
-    href?: string;
-  }>;
-  totalChanges: number;
-};
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -111,93 +89,6 @@ function safeJsonParse<T>(value: string | null): T | null {
   }
 }
 
-function snapshotFromPlan(plan: ReadinessPlan): PlanSnapshot {
-  return {
-    estateId: plan.estateId,
-    generatedAt: plan.generatedAt,
-    steps: (plan.steps ?? []).map((s) => ({
-      id: s.id,
-      title: s.title,
-      severity: s.severity,
-      href: s.href,
-      kind: s.kind,
-    })),
-  };
-}
-
-function diffPlans(current: ReadinessPlan | null, previous: PlanSnapshot | null): PlanDiff {
-  if (!current) {
-    return {
-      hasPrevious: Boolean(previous),
-      added: [],
-      removed: [],
-      severityChanged: [],
-      totalChanges: 0,
-    };
-  }
-
-  const curSteps: PlanStepSnapshot[] = (current.steps ?? []).map((s) => ({
-    id: s.id,
-    title: s.title,
-    severity: s.severity,
-    href: s.href,
-    kind: s.kind,
-  }));
-
-  const prevSteps = previous?.steps ?? [];
-
-  const curMap = new Map(curSteps.map((s) => [s.id, s] as const));
-  const prevMap = new Map(prevSteps.map((s) => [s.id, s] as const));
-
-  const added: PlanStepSnapshot[] = [];
-  const removed: PlanStepSnapshot[] = [];
-  const severityChanged: PlanDiff["severityChanged"] = [];
-
-  for (const [id, cur] of curMap.entries()) {
-    const prev = prevMap.get(id);
-    if (!prev) {
-      added.push(cur);
-      continue;
-    }
-    if (prev.severity !== cur.severity) {
-      severityChanged.push({
-        id,
-        title: cur.title,
-        from: prev.severity,
-        to: cur.severity,
-        href: cur.href,
-      });
-    }
-  }
-
-  for (const [id, prev] of prevMap.entries()) {
-    if (!curMap.has(id)) removed.push(prev);
-  }
-
-  severityChanged.sort(
-    (a, b) => severityRankLocal(b.to) - severityRankLocal(a.to) || a.title.localeCompare(b.title),
-  );
-
-  added.sort(
-    (a, b) =>
-      severityRankLocal(b.severity) - severityRankLocal(a.severity) || a.title.localeCompare(b.title),
-  );
-
-  removed.sort(
-    (a, b) =>
-      severityRankLocal(b.severity) - severityRankLocal(a.severity) || a.title.localeCompare(b.title),
-  );
-
-  const totalChanges = added.length + removed.length + severityChanged.length;
-
-  return {
-    hasPrevious: Boolean(previous),
-    added,
-    removed,
-    severityChanged,
-    totalChanges,
-  };
-}
 
 function rankTopActions(signals: SignalWithKind[]): SignalWithKind[] {
   return [...signals].sort((a, b) => {
