@@ -15,19 +15,19 @@ export default function Home() {
                 LegatePro
               </h1>
               <p className="mt-1 text-sm text-slate-400">
-                Named Personal Representative? Here’s your next step.
+                You’ve been named Personal Representative. Here’s what to do next.
               </p>
 
               {/* Trust / highlights */}
               <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
                 <span className="inline-flex items-center rounded-full border border-emerald-500/50 bg-emerald-500/10 px-3 py-1 font-medium uppercase tracking-wide text-emerald-300">
-                  Private beta
+                  Private beta (free)
                 </span>
                 <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900/50 px-3 py-1 font-medium uppercase tracking-wide text-slate-300">
-                  No uploads needed
+                  No document uploads
                 </span>
                 <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900/50 px-3 py-1 font-medium uppercase tracking-wide text-slate-300">
-                  Clean paper trail
+                  Court-ready record
                 </span>
               </div>
             </div>
@@ -38,7 +38,7 @@ export default function Home() {
               Built for personal reps.
             </span>
             <span className="text-[11px] text-slate-600">
-              Simple steps. Court-ready records.
+              Simple steps. A clean record.
             </span>
           </div>
         </header>
@@ -46,7 +46,7 @@ export default function Home() {
         {/* Value props */}
         <section className="space-y-4">
           <p className="text-sm leading-relaxed text-slate-300">
-            Probate is a lot. LegatePro keeps your documents, tasks, properties, money, and deadlines in one place—so you don’t miss something important.
+            Probate is a lot to hold in your head. LegatePro keeps your checklist, documents, costs, and deadlines in one place—so you always know what’s next.
           </p>
 
           <ul className="grid gap-3 text-sm text-slate-200 sm:grid-cols-2">
@@ -55,7 +55,7 @@ export default function Home() {
                 Tasks
               </div>
               <p className="mt-1 text-xs text-slate-400">
-                A simple checklist built around real probate milestones.
+                A clear checklist built around real probate milestones.
               </p>
             </li>
             <li className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
@@ -63,7 +63,7 @@ export default function Home() {
                 Money in &amp; out
               </div>
               <p className="mt-1 text-xs text-slate-400">
-                Track costs, repairs, utilities, and rent. Be ready for court and taxes.
+                Track expenses, repairs, utilities, and rent. Export clean totals when you need them.
               </p>
             </li>
             <li className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
@@ -71,7 +71,7 @@ export default function Home() {
                 Document index
               </div>
               <p className="mt-1 text-xs text-slate-400">
-                Index every key document—Drive, iCloud, email, or paper.
+                List what you have and where it lives—Drive, iCloud, email, or paper.
               </p>
             </li>
             <li className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
@@ -79,7 +79,7 @@ export default function Home() {
                 Timecard
               </div>
               <p className="mt-1 text-xs text-slate-400">
-                Log your hours as PR. Request compensation with a clean record.
+                Log your PR hours and notes. Keep proof if you request compensation.
               </p>
             </li>
           </ul>
@@ -91,15 +91,15 @@ export default function Home() {
             </h2>
             <div className="mt-3 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
               <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-                <div className="font-medium text-slate-100">A clean paper trail</div>
+                <div className="font-medium text-slate-100">A clean timeline</div>
                 <p className="mt-1 text-slate-400">
-                  Every action and change, tracked in one timeline.
+                  Every action, note, and cost captured in one place.
                 </p>
               </div>
               <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-                <div className="font-medium text-slate-100">A court-ready packet</div>
+                <div className="font-medium text-slate-100">A court-ready summary</div>
                 <p className="mt-1 text-slate-400">
-                  Documents indexed, notes organized, and costs easy to summarize.
+                  Documents indexed, tasks tracked, and totals easy to share.
                 </p>
               </div>
             </div>
@@ -114,7 +114,7 @@ export default function Home() {
                 href="/app"
                 className="inline-flex items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 shadow-sm shadow-emerald-500/30 hover:bg-emerald-400"
               >
-                Get started (free)
+                Start (free)
               </Link>
               <Link
                 href="#how-it-works"
@@ -124,7 +124,7 @@ export default function Home() {
               </Link>
             </div>
             <p className="text-xs text-slate-500">
-              Built for first-timers. Clear enough to share with family.
+              Built for first-timers. Clear enough to share.
             </p>
           </div>
 
@@ -155,7 +155,7 @@ export default function Home() {
                 <div>
                   <p className="font-medium text-slate-100">Work the checklist</p>
                   <p className="text-xs text-slate-400">
-                    Follow the checklist. Log expenses, rent, and your time.
+                    Follow the checklist. Log costs, rent, and your time as you go.
                   </p>
                 </div>
               </li>
@@ -174,7 +174,7 @@ export default function Home() {
           </section>
 
           <div className="mt-4 flex flex-col gap-2 border-t border-slate-900 pt-4 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-[11px] text-slate-500">Start here, then confirm court requirements with your attorney if you have one.</p>
+            <p className="text-[11px] text-slate-500">Start here, then confirm requirements with your court or attorney if you have one.</p>
             <p>
               LegatePro is not legal advice. Always confirm requirements with your
               court or attorney.
