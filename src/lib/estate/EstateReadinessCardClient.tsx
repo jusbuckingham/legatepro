@@ -1035,9 +1035,9 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
       <section className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-gray-900">Estate readiness</h2>
+            <h2 className="text-sm font-semibold text-gray-900">Readiness</h2>
             <p className="mt-1 text-xs text-gray-500">
-              Readiness could not be calculated{error ? ` (${error})` : ""}. Refresh or try again.
+              We couldn’t calculate readiness right now{error ? ` (${error})` : ""}. Please refresh and try again.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -1056,7 +1056,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
               href={`/app/estates/${encodeURIComponent(estateId)}/documents`}
               className="text-xs font-medium text-blue-600 hover:underline"
             >
-              Improve readiness →
+              Go to documents →
             </Link>
           </div>
         </div>
@@ -1069,7 +1069,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold text-gray-900">Estate readiness</h2>
+            <h2 className="text-sm font-semibold text-gray-900">Readiness</h2>
             <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-700">
               {readiness.signals.atRisk.length} risk
               {readiness.signals.atRisk.length === 1 ? "" : "s"} •{" "}
@@ -1078,7 +1078,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
           </div>
 
           <p className="mt-1 text-xs text-gray-500">
-            A quick completeness signal across documents, tasks, properties, contacts, and finances.
+            A quick snapshot of what’s complete and what needs attention across documents, tasks, properties, contacts, and finances.
           </p>
 
           <div className="mt-3 grid gap-2">
@@ -1102,8 +1102,8 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
           {topActions.length > 0 && (
             <div className="mt-4 rounded-md border border-gray-200 bg-white p-3">
               <div className="flex items-center justify-between gap-2">
-                <div className="text-[11px] font-semibold uppercase text-gray-600">Top actions</div>
-                <span className="text-[11px] text-gray-500">Based on missing + at-risk signals</span>
+                <div className="text-[11px] font-semibold uppercase text-gray-600">Top priorities</div>
+                <span className="text-[11px] text-gray-500">Based on missing and at-risk items</span>
               </div>
 
               <ul className="mt-2 space-y-2">
@@ -1142,7 +1142,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                       href={actionHrefForSignal(estateId, s.key)}
                       className="shrink-0 text-xs font-medium text-blue-600 hover:underline"
                     >
-                      Fix →
+                      Resolve →
                     </Link>
                   </li>
                 ))}
@@ -1167,7 +1167,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                     className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700"
                     title="Compared to your previous plan"
                   >
-                    Plan updated · {planDiff.totalChanges} change{planDiff.totalChanges === 1 ? "" : "s"}
+                    Updated · {planDiff.totalChanges} change{planDiff.totalChanges === 1 ? "" : "s"}
                   </span>
                 ) : null}
 
@@ -1176,9 +1176,9 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                     type="button"
                     onClick={() => setShowPlanChanges((v) => !v)}
                     className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
-                    title={showPlanChanges ? "Hide plan changes" : "View plan changes"}
+                    title={showPlanChanges ? "Hide changes" : "See changes"}
                   >
-                    {showPlanChanges ? "Hide changes" : "View changes"}
+                    {showPlanChanges ? "Hide changes" : "See changes"}
                   </button>
                 ) : null}
               </div>
@@ -1192,9 +1192,9 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                       setShowPlanCompare(true);
                     }}
                     className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
-                    title="Compare with previous plan"
+                    title="Compare plans"
                   >
-                    Compare
+                    Compare plans
                   </button>
                 ) : null}
 
@@ -1204,9 +1204,9 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                   className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
                   aria-busy={isPlanLoading}
                   disabled={isPlanLoading}
-                  title={plan ? "Regenerate plan (forces refresh)" : "Generate a 5-step plan"}
+                  title={plan ? "Refresh the plan" : "Create a 5-step plan"}
                 >
-                  {isPlanLoading ? "Generating…" : plan ? "Regenerate" : "Generate"}
+                  {isPlanLoading ? "Building…" : plan ? "Refresh plan" : "Create plan"}
                 </button>
               </div>
             </div>
@@ -1215,13 +1215,13 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
               <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <div className="text-xs font-semibold text-emerald-900">You’re in great shape</div>
+                    <div className="text-xs font-semibold text-emerald-900">All set</div>
                     <div className="mt-0.5 text-[11px] text-emerald-800">
-                      No missing or at-risk items detected right now. Keep things maintained and you’ll stay at 100%.
+                      No missing or at-risk items detected. Keep logging updates to stay on track.
                     </div>
                   </div>
                   <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
-                    Ready
+                    On track
                   </span>
                 </div>
 
@@ -1265,7 +1265,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                 </div>
 
                 <div className="mt-3 text-[11px] text-emerald-800">
-                  Tip: If anything changes, regenerate a plan to get updated next steps.
+                  Tip: If anything changes, refresh your plan to update next steps.
                 </div>
               </div>
             ) : (
@@ -1278,17 +1278,17 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
 
                 {planError ? (
                   <div className="mt-2 text-xs text-rose-700">
-                    Could not generate plan{planError ? ` (${planError})` : ""}.
+                    Plan unavailable{planError ? ` (${planError})` : ""}.
                   </div>
                 ) : null}
 
 
                 {!plan ? (
                   <div className="mt-2 text-xs text-gray-500">
-                    Get a short, prioritized checklist based on your current readiness signals.
+                    Create a short, prioritized checklist based on your current readiness.
                   </div>
                 ) : rankedPlanSteps.length === 0 ? (
-                  <div className="mt-2 text-xs text-gray-500">No next steps available.</div>
+                  <div className="mt-2 text-xs text-gray-500">No steps to show.</div>
                 ) : (
                   <ul className="mt-2 space-y-2">
                     {rankedPlanSteps.map((step) => (
@@ -1383,7 +1383,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                                   className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700"
                                   title="This step is new since your last plan"
                                 >
-                                  New since last plan
+                                  New
                                 </span>
                               ) : null}
 
@@ -1418,7 +1418,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                                 return (
                                   <details className="group">
                                     <summary className="cursor-pointer select-none text-[11px] font-medium text-gray-500 hover:text-gray-700">
-                                      Why changed?
+                                      What changed?
                                     </summary>
                                     <div className="mt-1 max-w-[560px] rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] text-gray-700">
                                       {why}
@@ -1437,7 +1437,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
 
                           <details className="mt-1" open={step.severity === "high"}>
                             <summary className="cursor-pointer text-[11px] font-medium text-blue-600 hover:underline">
-                              Why this step?
+                              Details
                             </summary>
 
                             <div className="mt-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 text-[11px] text-gray-700">
@@ -1545,7 +1545,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                 {plan ? (
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
                     <span title={planGeneratedAt ? planGeneratedAt.toLocaleString() : plan.generatedAt}>
-                      Generated: <span className="font-medium text-gray-700">{toRelativeAgeLabel(planGeneratedAt)}</span>
+                      Plan: <span className="font-medium text-gray-700">{toRelativeAgeLabel(planGeneratedAt)}</span>
                     </span>
 
                     {planIsOutdated ? (
@@ -1553,7 +1553,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                         className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
                         title="Readiness changed since this plan was generated. Regenerate to refresh next steps."
                       >
-                        Plan may be outdated
+                        Out of date
                       </span>
                     ) : null}
 
@@ -1562,7 +1562,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                         className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
                         title="This plan is older than 24 hours. The server will refresh it automatically soon, but you can regenerate now."
                       >
-                        {isPlanAutoRefreshing ? "Refreshing plan…" : "Plan is stale"}
+                        {isPlanAutoRefreshing ? "Refreshing…" : "Old plan"}
                       </span>
                     ) : null}
                   </div>
@@ -1584,7 +1584,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                         className="text-[11px] font-medium text-gray-600 hover:text-gray-800"
                         title="Hide changes"
                       >
-                        Close
+                        Dismiss
                       </button>
                     </div>
 
@@ -1683,7 +1683,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
             href={`/app/estates/${encodeURIComponent(estateId)}/documents`}
             className="text-xs font-medium text-blue-600 hover:underline"
           >
-            Improve readiness →
+            Go to documents →
           </Link>
         </div>
       </div>
@@ -1701,7 +1701,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
           <div className="w-full max-w-2xl rounded-lg border border-gray-200 bg-white shadow-xl">
             <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3">
               <div className="min-w-0">
-                <div className="text-sm font-semibold text-gray-900">Compare with previous plan</div>
+                <div className="text-sm font-semibold text-gray-900">Compare plans</div>
                 <div className="mt-0.5 text-[11px] text-gray-500">
                   {planDiff.hasPrevious
                     ? `${planDiff.added.length} new • ${planDiff.severityChanged.length} severity change${
@@ -1715,9 +1715,9 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
                 type="button"
                 onClick={() => setShowPlanCompare(false)}
                 className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
-                aria-label="Close"
+                aria-label="Dismiss"
               >
-                Close
+                Dismiss
               </button>
             </div>
 
@@ -1749,7 +1749,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
 
               {!planDiff.hasPrevious ? (
                 <div className="mt-3 text-xs text-gray-600">
-                  Generate a plan once, then regenerate after changes to see a comparison.
+                  Create a plan, then refresh it after updates to compare changes.
                 </div>
               ) : planDiff.totalChanges === 0 ? (
                 <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
@@ -1874,7 +1874,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
             </div>
 
             <div className="flex items-center justify-between gap-2 border-t border-gray-200 px-4 py-3">
-              <div className="text-[11px] text-gray-500">Tip: regenerate after changes to keep your plan synced.</div>
+              <div className="text-[11px] text-gray-500">Tip: refresh after updates to keep your plan in sync.</div>
               <button
                 type="button"
                 onClick={() => setShowPlanCompare(false)}
