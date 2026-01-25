@@ -15,7 +15,7 @@ export default function Home() {
                 LegatePro
               </h1>
               <p className="mt-1 text-sm text-slate-400">
-                Probate, simplified—like TurboTax, but for estates.
+                Named Personal Representative? Here’s your next step.
               </p>
 
               {/* Trust / highlights */}
@@ -24,10 +24,10 @@ export default function Home() {
                   Private beta
                 </span>
                 <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900/50 px-3 py-1 font-medium uppercase tracking-wide text-slate-300">
-                  No file uploads required
+                  No uploads needed
                 </span>
                 <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900/50 px-3 py-1 font-medium uppercase tracking-wide text-slate-300">
-                  Timeline & audit trail
+                  Clean paper trail
                 </span>
               </div>
             </div>
@@ -35,10 +35,10 @@ export default function Home() {
 
           <div className="flex flex-col items-start gap-1 text-right text-xs sm:items-end">
             <span className="text-[11px] text-slate-500">
-              Built for personal representatives and heirs.
+              Built for personal reps.
             </span>
             <span className="text-[11px] text-slate-600">
-              Calm workflows. Court-ready records.
+              Simple steps. Court-ready records.
             </span>
           </div>
         </header>
@@ -46,10 +46,7 @@ export default function Home() {
         {/* Value props */}
         <section className="space-y-4">
           <p className="text-sm leading-relaxed text-slate-300">
-            LegatePro gives personal representatives a calm, structured workspace to
-            manage an estate from start to finish—tasks, expenses, documents,
-            properties, rent, and your timecard all in one place. No giant
-            spreadsheet, no guessing what comes next.
+            Probate is a lot. LegatePro keeps your documents, tasks, properties, money, and deadlines in one place—so you don’t miss something important.
           </p>
 
           <ul className="grid gap-3 text-sm text-slate-200 sm:grid-cols-2">
@@ -58,8 +55,7 @@ export default function Home() {
                 Tasks
               </div>
               <p className="mt-1 text-xs text-slate-400">
-                A clear checklist that tracks real probate milestones instead of
-                abstract legal jargon.
+                A simple checklist built around real probate milestones.
               </p>
             </li>
             <li className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
@@ -67,8 +63,7 @@ export default function Home() {
                 Money in &amp; out
               </div>
               <p className="mt-1 text-xs text-slate-400">
-                Track court costs, repairs, utilities, and rent so you&apos;re ready for
-                court and tax time.
+                Track costs, repairs, utilities, and rent. Be ready for court and taxes.
               </p>
             </li>
             <li className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
@@ -76,8 +71,7 @@ export default function Home() {
                 Document index
               </div>
               <p className="mt-1 text-xs text-slate-400">
-                Keep a simple index of every key document, wherever it lives—Drive,
-                iCloud, or paper.
+                Index every key document—Drive, iCloud, email, or paper.
               </p>
             </li>
             <li className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
@@ -85,8 +79,7 @@ export default function Home() {
                 Timecard
               </div>
               <p className="mt-1 text-xs text-slate-400">
-                Log your hours as personal rep and be ready to request compensation
-                with a clean record.
+                Log your hours as PR. Request compensation with a clean record.
               </p>
             </li>
           </ul>
@@ -94,13 +87,13 @@ export default function Home() {
           {/* Outcome */}
           <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-200">
-              What you&apos;ll have when probate closes
+              What this gives you
             </h2>
             <div className="mt-3 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
               <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
                 <div className="font-medium text-slate-100">A clean paper trail</div>
                 <p className="mt-1 text-slate-400">
-                  Actions, changes, and collaboration tracked in one timeline.
+                  Every action and change, tracked in one timeline.
                 </p>
               </div>
               <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
@@ -121,7 +114,7 @@ export default function Home() {
                 href="/app"
                 className="inline-flex items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 shadow-sm shadow-emerald-500/30 hover:bg-emerald-400"
               >
-                Open your workspace
+                Get started (free)
               </Link>
               <Link
                 href="#how-it-works"
@@ -131,8 +124,7 @@ export default function Home() {
               </Link>
             </div>
             <p className="text-xs text-slate-500">
-              For people doing this for the first time—and never wanting to
-              reinvent the process again.
+              Built for first-timers. Clear enough to share with family.
             </p>
           </div>
 
@@ -142,7 +134,7 @@ export default function Home() {
             className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4 sm:p-5"
           >
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-200">
-              How LegatePro helps
+              How it works
             </h2>
             <ol className="mt-3 space-y-3 text-sm text-slate-300">
               <li className="flex gap-3">
@@ -152,8 +144,7 @@ export default function Home() {
                 <div>
                   <p className="font-medium text-slate-100">Set up your estate</p>
                   <p className="text-xs text-slate-400">
-                    Enter basic court details, properties, and key contacts so
-                    everything lives in one workspace.
+                    Add the basics: court info, properties, and key contacts.
                   </p>
                 </div>
               </li>
@@ -164,8 +155,7 @@ export default function Home() {
                 <div>
                   <p className="font-medium text-slate-100">Work the checklist</p>
                   <p className="text-xs text-slate-400">
-                    Follow a guided set of tasks while you log expenses, rent, and
-                    your time as personal representative.
+                    Follow the checklist. Log expenses, rent, and your time.
                   </p>
                 </div>
               </li>
@@ -176,8 +166,7 @@ export default function Home() {
                 <div>
                   <p className="font-medium text-slate-100">Close with confidence</p>
                   <p className="text-xs text-slate-400">
-                    When it&apos;s time to close probate, you have a clean record of what
-                    you did, what it cost, and what was paid.
+                    When it’s time to close, you have a clean record of what happened and what it cost.
                   </p>
                 </div>
               </li>
@@ -185,6 +174,7 @@ export default function Home() {
           </section>
 
           <div className="mt-4 flex flex-col gap-2 border-t border-slate-900 pt-4 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-[11px] text-slate-500">Start here, then confirm court requirements with your attorney if you have one.</p>
             <p>
               LegatePro is not legal advice. Always confirm requirements with your
               court or attorney.

@@ -5,10 +5,35 @@ import "./globals.css";
 import ToastHost from "@/components/ui/ToastHost";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://legatepro.com"),
   title: "LegatePro — Modern Probate Management",
   description: "AI-powered probate management platform for personal representatives.",
   icons: {
     icon: "/logo-icon.svg",
+  },
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    type: "website",
+    url: "/",
+    siteName: "LegatePro",
+    title: "LegatePro — Modern Probate Management",
+    description: "AI-powered probate management platform for personal representatives.",
+    images: [
+      {
+        url: "/og.png",
+        width: 1200,
+        height: 630,
+        alt: "LegatePro",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "LegatePro — Modern Probate Management",
+    description: "AI-powered probate management platform for personal representatives.",
+    images: ["/og.png"],
   },
 };
 
