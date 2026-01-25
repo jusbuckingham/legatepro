@@ -37,12 +37,12 @@ export default async function AppLayout({ children }: AppLayoutProps) {
   const user = session.user as { name?: string | null; email?: string | null };
   const userName = user.name || user.email || "User";
 
-  const navOverview: NavItem[] = [{ href: "/app", label: "Dashboard", badge: "Home" }];
+  const navOverview: NavItem[] = [{ href: "/app/dashboard", label: "Dashboard" }];
   const navEstates: NavItem[] = [
     { href: "/app/estates", label: "Estates" },
-    { href: "/app/tasks", label: "Tasks & deadlines" },
-    { href: "/app/expenses", label: "Expenses & reimbursements" },
-    { href: "/app/rent", label: "Rent & income" },
+    { href: "/app/tasks", label: "Tasks" },
+    { href: "/app/expenses", label: "Expenses" },
+    { href: "/app/rent", label: "Income" },
     { href: "/app/documents", label: "Documents" },
     { href: "/app/contacts", label: "Contacts" },
   ];
@@ -56,9 +56,7 @@ export default async function AppLayout({ children }: AppLayoutProps) {
           <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
             LegatePro
           </div>
-          <div className="mt-2 text-sm text-slate-300">
-            Probate &amp; estate workspace
-          </div>
+          <div className="mt-2 text-sm text-slate-300">Estate workspace</div>
         </div>
 
         <nav className="flex-1 space-y-1 text-sm" aria-label="App navigation">
