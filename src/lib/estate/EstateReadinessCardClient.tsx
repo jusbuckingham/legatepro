@@ -421,6 +421,9 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
   const didAutoPlanRef = useRef<string | null>(null);
   const didAutoPlanRefreshRef = useRef<string | null>(null);
   const didAutoPlanOutdatedRefreshRef = useRef<string | null>(null);
+  const latestPlanRef = useRef<ReadinessPlan | null>(null);
+  const latestIsPlanLoadingRef = useRef(false);
+  const latestPlanIsOutdatedRef = useRef(false);
 
   const planGeneratedAt = useMemo(() => {
     if (!plan?.generatedAt) return null;
@@ -438,6 +441,19 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
     if (!planGeneratedAt) return false;
     return Date.now() - planGeneratedAt.getTime() > PLAN_TTL_MS;
   }, [planGeneratedAt]);
+
+  // Keep latestPlanRef, latestIsPlanLoadingRef, latestPlanIsOutdatedRef in sync with state
+  useEffect(() => {
+    latestPlanRef.current = plan;
+  }, [plan]);
+
+  useEffect(() => {
+    latestIsPlanLoadingRef.current = isPlanLoading;
+  }, [isPlanLoading]);
+
+  useEffect(() => {
+    latestPlanIsOutdatedRef.current = planIsOutdated;
+  }, [planIsOutdated]);
 
   const loadReadiness = useCallback(
     async (opts?: { silent?: boolean; signal?: AbortSignal }) => {
@@ -599,6 +615,8 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
     const controller = new AbortController();
 
     void loadReadiness({ silent: false, signal: controller.signal });
+
+    // Reset plan state on estate switch
     setPlan(null);
     setPlanError(null);
     didAutoPlanRef.current = null;
@@ -622,24 +640,29 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
       setPreviousPlanSnapshot(null);
     }
 
+    return () => {
+      controller.abort();
+    };
+  }, [loadReadiness, estateId, planSnapshotStorageKey, planHistoryStorageKey]);
+
+  useEffect(() => {
     const onFocus = () => {
       // Silent refresh on focus (premium feel)
       void loadReadiness({ silent: true });
 
       // If a plan is already on-screen, quietly refresh it if readiness changed.
-      // (This keeps the plan in sync without nuking UI state.)
-      if (plan && !isPlanLoading && planIsOutdated) {
+      // Read from refs to avoid re-binding this handler on every render.
+      const currentPlan = latestPlanRef.current;
+      if (currentPlan && !latestIsPlanLoadingRef.current && latestPlanIsOutdatedRef.current) {
         void loadPlan({ refresh: true, reason: "auto" });
       }
     };
 
     window.addEventListener("focus", onFocus);
-
     return () => {
-      controller.abort();
       window.removeEventListener("focus", onFocus);
     };
-  }, [loadReadiness, estateId, planSnapshotStorageKey, planHistoryStorageKey, plan, isPlanLoading, planIsOutdated, loadPlan]);
+  }, [loadReadiness, loadPlan]);
 
   const score = clamp(Math.round(readiness?.score ?? 0), 0, 100);
 
