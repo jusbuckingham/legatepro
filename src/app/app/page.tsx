@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 
 export const metadata = {
-  title: "Dashboard | LegatePro",
+  title: "App | LegatePro",
 };
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,8 @@ export default async function AppIndexPage() {
   const session = await auth();
 
   if (!session?.user?.id) {
-    redirect("/login?callbackUrl=/app/dashboard");
+    // Send users back to the app entry route; it will forward to the dashboard after auth.
+    redirect("/login?callbackUrl=/app");
   }
 
   redirect("/app/dashboard");

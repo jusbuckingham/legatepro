@@ -15,13 +15,13 @@ export default function Home() {
                 LegatePro
               </h1>
               <p className="mt-1 text-sm text-slate-400">
-                You’ve been named Personal Representative. Here’s what to do next.
+                You’ve been named Personal Representative. Start with a clear next step.
               </p>
 
               {/* Trust / highlights */}
               <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
                 <span className="inline-flex items-center rounded-full border border-emerald-500/50 bg-emerald-500/10 px-3 py-1 font-medium uppercase tracking-wide text-emerald-300">
-                  Private beta (free)
+                  Private beta
                 </span>
                 <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900/50 px-3 py-1 font-medium uppercase tracking-wide text-slate-300">
                   No document uploads
@@ -38,7 +38,7 @@ export default function Home() {
               Built for personal reps.
             </span>
             <span className="text-[11px] text-slate-600">
-              Simple steps. A clean record.
+              Stay organized. Stay ready.
             </span>
           </div>
         </header>
@@ -46,7 +46,7 @@ export default function Home() {
         {/* Value props */}
         <section className="space-y-4">
           <p className="text-sm leading-relaxed text-slate-300">
-            Probate is a lot to hold in your head. LegatePro keeps your checklist, documents, costs, and deadlines in one place—so you always know what’s next.
+            Probate is a lot to hold in your head. LegatePro keeps your tasks, document index, costs, and deadlines in one place, so you always know what’s next.
           </p>
 
           <ul className="grid gap-3 text-sm text-slate-200 sm:grid-cols-2">
@@ -71,7 +71,7 @@ export default function Home() {
                 Document index
               </div>
               <p className="mt-1 text-xs text-slate-400">
-                List what you have and where it lives—Drive, iCloud, email, or paper.
+                List what you have and where it lives: Drive, iCloud, email, or paper.
               </p>
             </li>
             <li className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
@@ -87,7 +87,7 @@ export default function Home() {
           {/* Outcome */}
           <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-200">
-              What this gives you
+              What you get
             </h2>
             <div className="mt-3 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
               <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
@@ -114,7 +114,7 @@ export default function Home() {
                 href="/app"
                 className="inline-flex items-center justify-center rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 shadow-sm shadow-emerald-500/30 hover:bg-emerald-400"
               >
-                Start (free)
+                Start free
               </Link>
               <Link
                 href="#how-it-works"
@@ -174,30 +174,28 @@ export default function Home() {
           </section>
 
           <div className="mt-4 flex flex-col gap-2 border-t border-slate-900 pt-4 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-[11px] text-slate-500">Start here, then confirm requirements with your court or attorney if you have one.</p>
-            <p>
-              LegatePro is not legal advice. Always confirm requirements with your
-              court or attorney.
+            <p className="text-[11px] text-slate-500">
+              Not legal advice. Confirm requirements with your court or attorney.
             </p>
             <div className="flex gap-3">
-              <a
-                href="#"
+              <Link
+                href="/privacy"
                 className="text-[11px] text-slate-500 hover:text-slate-300"
               >
                 Privacy
-              </a>
-              <a
-                href="#"
+              </Link>
+              <Link
+                href="/terms"
                 className="text-[11px] text-slate-500 hover:text-slate-300"
               >
                 Terms
-              </a>
-              <a
-                href="#"
+              </Link>
+              <Link
+                href="/support"
                 className="text-[11px] text-slate-500 hover:text-slate-300"
               >
                 Support
-              </a>
+              </Link>
             </div>
           </div>
         </footer>
