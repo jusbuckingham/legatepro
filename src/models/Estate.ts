@@ -28,7 +28,7 @@ export interface EstateInvite {
 }
 
 // Detailed decedent info (optional, but keeps room for your richer spreadsheet data)
-interface DecedentDetails {
+export interface DecedentDetails {
   fullName?: string;
   dateOfBirth?: Date;
   dateOfDeath?: Date;
@@ -45,7 +45,7 @@ interface DecedentDetails {
 }
 
 // Personal representative compensation settings
-interface CompensationSettings {
+export interface CompensationSettings {
   feeType?: "HOURLY" | "PERCENTAGE" | "FLAT";
   hourlyRate?: number;
   percentageRate?: number;
@@ -53,7 +53,7 @@ interface CompensationSettings {
 }
 
 // Lightweight readiness rollup for list badges (avoids N+1 readiness calls)
-interface ReadinessSummary {
+export interface ReadinessSummary {
   score: number; // 0-100
   missingCount: number;
   atRiskCount: number;
