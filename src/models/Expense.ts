@@ -16,7 +16,7 @@ export type ExpenseCategory =
   | "COURT_FEES";
 
 export interface IExpense {
-  ownerId: Types.ObjectId | string; // user who owns this expense (Mongo ObjectId or string)
+  ownerId: Types.ObjectId; // stored as ObjectId in Mongo
   estateId: Types.ObjectId; // required
 
   date: Date;
@@ -24,14 +24,14 @@ export interface IExpense {
   description: string;
   amount: number;
 
-  payee?: string;
-  notes?: string;
+  payee?: string | null;
+  notes?: string | null;
 
   isPaid?: boolean;
 
-  propertyId?: Types.ObjectId;
-  utilityAccountId?: Types.ObjectId;
-  documentId?: Types.ObjectId;
+  propertyId?: Types.ObjectId | null;
+  utilityAccountId?: Types.ObjectId | null;
+  documentId?: Types.ObjectId | null;
 
   createdAt?: Date;
   updatedAt?: Date;
@@ -93,11 +93,11 @@ const ExpenseSchema = new Schema<ExpenseDocument>(
       default: "OTHER",
     },
 
-    description: { type: String, required: true, trim: true },
+    description: { type: String, required: true, trim: true, maxlength: 240 },
     amount: { type: Number, required: true, min: 0 },
 
-    payee: { type: String, trim: true },
-    notes: { type: String, trim: true },
+    payee: { type: String, trim: true, maxlength: 160, default: null },
+    notes: { type: String, trim: true, maxlength: 4000, default: null },
 
     isPaid: { type: Boolean, default: true },
 
@@ -105,22 +105,26 @@ const ExpenseSchema = new Schema<ExpenseDocument>(
       type: Schema.Types.ObjectId,
       ref: "EstateProperty",
       required: false,
+      default: null,
     },
 
     utilityAccountId: {
       type: Schema.Types.ObjectId,
       ref: "UtilityAccount",
       required: false,
+      default: null,
     },
 
     documentId: {
       type: Schema.Types.ObjectId,
       ref: "EstateDocument",
       required: false,
+      default: null,
     },
   },
   {
     timestamps: true,
+    minimize: false,
   }
 );
 
@@ -128,6 +132,7 @@ const ExpenseSchema = new Schema<ExpenseDocument>(
 ExpenseSchema.index({ estateId: 1, date: -1, createdAt: -1 });
 ExpenseSchema.index({ ownerId: 1, estateId: 1, date: -1, createdAt: -1 });
 ExpenseSchema.index({ estateId: 1, category: 1, date: -1 });
+ExpenseSchema.index({ ownerId: 1, createdAt: -1, _id: -1 });
 
 // Normalize output shape for the app
 

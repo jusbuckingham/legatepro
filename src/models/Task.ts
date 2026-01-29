@@ -22,7 +22,7 @@ export interface TaskDocument extends Document {
 
   // Core fields
   subject: string;
-  description?: string;
+  description?: string | null;
 
   // Status / workflow
   status: TaskStatus;
@@ -34,7 +34,7 @@ export interface TaskDocument extends Document {
   actualMinutes?: number;
 
   // Misc
-  notes?: string;
+  notes?: string | null;
 
   // Timestamps (added by Mongoose)
   createdAt: Date;
@@ -90,10 +90,13 @@ const TaskSchema = new Schema<TaskDocument, TaskModel>(
       type: String,
       required: true,
       trim: true,
+      maxlength: 240,
     },
     description: {
       type: String,
       trim: true,
+      maxlength: 4000,
+      default: null,
     },
 
     status: {
@@ -124,10 +127,13 @@ const TaskSchema = new Schema<TaskDocument, TaskModel>(
     notes: {
       type: String,
       trim: true,
+      maxlength: 4000,
+      default: null,
     },
   },
   {
     timestamps: true,
+    minimize: false,
   },
 );
 
@@ -135,12 +141,20 @@ const TaskSchema = new Schema<TaskDocument, TaskModel>(
 TaskSchema.index({ estateId: 1, status: 1, priority: 1, dueDate: 1 });
 TaskSchema.index({ ownerId: 1, status: 1, dueDate: 1 });
 
+// Owner-priority feed (dashboard ordering)
+TaskSchema.index({ ownerId: 1, priority: 1, dueDate: 1, createdAt: -1 });
+
 /**
  * Virtual: hours derived from actualMinutes.
  */
 TaskSchema.virtual("hours").get(function (this: TaskDocument) {
-  const mins = this.actualMinutes ?? this.estimatedMinutes ?? 0;
-  return mins / 60;
+  const mins =
+    typeof this.actualMinutes === "number"
+      ? this.actualMinutes
+      : typeof this.estimatedMinutes === "number"
+      ? this.estimatedMinutes
+      : 0;
+  return Number.isFinite(mins) ? mins / 60 : 0;
 });
 
 const toIdString = (v: unknown): string => {

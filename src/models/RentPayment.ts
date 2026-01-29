@@ -3,15 +3,15 @@ import { serializeMongoDoc } from "@/lib/db";
 
 export type RentPaymentRecord = {
   estateId: Schema.Types.ObjectId;
-  propertyId?: Schema.Types.ObjectId;
+  propertyId?: Schema.Types.ObjectId | null;
   tenantName: string;
   periodMonth: number;
   periodYear: number;
   amount: number;
   paymentDate: Date;
-  method?: string;
-  reference?: string;
-  notes?: string;
+  method?: string | null;
+  reference?: string | null;
+  notes?: string | null;
   isLate: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -36,11 +36,13 @@ const RentPaymentSchema = new Schema<RentPaymentRecord>(
       type: Schema.Types.ObjectId,
       ref: "EstateProperty",
       index: true,
+      default: null,
     },
     tenantName: {
       type: String,
       trim: true,
       required: true,
+      maxlength: 160,
     },
     periodMonth: {
       type: Number,
@@ -51,6 +53,8 @@ const RentPaymentSchema = new Schema<RentPaymentRecord>(
     periodYear: {
       type: Number,
       required: true,
+      min: 1900,
+      max: 2100,
     },
     amount: {
       type: Number,
@@ -64,14 +68,20 @@ const RentPaymentSchema = new Schema<RentPaymentRecord>(
     method: {
       type: String,
       trim: true,
+      maxlength: 40,
+      default: null,
     },
     reference: {
       type: String,
       trim: true,
+      maxlength: 120,
+      default: null,
     },
     notes: {
       type: String,
       trim: true,
+      maxlength: 4000,
+      default: null,
     },
     isLate: {
       type: Boolean,
@@ -80,6 +90,7 @@ const RentPaymentSchema = new Schema<RentPaymentRecord>(
   },
   {
     timestamps: true,
+    minimize: false,
   }
 );
 
@@ -88,6 +99,8 @@ const RentPaymentSchema = new Schema<RentPaymentRecord>(
 RentPaymentSchema.index({ estateId: 1, paymentDate: -1 });
 // Per-property timeline queries
 RentPaymentSchema.index({ estateId: 1, propertyId: 1, paymentDate: -1 });
+// Month/year period lookups (e.g., "show me October 2025")
+RentPaymentSchema.index({ estateId: 1, periodYear: -1, periodMonth: -1, paymentDate: -1 });
 
 // ------- SERIALIZATION ------- //
 

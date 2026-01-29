@@ -8,7 +8,6 @@ export interface IUser {
   // Credentials auth (bcrypt hash)
   // NOTE: `password` kept only for backward-compat migrations.
   passwordHash?: string;
-  password?: string;
   authProvider?: "google" | "apple" | "password" | "github" | "magiclink";
   providerId?: string; // e.g. Google sub, Apple id, etc.
 
@@ -20,6 +19,7 @@ export interface IUser {
   // Billing / subscription
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
+  // Billing state mirrors Stripe subscription lifecycle
   subscriptionStatus?: "free" | "trialing" | "active" | "past_due" | "canceled";
 
   // App metadata
@@ -28,6 +28,8 @@ export interface IUser {
 
   createdAt?: Date;
   updatedAt?: Date;
+
+  role?: "user" | "admin";
 }
 
 export interface UserDocument extends IUser, Document {}
@@ -38,9 +40,9 @@ const UserSchema = new Schema<UserDocument>(
       type: String,
       required: true,
       unique: true,
+      index: { unique: true },
       lowercase: true,
       trim: true,
-      index: true,
       validate: {
         validator: (v: string) => /^\S+@\S+\.\S+$/.test(v),
         message: (props: { value: string }) =>
@@ -54,10 +56,6 @@ const UserSchema = new Schema<UserDocument>(
     // We still prevent accidental leakage by stripping these fields in `toJSON`/`toObject` below.
     passwordHash: { type: String, required: false },
 
-    // Backward-compat (older records may have `password`)
-    // Kept for one-time migration on successful login.
-    password: { type: String, required: false },
-
     authProvider: {
       type: String,
       enum: ["google", "apple", "password", "github", "magiclink"],
@@ -66,12 +64,13 @@ const UserSchema = new Schema<UserDocument>(
 
     providerId: { type: String },
 
-    firstName: { type: String, trim: true },
-    lastName: { type: String, trim: true },
-    phone: { type: String, trim: true },
+    firstName: { type: String, trim: true, maxlength: 50 },
+    lastName: { type: String, trim: true, maxlength: 50 },
+    phone: { type: String, trim: true, maxlength: 25 },
 
     stripeCustomerId: { type: String },
     stripeSubscriptionId: { type: String },
+    // Billing state mirrors Stripe subscription lifecycle
     subscriptionStatus: {
       type: String,
       enum: ["free", "trialing", "active", "past_due", "canceled"],
@@ -81,11 +80,21 @@ const UserSchema = new Schema<UserDocument>(
 
     onboardingCompleted: { type: Boolean, default: false },
     lastLoginAt: { type: Date },
+
+    role: {
+      type: String,
+      enum: ["user", "admin"],
+      default: "user",
+      required: true,
+      index: true,
+    },
   },
   {
     timestamps: true,
   }
 );
+
+UserSchema.index({ stripeCustomerId: 1 });
 
 UserSchema.virtual("fullName").get(function (this: UserDocument) {
   return [this.firstName, this.lastName].filter(Boolean).join(" ");

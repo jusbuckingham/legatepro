@@ -15,8 +15,8 @@ export type EstateDocumentSubject =
   | "OTHER";
 
 export interface IEstateDocument {
-  ownerId: Types.ObjectId | string; // user who owns this record
-  estateId: Types.ObjectId | string; // required
+  ownerId: Types.ObjectId; // user who owns this record
+  estateId: Types.ObjectId; // required
 
   subject: EstateDocumentSubject;
   label: string; // human-friendly description
@@ -55,7 +55,7 @@ function normalizeTags(input: unknown): string[] {
     .map((t) => (typeof t === "string" ? t : ""))
     .map((t) => t.trim().toLowerCase())
     .map((t) => t.replace(/\s+/g, " "))
-    .filter((t) => t.length > 0);
+    .filter((t) => t.length > 0 && t.length <= 40);
 
   // De-dupe while preserving order
   const seen = new Set<string>();
@@ -135,7 +135,16 @@ const EstateDocumentSchema = new Schema<EstateDocumentDocument>(
     label: { type: String, required: true, trim: true, maxlength: 200 },
 
     location: { type: String, trim: true, maxlength: 200 },
-    url: { type: String, trim: true, maxlength: 2000 },
+    url: {
+      type: String,
+      trim: true,
+      maxlength: 2000,
+      validate: {
+        validator: (v: string) =>
+          !v || /^https?:\/\//i.test(v),
+        message: "URL must start with http:// or https://",
+      },
+    },
 
     tags: {
       type: [String],
@@ -155,6 +164,7 @@ const EstateDocumentSchema = new Schema<EstateDocumentDocument>(
   },
   {
     timestamps: true,
+    minimize: false,
     toJSON: {
       virtuals: true,
       transform(_doc, ret) {
@@ -198,6 +208,8 @@ EstateDocumentSchema.index(
 );
 
 EstateDocumentSchema.index({ estateId: 1, label: 1 });
+
+EstateDocumentSchema.index({ ownerId: 1, estateId: 1, createdAt: -1 });
 
 let EstateDocumentModel: Model<EstateDocumentDocument>;
 

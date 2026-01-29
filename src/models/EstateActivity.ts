@@ -14,8 +14,8 @@ export interface EstateActivityDocument {
 
 const EstateActivitySchema = new Schema<EstateActivityDocument>(
   {
-    estateId: { type: String, required: true, index: true },
-    ownerId: { type: String, required: true, index: true },
+    estateId: { type: String, required: true, trim: true, index: true },
+    ownerId: { type: String, required: true, trim: true, index: true },
 
     kind: {
       type: String,
@@ -23,19 +23,25 @@ const EstateActivitySchema = new Schema<EstateActivityDocument>(
       required: true,
     },
 
-    action: { type: String, required: true },
+    action: { type: String, required: true, trim: true },
 
-    entityId: { type: String, required: true },
+    entityId: { type: String, required: true, trim: true },
 
-    message: { type: String, required: true },
+    message: { type: String, required: true, trim: true },
 
-    snapshot: { type: Object, default: null },
+    // Use Mixed for flexible before/after payloads
+    snapshot: { type: Schema.Types.Mixed, default: null },
   },
-  { timestamps: { createdAt: true, updatedAt: false } }
+  {
+    timestamps: { createdAt: true, updatedAt: false },
+    minimize: false,
+  }
 );
 
 EstateActivitySchema.index({ estateId: 1, createdAt: -1, _id: -1 });
 EstateActivitySchema.index({ estateId: 1, kind: 1, action: 1, createdAt: -1, _id: -1 });
+// Owner-scoped feeds
+EstateActivitySchema.index({ ownerId: 1, createdAt: -1, _id: -1 });
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);

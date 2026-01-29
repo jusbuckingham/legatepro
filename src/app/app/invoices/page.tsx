@@ -10,7 +10,6 @@ import mongoose from "mongoose";
 
 type InvoiceStatus = "DRAFT" | "SENT" | "UNPAID" | "PARTIAL" | "PAID" | "VOID";
 
-
 type PageProps = {
   // Next 16: searchParams is a Promise-like dynamic API
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -85,6 +84,24 @@ function formatDate(value?: Date): string {
   } catch {
     return "—";
   }
+}
+
+function isOverdue(due?: Date, status?: string): boolean {
+  if (!due) return false;
+  const s = String(status ?? "").toUpperCase();
+  if (s === "PAID" || s === "VOID") return false;
+  return due.getTime() < new Date().getTime();
+}
+
+function formatStatusLabel(status: string): string {
+  const s = String(status || "").toUpperCase();
+  if (s === "UNPAID") return "Unpaid";
+  if (s === "PAID") return "Paid";
+  if (s === "PARTIAL") return "Partial";
+  if (s === "SENT") return "Sent";
+  if (s === "VOID") return "Void";
+  if (s === "DRAFT") return "Draft";
+  return s.charAt(0) + s.slice(1).toLowerCase();
 }
 
 function getInvoiceStatusClasses(status: string): string {
@@ -730,7 +747,7 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                   const invoiceLink =
                     inv.estateId.length > 0
                       ? `/app/estates/${inv.estateId}/invoices/${inv._id}`
-                      : `/app/invoices`;
+                      : "/app/invoices";
 
                   return (
                     <tr
@@ -744,6 +761,17 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                         >
                           {label}
                         </Link>
+                        <div className="mt-0.5 text-[11px]">
+                          {inv.status === "PAID" ? (
+                            <span className="font-medium text-emerald-400">
+                              Paid
+                            </span>
+                          ) : isOverdue(inv.dueDate, inv.status) ? (
+                            <span className="font-medium text-rose-400">
+                              Overdue
+                            </span>
+                          ) : null}
+                        </div>
                         {inv.notes && (
                           <div className="mt-0.5 max-w-xs truncate text-[11px] text-slate-500">
                             {inv.notes}
@@ -754,13 +782,21 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                         {estateLabel}
                       </td>
                       <td className="py-2 pr-4">
-                        <span
-                          className={`rounded-full border px-2 py-0.5 text-[11px] uppercase tracking-wide ${getInvoiceStatusClasses(
-                            inv.status
-                          )}`}
-                        >
-                          {inv.status}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[11px] uppercase tracking-wide ${getInvoiceStatusClasses(
+                              inv.status
+                            )}`}
+                          >
+                            {formatStatusLabel(inv.status)}
+                          </span>
+
+                          {isOverdue(inv.dueDate, inv.status) ? (
+                            <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[11px] font-semibold text-rose-400">
+                              Overdue
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="py-2 pr-4 text-slate-300">
                         {formatDate(inv.issueDate)}
@@ -771,8 +807,13 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                       <td className="py-2 pr-4 text-right text-slate-100">
                         {formatCurrency(inv.total)}
                       </td>
-                      <td className="py-2 pr-4 text-right text-slate-100">
-                        {formatCurrency(inv.balanceDue)}
+                      <td
+                        className={
+                          "py-2 pr-4 text-right " +
+                          (inv.balanceDue > 0 ? "text-slate-100" : "text-slate-500")
+                        }
+                      >
+                        {inv.balanceDue > 0 ? formatCurrency(inv.balanceDue) : "—"}
                       </td>
                     </tr>
                   );

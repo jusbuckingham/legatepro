@@ -3,6 +3,7 @@ import { serializeMongoDoc } from "@/lib/db";
 
 export interface EstatePropertyDocument extends Document {
   estateId: mongoose.Types.ObjectId;
+  ownerId?: mongoose.Types.ObjectId;
   label: string;
   addressLine1?: string;
   addressLine2?: string;
@@ -17,7 +18,8 @@ export interface EstatePropertyDocument extends Document {
   monthlyRentTarget?: number;
   isRented: boolean;
   isSold: boolean;
-  notes?: string;
+  notes?: string | null;
+  estateSnapshot?: { displayName?: string; caseNumber?: string } | null; // denormalized helper
   createdAt: Date;
   updatedAt: Date;
 }
@@ -28,6 +30,12 @@ const EstatePropertySchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: "Estate",
       required: true,
+    },
+
+    // Owner reference (optional)
+    ownerId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
     },
 
     // Display name, e.g. "Dickerson house" or "Tuller two-family"
@@ -53,10 +61,14 @@ const EstatePropertySchema = new Schema(
     state: {
       type: String,
       trim: true,
+      uppercase: true,
+      minlength: 2,
+      maxlength: 2,
     },
     postalCode: {
       type: String,
       trim: true,
+      maxlength: 12,
     },
 
     // Basic characteristics
@@ -73,20 +85,25 @@ const EstatePropertySchema = new Schema(
     },
     bedrooms: {
       type: Number,
+      min: 0,
     },
     bathrooms: {
       type: Number,
+      min: 0,
     },
     squareFeet: {
       type: Number,
+      min: 0,
     },
 
     // Financials
     estimatedValue: {
       type: Number,
+      min: 0,
     },
     monthlyRentTarget: {
       type: Number,
+      min: 0,
     },
 
     // Status flags
@@ -103,10 +120,18 @@ const EstatePropertySchema = new Schema(
     notes: {
       type: String,
       trim: true,
+      default: null,
+    },
+
+    // Denormalized helper for quick reference
+    estateSnapshot: {
+      displayName: { type: String, trim: true },
+      caseNumber: { type: String, trim: true },
     },
   },
   {
     timestamps: true,
+    minimize: false,
     toJSON: {
       transform(_doc, ret) {
         return serializeMongoDoc(ret);
@@ -123,6 +148,12 @@ const EstatePropertySchema = new Schema(
 EstatePropertySchema.index({ estateId: 1 });
 EstatePropertySchema.index({ estateId: 1, isSold: 1 });
 EstatePropertySchema.index({ estateId: 1, isRented: 1 });
+
+// Common estate dashboard queries
+EstatePropertySchema.index({ estateId: 1, createdAt: -1 });
+
+// Status-based filters
+EstatePropertySchema.index({ estateId: 1, isSold: 1, isRented: 1 });
 
 export const EstateProperty =
   (mongoose.models.EstateProperty as mongoose.Model<EstatePropertyDocument> | undefined) ??

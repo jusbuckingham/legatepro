@@ -14,11 +14,13 @@ const EstateNoteSchema = new Schema<EstateNoteDocument>(
     estateId: {
       type: String,
       required: true,
+      trim: true,
       index: true,
     },
     ownerId: {
       type: String,
       required: true,
+      trim: true,
       index: true,
     },
     body: {
@@ -35,6 +37,7 @@ const EstateNoteSchema = new Schema<EstateNoteDocument>(
   },
   {
     timestamps: true,
+    minimize: false,
     toJSON: {
       transform(_doc, ret: Record<string, unknown>) {
         const obj = ret as {
@@ -73,6 +76,8 @@ const EstateNoteSchema = new Schema<EstateNoteDocument>(
 );
 
 EstateNoteSchema.index({ estateId: 1, createdAt: -1 });
+// Owner-scoped notes feed (across estates)
+EstateNoteSchema.index({ ownerId: 1, createdAt: -1, _id: -1 });
 
 export const EstateNote: Model<EstateNoteDocument> =
   mongoose.models.EstateNote ||

@@ -45,6 +45,12 @@ export interface InvoiceAttrs {
 export interface InvoiceDocument extends Document, InvoiceAttrs {
   createdAt: Date;
   updatedAt: Date;
+
+  // Virtuals (not persisted)
+  isPaid: boolean;
+  isVoid: boolean;
+  isOverdue: boolean;
+  balanceDue: number;
 }
 
 type InvoiceTransformRet = Record<string, unknown> & {
@@ -60,6 +66,20 @@ const normalizeInvoiceTransform = (_doc: unknown, ret: InvoiceTransformRet) => {
   return ret;
 };
 
+function safeDate(value: unknown): Date | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  if (typeof value === "string") {
+    const d = new Date(value);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  return null;
+}
+
+function nowUtc(): Date {
+  // Date() is UTC internally; this is just a semantic wrapper.
+  return new Date();
+}
+
 const InvoiceLineItemSchema = new Schema<InvoiceLineItem>(
   {
     type: {
@@ -71,6 +91,7 @@ const InvoiceLineItemSchema = new Schema<InvoiceLineItem>(
       type: String,
       required: true,
       trim: true,
+      maxlength: 240,
     },
     sourceTimeEntryId: {
       type: Schema.Types.ObjectId,
@@ -126,6 +147,7 @@ const InvoiceSchema = new Schema<InvoiceDocument>(
     invoiceNumber: {
       type: String,
       trim: true,
+      maxlength: 64,
       index: true,
     },
 
@@ -143,10 +165,15 @@ const InvoiceSchema = new Schema<InvoiceDocument>(
     notes: {
       type: String,
       trim: true,
+      maxlength: 4000,
+      default: null,
     },
     currency: {
       type: String,
       default: "USD",
+      uppercase: true,
+      minlength: 3,
+      maxlength: 3,
     },
 
     lineItems: {
@@ -178,6 +205,7 @@ const InvoiceSchema = new Schema<InvoiceDocument>(
   },
   {
     timestamps: true,
+    minimize: false,
     toJSON: {
       virtuals: true,
       transform: normalizeInvoiceTransform,
@@ -218,11 +246,36 @@ InvoiceSchema.index(
   }
 );
 
+// --------
+// Virtuals
+// --------
+InvoiceSchema.virtual("isPaid").get(function (this: InvoiceDocument) {
+  return this.status === "PAID" || !!this.paidAt;
+});
+
+InvoiceSchema.virtual("isVoid").get(function (this: InvoiceDocument) {
+  return this.status === "VOID";
+});
+
+InvoiceSchema.virtual("isOverdue").get(function (this: InvoiceDocument) {
+  if (this.status === "PAID" || this.status === "VOID") return false;
+  const due = safeDate(this.dueDate);
+  if (!due) return false;
+  return due.getTime() < nowUtc().getTime();
+});
+
+InvoiceSchema.virtual("balanceDue").get(function (this: InvoiceDocument) {
+  // Minor units (e.g. cents). If paid/void, balance is 0.
+  if (this.status === "PAID" || this.status === "VOID") return 0;
+  const total = typeof this.totalAmount === "number" && !Number.isNaN(this.totalAmount) ? this.totalAmount : 0;
+  return Math.max(0, Math.round(total));
+});
+
 // Keep monetary totals in sync before save.
 // This is defensive: callers can set amount explicitly per line,
 // but if they don't, we compute from quantity * rate.
 InvoiceSchema.pre("save", function (this: InvoiceDocument, next) {
-  const lineItems = (this.lineItems ?? []) as InvoiceLineItem[];
+  const lineItems = Array.isArray(this.lineItems) ? (this.lineItems as InvoiceLineItem[]) : [];
 
   // Normalize each line item to integer minor units and compute subtotal from that.
   let subtotal = 0;

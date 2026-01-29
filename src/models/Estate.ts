@@ -68,6 +68,9 @@ export interface IEstate {
   invites?: EstateInvite[]; // pending/accepted collaborator invites (invite-link flow)
 
   // Top-level names used throughout the UI & API
+  // NOTE: `displayName` / `caseName` are kept for backward compatibility with existing pages & API selects.
+  displayName?: string; // preferred short label shown in UI lists
+  caseName?: string; // legacy/alternate label used in some older flows
   decedentName?: string; // e.g. "Donald Buckingham"
   name?: string; // optional label, e.g. "Estate of Donald Buckingham"
 
@@ -190,6 +193,8 @@ const EstateSchema = new Schema<EstateDocument>(
     invites: { type: [InviteSchema], default: [] },
 
     // Primary names used in the UI & filters
+    displayName: { type: String, required: false, trim: true, index: true },
+    caseName: { type: String, required: false, trim: true, index: true },
     decedentName: { type: String, required: false, trim: true },
     name: { type: String, required: false, trim: true },
 
@@ -253,6 +258,8 @@ EstateSchema.index({ ownerId: 1, status: 1, updatedAt: -1 });
 
 // Name-based lookups within an owner workspace
 EstateSchema.index({ ownerId: 1, decedentName: 1 });
+EstateSchema.index({ ownerId: 1, displayName: 1 });
+EstateSchema.index({ ownerId: 1, caseName: 1 });
 
 // Fast collaborator membership lookups
 EstateSchema.index({ "collaborators.userId": 1, updatedAt: -1 });
@@ -288,6 +295,45 @@ function extractReadinessPlanMeta(plan: unknown): {
 
   return { generatedAt, generator };
 }
+
+function normalizeLabel(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const v = value.trim();
+  return v.length > 0 ? v : null;
+}
+
+// Keep legacy name fields aligned for older selects while allowing newer fields to lead.
+EstateSchema.pre("save", function syncDisplayNames(next) {
+  const doc = this as unknown as {
+    displayName?: string;
+    caseName?: string;
+    decedentName?: string;
+    name?: string;
+    isModified: (path: string) => boolean;
+  };
+
+  const displayName = normalizeLabel(doc.displayName);
+  const caseName = normalizeLabel(doc.caseName);
+  const decedentName = normalizeLabel(doc.decedentName);
+  const name = normalizeLabel(doc.name);
+
+  // If displayName is empty, prefer `name`, then `decedentName`
+  if (!displayName) {
+    doc.displayName = name ?? decedentName ?? undefined;
+  }
+
+  // If caseName is empty, prefer `decedentName`, then `name`
+  if (!caseName) {
+    doc.caseName = decedentName ?? name ?? undefined;
+  }
+
+  // Optionally backfill `name` if empty but we have displayName
+  if (!name && normalizeLabel(doc.displayName)) {
+    doc.name = doc.displayName;
+  }
+
+  next();
+});
 
 // Keep convenience fields in sync whenever readinessPlan changes
 EstateSchema.pre("save", function syncReadinessPlanMeta(next) {

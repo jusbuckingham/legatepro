@@ -112,6 +112,10 @@ export interface EstateEventRecord {
   estateId: string;
   ownerId: string;
   type: EstateEventCanonicalType;
+
+  // Optional linkage to an entity involved (invoice/task/note/etc.)
+  entityId?: string | null;
+
   summary: string;
   detail?: string | null;
   meta?: Record<string, unknown> | null;
@@ -121,21 +125,24 @@ export interface EstateEventRecord {
 
 const EstateEventSchema = new Schema<EstateEventRecord>(
   {
-    estateId: { type: String, required: true, index: true },
-    ownerId: { type: String, required: true, index: true },
+    estateId: { type: String, required: true, trim: true, index: true },
+    ownerId: { type: String, required: true, trim: true, index: true },
     type: {
       type: String,
       required: true,
       enum: ESTATE_EVENT_TYPES,
       set: (value: unknown) => normalizeEstateEventType(String(value ?? "")),
     },
-    summary: { type: String, required: true },
+    // Optional linkage to an entity (invoice/task/note/etc.)
+    entityId: { type: String, default: null, trim: true },
+    summary: { type: String, required: true, trim: true, maxlength: 240 },
     // Optional freeform detail; keep null as the absence value (not empty string).
-    detail: { type: String, default: null },
+    detail: { type: String, default: null, trim: true, maxlength: 4000 },
     meta: { type: Schema.Types.Mixed, default: null },
   },
   {
     timestamps: true,
+    minimize: false,
     toJSON: {
       virtuals: true,
       versionKey: false,
@@ -154,6 +161,8 @@ const EstateEventSchema = new Schema<EstateEventRecord>(
 EstateEventSchema.index({ estateId: 1, createdAt: -1, _id: -1 });
 // Common filter: estateId + type, sorted by newest first
 EstateEventSchema.index({ estateId: 1, type: 1, createdAt: -1, _id: -1 });
+// Owner-scoped feed (across estates)
+EstateEventSchema.index({ ownerId: 1, createdAt: -1, _id: -1 });
 
 const EstateEvent =
   (mongoose.models.EstateEvent as mongoose.Model<EstateEventRecord> | undefined) ??

@@ -6,13 +6,16 @@ export interface EstateTaskDocument extends Document {
   estateId: string;
   ownerId: string;
   title: string;
-  description?: string;
+  description?: string | null;
   status: TaskStatus;
   dueDate?: Date | null;
   completedAt?: Date | null;
 
   relatedDocumentId?: string | null;
   relatedInvoiceId?: string | null;
+
+  priority?: "LOW" | "MEDIUM" | "HIGH" | null;
+  archivedAt?: Date | null;
 
   createdAt: Date;
   updatedAt: Date;
@@ -34,11 +37,11 @@ function transformDoc(_doc: EstateTaskHydratedDocument, ret: TransformRet) {
 
 const EstateTaskSchema = new Schema<EstateTaskDocument>(
   {
-    estateId: { type: String, required: true, index: true },
-    ownerId: { type: String, required: true, index: true },
+    estateId: { type: String, required: true, trim: true, index: true },
+    ownerId: { type: String, required: true, trim: true, index: true },
 
-    title: { type: String, required: true },
-    description: { type: String },
+    title: { type: String, required: true, trim: true, maxlength: 240 },
+    description: { type: String, trim: true, maxlength: 4000, default: null },
 
     status: {
       type: String,
@@ -46,14 +49,23 @@ const EstateTaskSchema = new Schema<EstateTaskDocument>(
       default: "NOT_STARTED",
     },
 
+    priority: {
+      type: String,
+      enum: ["LOW", "MEDIUM", "HIGH"],
+      default: null,
+    },
+
     dueDate: { type: Date },
     completedAt: { type: Date },
+
+    archivedAt: { type: Date, default: null },
 
     relatedDocumentId: { type: String },
     relatedInvoiceId: { type: String },
   },
   {
     timestamps: true,
+    minimize: false,
     toJSON: {
       virtuals: true,
       transform: transformDoc,
@@ -72,6 +84,12 @@ const EstateTaskSchema = new Schema<EstateTaskDocument>(
 EstateTaskSchema.index({ estateId: 1, createdAt: -1 });
 EstateTaskSchema.index({ estateId: 1, status: 1, createdAt: -1 });
 EstateTaskSchema.index({ estateId: 1, dueDate: 1, createdAt: -1 });
+
+// Owner-scoped task feeds
+EstateTaskSchema.index({ ownerId: 1, status: 1, createdAt: -1 });
+
+// Archived filtering
+EstateTaskSchema.index({ estateId: 1, archivedAt: 1, createdAt: -1 });
 
 export const EstateTask: Model<EstateTaskDocument> =
   mongoose.models.EstateTask ||

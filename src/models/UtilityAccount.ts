@@ -15,7 +15,7 @@ export type UtilityType =
 export interface IUtilityAccount {
   ownerId: string; // user who owns this utility record
   estateId: Types.ObjectId; // tie to specific estate
-  propertyId?: Types.ObjectId; // optional property-level link
+  propertyId?: Types.ObjectId | null; // optional property-level link, nullable
 
   providerName: string; // e.g. DTE, Consumers, Comcast
   utilityType: UtilityType;
@@ -25,9 +25,9 @@ export interface IUtilityAccount {
   website?: string | null;
 
   // Balances & billing
-  balanceDue?: number;
-  lastPaymentAmount?: number;
-  lastPaymentDate?: Date;
+  balanceDue?: number; // cents or dollars depending on app convention
+  lastPaymentAmount?: number | null;
+  lastPaymentDate?: Date | null;
 
   // Notes field for miscellaneous tracking
   notes?: string | null;
@@ -42,7 +42,7 @@ export interface UtilityAccountDocument
 
 const UtilityAccountSchema = new Schema<UtilityAccountDocument>(
   {
-    ownerId: { type: String, required: true, index: true },
+    ownerId: { type: String, required: true, trim: true, index: true },
 
     estateId: {
       type: Schema.Types.ObjectId,
@@ -55,9 +55,11 @@ const UtilityAccountSchema = new Schema<UtilityAccountDocument>(
       type: Schema.Types.ObjectId,
       ref: "EstateProperty",
       required: false,
+      default: null,
+      index: true,
     },
 
-    providerName: { type: String, required: true, trim: true },
+    providerName: { type: String, required: true, trim: true, maxlength: 160 },
 
     utilityType: {
       type: String,
@@ -75,18 +77,28 @@ const UtilityAccountSchema = new Schema<UtilityAccountDocument>(
       required: true,
     },
 
-    accountNumber: { type: String, trim: true, default: null },
-    phone: { type: String, trim: true, default: null },
-    website: { type: String, trim: true, default: null },
+    accountNumber: { type: String, trim: true, maxlength: 80, default: null },
+    phone: { type: String, trim: true, maxlength: 25, default: null },
+    website: {
+      type: String,
+      trim: true,
+      maxlength: 2000,
+      default: null,
+      validate: {
+        validator: (v: string) => !v || /^https?:\/\//i.test(v),
+        message: "Website must start with http:// or https://",
+      },
+    },
 
-    balanceDue: { type: Number, default: 0 },
-    lastPaymentAmount: { type: Number },
-    lastPaymentDate: { type: Date },
+    balanceDue: { type: Number, default: 0, min: 0 },
+    lastPaymentAmount: { type: Number, default: null, min: 0 },
+    lastPaymentDate: { type: Date, default: null },
 
-    notes: { type: String, trim: true, default: null },
+    notes: { type: String, trim: true, maxlength: 4000, default: null },
   },
   {
     timestamps: true,
+    minimize: false,
   }
 );
 

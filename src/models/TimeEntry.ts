@@ -22,8 +22,8 @@ export type TimeEntryRecord = {
   date: Date;
   minutes: number;
 
-  description?: string | null;
-  notes?: string | null;
+  description?: string | null; // Optional short summary
+  notes?: string | null; // Optional long-form notes
 
   activityType: TimeEntryActivityType;
 
@@ -104,10 +104,12 @@ const TimeEntrySchema = new Schema<TimeEntryDocument>(
     description: {
       type: String,
       trim: true,
+      maxlength: 500,
     },
     notes: {
       type: String,
       trim: true,
+      maxlength: 2000,
     },
 
     activityType: {
@@ -132,6 +134,7 @@ const TimeEntrySchema = new Schema<TimeEntryDocument>(
   },
   {
     timestamps: true,
+    minimize: false,
   }
 );
 
@@ -140,6 +143,12 @@ TimeEntrySchema.index({ estateId: 1, date: -1, createdAt: -1 });
 TimeEntrySchema.index({ ownerId: 1, estateId: 1, date: -1 });
 // Billing filters
 TimeEntrySchema.index({ estateId: 1, billable: 1, invoiced: 1, date: -1 });
+TimeEntrySchema.index({ ownerId: 1, billable: 1, invoiced: 1, date: -1 });
+
+TimeEntrySchema.virtual("hours").get(function (this: TimeEntryDocument) {
+  if (typeof this.minutes !== "number" || Number.isNaN(this.minutes)) return 0;
+  return Math.round((this.minutes / 60) * 100) / 100;
+});
 
 // Consistent serialization
 TimeEntrySchema.set("toJSON", {

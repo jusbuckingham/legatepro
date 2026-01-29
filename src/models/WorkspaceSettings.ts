@@ -14,9 +14,10 @@ function serializeWorkspaceSettings(
     [key: string]: unknown;
   },
 ) {
+  const { _id, ...rest } = ret;
   return {
-    ...ret,
-    id: ret._id ? String(ret._id) : undefined,
+    ...rest,
+    id: _id ? String(_id) : undefined,
   };
 }
 
@@ -86,22 +87,39 @@ const WorkspaceSettingsSchema = new Schema<
     ownerId: {
       type: String,
       required: true,
+      trim: true,
       index: true,
       unique: true,
     },
 
     // Branding
-    firmName: { type: String, default: null },
-    firmAddressLine1: { type: String, default: null },
-    firmAddressLine2: { type: String, default: null },
-    firmCity: { type: String, default: null },
-    firmState: { type: String, default: null },
-    firmPostalCode: { type: String, default: null },
-    firmCountry: { type: String, default: null },
-    logoUrl: { type: String, default: null },
+    firmName: { type: String, trim: true, maxlength: 160, default: null },
+    firmAddressLine1: { type: String, trim: true, maxlength: 160, default: null },
+    firmAddressLine2: { type: String, trim: true, maxlength: 160, default: null },
+    firmCity: { type: String, trim: true, maxlength: 80, default: null },
+    firmState: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      minlength: 2,
+      maxlength: 2,
+      default: null,
+    },
+    firmPostalCode: { type: String, trim: true, maxlength: 20, default: null },
+    firmCountry: { type: String, trim: true, maxlength: 80, default: null },
+    logoUrl: {
+      type: String,
+      trim: true,
+      maxlength: 2000,
+      default: null,
+      validate: {
+        validator: (v: string) => !v || /^https?:\/\//i.test(v),
+        message: "logoUrl must start with http:// or https://",
+      },
+    },
 
     // Billing defaults
-    defaultHourlyRateCents: { type: Number, default: null },
+    defaultHourlyRateCents: { type: Number, default: null, min: 0 },
     defaultInvoiceTerms: {
       type: String,
       enum: ["DUE_ON_RECEIPT", "NET_15", "NET_30", "NET_45", "NET_60"],
@@ -109,20 +127,29 @@ const WorkspaceSettingsSchema = new Schema<
     },
     defaultCurrency: {
       type: String,
+      trim: true,
+      uppercase: true,
+      minlength: 3,
+      maxlength: 3,
       default: null,
     },
 
     // Invoice numbering configuration
     invoiceNumberPrefix: {
       type: String,
+      trim: true,
+      maxlength: 24,
       default: null,
     },
     invoiceNumberSequence: {
       type: Number,
       default: null,
+      min: 0,
     },
     invoiceNumberFormat: {
       type: String,
+      trim: true,
+      maxlength: 80,
       default: "{PREFIX}{SEQ}",
     },
     invoiceNumberResetPolicy: {
@@ -133,6 +160,8 @@ const WorkspaceSettingsSchema = new Schema<
     invoiceNumberPadding: {
       type: Number,
       default: null,
+      min: 0,
+      max: 12,
     },
 
     // Billing / subscription plumbing
@@ -142,6 +171,7 @@ const WorkspaceSettingsSchema = new Schema<
   },
   {
     timestamps: true,
+    minimize: false,
     toJSON: {
       transform: serializeWorkspaceSettings,
     },
