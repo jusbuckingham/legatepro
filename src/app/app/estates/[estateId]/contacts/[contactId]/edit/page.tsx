@@ -131,13 +131,13 @@ export default async function EditContactPage({ params }: PageProps) {
       <div className="flex flex-col justify-between gap-4 border-b border-slate-800 pb-4 sm:flex-row sm:items-center">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
-            Edit contact
+            Edit contact details
           </p>
           <h1 className="text-2xl font-semibold text-slate-50 sm:text-3xl">
             {contact.name}
           </h1>
           <p className="mt-1 text-xs text-slate-400">
-            Update relationship, contact info, and notes.
+            Edit contact information used throughout this estate.
           </p>
         </div>
 
@@ -164,6 +164,8 @@ export default async function EditContactPage({ params }: PageProps) {
             <input
               id="name"
               name="name"
+              required
+              placeholder="Full name"
               defaultValue={contact.name}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-emerald-500"
             />
@@ -179,6 +181,7 @@ export default async function EditContactPage({ params }: PageProps) {
             <input
               id="relationship"
               name="relationship"
+              placeholder="e.g. Spouse, Child, Attorney"
               defaultValue={contact.relationship || ""}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-emerald-500"
             />
@@ -218,6 +221,7 @@ export default async function EditContactPage({ params }: PageProps) {
               id="email"
               name="email"
               type="email"
+              placeholder="name@example.com"
               defaultValue={contact.email || ""}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-emerald-500"
             />
@@ -233,6 +237,7 @@ export default async function EditContactPage({ params }: PageProps) {
             <input
               id="phone"
               name="phone"
+              placeholder="555-555-5555"
               defaultValue={contact.phone || ""}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-emerald-500"
             />
@@ -279,6 +284,7 @@ export default async function EditContactPage({ params }: PageProps) {
             <input
               id="city"
               name="city"
+              placeholder="City"
               defaultValue={contact.city || ""}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-emerald-500"
             />
@@ -294,6 +300,7 @@ export default async function EditContactPage({ params }: PageProps) {
             <input
               id="state"
               name="state"
+              placeholder="State / Province"
               defaultValue={contact.state || ""}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-emerald-500"
             />
@@ -309,6 +316,7 @@ export default async function EditContactPage({ params }: PageProps) {
             <input
               id="postalCode"
               name="postalCode"
+              placeholder="ZIP / Postal code"
               defaultValue={contact.postalCode || ""}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-emerald-500"
             />
@@ -324,6 +332,7 @@ export default async function EditContactPage({ params }: PageProps) {
             <input
               id="country"
               name="country"
+              placeholder="Country"
               defaultValue={contact.country || ""}
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-emerald-500"
             />
@@ -334,12 +343,13 @@ export default async function EditContactPage({ params }: PageProps) {
               htmlFor="notes"
               className="mb-1 block text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400"
             >
-              Notes
+              Internal notes
             </label>
             <textarea
               id="notes"
               name="notes"
               rows={3}
+              placeholder="Optional notes only visible to estate collaborators."
               defaultValue={contact.notes || ""}
               className="w-full resize-none rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-emerald-500"
             />
@@ -350,7 +360,7 @@ export default async function EditContactPage({ params }: PageProps) {
               type="submit"
               className="inline-flex items-center rounded-lg border border-emerald-500/70 bg-emerald-600/80 px-3 py-1.5 text-xs font-semibold text-emerald-50 shadow-sm shadow-black/40 hover:bg-emerald-500"
             >
-              Save changes
+              Save contact
             </button>
           </div>
         </form>

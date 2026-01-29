@@ -34,12 +34,10 @@ function formatDate(value: Date | string | undefined): string {
   if (!value) return "N/A";
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "N/A";
-  return date.toLocaleString("en-US", {
+  return date.toLocaleDateString("en-US", {
     month: "short",
     day: "2-digit",
     year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
   });
 }
 
@@ -99,41 +97,54 @@ export default async function ContactDetailPage({ params }: PageProps) {
   }
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-rose-400/70">
-            Contact
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold text-slate-50">
-            {contact.name || "Unnamed Contact"}
-          </h1>
-          <p className="mt-1 text-sm text-slate-400">
-            {contact.relationship ? `${contact.relationship}` : "Relationship not set"}
-            {contact.role ? (
-              <>
-                {" · "}
-                <span className="font-medium text-rose-300">
-                  {roleLabel(contact.role)}
-                </span>
-              </>
-            ) : null}
-          </p>
+    <div className="mx-auto max-w-5xl space-y-6 p-6">
+      <div className="flex flex-col gap-3 border-b border-gray-100 pb-4 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-2">
+          <nav className="text-xs text-gray-500">
+            <Link href="/app/estates" className="hover:underline">
+              Estates
+            </Link>
+            <span className="mx-1 text-gray-400">/</span>
+            <Link href={`/app/estates/${estateId}`} className="hover:underline">
+              Overview
+            </Link>
+            <span className="mx-1 text-gray-400">/</span>
+            <Link href={`/app/estates/${estateId}/contacts`} className="hover:underline">
+              Contacts
+            </Link>
+            <span className="mx-1 text-gray-400">/</span>
+            <span className="text-gray-900">{contact.name || "Contact"}</span>
+          </nav>
+
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Contact</p>
+            <h1 className="mt-1 text-xl font-semibold tracking-tight text-gray-900">
+              {contact.name || "Unnamed contact"}
+            </h1>
+            <p className="mt-1 text-sm text-gray-600">
+              {contact.relationship ? contact.relationship : "Relationship not set"}
+              {contact.role ? (
+                <>
+                  {" · "}
+                  <span className="font-medium text-gray-900">{roleLabel(contact.role)}</span>
+                </>
+              ) : null}
+            </p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="mt-1 flex flex-wrap items-center gap-2 md:justify-end">
           <Link
             href={`/app/estates/${estateId}/contacts/${contactId}/edit`}
-            className="rounded-lg border border-rose-500/60 bg-rose-500/10 px-3 py-1.5 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20"
+            className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
           >
-            Edit contact
+            Edit
           </Link>
 
           <form action={deleteContact}>
             <button
               type="submit"
-              className="rounded-lg border border-red-700/60 bg-red-900/30 px-3 py-1.5 text-sm font-medium text-red-100 transition hover:bg-red-900/60"
+              className="inline-flex items-center rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-100"
             >
               Delete
             </button>
@@ -141,107 +152,89 @@ export default async function ContactDetailPage({ params }: PageProps) {
         </div>
       </div>
 
-      {/* Meta */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Role
-          </p>
-          <p className="mt-2 inline-flex rounded-full bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-200 ring-1 ring-rose-500/30">
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Role</p>
+          <p className="mt-2 inline-flex rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700">
             {roleLabel(contact.role)}
           </p>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Created
-          </p>
-          <p className="mt-2 text-sm text-slate-200">
-            {formatDate(contact.createdAt)}
-          </p>
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Created</p>
+          <p className="mt-2 text-sm text-gray-700">{formatDate(contact.createdAt)}</p>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Last updated
-          </p>
-          <p className="mt-2 text-sm text-slate-200">
-            {formatDate(contact.updatedAt)}
-          </p>
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Last updated</p>
+          <p className="mt-2 text-sm text-gray-700">{formatDate(contact.updatedAt)}</p>
         </div>
       </div>
 
-      {/* Content grid */}
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Left: primary details */}
         <div className="space-y-4 lg:col-span-2">
-          {/* Contact details */}
-          <section className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-            <h2 className="text-sm font-semibold text-slate-100">
-              Contact details
-            </h2>
+          <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <h2 className="text-sm font-semibold text-gray-900">Contact details</h2>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <div>
-                <p className="text-xs uppercase tracking-wide text-slate-400">
-                  Name
-                </p>
-                <p className="mt-1 text-sm text-slate-100">
-                  {contact.name || "—"}
-                </p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Name</p>
+                <p className="mt-1 text-sm text-gray-900">{contact.name || "—"}</p>
               </div>
 
               <div>
-                <p className="text-xs uppercase tracking-wide text-slate-400">
-                  Relationship
-                </p>
-                <p className="mt-1 text-sm text-slate-100">
-                  {contact.relationship || "—"}
-                </p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Relationship</p>
+                <p className="mt-1 text-sm text-gray-900">{contact.relationship || "—"}</p>
               </div>
 
               <div>
-                <p className="text-xs uppercase tracking-wide text-slate-400">
-                  Email
-                </p>
-                <p className="mt-1 text-sm text-slate-100">
-                  {contact.email || "—"}
-                </p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Email</p>
+                {contact.email ? (
+                  <a
+                    href={`mailto:${contact.email}`}
+                    className="mt-1 block text-sm font-medium text-blue-700 hover:underline"
+                  >
+                    {contact.email}
+                  </a>
+                ) : (
+                  <p className="mt-1 text-sm text-gray-900">—</p>
+                )}
               </div>
 
               <div>
-                <p className="text-xs uppercase tracking-wide text-slate-400">
-                  Phone
-                </p>
-                <p className="mt-1 text-sm text-slate-100">
-                  {contact.phone || "—"}
-                </p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Phone</p>
+                {contact.phone ? (
+                  <a
+                    href={`tel:${contact.phone}`}
+                    className="mt-1 block text-sm font-medium text-blue-700 hover:underline"
+                  >
+                    {contact.phone}
+                  </a>
+                ) : (
+                  <p className="mt-1 text-sm text-gray-900">—</p>
+                )}
               </div>
             </div>
           </section>
 
-          {/* Notes */}
-          <section className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-            <h2 className="text-sm font-semibold text-slate-100">Notes</h2>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-slate-200">
-              {contact.notes && contact.notes.trim().length > 0
-                ? contact.notes
-                : "No notes added yet."}
+          <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <h2 className="text-sm font-semibold text-gray-900">Notes</h2>
+            <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700">
+              {contact.notes && contact.notes.trim().length > 0 ? contact.notes : "No notes yet."}
             </p>
           </section>
         </div>
 
-        {/* Right: address */}
         <aside className="space-y-4">
-          <section className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-            <h2 className="text-sm font-semibold text-slate-100">Address</h2>
-            <div className="mt-3 space-y-1 text-sm text-slate-200">
+          <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <h2 className="text-sm font-semibold text-gray-900">Address</h2>
+            <div className="mt-3 space-y-1 text-sm text-gray-700">
               {contact.addressLine1 || contact.addressLine2 ? (
                 <>
                   {contact.addressLine1 && <p>{contact.addressLine1}</p>}
                   {contact.addressLine2 && <p>{contact.addressLine2}</p>}
                 </>
               ) : (
-                <p>Address not provided.</p>
+                <p className="text-gray-500">No address on file.</p>
               )}
 
               {(contact.city || contact.state || contact.postalCode) && (
@@ -262,20 +255,14 @@ export default async function ContactDetailPage({ params }: PageProps) {
             </div>
           </section>
 
-          <section className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 text-sm text-slate-400">
-            <p className="font-medium text-slate-200">Estate navigation</p>
+          <section className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Estate navigation</p>
             <div className="mt-3 space-y-2">
-              <Link
-                href={`/app/estates/${estateId}`}
-                className="block text-sm text-rose-300 underline-offset-2 hover:underline"
-              >
-                Back to estate overview
+              <Link href={`/app/estates/${estateId}`} className="block font-medium text-blue-700 hover:underline">
+                Back to overview
               </Link>
-              <Link
-                href={`/app/estates/${estateId}/contacts`}
-                className="block text-sm text-rose-300 underline-offset-2 hover:underline"
-              >
-                View all contacts for this estate
+              <Link href={`/app/estates/${estateId}/contacts`} className="block font-medium text-blue-700 hover:underline">
+                View all contacts
               </Link>
             </div>
           </section>

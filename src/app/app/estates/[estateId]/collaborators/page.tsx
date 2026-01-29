@@ -5,7 +5,7 @@ import type { ComponentProps } from "react";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { getEstateAccess } from "@/lib/validators";
-import { Estate, type EstateCollaborator } from "@/models/Estate";
+import { Estate } from "@/models/Estate";
 import CollaboratorsManager from "@/components/estate/CollaboratorsManager";
 
 type DbCollaborator = {
@@ -29,7 +29,7 @@ async function getCollaboratorsFromDb(estateId: string) {
   await connectToDatabase();
 
   const estate = await Estate.findById(estateId, { ownerId: 1, collaborators: 1 })
-    .lean<{ ownerId: string; collaborators?: EstateCollaborator[] }>();
+    .lean<{ ownerId: string; collaborators?: DbCollaborator[] }>();
 
   if (!estate) return null;
 
@@ -69,84 +69,106 @@ export default async function CollaboratorsPage({
   const data = await getCollaboratorsFromDb(estateId);
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Collaborators</h1>
-        <Link
-          href={`/app/estates/${estateId}`}
-          className="text-sm text-blue-600 hover:underline"
-        >
-          Back to estate
-        </Link>
+    <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
+      <div className="flex flex-col gap-3 border-b border-gray-100 pb-4 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-1">
+          <nav className="text-xs text-gray-500">
+            <Link href="/app/estates" className="hover:underline">
+              Estates
+            </Link>
+            <span className="mx-1 text-gray-400">/</span>
+            <Link href={`/app/estates/${estateId}`} className="hover:underline">
+              Overview
+            </Link>
+            <span className="mx-1 text-gray-400">/</span>
+            <span className="text-gray-900">Collaborators</span>
+          </nav>
+
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-gray-900">Collaborators</h1>
+            <p className="mt-1 max-w-2xl text-sm text-gray-600">
+              Invite people to help manage this estate. Owners can add/remove collaborators and change roles.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/app/estates/${estateId}`}
+            className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+          >
+            Back to overview
+          </Link>
+        </div>
       </div>
 
-      <p className="mt-2 text-sm text-gray-600">
-        Owners can add/remove collaborators and change roles. Editors/Viewers can
-        only view this list.
-      </p>
-
       {forbidden && (
-        <div className="mt-4 rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
+        <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="font-semibold">Action blocked</div>
               <div className="text-xs text-rose-800">
-                You don’t have permission to manage collaborators for this estate.
+                You don’t have permission to change collaborator access for this estate.
               </div>
             </div>
             <Link
               href={`/app/estates/${estateId}?requestAccess=1`}
               className="inline-flex items-center justify-center rounded-md border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-900 hover:bg-rose-100"
             >
-              Request edit access
+              Request access
             </Link>
           </div>
         </div>
       )}
 
-      <div className="mt-4 rounded-md border border-gray-200 bg-white p-4">
-        <div className="text-sm font-semibold">Your role</div>
-        <div className="mt-1 text-sm text-gray-700">
-          {access.role === "OWNER"
-            ? "Owner"
-            : access.role === "EDITOR"
-            ? "Editor"
-            : "Viewer"}
+      <div className="rounded-md border border-gray-200 bg-white p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-semibold text-gray-900">Your access</div>
+            <div className="mt-1 text-sm text-gray-700">
+              {access.role === "OWNER" ? "Owner" : access.role === "EDITOR" ? "Editor" : "Viewer"}
+            </div>
+          </div>
+          <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-700">
+            {access.role === "OWNER" ? "Full control" : access.role === "EDITOR" ? "Can edit" : "View only"}
+          </span>
         </div>
       </div>
 
       {!canManage && (
-        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-              <div className="font-semibold">Read-only access</div>
+              <div className="font-semibold">Limited access</div>
               <div className="text-xs text-amber-800">
-                Only the Owner can add/remove collaborators and change roles.
+                Only the Owner can invite people, remove access, and change roles.
               </div>
             </div>
             <Link
               href={`/app/estates/${estateId}?requestAccess=1`}
               className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
             >
-              Request edit access
+              Request access
             </Link>
           </div>
         </div>
       )}
 
-      <div className="mt-6 rounded-md border border-gray-200 bg-white p-4">
-        <div className="text-sm font-semibold">Owner</div>
+      <div className="rounded-md border border-gray-200 bg-white p-4">
+        <div className="text-sm font-semibold text-gray-900">Owner (user id)</div>
+        <div className="mt-1 text-[11px] text-gray-500">The owner is the account with ultimate control for this estate.</div>
         <div className="mt-2 text-sm text-gray-700">
           <span className="font-mono">{data?.ownerId ?? "—"}</span>
         </div>
       </div>
 
-      <div className="mt-6 rounded-md border border-gray-200 bg-white p-4">
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-semibold">Collaborators</div>
-          <span className="text-xs text-gray-500">
-            {canManage ? "Manage access" : "Read-only"}
-          </span>
+      <div className="rounded-md border border-gray-200 bg-white p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-gray-900">Collaborators</div>
+            <div className="mt-1 text-[11px] text-gray-500">Give access only to people you trust. You can change roles at any time.</div>
+          </div>
+          <span className="text-xs text-gray-500">{canManage ? "Owner controls access" : "View only"}</span>
         </div>
 
         <div className="mt-3">

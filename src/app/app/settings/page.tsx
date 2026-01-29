@@ -50,10 +50,10 @@ export default async function SettingsPage() {
     <div className="mx-auto w-full max-w-5xl space-y-10 px-4 py-8">
       <PageHeader
         eyebrow={
-          <span className="text-slate-400">
-            <span className="text-slate-500">App</span>
-            <span className="mx-1 text-slate-600">/</span>
-            <span className="text-slate-300">Settings</span>
+          <span className="text-muted-foreground">
+            <span className="text-muted-foreground">App</span>
+            <span className="mx-1 text-muted-foreground/60">/</span>
+            <span className="text-foreground">Settings</span>
           </span>
         }
         title="Settings"
@@ -62,13 +62,13 @@ export default async function SettingsPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Link
               href="/app/billing"
-              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/60"
+              className="inline-flex items-center justify-center rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               Billing
             </Link>
             <Link
               href="/app"
-              className="inline-flex items-center justify-center rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-500/20"
+              className="inline-flex items-center justify-center rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               Back to dashboard
             </Link>
@@ -79,9 +79,9 @@ export default async function SettingsPage() {
       <PageSection
         title="Invoice defaults live here"
         description="Tip: set your default hourly rate and invoice terms once—each new invoice will start with these values."
-        className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4"
+        className="rounded-2xl border border-border bg-card p-4"
       >
-        <p className="text-sm text-slate-200">
+        <p className="text-sm text-foreground">
           Set your defaults once and keep moving—new invoices will pick them up automatically.
         </p>
       </PageSection>
@@ -89,7 +89,7 @@ export default async function SettingsPage() {
       <PageSection
         title="Workspace profile"
         description="This info is used for invoice headers, PDFs, and your internal defaults."
-        className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm"
+        className="rounded-2xl border border-border bg-card p-4 shadow-sm"
       >
         <WorkspaceSettingsForm initial={initial} />
       </PageSection>
@@ -97,19 +97,19 @@ export default async function SettingsPage() {
       <PageSection
         title="Account"
         description="Your personal account details."
-        className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4"
+        className="rounded-2xl border border-border bg-card p-4"
       >
         <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2">
-          <div className="text-xs text-slate-400">Email</div>
-          <div className="text-sm text-slate-100">{session.user.email ?? "—"}</div>
-          <div className="text-xs text-slate-400">User ID</div>
-          <div className="text-sm text-slate-100">{session.user.id}</div>
+          <div className="text-xs text-muted-foreground">Email</div>
+          <div className="text-sm text-foreground">{session.user.email ?? "—"}</div>
+          <div className="text-xs text-muted-foreground">User ID</div>
+          <div className="text-sm text-foreground">{session.user.id}</div>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
             href="/api/auth/signout?callbackUrl=/login"
-            className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/60"
+            className="inline-flex items-center justify-center rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             Sign out
           </Link>
@@ -119,26 +119,26 @@ export default async function SettingsPage() {
       <PageSection
         title="Security"
         description="Manage sign-in and security-related actions."
-        className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4"
+        className="rounded-2xl border border-border bg-card p-4"
       >
         <div className="mt-4">
           <Link
             href="/api/auth/signin"
-            className="inline-block rounded-md border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm font-medium text-rose-100 hover:bg-rose-500/20"
+            className="inline-block rounded-md border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm font-medium text-rose-600 hover:bg-rose-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             Manage sign-in
           </Link>
-          <p className="mt-2 text-xs text-slate-400">
+          <p className="mt-2 text-xs text-muted-foreground">
             Use this to review available sign-in options. Password reset behavior depends on your auth provider.
           </p>
         </div>
       </PageSection>
 
-      <p className="text-[11px] text-slate-500">
+      <p className="text-[11px] text-muted-foreground">
         Need to manage your subscription or payment method? Head to{" "}
         <Link
           href="/app/billing"
-          className="text-slate-300 underline-offset-2 hover:text-emerald-300 hover:underline"
+          className="text-foreground underline-offset-2 hover:text-emerald-600 hover:underline"
         >
           Billing
         </Link>

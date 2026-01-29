@@ -43,7 +43,18 @@ export default async function EditContactPage({ params }: PageProps) {
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
+    <div className="max-w-2xl mx-auto px-4 py-6">
+      <div className="mb-4">
+        <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+          Edit contact
+        </div>
+        <h1 className="mt-1 text-lg font-semibold text-gray-900">
+          Update contact details
+        </h1>
+        <p className="mt-1 text-sm text-gray-500">
+          Keep contact information accurate for estate communication and record keeping.
+        </p>
+      </div>
       <ContactEditForm contactId={contactId} initial={initial} />
     </div>
   );

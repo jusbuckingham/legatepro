@@ -4,77 +4,79 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
-import { connectToDatabase } from "../../../../../../lib/db";
-import { Contact as ContactModel } from "../../../../../../models/Contact";
-import { auth } from "../../../../../../lib/auth";
+import { auth } from "@/lib/auth";
+import { connectToDatabase } from "@/lib/db";
+import { requireEstateAccess } from "@/lib/estateAccess";
+import { Contact as ContactModel } from "@/models/Contact";
 
-interface PageProps {
-  params: Promise<{
-    estateId: string;
-  }>;
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+type PageProps = {
+  params: Promise<{ estateId: string }>;
+};
+
+type NormalizedRole =
+  | "PERSONAL_REPRESENTATIVE"
+  | "CREDITOR"
+  | "ATTORNEY"
+  | "BENEFICIARY";
+
+function normalizeRole(raw: string): NormalizedRole | undefined {
+  const r = raw.trim().toLowerCase();
+  if (!r) return undefined;
+
+  if (r === "personal representative" || r === "personal rep" || r === "pr") return "PERSONAL_REPRESENTATIVE";
+  if (r === "creditor") return "CREDITOR";
+  if (r === "attorney" || r === "lawyer") return "ATTORNEY";
+  if (r === "heir" || r === "beneficiary") return "BENEFICIARY";
+
+  return undefined;
 }
 
 async function createContact(formData: FormData) {
   "use server";
 
-  // Ensure we have an authenticated user for ownerId
   const session = await auth();
-  const ownerId = session?.user?.id;
+  const userId = session?.user?.id;
 
-  if (!ownerId) {
-    // If somehow not logged in, just bounce to login
+  if (!userId) {
     redirect("/login");
   }
 
   const estateId = formData.get("estateId");
-  if (typeof estateId !== "string" || !estateId) {
+  if (typeof estateId !== "string" || !estateId.trim()) {
     return;
   }
 
-  const name = formData.get("name")?.toString().trim() ?? "";
-  const rawRole = formData.get("role")?.toString().trim() || "";
-  const category = formData.get("category")?.toString().trim() || "";
-  const email = formData.get("email")?.toString().trim() || "";
-  const phone = formData.get("phone")?.toString().trim() || "";
+  const name = (formData.get("name")?.toString() ?? "").trim();
+  if (!name) return;
 
-  const addressLine1 = formData.get("addressLine1")?.toString().trim() || "";
-  const addressLine2 = formData.get("addressLine2")?.toString().trim() || "";
-  const city = formData.get("city")?.toString().trim() || "";
-  const state = formData.get("state")?.toString().trim() || "";
-  const postalCode = formData.get("postalCode")?.toString().trim() || "";
-  const country = formData.get("country")?.toString().trim() || "";
+  const roleRaw = (formData.get("role")?.toString() ?? "").trim();
+  const category = (formData.get("category")?.toString() ?? "").trim();
+  const email = (formData.get("email")?.toString() ?? "").trim();
+  const phone = (formData.get("phone")?.toString() ?? "").trim();
 
-  const notes = formData.get("notes")?.toString().trim() || "";
+  const addressLine1 = (formData.get("addressLine1")?.toString() ?? "").trim();
+  const addressLine2 = (formData.get("addressLine2")?.toString() ?? "").trim();
+  const city = (formData.get("city")?.toString() ?? "").trim();
+  const state = (formData.get("state")?.toString() ?? "").trim();
+  const postalCode = (formData.get("postalCode")?.toString() ?? "").trim();
+  const country = (formData.get("country")?.toString() ?? "").trim();
 
-  if (!name) {
-    // Require a name; no-op if missing
-    return;
-  }
+  const notes = (formData.get("notes")?.toString() ?? "").trim();
 
-  // Map the free-text role input into your enum values.
-  // Anything that doesn't match a known role is ignored so it won't break validation.
-  let normalizedRole: string | undefined;
-  if (rawRole) {
-    const r = rawRole.toLowerCase();
-
-    if (r === "personal representative" || r === "personal rep" || r === "pr") {
-      normalizedRole = "PERSONAL_REPRESENTATIVE";
-    } else if (r === "creditor") {
-      normalizedRole = "CREDITOR";
-    } else if (r === "attorney" || r === "lawyer") {
-      normalizedRole = "ATTORNEY";
-    } else if (r === "heir" || r === "beneficiary") {
-      normalizedRole = "BENEFICIARY";
-    } else {
-      // Unknown roles are stored as plain language in category/notes instead
-      normalizedRole = undefined;
-    }
-  }
+  const normalizedRole = normalizeRole(roleRaw);
 
   await connectToDatabase();
 
+  const access = await requireEstateAccess({ estateId, userId });
+  if (!access?.hasAccess) {
+    redirect("/app/estates");
+  }
+
   await ContactModel.create({
-    ownerId,
+    ownerId: userId,
     estateId,
     name,
     role: normalizedRole,
@@ -91,6 +93,8 @@ async function createContact(formData: FormData) {
   });
 
   revalidatePath(`/app/estates/${estateId}/contacts`);
+  revalidatePath(`/app/estates/${estateId}`);
+
   redirect(`/app/estates/${estateId}/contacts`);
 }
 
@@ -98,279 +102,256 @@ export default async function NewContactPage({ params }: PageProps) {
   const { estateId } = await params;
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Header / breadcrumb */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+    <div className="mx-auto max-w-5xl space-y-6 p-6">
+      <div className="flex flex-col gap-3 border-b border-gray-100 pb-4 md:flex-row md:items-start md:justify-between">
         <div className="space-y-2">
-          <nav className="text-xs text-slate-500">
-            <span className="text-slate-500">Estates</span>
-            <span className="mx-1 text-slate-600">/</span>
-            <span className="text-slate-300">Current estate</span>
-            <span className="mx-1 text-slate-600">/</span>
-            <Link
-              href={`/app/estates/${estateId}/contacts`}
-              className="text-slate-300 underline-offset-2 hover:text-slate-100 hover:underline"
-            >
+          <nav className="text-xs text-gray-500">
+            <Link href="/app/estates" className="hover:underline">
+              Estates
+            </Link>
+            <span className="mx-1 text-gray-400">/</span>
+            <Link href={`/app/estates/${estateId}`} className="hover:underline">
+              Overview
+            </Link>
+            <span className="mx-1 text-gray-400">/</span>
+            <Link href={`/app/estates/${estateId}/contacts`} className="hover:underline">
               Contacts
             </Link>
-            <span className="mx-1 text-slate-600">/</span>
-            <span className="text-rose-300">New</span>
+            <span className="mx-1 text-gray-400">/</span>
+            <span className="text-gray-900">Add</span>
           </nav>
 
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-slate-50">
-              Add contact
-            </h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-400">
-              Create a new contact for this estate. This could be an attorney,
-              heir, creditor, insurance representative, tenant, vendor, or any
-              other key person you&apos;re working with.
+            <h1 className="text-xl font-semibold tracking-tight text-gray-900">Add contact</h1>
+            <p className="mt-1 max-w-2xl text-sm text-gray-600">
+              Keep your estate directory accurate for notices, claims, and follow-ups.
             </p>
           </div>
         </div>
 
-        <div className="flex flex-col items-end gap-2 text-xs">
-          <span className="inline-flex items-center rounded-full border border-rose-500/40 bg-rose-950/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-rose-100 shadow-sm">
-            <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-rose-400" />
-            Estate directory
-          </span>
-
+        <div className="mt-1 flex flex-col items-start gap-2 text-xs text-gray-500 md:items-end">
           <Link
             href={`/app/estates/${estateId}/contacts`}
-            className="text-[11px] text-slate-300 underline-offset-2 hover:text-emerald-300 hover:underline"
+            className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
           >
             Back to contacts
           </Link>
         </div>
       </div>
 
-      {/* Form */}
       <form
         action={createContact}
-        className="max-w-xl space-y-4 rounded-xl border border-rose-900/40 bg-slate-950/70 p-4 shadow-sm shadow-rose-950/40"
+        className="max-w-2xl space-y-5 rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
       >
         <input type="hidden" name="estateId" value={estateId} />
 
-        <div className="space-y-1">
-          <label
-            htmlFor="name"
-            className="text-xs font-medium text-slate-200"
-          >
-            Name<span className="text-rose-400"> *</span>
-          </label>
-          <input
-            id="name"
-            name="name"
-            required
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
-            placeholder="Full name"
-          />
-          <p className="text-[11px] text-slate-500">
-            Use the name you or the court would recognize on paper.
-          </p>
-        </div>
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Basics</h2>
+            <p className="mt-1 text-xs text-gray-500">Who is this, and how do they relate to the estate?</p>
+          </div>
 
-        <div className="space-y-1">
-          <label
-            htmlFor="role"
-            className="text-xs font-medium text-slate-200"
-          >
-            Role / relationship
-          </label>
-          <input
-            id="role"
-            name="role"
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
-            placeholder="Probate attorney, heir, creditor, vendor, court clerk, etc."
-          />
-          <p className="text-[11px] text-slate-500">
-            How this person relates to the estate in plain language.
-          </p>
-        </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1">
+              <label htmlFor="name" className="text-xs font-medium text-gray-700">
+                Name<span className="text-rose-600"> *</span>
+              </label>
+              <input
+                id="name"
+                name="name"
+                required
+                placeholder="Full legal name"
+                className="h-9 w-full rounded-md border border-gray-300 px-3 text-sm text-gray-900 placeholder:text-gray-400"
+              />
+              <p className="text-[11px] text-gray-500">Use the name you or the court would recognize on paper.</p>
+            </div>
 
-        <div className="space-y-1">
-          <label
-            htmlFor="category"
-            className="text-xs font-medium text-slate-200"
-          >
-            Category
-          </label>
-          <select
-            id="category"
-            name="category"
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
-            defaultValue=""
-          >
-            <option value="">Select a category (optional)</option>
-            <option value="Attorney">Attorney</option>
-            <option value="Heir / Beneficiary">Heir / Beneficiary</option>
-            <option value="Tenant">Tenant</option>
-            <option value="Creditor">Creditor</option>
-            <option value="Vendor / Contractor">Vendor / Contractor</option>
-            <option value="Court contact">Court contact</option>
-            <option value="Other">Other</option>
-          </select>
-          <p className="text-[11px] text-slate-500">
-            This powers the small category chip you see on the directory cards.
-          </p>
-        </div>
+            <div className="space-y-1">
+              <label htmlFor="role" className="text-xs font-medium text-gray-700">
+                Role / relationship
+              </label>
+              <input
+                id="role"
+                name="role"
+                placeholder="Probate attorney, heir, creditor, vendor…"
+                className="h-9 w-full rounded-md border border-gray-300 px-3 text-sm text-gray-900 placeholder:text-gray-400"
+              />
+              <p className="text-[11px] text-gray-500">Plain language is fine. We’ll map common roles automatically.</p>
+            </div>
+          </div>
 
-        <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-1">
-            <label
-              htmlFor="email"
-              className="text-xs font-medium text-slate-200"
+            <label htmlFor="category" className="text-xs font-medium text-gray-700">
+              Category
+            </label>
+            <select
+              id="category"
+              name="category"
+              defaultValue=""
+              className="h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900"
             >
-              Email
+              <option value="">Select a category (optional)</option>
+              <option value="Attorney">Attorney</option>
+              <option value="Heir / Beneficiary">Heir / Beneficiary</option>
+              <option value="Tenant">Tenant</option>
+              <option value="Creditor">Creditor</option>
+              <option value="Vendor / Contractor">Vendor / Contractor</option>
+              <option value="Court contact">Court contact</option>
+              <option value="Other">Other</option>
+            </select>
+            <p className="text-[11px] text-gray-500">Used for quick filters and the category chip.</p>
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Contact info</h2>
+            <p className="mt-1 text-xs text-gray-500">Optional, but helpful for time-sensitive notices.</p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1">
+              <label htmlFor="email" className="text-xs font-medium text-gray-700">
+                Email
+              </label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                placeholder="name@example.com"
+                className="h-9 w-full rounded-md border border-gray-300 px-3 text-sm text-gray-900 placeholder:text-gray-400"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label htmlFor="phone" className="text-xs font-medium text-gray-700">
+                Phone
+              </label>
+              <input
+                id="phone"
+                name="phone"
+                placeholder="(555) 555-5555"
+                className="h-9 w-full rounded-md border border-gray-300 px-3 text-sm text-gray-900 placeholder:text-gray-400"
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Address</h2>
+            <p className="mt-1 text-xs text-gray-500">Use this when you need to mail notices or record service details.</p>
+          </div>
+
+          <div className="space-y-1">
+            <label htmlFor="addressLine1" className="text-xs font-medium text-gray-700">
+              Address line 1
             </label>
             <input
-              id="email"
-              name="email"
-              type="email"
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
-              placeholder="name@example.com"
+              id="addressLine1"
+              name="addressLine1"
+              placeholder="Street address"
+              className="h-9 w-full rounded-md border border-gray-300 px-3 text-sm text-gray-900 placeholder:text-gray-400"
             />
           </div>
 
           <div className="space-y-1">
-            <label
-              htmlFor="phone"
-              className="text-xs font-medium text-slate-200"
-            >
-              Phone
+            <label htmlFor="addressLine2" className="text-xs font-medium text-gray-700">
+              Address line 2
             </label>
             <input
-              id="phone"
-              name="phone"
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
-              placeholder="(555) 555-5555"
+              id="addressLine2"
+              name="addressLine2"
+              placeholder="Apartment, suite, unit, etc."
+              className="h-9 w-full rounded-md border border-gray-300 px-3 text-sm text-gray-900 placeholder:text-gray-400"
             />
           </div>
-        </div>
 
-        <div className="space-y-1">
-          <label
-            htmlFor="addressLine1"
-            className="text-xs font-medium text-slate-200"
-          >
-            Address Line 1
-          </label>
-          <input
-            id="addressLine1"
-            name="addressLine1"
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
-            placeholder="Street address"
-          />
-        </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-1">
+              <label htmlFor="city" className="text-xs font-medium text-gray-700">
+                City
+              </label>
+              <input
+                id="city"
+                name="city"
+                placeholder="City"
+                className="h-9 w-full rounded-md border border-gray-300 px-3 text-sm text-gray-900 placeholder:text-gray-400"
+              />
+            </div>
 
-        <div className="space-y-1">
-          <label
-            htmlFor="addressLine2"
-            className="text-xs font-medium text-slate-200"
-          >
-            Address Line 2
-          </label>
-          <input
-            id="addressLine2"
-            name="addressLine2"
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
-            placeholder="Apartment, suite, etc."
-          />
-        </div>
+            <div className="space-y-1">
+              <label htmlFor="state" className="text-xs font-medium text-gray-700">
+                State
+              </label>
+              <input
+                id="state"
+                name="state"
+                placeholder="State"
+                className="h-9 w-full rounded-md border border-gray-300 px-3 text-sm text-gray-900 placeholder:text-gray-400"
+              />
+            </div>
 
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="space-y-1">
-            <label
-              htmlFor="city"
-              className="text-xs font-medium text-slate-200"
-            >
-              City
-            </label>
-            <input
-              id="city"
-              name="city"
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
-              placeholder="City"
-            />
+            <div className="space-y-1">
+              <label htmlFor="postalCode" className="text-xs font-medium text-gray-700">
+                Postal code
+              </label>
+              <input
+                id="postalCode"
+                name="postalCode"
+                placeholder="ZIP"
+                className="h-9 w-full rounded-md border border-gray-300 px-3 text-sm text-gray-900 placeholder:text-gray-400"
+              />
+            </div>
           </div>
 
           <div className="space-y-1">
-            <label
-              htmlFor="state"
-              className="text-xs font-medium text-slate-200"
-            >
-              State
+            <label htmlFor="country" className="text-xs font-medium text-gray-700">
+              Country
             </label>
             <input
-              id="state"
-              name="state"
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
-              placeholder="State"
+              id="country"
+              name="country"
+              placeholder="Country"
+              className="h-9 w-full rounded-md border border-gray-300 px-3 text-sm text-gray-900 placeholder:text-gray-400"
             />
+          </div>
+        </section>
+
+        <section className="space-y-2">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Notes</h2>
+            <p className="mt-1 text-xs text-gray-500">Keep context you’ll want later.</p>
           </div>
 
           <div className="space-y-1">
-            <label
-              htmlFor="postalCode"
-              className="text-xs font-medium text-slate-200"
-            >
-              Postal Code
+            <label htmlFor="notes" className="text-xs font-medium text-gray-700">
+              Internal notes
             </label>
-            <input
-              id="postalCode"
-              name="postalCode"
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
-              placeholder="ZIP"
+            <textarea
+              id="notes"
+              name="notes"
+              rows={4}
+              placeholder="Claim ID, bar number, best time to call, relationship context…"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400"
             />
+            <p className="text-[11px] text-gray-500">Visible to collaborators with access to this estate.</p>
           </div>
-        </div>
+        </section>
 
-        <div className="space-y-1">
-          <label
-            htmlFor="country"
-            className="text-xs font-medium text-slate-200"
-          >
-            Country
-          </label>
-          <input
-            id="country"
-            name="country"
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
-            placeholder="Country"
-          />
-        </div>
+        <div className="flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-[11px] text-gray-500">You can edit or remove this contact later.</p>
 
-        <div className="space-y-1">
-          <label
-            htmlFor="notes"
-            className="text-xs font-medium text-slate-200"
-          >
-            Notes
-          </label>
-          <textarea
-            id="notes"
-            name="notes"
-            rows={4}
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-400"
-            placeholder="Bar number, claim ID, retainer details, best time to call, or relationship context."
-          />
-        </div>
-
-        <div className="flex flex-col gap-3 border-t border-slate-800 pt-3 text-xs md:flex-row md:items-center md:justify-between">
-          <p className="text-[11px] text-slate-500">
-            This contact will only be visible inside this estate&apos;s
-            workspace.
-          </p>
           <div className="flex items-center gap-3">
             <Link
               href={`/app/estates/${estateId}/contacts`}
-              className="text-[11px] text-slate-300 underline-offset-2 hover:text-slate-100 hover:underline"
+              className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
             >
               Cancel
             </Link>
             <button
               type="submit"
-              className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-sm font-medium text-slate-950 hover:bg-rose-400"
+              className="inline-flex items-center rounded-md bg-gray-900 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-gray-800"
             >
               Save contact
             </button>

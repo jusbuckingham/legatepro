@@ -32,6 +32,19 @@ function toStringId(value: unknown): string {
   return "";
 }
 
+// helper to detect if request is a form POST
+function isHtmlFormPost(req: NextRequest): boolean {
+  const contentType = req.headers.get("content-type") || "";
+  return !contentType.includes("application/json");
+}
+
+// helper to redirect with error message
+function redirectWithError(req: NextRequest, message: string): NextResponse {
+  const url = new URL("/app/time/new", req.url);
+  url.searchParams.set("error", message);
+  return NextResponse.redirect(url, { status: 303 });
+}
+
 // GET /api/time?estateId=...
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
@@ -122,6 +135,7 @@ async function parseTimePostBody(
   };
 }
 
+
 function toIsoString(value: unknown): string {
   if (value instanceof Date) return value.toISOString();
   return String(value);
@@ -156,7 +170,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const { estateId, taskId, description, date, hours, minutes, rate } =
       await parseTimePostBody(req);
 
+    const wantsRedirect = isHtmlFormPost(req);
+
     if (date && date.trim() !== "" && !parseOptionalDate(date)) {
+      if (wantsRedirect) return redirectWithError(req, "Date must be valid.");
       return NextResponse.json(
         { ok: false, error: "date must be a valid ISO date" },
         { status: 400 },
@@ -164,6 +181,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     if (!estateId) {
+      if (wantsRedirect) return redirectWithError(req, "Please select an estate.");
       return NextResponse.json(
         { ok: false, error: "Missing estateId" },
         { status: 400 },
@@ -177,7 +195,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const hoursNumber = hoursNumberRaw ? Number.parseFloat(hoursNumberRaw) : 0;
     const minutesNumber = minutesNumberRaw ? Number.parseInt(minutesNumberRaw, 10) : 0;
 
-    if ((hoursNumberRaw && !Number.isFinite(hoursNumber)) || (minutesNumberRaw && !Number.isFinite(minutesNumber))) {
+    if (
+      (hoursNumberRaw && !Number.isFinite(hoursNumber)) ||
+      (minutesNumberRaw && !Number.isFinite(minutesNumber))
+    ) {
+      if (wantsRedirect) {
+        return redirectWithError(req, "Hours/minutes must be valid numbers.");
+      }
       return NextResponse.json(
         { ok: false, error: "Hours/minutes must be valid numbers." },
         { status: 400 },
@@ -185,6 +209,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     if (hoursNumber < 0 || minutesNumber < 0) {
+      if (wantsRedirect) return redirectWithError(req, "Hours/minutes cannot be negative.");
       return NextResponse.json(
         { ok: false, error: "Hours/minutes cannot be negative." },
         { status: 400 },
@@ -195,6 +220,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       hoursNumber > 0 ? Math.round(hoursNumber * 60) + minutesNumber : minutesNumber;
 
     if (!Number.isFinite(totalMinutes) || totalMinutes <= 0) {
+      if (wantsRedirect) {
+        return redirectWithError(req, "Please provide a positive amount of time.");
+      }
       return NextResponse.json(
         {
           ok: false,
@@ -206,6 +234,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const rateNumber = parseOptionalFiniteNumber(rate);
     if (rate && rate.trim() !== "" && typeof rateNumber !== "number") {
+      if (wantsRedirect) return redirectWithError(req, "Rate must be a valid number.");
       return NextResponse.json(
         { ok: false, error: "Rate must be a valid number." },
         { status: 400 },
@@ -240,6 +269,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       createdAt: toIsoString(entryDoc.createdAt as unknown),
       updatedAt: toIsoString(entryDoc.updatedAt as unknown),
     };
+
+    if (wantsRedirect) {
+      const url = new URL("/app/time", req.url);
+      url.searchParams.set("created", "1");
+      url.searchParams.set("estateId", estateId);
+      return NextResponse.redirect(url, { status: 303 });
+    }
 
     return NextResponse.json({ ok: true, entry }, { status: 201 });
   } catch (error) {

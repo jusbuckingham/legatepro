@@ -416,9 +416,9 @@ export default async function EstatesPage({
       ) : null}
 
       {hasEstates && !hasAnyActivity ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 text-xs text-slate-200 shadow-sm">
-          <p className="text-sm font-semibold text-slate-100">Quick start</p>
-          <p className="mt-0.5 text-[11px] text-slate-500">
+        <div className="rounded-2xl border border-border bg-card p-4 text-xs text-foreground shadow-sm">
+          <p className="text-sm font-semibold text-foreground">Quick start</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
             Add your first task or invoice and this page will start showing recent activity.
           </p>
         </div>
@@ -433,14 +433,14 @@ export default async function EstatesPage({
                 "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
                 isPro
                   ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-                  : "border-slate-700 bg-slate-950/40 text-slate-300",
+                  : "border-border bg-muted/20 text-muted-foreground",
               ].join(" ")}
               title={planHint}
             >
               {planLabel}
             </span>
           </div>
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-muted-foreground">
             Matter-centric view of everything tied to each probate estate: properties, tasks, notes,
             invoices, rent, contacts, and documents.
           </p>
@@ -449,26 +449,26 @@ export default async function EstatesPage({
         <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end">
           <Link
             href="/app"
-            className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-950/40 px-4 text-sm font-medium text-slate-200 shadow-sm hover:bg-slate-900/40"
+            className="inline-flex h-10 items-center justify-center rounded-xl border border-border bg-card px-4 text-sm font-medium text-foreground shadow-sm hover:bg-muted/40"
           >
             Back to dashboard
           </Link>
           <form
             action="/app/estates"
             method="get"
-            className="flex h-10 items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/40 px-3 shadow-sm"
+            className="flex h-10 items-center gap-2 rounded-xl border border-border bg-card px-3 shadow-sm"
           >
-            <SearchIcon className="h-4 w-4 text-slate-500" aria-hidden />
+            <SearchIcon className="h-4 w-4 text-muted-foreground" aria-hidden />
             <input
               name="q"
               defaultValue={q}
               placeholder="Search estates…"
-              className="h-9 w-44 bg-transparent text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none sm:w-56"
+              className="h-9 w-44 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none sm:w-56"
               aria-label="Search estates"
             />
             <button
               type="submit"
-              className="inline-flex h-8 items-center justify-center rounded-lg border border-slate-800 bg-slate-900/40 px-2 text-[11px] font-semibold text-slate-200 hover:bg-slate-900"
+              className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-muted/30 px-2 text-[11px] font-semibold text-foreground hover:bg-muted/50"
             >
               Search
             </button>
@@ -512,13 +512,13 @@ export default async function EstatesPage({
       ) : null}
 
       {!hasEstates ? (
-        <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 p-6 shadow-sm sm:p-8">
+        <div className="rounded-2xl border border-dashed border-border bg-card p-6 shadow-sm sm:p-8">
           <div className="mx-auto max-w-2xl text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-slate-800 bg-slate-900/40">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-border bg-muted/30">
               <span className="text-lg">📁</span>
             </div>
-            <p className="mt-3 text-sm font-semibold text-slate-100">No estates yet</p>
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-3 text-sm font-semibold text-foreground">No estates yet</p>
+            <p className="mt-1 text-xs text-muted-foreground">
               Start by creating an estate. Then track tasks, notes, documents, invoices, rent, and contacts in one place.
               {hasReachedFreeLimit ? (
                 <span className="block pt-1 text-[#F15A43]">You’ve reached the Starter limit (1 owned estate). Upgrade to add more.</span>
@@ -543,24 +543,24 @@ export default async function EstatesPage({
               )}
               <Link
                 href="/app"
-                className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-950/40 px-4 text-sm font-medium text-slate-200 shadow-sm hover:bg-slate-900/40"
+                className="inline-flex h-10 items-center justify-center rounded-xl border border-border bg-card px-4 text-sm font-medium text-foreground shadow-sm hover:bg-muted/40"
               >
                 Go to dashboard
               </Link>
             </div>
 
             <div className="mt-6 grid gap-3 text-left sm:grid-cols-3">
-              <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-                <p className="text-xs font-semibold text-slate-100">1) Add details</p>
-                <p className="mt-1 text-[11px] text-slate-400">Name, case number, county, and status.</p>
+              <div className="rounded-xl border border-border bg-muted/20 p-4">
+                <p className="text-xs font-semibold text-foreground">1) Add details</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">Name, case number, county, and status.</p>
               </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-                <p className="text-xs font-semibold text-slate-100">2) Track work</p>
-                <p className="mt-1 text-[11px] text-slate-400">Tasks + notes keep everything moving.</p>
+              <div className="rounded-xl border border-border bg-muted/20 p-4">
+                <p className="text-xs font-semibold text-foreground">2) Track work</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">Tasks + notes keep everything moving.</p>
               </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-                <p className="text-xs font-semibold text-slate-100">3) Capture money</p>
-                <p className="mt-1 text-[11px] text-slate-400">Invoices, rent, and expenses in one place.</p>
+              <div className="rounded-xl border border-border bg-muted/20 p-4">
+                <p className="text-xs font-semibold text-foreground">3) Capture money</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">Invoices, rent, and expenses in one place.</p>
               </div>
             </div>
           </div>
@@ -568,18 +568,18 @@ export default async function EstatesPage({
       ) : (
         <div className="space-y-3">
           {!hasVisibleEstates ? (
-            <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 p-6 shadow-sm sm:p-8">
+            <div className="rounded-2xl border border-dashed border-border bg-card p-6 shadow-sm sm:p-8">
               <div className="mx-auto max-w-2xl text-center">
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-slate-800 bg-slate-900/40">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-border bg-muted/30">
                   <span className="text-lg">🔎</span>
                 </div>
-                <p className="mt-3 text-sm font-semibold text-slate-100">No results</p>
-                <p className="mt-1 text-xs text-slate-400">Try adjusting your search.</p>
+                <p className="mt-3 text-sm font-semibold text-foreground">No results</p>
+                <p className="mt-1 text-xs text-muted-foreground">Try adjusting your search.</p>
 
                 <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
                   <Link
                     href="/app/estates"
-                    className="inline-flex h-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-950/40 px-4 text-sm font-medium text-slate-200 shadow-sm hover:bg-slate-900/40"
+                    className="inline-flex h-10 items-center justify-center rounded-xl border border-border bg-card px-4 text-sm font-medium text-foreground shadow-sm hover:bg-muted/40"
                   >
                     Clear search
                   </Link>
@@ -602,17 +602,17 @@ export default async function EstatesPage({
               </div>
             </div>
           ) : null}
-          <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 shadow-sm">
-            <p className="text-sm text-slate-200">
-              <span className="font-semibold text-slate-100">{visibleEstates.length}</span> estate{visibleEstates.length === 1 ? "" : "s"}
-              <span className="mx-2 text-slate-600">•</span>
-              <span className="text-xs text-slate-400">
-                Owned: <span className="font-semibold text-slate-200">{ownedEstatesCount}</span>
-                <span className="mx-1 text-slate-600">·</span>
-                Shared: <span className="font-semibold text-slate-200">{sharedEstatesCount}</span>
+          <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
+            <p className="text-sm text-muted-foreground">
+              <span className="font-semibold text-foreground">{visibleEstates.length}</span> estate{visibleEstates.length === 1 ? "" : "s"}
+              <span className="mx-2 text-muted-foreground/60">•</span>
+              <span className="text-xs text-muted-foreground">
+                Owned: <span className="font-semibold text-foreground">{ownedEstatesCount}</span>
+                <span className="mx-1 text-muted-foreground/60">·</span>
+                Shared: <span className="font-semibold text-foreground">{sharedEstatesCount}</span>
               </span>
-              <span className="mx-2 text-slate-600">•</span>
-              <span className="text-xs text-slate-400">{planHint}</span>
+              <span className="mx-2 text-muted-foreground/60">•</span>
+              <span className="text-xs text-muted-foreground">{planHint}</span>
             </p>
             {!hasReachedFreeLimit ? (
               <Link
@@ -645,12 +645,12 @@ export default async function EstatesPage({
               return (
                 <div
                   key={id}
-                  className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 shadow-sm transition hover:bg-slate-900/30"
+                  className="rounded-2xl border border-border bg-card p-4 shadow-sm transition hover:bg-muted/30"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-semibold text-slate-100">{name}</p>
+                        <p className="truncate text-sm font-semibold text-foreground">{name}</p>
                         {typeof estate.readinessScore === "number" &&
                         typeof estate.readinessMissingCount === "number" &&
                         typeof estate.readinessRiskCount === "number" ? (
@@ -664,25 +664,25 @@ export default async function EstatesPage({
                           />
                         ) : null}
                       </div>
-                      <p className="mt-1 text-xs text-slate-400">
-                        <span className="text-slate-500">Case:</span> {caseNumber}
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        <span className="text-muted-foreground">Case:</span> {caseNumber}
                       </p>
-                      <p className="mt-1 text-xs text-slate-400">
-                        <span className="text-slate-500">Created:</span> {createdLabel}
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        <span className="text-muted-foreground">Created:</span> {createdLabel}
                       </p>
-                      <p className="mt-1 text-xs text-slate-400">
-                        <span className="text-slate-500">Last activity:</span> {lastActivityLabel}
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        <span className="text-muted-foreground">Last activity:</span> {lastActivityLabel}
                       </p>
                       {estate.lastActivitySummary ? (
-                        <p className="mt-1 line-clamp-1 text-xs text-slate-500">{estate.lastActivitySummary}</p>
+                        <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{estate.lastActivitySummary}</p>
                       ) : null}
                       {estate.county || estate.jurisdiction ? (
-                        <p className="mt-1 text-xs text-slate-500">{estate.county || estate.jurisdiction}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{estate.county || estate.jurisdiction}</p>
                       ) : null}
                     </div>
 
                     <div className="flex shrink-0 flex-col items-end gap-1">
-                      <span className="rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-200">
+                      <span className="rounded-full border border-border bg-muted/20 px-2 py-0.5 text-[11px] uppercase tracking-wide text-foreground">
                         {status}
                       </span>
                       <span
@@ -690,7 +690,7 @@ export default async function EstatesPage({
                           "rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
                           estate.ownerId === session.user.id
                             ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-                            : "border-slate-700 bg-slate-950/40 text-slate-300",
+                            : "border-border bg-muted/20 text-muted-foreground",
                         ].join(" ")}
                         title={
                           estate.ownerId === session.user.id
@@ -706,25 +706,25 @@ export default async function EstatesPage({
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Link
                       href={`/app/estates/${id}`}
-                      className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-900/70"
+                      className="inline-flex items-center rounded-full border border-border bg-muted/20 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/40"
                     >
                       Open
                     </Link>
                     <Link
                       href={`/app/estates/${id}/tasks`}
-                      className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/40"
+                      className="inline-flex items-center rounded-full border border-border bg-muted/20 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground"
                     >
                       Tasks
                     </Link>
                     <Link
                       href={`/app/estates/${id}/documents`}
-                      className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/40"
+                      className="inline-flex items-center rounded-full border border-border bg-muted/20 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground"
                     >
                       Documents
                     </Link>
                     <Link
                       href={`/app/estates/${id}/activity`}
-                      className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/40"
+                      className="inline-flex items-center rounded-full border border-border bg-muted/20 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground"
                     >
                       Activity
                     </Link>
@@ -735,9 +735,9 @@ export default async function EstatesPage({
           </div>
 
           {/* Desktop table */}
-          <div className="hidden overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 shadow-sm sm:block">
+          <div className="hidden overflow-hidden rounded-2xl border border-border bg-card shadow-sm sm:block">
             <table className="min-w-full text-left text-sm">
-              <thead className="border-b border-slate-800 bg-slate-900/80 text-xs uppercase tracking-wide text-slate-400">
+              <thead className="border-b border-border bg-muted/30 text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 font-medium">Estate</th>
                   <th className="px-4 py-3 font-medium">Case #</th>
@@ -759,17 +759,17 @@ export default async function EstatesPage({
                   const lastActivityLabel = formatShortDate(estate.lastActivityAt);
 
                   return (
-                    <tr key={id} className="border-t border-slate-900/80 hover:bg-slate-900/40">
+                    <tr key={id} className="border-t border-border/60 hover:bg-muted/20">
                       <td className="px-4 py-3 align-middle">
                         <div className="flex flex-col">
-                          <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-100">
+                          <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
                             {name}
                             <span
                               className={[
                                 "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
                                 estate.ownerId === session.user.id
                                   ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-                                  : "border-slate-700 bg-slate-950/40 text-slate-300",
+                                  : "border-border bg-muted/20 text-muted-foreground",
                               ].join(" ")}
                               title={
                                 estate.ownerId === session.user.id
@@ -793,13 +793,13 @@ export default async function EstatesPage({
                             ) : null}
                           </span>
                           {estate.county || estate.jurisdiction ? (
-                            <span className="text-xs text-slate-500">{estate.county || estate.jurisdiction}</span>
+                            <span className="text-xs text-muted-foreground">{estate.county || estate.jurisdiction}</span>
                           ) : null}
                         </div>
                       </td>
-                      <td className="px-4 py-3 align-middle text-sm text-slate-300">{caseNumber}</td>
+                      <td className="px-4 py-3 align-middle text-sm text-foreground">{caseNumber}</td>
                       <td className="px-4 py-3 align-middle text-xs">
-                        <span className="inline-flex min-w-[4.5rem] items-center justify-center rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-200">
+                        <span className="inline-flex min-w-[4.5rem] items-center justify-center rounded-full border border-border bg-muted/20 px-2 py-0.5 text-[11px] uppercase tracking-wide text-foreground">
                           {status}
                         </span>
                       </td>
@@ -816,17 +816,17 @@ export default async function EstatesPage({
                             }}
                           />
                         ) : (
-                          <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                          <span className="inline-flex items-center rounded-full border border-border bg-muted/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                             —
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 align-middle text-sm text-slate-300">{createdLabel}</td>
+                      <td className="px-4 py-3 align-middle text-sm text-foreground">{createdLabel}</td>
                       <td className="px-4 py-3 align-middle">
                         <div className="flex flex-col">
-                          <span className="text-sm text-slate-300">{lastActivityLabel}</span>
+                          <span className="text-sm text-foreground">{lastActivityLabel}</span>
                           {estate.lastActivitySummary ? (
-                            <span className="mt-0.5 line-clamp-1 text-[11px] text-slate-500">
+                            <span className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">
                               {estate.lastActivitySummary}
                             </span>
                           ) : null}
@@ -836,25 +836,25 @@ export default async function EstatesPage({
                         <div className="inline-flex items-center gap-2">
                           <Link
                             href={`/app/estates/${id}`}
-                            className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/40 px-3 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-900"
+                            className="inline-flex items-center rounded-full border border-border bg-muted/20 px-3 py-1 text-[11px] font-medium text-foreground hover:bg-muted/40"
                           >
                             Open
                           </Link>
                           <Link
                             href={`/app/estates/${id}/tasks`}
-                            className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950/40 px-3 py-1 text-[11px] font-medium text-slate-200 hover:bg-slate-900"
+                            className="inline-flex items-center rounded-full border border-border bg-muted/20 px-3 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground"
                           >
                             Tasks
                           </Link>
                           <Link
                             href={`/app/estates/${id}/documents`}
-                            className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950/40 px-3 py-1 text-[11px] font-medium text-slate-200 hover:bg-slate-900"
+                            className="inline-flex items-center rounded-full border border-border bg-muted/20 px-3 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground"
                           >
                             Documents
                           </Link>
                           <Link
                             href={`/app/estates/${id}/activity`}
-                            className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950/40 px-3 py-1 text-[11px] font-medium text-slate-200 hover:bg-slate-900"
+                            className="inline-flex items-center rounded-full border border-border bg-muted/20 px-3 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground"
                           >
                             Activity
                           </Link>

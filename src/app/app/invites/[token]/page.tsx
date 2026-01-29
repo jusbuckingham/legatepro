@@ -36,11 +36,11 @@ function getStatusBadgeClasses(status: string): string {
     case "ACCEPTED":
       return "border-emerald-900/40 bg-emerald-950/40 text-emerald-200";
     case "REVOKED":
-      return "border-slate-800 bg-slate-900/60 text-slate-200";
+      return "border-border bg-muted/20 text-muted-foreground";
     case "EXPIRED":
       return "border-amber-900/40 bg-amber-950/40 text-amber-200";
     default:
-      return "border-slate-800 bg-slate-900/60 text-slate-200";
+      return "border-border bg-muted/20 text-muted-foreground";
   }
 }
 
@@ -227,29 +227,29 @@ export default async function InviteAcceptPage({
 
   return (
     <div className="mx-auto w-full max-w-xl p-6">
-      <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-6">
+      <div className="rounded-xl border border-border bg-card p-6">
         {errorMessage ? (
-          <div className="mb-4 rounded-md border border-red-900/40 bg-red-950/40 p-3 text-sm text-red-200">
+          <div className="mb-4 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-500">
             {errorMessage}
           </div>
         ) : null}
 
-        <h1 className="text-xl font-semibold text-slate-50">Accept collaborator invite</h1>
-        <p className="mt-2 text-sm text-slate-400">
-          You’ve been invited to collaborate on <span className="font-medium text-slate-200">{estateName}</span>.
+        <h1 className="text-xl font-semibold text-foreground">Accept collaborator invite</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          You’ve been invited to collaborate on <span className="font-medium text-foreground">{estateName}</span>.
         </p>
 
-        <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900/50 p-4 text-sm">
+        <div className="mt-4 rounded-lg border border-border bg-muted/20 p-4 text-sm">
           <div className="flex items-center justify-between">
-            <span className="text-slate-400">Invited email</span>
-            <span className="font-medium text-slate-100">{inviteEmail}</span>
+            <span className="text-muted-foreground">Invited email</span>
+            <span className="font-medium text-foreground">{inviteEmail}</span>
           </div>
           <div className="mt-2 flex items-center justify-between">
-            <span className="text-slate-400">Role</span>
-            <span className="font-medium text-slate-100">{roleLabel}</span>
+            <span className="text-muted-foreground">Role</span>
+            <span className="font-medium text-foreground">{roleLabel}</span>
           </div>
           <div className="mt-2 flex items-center justify-between">
-            <span className="text-slate-400">Status</span>
+            <span className="text-muted-foreground">Status</span>
             <span
               className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${getStatusBadgeClasses(
                 String(status)
@@ -262,10 +262,10 @@ export default async function InviteAcceptPage({
 
         {!session?.user?.id ? (
           <div className="mt-4">
-            <p className="text-sm text-slate-300">Please sign in to accept this invite.</p>
+            <p className="text-sm text-muted-foreground">Please sign in to accept this invite.</p>
             <Link
               href={`/login?callbackUrl=${encodeURIComponent(`/app/invites/${token}`)}`}
-              className="mt-3 inline-flex w-full items-center justify-center rounded-md bg-slate-100 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-white"
+              className="mt-3 inline-flex w-full items-center justify-center rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               Sign in to accept
             </Link>
@@ -275,11 +275,11 @@ export default async function InviteAcceptPage({
             <div className="space-y-2">
               <div>
                 You’re signed in as{" "}
-                <span className="font-medium text-amber-100">
+                <span className="font-medium text-amber-200">
                   {signedInEmail ?? ""}
                 </span>
                 , but this invite is for{" "}
-                <span className="font-medium text-amber-100">
+                <span className="font-medium text-amber-200">
                   {inviteEmail}
                 </span>
                 .
@@ -290,18 +290,18 @@ export default async function InviteAcceptPage({
             </div>
           </div>
         ) : status !== "PENDING" ? (
-          <div className="mt-4 rounded-md border border-slate-800 bg-slate-900/50 p-3 text-sm text-slate-300">
-            This invite can’t be accepted because its status is <span className="font-medium text-slate-100">{statusLabel}</span>.
+          <div className="mt-4 rounded-md border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
+            This invite can’t be accepted because its status is <span className="font-medium text-foreground">{statusLabel}</span>.
           </div>
         ) : (
           <form action={acceptInviteAction} className="mt-5">
             <button
               type="submit"
-              className="inline-flex w-full items-center justify-center rounded-md bg-rose-500 px-4 py-2 text-sm font-medium text-white hover:bg-rose-400"
+              className="inline-flex w-full items-center justify-center rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               Accept invite
             </button>
-            <p className="mt-2 text-xs text-slate-500">
+            <p className="mt-2 text-xs text-muted-foreground">
               After accepting, you’ll be taken to the estate overview. You must be signed in with the invited email.
             </p>
           </form>

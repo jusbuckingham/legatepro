@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
+import { Types } from "mongoose";
 import {
   TimeEntry,
   TIME_ENTRY_ACTIVITY_TYPES,
@@ -9,11 +10,43 @@ import {
 
 type RouteContext = { params: Promise<{ estateId: string }> };
 
+function isValidObjectId(value: string): boolean {
+  return Types.ObjectId.isValid(value);
+}
+
 function parseIsoDate(value: string | null): Date | null {
   if (!value) return null;
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return null;
   return d;
+}
+
+function parseIsoDateStart(value: string | null): Date | null {
+  if (!value) return null;
+
+  // If the user passes a date-only string, interpret as local start-of-day.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, d] = value.split("-").map((n) => Number(n));
+    const dt = new Date(y, m - 1, d, 0, 0, 0, 0);
+    if (Number.isNaN(dt.getTime())) return null;
+    return dt;
+  }
+
+  return parseIsoDate(value);
+}
+
+function parseIsoDateEnd(value: string | null): Date | null {
+  if (!value) return null;
+
+  // If the user passes a date-only string, interpret as local end-of-day (inclusive).
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, d] = value.split("-").map((n) => Number(n));
+    const dt = new Date(y, m - 1, d, 23, 59, 59, 999);
+    if (Number.isNaN(dt.getTime())) return null;
+    return dt;
+  }
+
+  return parseIsoDate(value);
 }
 
 function normalizeObjectId(value: unknown): string | undefined {
@@ -51,11 +84,19 @@ export async function GET(
       { status: 400 }
     );
   }
+
+  if (!isValidObjectId(estateId)) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid estateId" },
+      { status: 400 }
+    );
+  }
+
   const from = searchParams.get("from");
   const to = searchParams.get("to");
 
-  const fromDate = parseIsoDate(from);
-  const toDate = parseIsoDate(to);
+  const fromDate = parseIsoDateStart(from);
+  const toDate = parseIsoDateEnd(to);
 
   if (from && !fromDate) {
     return NextResponse.json({ ok: false, error: "from must be a valid ISO date" }, { status: 400 });
@@ -113,7 +154,7 @@ export async function GET(
 
     return NextResponse.json({ ok: true, entries }, { status: 200 });
   } catch (error) {
-    console.error("[GET /api/time] Error:", error);
+    console.error("[GET /api/estates/:estateId/time] Error:", error);
     return NextResponse.json(
       { ok: false, error: "Failed to load time entries" },
       { status: 500 }
@@ -138,6 +179,13 @@ export async function POST(
   if (!estateId) {
     return NextResponse.json(
       { ok: false, error: "Missing estateId" },
+      { status: 400 }
+    );
+  }
+
+  if (!isValidObjectId(estateId)) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid estateId" },
       { status: 400 }
     );
   }
@@ -186,6 +234,20 @@ export async function POST(
       body.hourlyRate !== undefined && body.hourlyRate !== null
         ? Number(body.hourlyRate)
         : 0;
+
+    if (!Number.isFinite(hourlyRate) || hourlyRate < 0) {
+      return NextResponse.json(
+        { ok: false, error: "hourlyRate must be a non-negative number" },
+        { status: 400 }
+      );
+    }
+
+    if (body.taskId && !isValidObjectId(body.taskId)) {
+      return NextResponse.json(
+        { ok: false, error: "taskId must be a valid ObjectId" },
+        { status: 400 }
+      );
+    }
 
     const normalizedActivityType: TimeEntryActivityType =
       body.activityType &&
@@ -239,7 +301,7 @@ export async function POST(
 
     return NextResponse.json({ ok: true, entry }, { status: 201 });
   } catch (error) {
-    console.error("[POST /api/time] Error:", error);
+    console.error("[POST /api/estates/:estateId/time] Error:", error);
     return NextResponse.json(
       { ok: false, error: "Failed to create time entry" },
       { status: 500 }

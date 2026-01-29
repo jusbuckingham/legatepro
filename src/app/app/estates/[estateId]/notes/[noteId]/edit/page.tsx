@@ -1,11 +1,12 @@
-import { redirect, notFound } from "next/navigation";
-import { revalidatePath } from "next/cache";
 import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import type { Types } from "mongoose";
+
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { requireEstateEditAccess } from "@/lib/estateAccess";
 import { EstateNote } from "@/models/EstateNote";
-import type { Types } from "mongoose";
 
 export const metadata = {
   title: "Edit Note | LegatePro",
@@ -33,7 +34,43 @@ type RawNote = {
   updatedAt?: Date;
 };
 
+const CATEGORY_LABELS: Record<string, string> = {
+  GENERAL: "General",
+  LEGAL: "Legal",
+  FINANCIAL: "Financial",
+  COMMUNICATION: "Communication",
+};
+
+function getStringParam(
+  sp: Record<string, string | string[] | undefined> | undefined,
+  key: string,
+): string {
+  const raw = sp?.[key];
+  if (typeof raw === "string") return raw;
+  if (Array.isArray(raw)) return raw[0] ?? "";
+  return "";
+}
+
+function safeCallbackUrl(path: string): string {
+  return encodeURIComponent(path);
+}
+
+function formatDateTime(value: unknown): string {
+  if (!value) return "";
+  const d = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 async function loadNote(estateId: string, noteId: string): Promise<RawNote | null> {
+  await connectToDatabase();
+
   const note = await EstateNote.findOne(
     {
       _id: noteId,
@@ -47,8 +84,11 @@ async function loadNote(estateId: string, noteId: string): Promise<RawNote | nul
       pinned: 1,
       createdAt: 1,
       updatedAt: 1,
-    }
-  ).lean<RawNote | null>();
+    },
+  )
+    .lean<RawNote | null>()
+    .exec();
+
   return note;
 }
 
@@ -56,8 +96,7 @@ export default async function EditNotePage({ params, searchParams }: PageProps) 
   const { estateId, noteId } = await params;
 
   const sp = searchParams ? await searchParams : undefined;
-  const errorParam = sp?.error;
-  const errorValue = typeof errorParam === "string" ? errorParam : Array.isArray(errorParam) ? errorParam[0] : undefined;
+  const errorValue = getStringParam(sp, "error");
 
   const errorMessage =
     errorValue === "missing"
@@ -68,10 +107,12 @@ export default async function EditNotePage({ params, searchParams }: PageProps) 
 
   const session = await auth();
   if (!session?.user?.id) {
-    redirect("/login");
+    redirect(
+      `/login?callbackUrl=${safeCallbackUrl(
+        `/app/estates/${estateId}/notes/${noteId}/edit`,
+      )}`,
+    );
   }
-
-  await connectToDatabase();
 
   const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
   if (access.role === "VIEWER") {
@@ -88,7 +129,11 @@ export default async function EditNotePage({ params, searchParams }: PageProps) 
 
     const session = await auth();
     if (!session?.user?.id) {
-      redirect("/login");
+      redirect(
+        `/login?callbackUrl=${safeCallbackUrl(
+          `/app/estates/${estateId}/notes/${noteId}/edit`,
+        )}`,
+      );
     }
     const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
     if (access.role === "VIEWER") {
@@ -143,7 +188,7 @@ export default async function EditNotePage({ params, searchParams }: PageProps) 
             Update the subject, body, category, or pinned status.
             {note.updatedAt ? (
               <span className="ml-2 text-[11px] text-slate-500">
-                Last updated {new Date(note.updatedAt).toLocaleString()}
+                Last updated {formatDateTime(note.updatedAt)}
               </span>
             ) : null}
           </p>
@@ -166,7 +211,10 @@ export default async function EditNotePage({ params, searchParams }: PageProps) 
 
       {errorMessage ? (
         <div className="max-w-2xl rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-          {errorMessage}
+          <div className="font-medium">{errorMessage}</div>
+          <div className="mt-1 text-xs text-rose-200">
+            Tip: keep the subject short (so it scans well in the notes list), and put the full detail in the body.
+          </div>
         </div>
       ) : null}
 
@@ -220,10 +268,11 @@ export default async function EditNotePage({ params, searchParams }: PageProps) 
               defaultValue={note.category && note.category.trim().length > 0 ? note.category : "GENERAL"}
               className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100 outline-none focus:border-rose-600 focus:ring-1 focus:ring-rose-700/50"
             >
-              <option value="GENERAL">General</option>
-              <option value="LEGAL">Legal</option>
-              <option value="FINANCIAL">Financial</option>
-              <option value="COMMUNICATION">Communication</option>
+              {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
             </select>
           </div>
 

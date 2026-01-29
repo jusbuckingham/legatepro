@@ -138,8 +138,7 @@ function OnboardingBanner() {
         <div>
           <p className="text-sm font-semibold text-slate-100">Finish setup</p>
           <p className="mt-1 text-xs text-slate-500">
-            You’ve added an estate — now log time and create your first invoice so this dashboard starts
-            rolling up totals automatically.
+            You’ve added an estate. Next, track time and create your first invoice so your dashboard starts updating automatically.
           </p>
         </div>
         <div className="mt-3 flex flex-wrap gap-2 md:mt-0">
@@ -174,14 +173,14 @@ function OnboardingBanner() {
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-4">
           <p className="text-xs font-medium text-slate-200">Step 2</p>
-          <p className="mt-1 text-[11px] text-slate-500">Create your first invoice and mark payments as they come in.</p>
+          <p className="mt-1 text-[11px] text-slate-500">Create your first invoice and record payments as they come in.</p>
           <Link href="/app/invoices/new" className="mt-2 inline-flex text-[11px] font-medium text-sky-400 hover:text-sky-300">
             Create invoice ↗
           </Link>
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-4">
           <p className="text-xs font-medium text-slate-200">Step 3</p>
-          <p className="mt-1 text-[11px] text-slate-500">Add tasks and documents so everything lives in one place.</p>
+          <p className="mt-1 text-[11px] text-slate-500">Add tasks and documents so everything stays in one place.</p>
           <div className="mt-2 flex flex-wrap gap-3">
             <Link href="/app/tasks" className="inline-flex text-[11px] font-medium text-sky-400 hover:text-sky-300">
               Tasks ↗
@@ -273,8 +272,8 @@ export default async function DashboardPage() {
       <div className="mx-auto w-full max-w-6xl space-y-8 px-4 py-8">
         <PageHeader
           eyebrow="Welcome"
-          title="Create your first estate"
-          description="Start by adding an estate. Once you do, your invoices, time, tasks, and billing metrics will roll up here automatically."
+          title="Add your first estate"
+          description="Start by adding an estate. As you track time and money, LegatePro builds your dashboard automatically."
           actions={
             <div className="flex flex-wrap gap-2">
               <Link
@@ -287,7 +286,7 @@ export default async function DashboardPage() {
                 href="/app/estates"
                 className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-900/60 px-3 text-xs font-medium text-slate-200 shadow-sm transition hover:bg-slate-900"
               >
-                View estates
+                All estates
               </Link>
               <Link
                 href="/app/billing"
@@ -301,19 +300,19 @@ export default async function DashboardPage() {
 
         <section className="grid gap-4 md:grid-cols-2">
           <EmptyState
-            title="Step 1: Add the estate"
+            title="Step 1: Add an estate"
             description="Give it a name and (optionally) a case name. You can add collaborators later."
             cta={{ label: "Create an estate", href: "/app/estates/new" }}
           />
           <EmptyState
-            title="Step 2: Track work and money"
-            description="Log time, create invoices, and record rent payments. LegatePro will build your dashboard automatically."
+            title="Step 2: Track time and billing"
+            description="Log time, send invoices, and record payments. LegatePro updates your totals automatically."
             cta={{ label: "Track time", href: "/app/time" }}
           />
         </section>
 
         <p className="text-[11px] text-slate-500">
-          Tip: You can always come back here — the dashboard becomes more useful as soon as your first invoice, time entry, or rent payment exists.
+          Tip: This page gets more useful after your first invoice, time entry, or payment.
         </p>
       </div>
     );
@@ -887,9 +886,9 @@ export default async function DashboardPage() {
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8 px-4 py-8">
       <PageHeader
-        eyebrow="Workspace"
-        title="Billing overview"
-        description="High-level view of everything you have invoiced, collected, and still have outstanding across all estates."
+        eyebrow="Dashboard"
+        title="Dashboard"
+        description="Track what you’ve invoiced, collected, and still have outstanding across all estates."
         actions={
           <div className="flex flex-wrap gap-2">
             <Link
@@ -920,7 +919,7 @@ export default async function DashboardPage() {
         }
       />
       <p className="text-[11px] text-slate-500">
-        Last updated {nowDate.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}
+        Updated {nowDate.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}
       </p>
       {showOnboarding ? (
         <OnboardingBanner />
@@ -935,7 +934,7 @@ export default async function DashboardPage() {
             {formatMoney(effectiveInvoiced, currency)}
           </p>
           <p className="text-[11px] text-slate-500">
-            Sum of all invoices regardless of status.
+            Total of all invoices (any status).
           </p>
         </div>
 
@@ -947,7 +946,7 @@ export default async function DashboardPage() {
             {formatMoney(effectiveCollected, currency)}
           </p>
           <p className="text-[11px] text-slate-500">
-            Fully paid invoices. Collection rate: {collectionRate}%.
+            Paid invoices only. Collection rate: {collectionRate}%.
           </p>
         </div>
 
@@ -959,7 +958,7 @@ export default async function DashboardPage() {
             {formatMoney(effectiveOutstanding, currency)}
           </p>
           <p className="text-[11px] text-slate-500">
-            Sent, unpaid, or partial invoices still waiting to be collected.
+            Sent, unpaid, or partial invoices not yet collected.
           </p>
         </div>
 
@@ -971,8 +970,7 @@ export default async function DashboardPage() {
             {formatMoney(totalVoidedCents, currency)}
           </p>
           <p className="text-[11px] text-slate-500">
-            Invoices marked as VOID are excluded from outstanding and
-            collection rate.
+            VOID invoices are excluded from outstanding and collection rate.
           </p>
         </div>
       </section>
@@ -985,8 +983,7 @@ export default async function DashboardPage() {
               Accounts receivable aging
             </p>
             <p className="text-[11px] text-slate-500">
-              Breakdown of outstanding invoices by how long they have been past
-              due, based on due date when available.
+              Outstanding invoices grouped by how late they are (based on due date when available).
             </p>
           </div>
           <Link
@@ -1067,8 +1064,7 @@ export default async function DashboardPage() {
               Revenue trend (last 6 months)
             </p>
             <p className="text-[11px] text-slate-500">
-              Monthly totals for invoiced and collected amounts, with per-month
-              collection rate.
+              Monthly totals for invoiced and collected amounts, plus collection rate.
             </p>
           </div>
         </div>
@@ -1148,7 +1144,7 @@ export default async function DashboardPage() {
           <p className="text-xs text-slate-400">
             {unbilledHoursTotal > 0
               ? `${unbilledHoursTotal.toFixed(1)} hours of tracked time that has not been attached to invoices yet.`
-              : "No unbilled time entries yet. Track time and it will appear here until it is invoiced."}
+              : "No unbilled time yet. Track time and it will appear here until it’s invoiced."}
           </p>
           <div className="pt-2">
             <div className="flex flex-wrap gap-x-4 gap-y-1">
@@ -1156,7 +1152,7 @@ export default async function DashboardPage() {
                 href="/app/estates"
                 className="inline-flex items-center text-xs font-medium text-sky-400 hover:text-sky-300"
               >
-                Review time by estate
+                Time by estate
                 <span className="ml-1 text-[10px]">↗</span>
               </Link>
               <Link
@@ -1264,7 +1260,7 @@ export default async function DashboardPage() {
                           href={`/app/invoices?invoiceId=${encodeURIComponent(id)}`}
                           className="text-[11px] text-sky-400 hover:text-sky-300"
                         >
-                          View
+                          Open
                         </Link>
                       </div>
                     </div>
@@ -1284,8 +1280,7 @@ export default async function DashboardPage() {
               Estate billing breakdown
             </p>
             <p className="text-[11px] text-slate-500">
-              Per-estate totals for invoiced, collected, outstanding, and
-              unbilled time value.
+              Per-estate totals for invoiced, collected, outstanding, and unbilled time value.
             </p>
           </div>
           <Link

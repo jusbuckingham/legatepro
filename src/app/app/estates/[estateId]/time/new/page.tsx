@@ -39,6 +39,23 @@ function getErrorFromApiPayload(payload: unknown): string | null {
   return null;
 }
 
+function formatCurrency(value: number): string {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return `$${value.toFixed(2)}`;
+  }
+}
+
+function clampToNonNegativeFinite(n: number | undefined): number {
+  if (typeof n !== "number" || !Number.isFinite(n) || n < 0) return 0;
+  return n;
+}
+
 export default function NewTimeEntryPage() {
   const router = useRouter();
   const { estateId } = useParams<{ estateId: string }>();
@@ -60,8 +77,20 @@ export default function NewTimeEntryPage() {
     const raw = form.hours.trim();
     if (!raw) return 0;
     const parsed = Number.parseFloat(raw);
-    return Number.isFinite(parsed) ? parsed : 0;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   }, [form.hours]);
+
+  const rateNumber = useMemo(() => {
+    const raw = form.rate.trim();
+    if (!raw) return 0;
+    const parsed = Number.parseFloat(raw);
+    return clampToNonNegativeFinite(parsed);
+  }, [form.rate]);
+
+  const estimatedValue = useMemo(() => {
+    if (hoursNumber <= 0 || rateNumber <= 0) return 0;
+    return hoursNumber * rateNumber;
+  }, [hoursNumber, rateNumber]);
 
   const canSubmit = !submitting && form.date.trim().length > 0 && hoursNumber > 0;
 
@@ -84,13 +113,7 @@ export default function NewTimeEntryPage() {
     const hoursValue = hoursNumber;
 
     try {
-      const rateNumberRaw = form.rate ? Number.parseFloat(form.rate) : undefined;
-      const rateNumber =
-        typeof rateNumberRaw === "number" &&
-        Number.isFinite(rateNumberRaw) &&
-        rateNumberRaw >= 0
-          ? rateNumberRaw
-          : undefined;
+      const rateValue = rateNumber > 0 ? rateNumber : undefined;
 
       if (!form.date || hoursValue <= 0) {
         setError("Please provide a date and a positive number of hours.");
@@ -110,7 +133,7 @@ export default function NewTimeEntryPage() {
             estateId,
             date: form.date,
             hours: hoursValue,
-            rate: rateNumber,
+            rate: rateValue,
             activity: form.activity.trim() || undefined,
             notes: form.notes.trim() || undefined,
             isBillable: form.isBillable,
@@ -143,7 +166,7 @@ export default function NewTimeEntryPage() {
   };
 
   return (
-    <div className="space-y-8 p-6">
+    <div className="mx-auto w-full max-w-6xl space-y-8 px-4 py-6 sm:px-6 lg:px-8">
       <PageHeader
         eyebrow={
           <nav className="text-xs text-slate-500">
@@ -178,14 +201,46 @@ export default function NewTimeEntryPage() {
             >
               Back
             </Link>
+
+            <button
+              type="submit"
+              form="time-entry-form"
+              disabled={!canSubmit}
+              className="inline-flex items-center justify-center rounded-md bg-rose-600 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {submitting ? "Saving…" : "Save"}
+            </button>
           </div>
         }
       />
 
+      <section className="grid gap-4 sm:grid-cols-3">
+        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+          <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Hours</p>
+          <p className="mt-1 text-lg font-semibold text-slate-50">{hoursNumber > 0 ? hoursNumber : "—"}</p>
+          <p className="mt-1 text-xs text-slate-500">Use decimals (e.g. 1.5 = 1h 30m).</p>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+          <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Billable</p>
+          <p className="mt-1 text-lg font-semibold text-slate-50">{form.isBillable ? "Yes" : "No"}</p>
+          <p className="mt-1 text-xs text-slate-500">Mark billable entries to keep estate accounting clean.</p>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+          <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Estimated value</p>
+          <p className="mt-1 text-lg font-semibold text-slate-50">
+            {estimatedValue > 0 ? formatCurrency(estimatedValue) : "—"}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">Requires an hourly value to be set.</p>
+        </div>
+      </section>
+
       <form
+        id="time-entry-form"
         onSubmit={handleSubmit}
         aria-busy={submitting}
-        className="space-y-6 rounded-xl border border-slate-800 bg-slate-950/70 p-4 sm:p-6"
+        className="space-y-6 rounded-2xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm shadow-slate-950/30 sm:p-6"
       >
         <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-1 md:col-span-1">
@@ -302,8 +357,8 @@ export default function NewTimeEntryPage() {
 
           <button
             type="submit"
-            disabled={!canSubmit || submitting}
-            className="inline-flex items-center rounded-md bg-rose-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-400 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!canSubmit}
+            className="inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting ? "Saving entry…" : "Save time entry"}
           </button>

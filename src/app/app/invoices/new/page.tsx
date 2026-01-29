@@ -35,6 +35,14 @@ export const metadata: Metadata = {
   title: "New Invoice | LegatePro",
 };
 
+function formatShortDate(d: Date): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+  }).format(d);
+}
+
 export default async function GlobalNewInvoicePage({ searchParams }: PageProps) {
   // Safely unwrap the promised searchParams (or fall back to empty object)
   const sp = (await searchParams) || {};
@@ -59,21 +67,17 @@ export default async function GlobalNewInvoicePage({ searchParams }: PageProps) 
     { ownerId: session.user.id },
     ...(userObjectId ? [{ ownerId: userObjectId }] : []),
 
-    // Common collaborator/member patterns (safe even if fields don't exist)
-    { collaboratorIds: session.user.id },
-    ...(userObjectId ? [{ collaboratorIds: userObjectId }] : []),
-    { collaborators: session.user.id },
-    ...(userObjectId ? [{ collaborators: userObjectId }] : []),
-    { memberIds: session.user.id },
-    ...(userObjectId ? [{ memberIds: userObjectId }] : []),
-    { members: session.user.id },
-    ...(userObjectId ? [{ members: userObjectId }] : []),
-    { userIds: session.user.id },
-    ...(userObjectId ? [{ userIds: userObjectId }] : []),
+    // Safe collaborator lookup (matches dashboard usage)
+    { "collaborators.userId": session.user.id },
+    ...(userObjectId ? [{ "collaborators.userId": userObjectId }] : []),
   ];
 
+  const estateAccessOrSafe = estateAccessOr.filter(
+    (v): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v),
+  );
+
   const estatesRaw = (await Estate.find({
-    $or: estateAccessOr,
+    $or: estateAccessOrSafe,
   })
     .select("_id displayName caseName caseNumber")
     .sort({ createdAt: -1 })
@@ -104,45 +108,48 @@ export default async function GlobalNewInvoicePage({ searchParams }: PageProps) 
   }
 
   return (
-    <div className="max-w-xl mx-auto px-4 py-8 space-y-6">
+    <div className="mx-auto w-full max-w-xl space-y-6 px-4 py-8">
       <header className="space-y-1">
-        <p className="text-xs uppercase tracking-wide text-slate-500">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Invoices
         </p>
-        <h1 className="text-2xl font-semibold text-slate-100">
-          New invoice – choose estate
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+          New invoice — choose estate
         </h1>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-muted-foreground">
           Start by selecting the estate this invoice belongs to. You&apos;ll then
           be taken to the estate-specific invoice form.
         </p>
       </header>
 
-      <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
-        <p className="text-xs font-semibold text-slate-100">How this works</p>
-        <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] text-slate-400">
-          <li>Select the <span className="text-slate-200">estate</span> this invoice belongs to.</li>
+      <div className="rounded-xl border border-border bg-card p-4">
+        <p className="text-xs font-semibold text-foreground">How this works</p>
+        <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] text-muted-foreground">
+          <li>
+            Select the <span className="text-foreground">estate</span> this invoice belongs to.
+          </li>
           <li>You’ll add line items, issue/due dates, and payment status on the next screen.</li>
           <li>Invoices stay estate-scoped so records are easy to audit.</li>
         </ul>
       </div>
 
       {isCreated ? (
-        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-100 shadow-sm">
-          <p className="text-sm font-semibold text-emerald-100">Estate created</p>
-          <p className="mt-0.5 text-[11px] text-emerald-100/80">
+        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-700 shadow-sm">
+          <p className="text-sm font-semibold text-emerald-700">Estate created</p>
+          <p className="mt-0.5 text-[11px] text-emerald-700/80">
             Next: create your first invoice for that estate.
+            <span className="ml-1">• {formatShortDate(new Date())}</span>
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Link
               href="/app/estates"
-              className="inline-flex items-center rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-500/20"
+              className="inline-flex items-center rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               View estates
             </Link>
             <Link
               href="/app/dashboard"
-              className="inline-flex items-center rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-500/20"
+              className="inline-flex items-center rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               Dashboard
             </Link>
@@ -150,33 +157,33 @@ export default async function GlobalNewInvoicePage({ searchParams }: PageProps) 
         </div>
       ) : null}
 
-      <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+      <div className="rounded-lg border border-border bg-card p-4">
         {estates.length === 0 ? (
-          <div className="space-y-2 text-sm text-slate-400">
+          <div className="space-y-2 text-sm text-muted-foreground">
             <p>You don&apos;t have any estates yet.</p>
             <p>
               Create an estate first, then you&apos;ll be able to generate
               invoices for it.
             </p>
-            <p className="text-[11px] text-slate-500">
+            <p className="text-[11px] text-muted-foreground">
               This keeps billing records separated per estate and makes accounting cleaner.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Link
                 href="/app/estates/new"
-                className="inline-flex items-center rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500"
+                className="inline-flex items-center rounded-md bg-sky-500 px-3 py-1.5 text-xs font-semibold text-background hover:bg-sky-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 Create estate
               </Link>
               <Link
                 href="/app/estates"
-                className="inline-flex items-center rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+                className="inline-flex items-center rounded-md border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 View estates
               </Link>
               <Link
                 href="/app/dashboard"
-                className="inline-flex items-center rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+                className="inline-flex items-center rounded-md border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 Dashboard
               </Link>
@@ -187,7 +194,7 @@ export default async function GlobalNewInvoicePage({ searchParams }: PageProps) 
             <div className="flex flex-col gap-1">
               <label
                 htmlFor="estateId"
-                className="text-xs font-medium text-slate-300"
+                className="text-xs font-medium text-muted-foreground"
               >
                 Estate
               </label>
@@ -196,7 +203,7 @@ export default async function GlobalNewInvoicePage({ searchParams }: PageProps) 
                 name="estateId"
                 defaultValue={estates[0]?._id ?? ""}
                 required
-                className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 <option value="">
                   Select an estate…
@@ -217,7 +224,7 @@ export default async function GlobalNewInvoicePage({ searchParams }: PageProps) 
                   );
                 })}
               </select>
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[11px] text-muted-foreground">
                 Invoices are always tied to a single estate.
               </p>
             </div>
@@ -225,13 +232,13 @@ export default async function GlobalNewInvoicePage({ searchParams }: PageProps) 
             <div className="flex items-center justify-between gap-2 pt-2">
               <Link
                 href="/app/invoices"
-                className="text-xs text-slate-400 hover:text-slate-200"
+                className="text-xs text-muted-foreground hover:text-foreground"
               >
                 ← Back to invoices
               </Link>
               <button
                 type="submit"
-                className="inline-flex items-center rounded-md bg-sky-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-sky-500"
+                className="inline-flex items-center rounded-md bg-sky-500 px-4 py-1.5 text-xs font-semibold text-background hover:bg-sky-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 Continue to invoice form
               </button>

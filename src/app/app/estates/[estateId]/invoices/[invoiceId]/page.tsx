@@ -1,12 +1,13 @@
 import Link from "next/link";
-import PageHeader from "@/components/layout/PageHeader";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
+import PageHeader from "@/components/layout/PageHeader";
+
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import mongoose from "mongoose";
-import { Estate } from "@/models/Estate";
+
+import { requireEstateAccess } from "@/lib/estateAccess";
 import { Invoice } from "@/models/Invoice";
 
 type PageProps = {
@@ -14,12 +15,10 @@ type PageProps = {
     estateId: string;
     invoiceId: string;
   }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-type EstateLean = {
-  _id: unknown;
-  name?: string | null;
-};
+
 
 type InvoiceLeanDoc = {
   _id: unknown;
@@ -82,98 +81,132 @@ function formatDate(value: string | null | undefined): string {
 function statusPillClasses(statusUpper: string): string {
   switch (statusUpper) {
     case "PAID":
-      return "bg-green-50 text-green-700 ring-green-200";
+      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-100";
     case "UNPAID":
     case "SENT":
-      return "bg-amber-50 text-amber-700 ring-amber-200";
+      return "border-amber-500/30 bg-amber-500/10 text-amber-100";
     case "VOID":
-      return "bg-red-50 text-red-700 ring-red-200";
+      return "border-rose-500/30 bg-rose-500/10 text-rose-100";
     case "PARTIAL":
-      return "bg-blue-50 text-blue-700 ring-blue-200";
+      return "border-sky-500/30 bg-sky-500/10 text-sky-100";
     case "DRAFT":
     default:
-      return "bg-gray-50 text-gray-700 ring-gray-200";
+      return "border-slate-700 bg-slate-950/70 text-slate-200";
   }
 }
 
-export default async function InvoiceDetailPage({ params }: PageProps) {
+function getStringParam(
+  sp: Record<string, string | string[] | undefined> | undefined,
+  key: string,
+): string {
+  const raw = sp?.[key];
+  if (typeof raw === "string") return raw;
+  if (Array.isArray(raw)) return raw[0] ?? "";
+  return "";
+}
+
+export default async function InvoiceDetailPage({ params, searchParams }: PageProps) {
   const { estateId, invoiceId } = await params;
+
+  const sp = searchParams ? await searchParams : undefined;
+  const forbiddenFlag = getStringParam(sp, "forbidden");
+  const forbidden = forbiddenFlag === "1" || forbiddenFlag.toLowerCase() === "true";
 
   const session = await auth();
   if (!session?.user?.id) {
-    redirect("/login");
+    redirect(`/login?callbackUrl=${encodeURIComponent(`/app/estates/${estateId}/invoices/${invoiceId}`)}`);
+  }
+
+  // Resolve access (OWNER / EDITOR / VIEWER). If this fails, treat as unauthorized.
+  let role: "OWNER" | "EDITOR" | "VIEWER" = "VIEWER";
+  try {
+    const access = await requireEstateAccess({ estateId, userId: session.user.id });
+    const r = (access as { role?: unknown } | null)?.role;
+    role = r === "OWNER" || r === "EDITOR" || r === "VIEWER" ? r : "VIEWER";
+  } catch {
+    return (
+      <div className="space-y-8 p-6">
+        <PageHeader
+          eyebrow={
+            <nav className="text-xs text-slate-500">
+              <Link href="/app/estates" className="text-slate-400 hover:text-slate-200 hover:underline">
+                Estates
+              </Link>
+              <span className="mx-1 text-slate-600">/</span>
+              <span className="truncate text-rose-200">Unauthorized</span>
+            </nav>
+          }
+          title="Unauthorized"
+          description="You don’t have access to this estate (or your session expired)."
+          actions={
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Link
+                href="/app/estates"
+                className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+              >
+                Back to estates
+              </Link>
+            </div>
+          }
+        />
+
+        <section className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm">
+          <p className="text-sm font-semibold text-slate-50">We can’t show this invoice.</p>
+          <p className="mt-1 text-sm text-slate-300">
+            If you think you should have access, ask an estate OWNER to add you as a collaborator.
+          </p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <Link
+              href="/app/estates"
+              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+            >
+              Return to estates
+            </Link>
+            <Link
+              href={`/login?callbackUrl=${encodeURIComponent(`/app/estates/${estateId}/invoices/${invoiceId}`)}`}
+              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+            >
+              Re-authenticate
+            </Link>
+          </div>
+        </section>
+      </div>
+    );
   }
 
   await connectToDatabase();
 
-  const estateObjectId = mongoose.Types.ObjectId.isValid(estateId)
-    ? new mongoose.Types.ObjectId(estateId)
-    : null;
-
-  const invoiceObjectId = mongoose.Types.ObjectId.isValid(invoiceId)
-    ? new mongoose.Types.ObjectId(invoiceId)
-    : null;
-
-  const userObjectId = mongoose.Types.ObjectId.isValid(session.user.id)
-    ? new mongoose.Types.ObjectId(session.user.id)
-    : null;
-
-  const estateIdCandidates = [estateId, estateObjectId].filter(Boolean);
-
-  const estateAccessOr: Record<string, unknown>[] = [
-    { ownerId: session.user.id },
-    ...(userObjectId ? [{ ownerId: userObjectId }] : []),
-
-    // Common collaborator/member patterns (harmless if fields don't exist)
-    { collaboratorIds: session.user.id },
-    ...(userObjectId ? [{ collaboratorIds: userObjectId }] : []),
-    { collaborators: session.user.id },
-    ...(userObjectId ? [{ collaborators: userObjectId }] : []),
-    { memberIds: session.user.id },
-    ...(userObjectId ? [{ memberIds: userObjectId }] : []),
-    { members: session.user.id },
-    ...(userObjectId ? [{ members: userObjectId }] : []),
-    { userIds: session.user.id },
-    ...(userObjectId ? [{ userIds: userObjectId }] : []),
-  ];
-
-  const [estateDoc, invoiceDoc] = await Promise.all([
-    Estate.findOne({
-      _id: estateObjectId ?? estateId,
-      $or: estateAccessOr,
-    })
-      .lean()
-      .exec() as Promise<EstateLean | null>,
-    Invoice.findOne(
-      {
-        _id: invoiceObjectId ?? invoiceId,
-        estateId: { $in: estateIdCandidates },
-      },
-      {
-        invoiceNumber: 1,
-        description: 1,
-        status: 1,
-        issueDate: 1,
-        dueDate: 1,
-        paidAt: 1,
-        subtotal: 1,
-        totalAmount: 1,
-        amount: 1,
-      },
-    )
-      .lean()
-      .exec() as Promise<InvoiceLeanDoc | null>,
-  ]);
-
-  if (!estateDoc) {
-    notFound();
-  }
+  const invoiceDoc = (await Invoice.findOne(
+    {
+      _id: invoiceId,
+      estateId,
+    },
+    {
+      invoiceNumber: 1,
+      description: 1,
+      status: 1,
+      issueDate: 1,
+      dueDate: 1,
+      paidAt: 1,
+      subtotal: 1,
+      totalAmount: 1,
+      amount: 1,
+    },
+  )
+    .lean()
+    .exec()) as InvoiceLeanDoc | null;
 
   if (!invoiceDoc) {
     notFound();
   }
 
-  const estateName = estateDoc.name ?? "Estate";
+  const estateName = "Estate";
+
+  const requestAccessHref = `/app/estates/${estateId}/collaborators?${new URLSearchParams({
+    request: "EDITOR",
+    from: "invoice",
+    invoiceId,
+  }).toString()}`;
 
   const description =
     typeof invoiceDoc.description === "string" && invoiceDoc.description.trim()
@@ -228,9 +261,12 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
   const hasInvoiceNumber =
     typeof invoiceDoc.invoiceNumber === "string" && invoiceDoc.invoiceNumber.trim().length > 0;
 
-  const canEdit = statusUpper !== "VOID";
+  const canEditRole = role === "OWNER" || role === "EDITOR";
   const isPaid = statusUpper === "PAID";
   const isVoid = statusUpper === "VOID";
+  const canEdit = canEditRole && !isVoid;
+
+  const invoiceIdText = invoiceDoc._id?.toString?.() ?? String(invoiceDoc._id);
 
   async function markPaidAction() {
     "use server";
@@ -239,11 +275,17 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
     if (!session?.user?.id) redirect("/login");
 
     await connectToDatabase();
+    const access = await requireEstateAccess({ estateId, userId: session.user.id });
+    const r = (access as { role?: unknown } | null)?.role;
+    const role = r === "OWNER" || r === "EDITOR" || r === "VIEWER" ? r : "VIEWER";
+    if (role !== "OWNER" && role !== "EDITOR") {
+      redirect(`/app/estates/${estateId}/invoices/${invoiceId}?forbidden=1`);
+    }
 
     await Invoice.updateOne(
       {
-        _id: invoiceObjectId ?? invoiceId,
-        estateId: { $in: estateIdCandidates },
+        _id: invoiceId,
+        estateId,
       },
       {
         $set: {
@@ -265,11 +307,17 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
     if (!session?.user?.id) redirect("/login");
 
     await connectToDatabase();
+    const access = await requireEstateAccess({ estateId, userId: session.user.id });
+    const r = (access as { role?: unknown } | null)?.role;
+    const role = r === "OWNER" || r === "EDITOR" || r === "VIEWER" ? r : "VIEWER";
+    if (role !== "OWNER" && role !== "EDITOR") {
+      redirect(`/app/estates/${estateId}/invoices/${invoiceId}?forbidden=1`);
+    }
 
     await Invoice.updateOne(
       {
-        _id: invoiceObjectId ?? invoiceId,
-        estateId: { $in: estateIdCandidates },
+        _id: invoiceId,
+        estateId,
       },
       {
         $set: {
@@ -290,10 +338,16 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
     if (!session?.user?.id) redirect("/login");
 
     await connectToDatabase();
+    const access = await requireEstateAccess({ estateId, userId: session.user.id });
+    const r = (access as { role?: unknown } | null)?.role;
+    const role = r === "OWNER" || r === "EDITOR" || r === "VIEWER" ? r : "VIEWER";
+    if (role !== "OWNER" && role !== "EDITOR") {
+      redirect(`/app/estates/${estateId}/invoices/${invoiceId}?forbidden=1`);
+    }
 
     await Invoice.deleteOne({
-      _id: invoiceObjectId ?? invoiceId,
-      estateId: { $in: estateIdCandidates },
+      _id: invoiceId,
+      estateId,
     });
 
     revalidatePath(`/app/estates/${estateId}/invoices`);
@@ -303,169 +357,228 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 p-6">
       <PageHeader
         eyebrow={
-          <Link
-            href={`/app/estates/${estateId}/invoices`}
-            className="text-xs text-gray-500 hover:underline"
-          >
-            ← Back to invoices
-          </Link>
+          <nav className="text-xs text-slate-500">
+            <Link href="/app/estates" className="text-slate-400 hover:text-slate-200 hover:underline">
+              Estates
+            </Link>
+            <span className="mx-1 text-slate-600">/</span>
+            <Link href={`/app/estates/${estateId}`} className="text-slate-400 hover:text-slate-200 hover:underline">
+              Overview
+            </Link>
+            <span className="mx-1 text-slate-600">/</span>
+            <Link href={`/app/estates/${estateId}/invoices`} className="text-slate-400 hover:text-slate-200 hover:underline">
+              Invoices
+            </Link>
+            <span className="mx-1 text-slate-600">/</span>
+            <span className="truncate text-rose-200">{hasInvoiceNumber ? `#${invoiceDoc.invoiceNumber}` : "Invoice"}</span>
+          </nav>
         }
         title={description}
         description={`${estateName}${hasInvoiceNumber ? ` • #${invoiceDoc.invoiceNumber}` : ""}`}
         actions={
-          <div className="flex flex-col gap-2 sm:items-end">
-            <div className="flex items-center gap-2">
-              <span
-                className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${statusPillClasses(
-                  statusUpper,
-                )}`}
-              >
-                {statusLabel}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-200">
+              {role}
+            </span>
+            <span
+              className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${statusPillClasses(
+                statusUpper,
+              )}`}
+            >
+              {statusLabel}
+            </span>
+
+            <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-200">
+              {formatCurrencyFromCents(totalCents)}
+            </span>
+
+            {!canEditRole && (
+              <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-950/50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-100">
+                View-only
               </span>
-              <span className="text-lg font-semibold">
-                {formatCurrencyFromCents(totalCents)}
-              </span>
-            </div>
+            )}
 
-            <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={`/app/estates/${estateId}/invoices`}
+              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+            >
+              Back
+            </Link>
+
+            <Link
+              href={`/app/estates/${estateId}/invoices/${invoiceId}/edit`}
+              aria-disabled={!canEdit}
+              className={`inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60 ${
+                !canEdit ? "pointer-events-none opacity-50" : ""
+              }`}
+            >
+              Edit
+            </Link>
+
+            <Link
+              href={`/app/estates/${estateId}/invoices/${invoiceId}/print`}
+              className="inline-flex items-center justify-center rounded-md border border-emerald-500/60 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-100 hover:bg-emerald-500/20"
+            >
+              Print
+            </Link>
+
+            {!canEditRole ? (
               <Link
-                href={`/app/estates/${estateId}/invoices/${invoiceId}/edit`}
-                aria-disabled={!canEdit || isPaid}
-                className={`rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-900 shadow-sm hover:bg-gray-50 ${
-                  !canEdit || isPaid ? "pointer-events-none opacity-50" : ""
-                }`}
+                href={requestAccessHref}
+                className="inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-100 hover:bg-amber-500/20"
               >
-                Edit
+                Request access
               </Link>
-              <Link
-                href={`/app/estates/${estateId}/invoices/${invoiceId}/print`}
-                className="rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white shadow-sm hover:bg-blue-700"
-              >
-                Print
-              </Link>
+            ) : null}
 
-              <details className="group">
-                <summary
-                  className={`list-none rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-900 shadow-sm hover:bg-gray-50 ${
-                    isPaid || isVoid ? "pointer-events-none opacity-50" : "cursor-pointer"
-                  }`}
-                >
-                  Mark as paid
-                </summary>
-                <div className="mt-2 flex items-center gap-2">
-                  <form action={markPaidAction}>
-                    <button
-                      type="submit"
-                      className="rounded-md bg-emerald-600 px-3 py-2 text-xs font-medium text-white shadow-sm hover:bg-emerald-700"
-                    >
-                      Confirm paid
-                    </button>
-                  </form>
-                  <span className="text-[11px] text-gray-500">This will set status to PAID and record paid date.</span>
-                </div>
-              </details>
+            {canEditRole ? (
+              <>
+                <details className="group relative">
+                  <summary
+                    className={`list-none rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60 ${
+                      isPaid || isVoid ? "pointer-events-none opacity-50" : "cursor-pointer"
+                    }`}
+                  >
+                    Mark as paid
+                  </summary>
+                  <div className="absolute right-0 z-10 mt-2 w-72 rounded-xl border border-slate-800 bg-slate-950 p-3 shadow-lg shadow-black/40">
+                    <p className="text-xs font-semibold text-slate-100">Confirm status update</p>
+                    <p className="mt-1 text-[11px] text-slate-400">
+                      This will set status to <span className="font-semibold text-slate-200">PAID</span> and record the paid date.
+                    </p>
+                    <div className="mt-3 flex items-center gap-2">
+                      <form action={markPaidAction}>
+                        <button
+                          type="submit"
+                          className="inline-flex items-center justify-center rounded-md bg-emerald-500 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-950 hover:bg-emerald-400"
+                        >
+                          Confirm
+                        </button>
+                      </form>
+                      <span className="text-[11px] text-slate-500">You can change it later.</span>
+                    </div>
+                  </div>
+                </details>
 
-              <details className="group">
-                <summary
-                  className={`list-none rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-800 shadow-sm hover:bg-red-100 ${
-                    isVoid ? "pointer-events-none opacity-50" : "cursor-pointer"
-                  }`}
-                >
-                  Void
-                </summary>
-                <div className="mt-2 flex items-center gap-2">
-                  <form action={voidInvoiceAction}>
-                    <button
-                      type="submit"
-                      className="rounded-md bg-red-600 px-3 py-2 text-xs font-medium text-white shadow-sm hover:bg-red-700"
-                    >
-                      Confirm void
-                    </button>
-                  </form>
-                  <span className="text-[11px] text-gray-500">Voided invoices should not be collected.</span>
-                </div>
-              </details>
+                <details className="group relative">
+                  <summary
+                    className={`list-none rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20 ${
+                      isVoid ? "pointer-events-none opacity-50" : "cursor-pointer"
+                    }`}
+                  >
+                    Void
+                  </summary>
+                  <div className="absolute right-0 z-10 mt-2 w-72 rounded-xl border border-slate-800 bg-slate-950 p-3 shadow-lg shadow-black/40">
+                    <p className="text-xs font-semibold text-slate-100">Void this invoice?</p>
+                    <p className="mt-1 text-[11px] text-slate-400">Voided invoices should not be collected.</p>
+                    <div className="mt-3 flex items-center gap-2">
+                      <form action={voidInvoiceAction}>
+                        <button
+                          type="submit"
+                          className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-950 hover:bg-rose-400"
+                        >
+                          Confirm
+                        </button>
+                      </form>
+                      <span className="text-[11px] text-slate-500">This is reversible by editing.</span>
+                    </div>
+                  </div>
+                </details>
 
-              <details className="group">
-                <summary className="cursor-pointer list-none rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-900 shadow-sm hover:bg-gray-100">
-                  Delete
-                </summary>
-                <div className="mt-2 flex items-center gap-2">
-                  <form action={deleteInvoiceAction}>
-                    <button
-                      type="submit"
-                      className="rounded-md bg-gray-900 px-3 py-2 text-xs font-medium text-white shadow-sm hover:bg-black"
-                    >
-                      Confirm delete
-                    </button>
-                  </form>
-                  <span className="text-[11px] text-gray-500">This cannot be undone.</span>
-                </div>
-              </details>
-            </div>
+                <details className="group relative">
+                  <summary className="cursor-pointer list-none rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60">
+                    Delete
+                  </summary>
+                  <div className="absolute right-0 z-10 mt-2 w-72 rounded-xl border border-slate-800 bg-slate-950 p-3 shadow-lg shadow-black/40">
+                    <p className="text-xs font-semibold text-slate-100">Delete this invoice?</p>
+                    <p className="mt-1 text-[11px] text-slate-400">This cannot be undone.</p>
+                    <div className="mt-3 flex items-center gap-2">
+                      <form action={deleteInvoiceAction}>
+                        <button
+                          type="submit"
+                          className="inline-flex items-center justify-center rounded-md bg-slate-200 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-950 hover:bg-white"
+                        >
+                          Confirm
+                        </button>
+                      </form>
+                      <span className="text-[11px] text-slate-500">Be careful.</span>
+                    </div>
+                  </div>
+                </details>
+              </>
+            ) : null}
           </div>
         }
       />
-      {isOverdue ? (
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-4">
-          <p className="text-sm font-semibold text-amber-900">Overdue</p>
-          <p className="mt-1 text-xs text-amber-900/80">
-            This invoice is {daysPastDue} day{daysPastDue === 1 ? "" : "s"} past the due date.
-            Consider following up or updating the status once paid.
+
+      {/* Forbidden banner placeholder */}
+      {forbidden ? (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-950/40 p-4">
+          <p className="text-sm font-semibold text-rose-100">You do not have permission to edit this invoice.</p>
+          <p className="mt-1 text-xs text-rose-200/90">
+            Only estate OWNERs or EDITORs can make changes. Request access if needed.
           </p>
         </div>
       ) : null}
 
-      {/* Details card */}
-      <section className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold">Invoice details</h2>
+      {isOverdue ? (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-950/40 p-4">
+          <p className="text-sm font-semibold text-amber-100">Overdue</p>
+          <p className="mt-1 text-xs text-amber-200/90">
+            This invoice is {daysPastDue} day{daysPastDue === 1 ? "" : "s"} past the due date. Consider following up or
+            updating the status once paid.
+          </p>
+        </div>
+      ) : null}
 
-        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="rounded-md bg-gray-50 p-4">
-            <p className="text-xs font-medium uppercase text-gray-500">Status</p>
-            <p className="mt-1 text-sm font-medium text-gray-900">{statusLabel}</p>
-            <p className="mt-1 text-xs text-gray-500">{statusHelperText(statusUpper)}</p>
+      <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm">
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Status</p>
+            <p className="mt-1 text-sm font-medium text-slate-50">{statusLabel}</p>
+            <p className="mt-1 text-xs text-slate-400">{statusHelperText(statusUpper)}</p>
           </div>
 
-          <div className="rounded-md bg-gray-50 p-4">
-            <p className="text-xs font-medium uppercase text-gray-500">Issue date</p>
-            <p className="mt-1 text-sm font-medium text-gray-900">
-              {formatDate(issue)}
-            </p>
+          <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Issue date</p>
+            <p className="mt-1 text-sm font-medium text-slate-50">{formatDate(issue)}</p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Due date</p>
+            <p className="mt-1 text-sm font-medium text-slate-50">{formatDate(due)}</p>
           </div>
 
-          <div className="rounded-md bg-gray-50 p-4">
-            <p className="text-xs font-medium uppercase text-gray-500">Due date</p>
-            <p className="mt-1 text-sm font-medium text-gray-900">
-              {formatDate(due)}
-            </p>
-          </div>
-
-          <div className="rounded-md bg-gray-50 p-4">
-            <p className="text-xs font-medium uppercase text-gray-500">Subtotal</p>
-            <p className="mt-1 text-sm font-medium text-gray-900">
-              {formatCurrencyFromCents(subtotalCents)}
-            </p>
-          </div>
-
-          <div className="rounded-md bg-gray-50 p-4">
-            <p className="text-xs font-medium uppercase text-gray-500">Total</p>
-            <p className="mt-1 text-sm font-medium text-gray-900">
+          <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Totals</p>
+            <p className="mt-1 text-sm font-medium text-slate-50">
               {formatCurrencyFromCents(totalCents)}
+              <span className="text-xs text-slate-400"> • Subtotal {formatCurrencyFromCents(subtotalCents)}</span>
             </p>
           </div>
         </div>
 
-        <details className="mt-5">
-          <summary className="cursor-pointer select-none text-xs font-medium uppercase text-gray-500 hover:text-gray-700">
-            Internal IDs
+        <details className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+          <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-slate-300">
+            Raw record
           </summary>
-          <p className="mt-2 break-all text-xs text-gray-600">
-            Estate: {estateId} • Invoice: {invoiceId}
-          </p>
+          <pre className="mt-3 max-h-80 overflow-auto rounded-md border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-200">
+            {JSON.stringify(
+              {
+                ...invoiceDoc,
+                _id: invoiceIdText,
+                estateId,
+              },
+              null,
+              2,
+            )}
+          </pre>
+          <p className="mt-2 text-[11px] text-slate-500">Estate: {estateId} • Invoice: {invoiceId}</p>
         </details>
       </section>
     </div>

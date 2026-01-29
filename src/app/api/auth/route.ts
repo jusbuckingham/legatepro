@@ -1,6 +1,7 @@
 // src/app/api/auth/route.ts
 // Current-user endpoint (NextAuth-backed).
-// NOTE: We keep this as a convenience endpoint for the app UI, but it MUST NOT create demo users.
+// NOTE: We keep this as a convenience endpoint for the app UI,
+// but it MUST NOT create demo users.
 
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";

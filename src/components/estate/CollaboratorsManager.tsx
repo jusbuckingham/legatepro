@@ -99,7 +99,7 @@ export default function CollaboratorsManager({
     try {
       if (canUseClipboard) {
         await navigator.clipboard.writeText(text);
-        setInfoWithTimeout("Copied link.");
+        setInfoWithTimeout("Link copied.");
         return;
       }
     } catch {
@@ -117,7 +117,7 @@ export default function CollaboratorsManager({
       el.select();
       document.execCommand("copy");
       document.body.removeChild(el);
-      setInfoWithTimeout("Copied link.");
+      setInfoWithTimeout("Link copied.");
     } catch {
       setInfoWithTimeout("Copy failed — please copy manually.");
     }
@@ -218,13 +218,13 @@ export default function CollaboratorsManager({
     setInviteEmail("");
     setInviteRole("VIEWER");
     setCreatedInviteUrl(typeof data.inviteUrl === "string" ? data.inviteUrl : null);
-    setInfoWithTimeout("Invite created.");
+    setInfoWithTimeout("Invite link created.");
     await fetchInvites();
   }
 
   async function revokeInvite(inv: Invite) {
     if (inv.status !== "PENDING") return;
-    if (!confirm(`Revoke invite for ${inv.email}?`)) return;
+    if (!confirm(`Revoke invite for ${inv.email}? They won’t be able to use the link.`)) return;
 
     setInvitesLoading(true);
     setInvitesError(null);
@@ -362,64 +362,60 @@ export default function CollaboratorsManager({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {!isOwner && (
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-          <div className="text-sm font-medium text-slate-100">Collaborators</div>
-          <p className="mt-1 text-xs text-slate-400">
-            You can view collaborators, but only the estate owner can add/remove people or change roles.
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+          <div className="text-sm font-semibold text-gray-900">Collaborators</div>
+          <p className="mt-1 text-xs text-gray-600">
+            You can view who has access. Only the estate owner can add people or change roles.
           </p>
         </div>
       )}
       {isOwner && (
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-          <div className="text-sm font-medium">Add collaborator</div>
-
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="text-sm font-semibold text-gray-900">Add a collaborator</div>
+          <p className="mt-1 text-xs text-gray-600">Grant access by user ID. Use invites below if you only have an email.</p>
           <div className="mt-2 flex flex-wrap gap-2">
             <input
               type="text"
-              placeholder="User ID"
+              placeholder="User ID (e.g., 123abc...)"
               value={userId}
               onChange={(e) => setUserId(e.target.value)}
-              className="flex-1 rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-2 py-1 text-sm"
+              className="flex-1 rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 placeholder:text-gray-400"
             />
-
             <select
               value={role}
               onChange={(e) => setRole(e.target.value as Role)}
-              className="rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-2 py-1 text-sm"
+              className="rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900"
             >
               <option value="VIEWER">Viewer</option>
               <option value="EDITOR">Editor</option>
             </select>
-
             <button
               type="button"
               onClick={addCollaborator}
               disabled={loading || !userId.trim()}
-              className="rounded-md bg-rose-600 px-3 py-1 text-sm text-white hover:bg-rose-500 disabled:opacity-50"
+              className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
             >
-              Add
+              Save
             </button>
           </div>
-
           {error && (
-            <div className="mt-2 rounded-lg border border-rose-900/40 bg-rose-950/30 p-2 text-xs text-rose-200">
+            <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800">
               {error}
             </div>
           )}
         </div>
       )}
 
-      {info && <div className="text-xs text-slate-400">{info}</div>}
+      {info && <div className="text-xs text-gray-600">{info}</div>}
 
       {isOwner && (
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-          <div className="text-sm font-medium">Invites (link)</div>
-          <p className="mt-1 text-xs text-slate-400">
-            Create an invite link and share it manually (no email service required).
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="text-sm font-semibold text-gray-900">Invite links</div>
+          <p className="mt-1 text-xs text-gray-600">
+            Create an invite link and share it. We don’t send email yet.
           </p>
-
           <div className="mt-3 flex flex-wrap gap-2">
             <input
               type="email"
@@ -429,138 +425,124 @@ export default function CollaboratorsManager({
                 setInviteEmail(e.target.value);
                 if (invitesError) setInvitesError(null);
               }}
-              className="flex-1 rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-2 py-1 text-sm"
+              className="flex-1 rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 placeholder:text-gray-400"
             />
-
             <select
               value={inviteRole}
               onChange={(e) => setInviteRole(e.target.value as Role)}
-              className="rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-2 py-1 text-sm"
+              className="rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900"
             >
               <option value="VIEWER">Viewer</option>
               <option value="EDITOR">Editor</option>
             </select>
-
             <button
               type="button"
               onClick={createInvite}
               disabled={invitesLoading || !isValidEmail}
-              className="rounded-md bg-rose-600 px-3 py-1 text-sm text-white hover:bg-rose-500 disabled:opacity-50"
+              className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
             >
               Create link
             </button>
           </div>
-          <div className="mt-2 text-[11px] text-slate-500">
-            Tip: This does not send email — it generates a link you can copy and share.
-          </div>
-
           {createdInviteUrl && (
-            <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
-              <div className="text-xs font-medium text-slate-200">New invite link</div>
+            <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs font-semibold text-gray-900">New invite link</div>
               <div className="mt-1 flex items-center justify-between gap-2">
                 <a
                   href={createdInviteUrl}
-                  className="min-w-0 flex-1 truncate text-xs text-rose-300 hover:underline"
+                  className="min-w-0 flex-1 truncate text-xs text-blue-700 hover:underline"
                 >
                   {createdInviteUrl}
                 </a>
                 <button
                   type="button"
                   onClick={() => copyToClipboard(createdInviteUrl)}
-                  className="rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-2 py-1 text-xs hover:bg-slate-900"
+                  className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
                 >
-                  Copy
+                  Copy link
                 </button>
               </div>
             </div>
           )}
-
           {invitesError && (
-            <div className="mt-2 rounded-lg border border-rose-900/40 bg-rose-950/30 p-2 text-xs text-rose-200">
+            <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800">
               {invitesError}
             </div>
           )}
-
           <div className="mt-3">
             <div className="mb-1 flex items-center justify-between">
-              <div className="text-xs font-medium text-slate-200">Recent invites</div>
+              <div className="text-xs font-semibold text-gray-900">Recent invites</div>
               <button
                 type="button"
                 onClick={() => {
                   void fetchInvites();
                 }}
                 disabled={invitesLoading}
-                className="text-xs text-rose-300 hover:underline disabled:opacity-50"
+                className="text-xs font-medium text-blue-700 hover:underline disabled:opacity-50"
               >
                 Refresh
               </button>
             </div>
-
             {invitesLoading ? (
-              <div className="text-xs text-slate-400">Loading…</div>
+              <div className="text-xs text-gray-600">Loading…</div>
             ) : invites.length === 0 ? (
-              <div className="text-xs text-slate-400">No invites yet.</div>
+              <div className="text-xs text-gray-600">No invites yet.</div>
             ) : (
               <div className="space-y-2">
                 {invites.map((inv) => {
                   const badgeClass =
                     inv.status === "PENDING"
-                      ? "bg-amber-100 text-amber-800"
+                      ? "border border-amber-200 bg-amber-50 text-amber-800"
                       : inv.status === "ACCEPTED"
-                        ? "bg-green-100 text-green-800"
+                        ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
                         : inv.status === "EXPIRED"
-                          ? "bg-slate-800 text-slate-200"
-                          : "bg-slate-800 text-slate-200";
-
+                          ? "border border-gray-200 bg-gray-50 text-gray-700"
+                          : "border border-gray-200 bg-gray-50 text-gray-700";
                   const invitePath = `/app/invites/${inv.token}`;
                   const inviteUrl = origin ? `${origin}${invitePath}` : invitePath;
-
                   return (
                     <div
                       key={inv.token}
-                      className="rounded-lg border border-slate-800 bg-slate-950/60 p-3"
+                      className="rounded-md border border-gray-200 bg-white p-3"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <div className="truncate text-xs font-medium text-slate-200">
+                          <div className="truncate text-sm font-medium text-gray-900">
                             {inv.email}
                           </div>
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                            <span className="rounded px-2 py-0.5 text-[11px] font-medium bg-slate-800 text-slate-200">
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                            <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-700">
                               {inv.role}
                             </span>
                             <span
-                              className={`rounded px-2 py-0.5 text-[11px] font-medium ${badgeClass}`}
+                              className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${badgeClass}`}
                             >
                               {inv.status}
                             </span>
                           </div>
                         </div>
-
                         <div className="flex items-center gap-2">
                           <a
                             href={inviteUrl}
-                            className="rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-2 py-1 text-xs hover:bg-slate-900"
+                            className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
                           >
                             Open
                           </a>
-
                           <button
                             type="button"
                             onClick={() => {
                               void copyToClipboard(inviteUrl);
                             }}
-                            className="rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-2 py-1 text-xs hover:bg-slate-900"
+                            className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
                           >
                             Copy link
                           </button>
-
                           {inv.status === "PENDING" ? (
                             <button
                               type="button"
                               onClick={() => revokeInvite(inv)}
                               disabled={invitesLoading}
-                              className="rounded-md border border-rose-900/40 bg-rose-950/30 text-rose-200 px-2 py-1 text-xs hover:bg-rose-950/50 disabled:opacity-50"
+                              className="rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-xs font-medium text-red-800 hover:bg-red-100 disabled:opacity-50"
                             >
                               Revoke
                             </button>
@@ -576,42 +558,51 @@ export default function CollaboratorsManager({
         </div>
       )}
 
-      <div className="space-y-2">
-        {collaborators.map((c) => (
-          <div
-            key={c.userId}
-            className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2"
-          >
-            <div className="min-w-0">
-              <div className="truncate font-mono text-sm">{c.userId}</div>
-              <div className="text-xs text-slate-500">{c.role}</div>
-            </div>
-
-            {isOwner && (
-              <div className="flex items-center gap-2">
-                <select
-                  value={c.role}
-                  disabled={loading}
-                  onChange={(e) =>
-                    updateRole(c.userId, e.target.value as Role)
-                  }
-                  className="rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-2 py-1 text-xs disabled:opacity-50"
-                >
-                  <option value="VIEWER">Viewer</option>
-                  <option value="EDITOR">Editor</option>
-                </select>
-
-                <button
-                  onClick={() => removeCollaborator(c.userId)}
-                  disabled={loading}
-                  className="text-xs text-rose-300 hover:underline disabled:opacity-50"
-                >
-                  Remove
-                </button>
-              </div>
-            )}
+      <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-semibold text-gray-900">Current access</div>
+            <p className="mt-1 text-xs text-gray-600">People who can view or edit this estate.</p>
           </div>
-        ))}
+        </div>
+        <div className="mt-3 space-y-2">
+          {collaborators.length === 0 ? (
+            <div className="text-sm text-gray-600">No collaborators yet.</div>
+          ) : null}
+          {collaborators.map((c) => (
+            <div
+              key={c.userId}
+              className="flex items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2"
+            >
+              <div className="min-w-0">
+                <div className="truncate font-mono text-sm text-gray-900">{c.userId}</div>
+                <div className="text-xs text-gray-600">{c.role}</div>
+              </div>
+              {isOwner && (
+                <div className="flex items-center gap-2">
+                  <select
+                    value={c.role}
+                    disabled={loading}
+                    onChange={(e) =>
+                      updateRole(c.userId, e.target.value as Role)
+                    }
+                    className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-900 disabled:opacity-50"
+                  >
+                    <option value="VIEWER">Viewer</option>
+                    <option value="EDITOR">Editor</option>
+                  </select>
+                  <button
+                    onClick={() => removeCollaborator(c.userId)}
+                    disabled={loading}
+                    className="text-xs font-medium text-red-700 hover:underline disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

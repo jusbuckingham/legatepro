@@ -10,6 +10,38 @@ import { EstateDocument } from "@/models/EstateDocument";
 
 export const dynamic = "force-dynamic";
 
+export const runtime = "nodejs";
+
+function safeExternalUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  try {
+    const u = new URL(trimmed);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
+function formatDateTime(value: Date | string | null | undefined): string {
+  if (!value) return "—";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(d);
+  } catch {
+    return d.toLocaleString();
+  }
+}
+
 type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
 
 function roleAtLeast(role: EstateRole, minRole: EstateRole): boolean {
@@ -94,7 +126,8 @@ async function deleteDocument(formData: FormData): Promise<void> {
 
   const session = await auth();
   if (!session?.user?.id) {
-    redirect(`/login?callbackUrl=/app/estates/${estateId}/documents/${documentId}`);
+    const callbackUrl = encodeURIComponent(`/app/estates/${estateId}/documents/${documentId}`);
+    redirect(`/login?callbackUrl=${callbackUrl}`);
   }
 
   const editAccess = await requireEstateEditAccess({ estateId, userId: session.user.id });
@@ -116,6 +149,7 @@ async function deleteDocument(formData: FormData): Promise<void> {
   });
 
   revalidatePath(`/app/estates/${estateId}/documents`);
+  revalidatePath(`/app/estates/${estateId}`);
   redirect(`/app/estates/${estateId}/documents?deleted=1`);
 }
 
@@ -151,7 +185,8 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
 
   const session = await auth();
   if (!session?.user?.id) {
-    redirect(`/login?callbackUrl=/app/estates/${estateId}/documents/${documentId}`);
+    const callbackUrl = encodeURIComponent(`/app/estates/${estateId}/documents/${documentId}`);
+    redirect(`/login?callbackUrl=${callbackUrl}`);
   }
 
   let role: EstateRole = "VIEWER";
@@ -200,7 +235,7 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
               Return to estates
             </Link>
             <Link
-              href={`/login?callbackUrl=/app/estates/${estateId}/documents/${documentId}`}
+              href={`/login?callbackUrl=${encodeURIComponent(`/app/estates/${estateId}/documents/${documentId}`)}`}
               className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
             >
               Re-authenticate
@@ -349,8 +384,8 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
     .map((t) => normalizeTag(t))
     .filter((t) => t.length > 0);
   const docId = doc._id?.toString?.() ?? String(doc._id);
-  const createdAtText = doc.createdAt ? new Date(doc.createdAt).toLocaleString() : "—";
-  const updatedAtText = doc.updatedAt ? new Date(doc.updatedAt).toLocaleString() : "—";
+  const createdAtText = formatDateTime(doc.createdAt ?? null);
+  const updatedAtText = formatDateTime(doc.updatedAt ?? null);
   const fileSizeText = formatBytes(doc.fileSizeBytes ?? null);
 
   return (
@@ -432,16 +467,20 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
               </Link>
             )}
 
-            {doc.url && (
-              <a
-                href={doc.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center rounded-md border border-emerald-500/60 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-100 hover:bg-emerald-500/20"
-              >
-                Open linked file
-              </a>
-            )}
+            {(() => {
+              const safeUrl = safeExternalUrl(doc.url);
+              if (!safeUrl) return null;
+              return (
+                <a
+                  href={safeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center rounded-md border border-emerald-500/60 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-100 hover:bg-emerald-500/20"
+                >
+                  Open linked file
+                </a>
+              );
+            })()}
           </div>
         }
       />
@@ -543,18 +582,23 @@ export default async function EstateDocumentDetailPage({ params, searchParams }:
         <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Link / URL</p>
-            {doc.url ? (
-              <a
-                href={doc.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-1 inline-flex items-center text-sm font-medium text-emerald-200 hover:text-emerald-300 underline-offset-2 hover:underline"
-              >
-                {doc.url}
-              </a>
-            ) : (
-              <p className="mt-1 text-sm font-medium text-slate-50">—</p>
-            )}
+            {(() => {
+              const safeUrl = safeExternalUrl(doc.url);
+              if (!safeUrl) {
+                return <p className="mt-1 text-sm font-medium text-slate-50">—</p>;
+              }
+              return (
+                <a
+                  href={safeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-flex items-center text-sm font-medium text-emerald-200 hover:text-emerald-300 underline-offset-2 hover:underline"
+                  title={safeUrl}
+                >
+                  {safeUrl}
+                </a>
+              );
+            })()}
           </div>
 
           <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">

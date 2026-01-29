@@ -328,6 +328,18 @@ export default function BillingPage() {
     return "Free";
   }, [currentStatus, isBillingLive, isPro]);
 
+  const openPortal = useCallback(async () => {
+    try {
+      setBusyPortal(true);
+      const url = await startPortal();
+      window.location.assign(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to open customer portal");
+    } finally {
+      setBusyPortal(false);
+    }
+  }, []);
+
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-4 md:p-6 lg:p-8">
       {banner ? <BannerBox banner={banner} onDismiss={() => setBanner(null)} /> : null}
@@ -358,7 +370,7 @@ export default function BillingPage() {
             </Link>
             <span className="text-xs text-slate-600">•</span>
             <Link
-              href="/app"
+              href="/app/dashboard"
               className="text-xs font-medium text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
             >
               Go to dashboard
@@ -409,17 +421,7 @@ export default function BillingPage() {
             <button
               type="button"
               disabled={!isBillingLive || busyPortal}
-            onClick={async () => {
-              try {
-                setBusyPortal(true);
-                const url = await startPortal();
-                window.location.assign(url);
-              } catch (err) {
-                setError(err instanceof Error ? err.message : "Failed to open customer portal");
-              } finally {
-                setBusyPortal(false);
-              }
-            }}
+              onClick={openPortal}
               className="inline-flex w-full items-center justify-center rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs font-medium text-slate-200 shadow-sm hover:bg-slate-900/80 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {busyPortal ? "Opening portal…" : "Customer portal"}
@@ -490,6 +492,15 @@ export default function BillingPage() {
                   >
                     Current plan
                   </button>
+                ) : isPro && plan.id === "free" ? (
+                  <button
+                    type="button"
+                    disabled={!isBillingLive || busyPortal}
+                    onClick={openPortal}
+                    className="inline-flex w-full items-center justify-center rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs font-medium text-slate-200 shadow-sm hover:bg-slate-900/80 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {busyPortal ? "Opening portal…" : "Downgrade in portal"}
+                  </button>
                 ) : (
                   <button
                     type="button"
@@ -533,17 +544,7 @@ export default function BillingPage() {
           <button
             type="button"
             disabled={!isBillingLive || busyPortal}
-            onClick={async () => {
-              try {
-                setBusyPortal(true);
-                const url = await startPortal();
-                window.location.assign(url);
-              } catch (err) {
-                setError(err instanceof Error ? err.message : "Failed to open customer portal");
-              } finally {
-                setBusyPortal(false);
-              }
-            }}
+            onClick={openPortal}
             className="inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-xs font-medium text-slate-200 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busyPortal ? "Opening…" : "View invoices in portal"}

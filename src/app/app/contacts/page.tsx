@@ -5,13 +5,9 @@ import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import PageHeader from "@/components/layout/PageHeader";
 import { Contact } from "@/models/Contact";
 
-type PageSearchParams = {
-  q?: string;
-  role?: string;
-};
-
 type PageProps = {
-  searchParams?: PageSearchParams;
+  // Next 16: searchParams is a Promise-like dynamic API
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 type ContactListItem = {
@@ -28,7 +24,9 @@ function escapeRegex(value: string): string {
 }
 
 export default async function ContactsPage({ searchParams }: PageProps) {
-  const { q: qRaw, role: roleRaw } = searchParams ?? {};
+  const queryParams = (await searchParams) ?? {};
+  const qRaw = queryParams.q;
+  const roleRaw = queryParams.role;
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -37,8 +35,8 @@ export default async function ContactsPage({ searchParams }: PageProps) {
 
   await connectToDatabase();
 
-  const q = (qRaw ?? "").trim();
-  const roleFilter = (roleRaw ?? "ALL").toUpperCase();
+  const q = (typeof qRaw === "string" ? qRaw : "").trim();
+  const roleFilter = (typeof roleRaw === "string" ? roleRaw : "ALL").toUpperCase();
 
   const mongoQuery: Record<string, unknown> = {
     ownerId: session.user.id,
@@ -92,7 +90,7 @@ export default async function ContactsPage({ searchParams }: PageProps) {
       <PageHeader
         eyebrow="People"
         title="Contacts"
-        description="Keep track of executors, heirs, attorneys, vendors, and other people connected to your estates."
+        description="Manage everyone involved in your estates — executors, heirs, attorneys, and vendors."
         actions={
           <Link
             href="/app/contacts/new"
@@ -112,7 +110,7 @@ export default async function ContactsPage({ searchParams }: PageProps) {
           <div>
             <p className="text-sm font-semibold text-slate-100">Add a contact</p>
             <p className="text-xs text-slate-400">
-              Create executors, heirs, attorneys, vendors, and other people so you can link them to estates.
+              Add executors, heirs, attorneys, and vendors so they can be linked to your estates.
             </p>
           </div>
           <Link
@@ -135,7 +133,7 @@ export default async function ContactsPage({ searchParams }: PageProps) {
               type="text"
               name="q"
               defaultValue={q}
-              placeholder="Name, email, phone…"
+              placeholder="Search by name, email, or phone…"
               className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
             />
           </div>
@@ -193,7 +191,7 @@ export default async function ContactsPage({ searchParams }: PageProps) {
             <p className="text-xs text-slate-500">
               {q.length > 0 || roleFilter !== "ALL"
                 ? "No contacts match your current filters. Try clearing filters or adjusting your search."
-                : "You don\u2019t have any contacts yet. Create your first contact to start linking people to estates."}
+                : "You don\u2019t have any contacts yet. Create your first contact to start connecting people to estates."}
             </p>
             <div>
               <Link
@@ -214,7 +212,7 @@ export default async function ContactsPage({ searchParams }: PageProps) {
                   <th className="py-2 pr-4 font-medium">Phone</th>
                   <th className="py-2 pr-4 font-medium">Role</th>
                   <th className="py-2 pr-4 font-medium text-right">
-                    Estates
+                    Linked estates
                   </th>
                 </tr>
               </thead>

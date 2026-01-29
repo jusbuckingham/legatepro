@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -61,9 +61,28 @@ function getErrorFromApiBody(body: ApiErrorBody): string | null {
   return null;
 }
 
+function normalizeType(value: string): string {
+  const v = value.trim().toLowerCase();
+  return v.length > 0 ? v : "other";
+}
+
+function normalizeStatus(value: string): string {
+  const v = value.trim().toLowerCase();
+  return STATUS_OPTIONS.includes(v) ? v : "active";
+}
+
+function safeRedirectPath(estateId: string, propertyId: string): string {
+  return `/app/estates/${encodeURIComponent(estateId)}/properties/${encodeURIComponent(propertyId)}/utilities`;
+}
+
 export default function AddUtilityAccountPage({ params }: PageProps) {
   const { estateId, propertyId } = params;
   const router = useRouter();
+
+  const utilitiesHref = useMemo(
+    () => safeRedirectPath(estateId, propertyId),
+    [estateId, propertyId],
+  );
 
   const [form, setForm] = useState<UtilityFormState>({
     provider: "",
@@ -101,13 +120,13 @@ export default function AddUtilityAccountPage({ params }: PageProps) {
           estateId,
           propertyId,
           provider: form.provider.trim(),
-          type: form.type || "other",
+          type: normalizeType(form.type),
           accountNumber: form.accountNumber.trim(),
           billingName: form.billingName.trim(),
           phone: form.phone.trim(),
           email: form.email.trim(),
           onlinePortalUrl: form.onlinePortalUrl.trim(),
-          status: form.status,
+          status: normalizeStatus(form.status),
           isAutoPay: form.isAutoPay,
           notes: form.notes.trim(),
         }),
@@ -120,27 +139,67 @@ export default function AddUtilityAccountPage({ params }: PageProps) {
         throw new Error(apiError || `Request failed (${res.status})`);
       }
 
-      router.push(
-        `/app/estates/${estateId}/properties/${propertyId}/utilities`
-      );
+      router.push(utilitiesHref);
       router.refresh();
     } catch (err) {
-      console.error("Unable to create utility account:", err);
-      setError(
-        err instanceof Error ? err.message : "Unable to create utility account"
-      );
+      console.error("[AddUtilityAccountPage] Unable to create utility account", err);
+      const message =
+        err instanceof Error && err.message.trim().length > 0
+          ? err.message
+          : "We couldn’t save this utility account. Please try again.";
+
+      setError(message);
+      setTimeout(() => setError(null), 8000);
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
       <header className="space-y-3">
+        <nav className="text-xs text-slate-500">
+          <Link
+            href="/app/estates"
+            className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+          >
+            Estates
+          </Link>
+          <span className="mx-1 text-slate-600">/</span>
+          <Link
+            href={`/app/estates/${encodeURIComponent(estateId)}`}
+            className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+          >
+            Estate
+          </Link>
+          <span className="mx-1 text-slate-600">/</span>
+          <Link
+            href={`/app/estates/${encodeURIComponent(estateId)}/properties`}
+            className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+          >
+            Properties
+          </Link>
+          <span className="mx-1 text-slate-600">/</span>
+          <Link
+            href={`/app/estates/${encodeURIComponent(estateId)}/properties/${encodeURIComponent(propertyId)}`}
+            className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+          >
+            Property
+          </Link>
+          <span className="mx-1 text-slate-600">/</span>
+          <Link
+            href={utilitiesHref}
+            className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+          >
+            Utilities
+          </Link>
+          <span className="mx-1 text-slate-600">/</span>
+          <span className="text-rose-300">New</span>
+        </nav>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
             <Link
-              href={`/app/estates/${estateId}/properties/${propertyId}/utilities`}
+              href={utilitiesHref}
               className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200"
             >
               <span aria-hidden="true">←</span>
@@ -153,14 +212,16 @@ export default function AddUtilityAccountPage({ params }: PageProps) {
 
           <div className="flex items-center gap-2">
             <span className="rounded-full border border-slate-800 bg-slate-900/60 px-3 py-1 text-xs text-slate-300">
-              Property utilities
+              Utility account
+            </span>
+            <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-xs font-semibold text-rose-100">
+              New
             </span>
           </div>
         </div>
 
         <p className="text-sm text-slate-400">
-          Capture electric, gas, water, internet, and other services so you can
-          show the court every bill that was kept current during probate.
+          Track electric, gas, water, internet, and other services so you can show the court every bill that stayed current during probate.
         </p>
       </header>
 
@@ -190,9 +251,10 @@ export default function AddUtilityAccountPage({ params }: PageProps) {
 
           <div className="space-y-1">
             <label className="block text-xs font-medium uppercase tracking-wide text-slate-400">
-              Type
+              Type <span className="text-rose-400">*</span>
             </label>
             <select
+              required
               className="w-full rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
               value={form.type}
               onChange={(e) => updateField("type", e.target.value)}
@@ -283,6 +345,7 @@ export default function AddUtilityAccountPage({ params }: PageProps) {
               Online portal URL
             </label>
             <input
+              type="url"
               className="w-full rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
               placeholder="https://…"
               value={form.onlinePortalUrl}
@@ -319,15 +382,19 @@ export default function AddUtilityAccountPage({ params }: PageProps) {
           </div>
         </section>
 
-        {error && (
-          <p className="text-sm text-rose-300" role="alert">
-            {error}
-          </p>
-        )}
+        {error ? (
+          <div
+            role="alert"
+            className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100"
+          >
+            <p className="font-medium">Couldn’t save utility account</p>
+            <p className="mt-1 text-xs text-rose-200">{error}</p>
+          </div>
+        ) : null}
 
         <div className="flex items-center justify-between gap-3 pt-2">
           <Link
-            href={`/app/estates/${estateId}/properties/${propertyId}/utilities`}
+            href={utilitiesHref}
             className="text-sm text-slate-400 hover:text-slate-200"
           >
             Cancel
@@ -336,9 +403,19 @@ export default function AddUtilityAccountPage({ params }: PageProps) {
           <button
             type="submit"
             disabled={saving}
+            aria-busy={saving}
             className="inline-flex items-center justify-center rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {saving ? "Saving…" : "Save utility account"}
+            <span className="inline-flex items-center gap-2">
+              {saving ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-white/80" aria-hidden="true" />
+                  Saving…
+                </span>
+              ) : (
+                "Save utility account"
+              )}
+            </span>
           </button>
         </div>
       </form>

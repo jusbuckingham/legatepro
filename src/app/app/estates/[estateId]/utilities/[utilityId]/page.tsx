@@ -124,7 +124,7 @@ async function getUtilityDetail(
     email: asString(utilityObj.email),
     onlinePortalUrl: asString(utilityObj.onlinePortalUrl),
     status: asString(utilityObj.status),
-    isAutoPay: asBool(utilityObj.isAutoPay) ?? Boolean(utilityObj.isAutoPay),
+    isAutoPay: asBool(utilityObj.isAutoPay),
     notes: asString(utilityObj.notes),
     propertyId,
     propertyLabel,
@@ -152,6 +152,16 @@ function formatType(type?: string): string {
       return "Cable TV";
     default:
       return type.charAt(0).toUpperCase() + type.slice(1);
+  }
+}
+
+function formatPortalLabel(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, "");
+    return host || url;
+  } catch {
+    return url;
   }
 }
 
@@ -341,55 +351,62 @@ export default async function UtilityDetailPage({ params }: PageProps) {
     );
   }
 
-  const autopayLabel = utility.isAutoPay ? "Autopay enabled" : "Autopay off";
+  const autopayLabel =
+    typeof utility.isAutoPay !== "boolean"
+      ? "Autopay unknown"
+      : utility.isAutoPay
+      ? "Autopay enabled"
+      : "Autopay off";
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-950/70 px-3 py-1 text-xs text-slate-300">
+          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/30 px-3 py-1 text-xs text-muted-foreground">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-rose-400" />
             Utility account
           </div>
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
               {utility.provider || "Utility account"}
             </h1>
-            <p className="mt-1 text-sm text-slate-400">
+            <p className="mt-1 text-sm text-muted-foreground">
               {formatType(utility.type)} •{" "}
               {utility.accountNumber ? (
-                <span className="font-mono text-xs text-slate-300">
+                <span className="font-mono text-xs text-foreground">
                   {utility.accountNumber}
                 </span>
               ) : (
-                <span className="text-slate-500">No account number on file</span>
+                <span className="text-muted-foreground">No account number on file</span>
               )}
             </p>
           </div>
         </div>
 
         <div className="flex flex-col items-end gap-2">
-          <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-200">
+          <span className="inline-flex items-center rounded-full border border-border bg-muted/30 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-foreground">
             {role}
           </span>
           <div className="flex gap-2">
             <span
               className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                 utility.status === "active"
-                  ? "bg-green-700/20 text-green-300"
+                  ? "bg-emerald-500/10 text-emerald-600"
                   : utility.status === "closed"
-                  ? "bg-slate-700/80 text-slate-200"
-                  : "bg-slate-800/80 text-slate-300"
+                  ? "bg-muted/30 text-muted-foreground"
+                  : "bg-muted/30 text-muted-foreground"
               }`}
             >
               {utility.status || "Status unknown"}
             </span>
             <span
               className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                utility.isAutoPay
-                  ? "bg-emerald-700/20 text-emerald-300"
-                  : "bg-slate-800/80 text-slate-300"
+                typeof utility.isAutoPay !== "boolean"
+                  ? "bg-muted/30 text-muted-foreground"
+                  : utility.isAutoPay
+                  ? "bg-emerald-500/10 text-emerald-600"
+                  : "bg-muted/30 text-muted-foreground"
               }`}
             >
               {autopayLabel}
@@ -398,14 +415,14 @@ export default async function UtilityDetailPage({ params }: PageProps) {
           <div className="flex gap-2 text-xs">
             <Link
               href={`/app/estates/${estateId}/utilities`}
-              className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 font-medium text-slate-200 hover:border-rose-500/70 hover:text-rose-100"
+              className="inline-flex items-center rounded-full border border-border bg-muted/20 px-3 py-1 font-medium text-muted-foreground hover:border-rose-500/70 hover:text-foreground"
             >
               ← Back to estate utilities
             </Link>
             {utility.propertyId && (
               <Link
                 href={`/app/estates/${estateId}/properties/${utility.propertyId}/utilities`}
-                className="inline-flex items-center rounded-full border border-slate-700 bg-slate-900/60 px-3 py-1 font-medium text-slate-200 hover:border-rose-500/70 hover:text-rose-100"
+                className="inline-flex items-center rounded-full border border-border bg-muted/20 px-3 py-1 font-medium text-muted-foreground hover:border-rose-500/70 hover:text-foreground"
               >
                 View property utilities
               </Link>
@@ -416,90 +433,91 @@ export default async function UtilityDetailPage({ params }: PageProps) {
 
       {/* Core details */}
       <div className="grid gap-6 md:grid-cols-3">
-        <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4 md:col-span-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
+        <section className="space-y-4 rounded-xl border border-border bg-card p-4 md:col-span-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Account details
           </h2>
           <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <dt className="text-xs font-medium text-slate-400">
+              <dt className="text-xs font-medium text-muted-foreground">
                 Billing name
               </dt>
-              <dd className="mt-1 text-sm text-slate-100">
+              <dd className="mt-1 text-sm text-foreground">
                 {utility.billingName || (
-                  <span className="text-slate-500">Not provided</span>
+                  <span className="text-muted-foreground">Not provided</span>
                 )}
               </dd>
             </div>
             <div>
-              <dt className="text-xs font-medium text-slate-400">
+              <dt className="text-xs font-medium text-muted-foreground">
                 Utility type
               </dt>
-              <dd className="mt-1 text-sm text-slate-100">
+              <dd className="mt-1 text-sm text-foreground">
                 {formatType(utility.type)}
               </dd>
             </div>
             <div>
-              <dt className="text-xs font-medium text-slate-400">Phone</dt>
-              <dd className="mt-1 text-sm text-slate-100">
+              <dt className="text-xs font-medium text-muted-foreground">Phone</dt>
+              <dd className="mt-1 text-sm text-foreground">
                 {utility.phone || (
-                  <span className="text-slate-500">Not provided</span>
+                  <span className="text-muted-foreground">Not provided</span>
                 )}
               </dd>
             </div>
             <div>
-              <dt className="text-xs font-medium text-slate-400">Email</dt>
-              <dd className="mt-1 text-sm text-slate-100">
+              <dt className="text-xs font-medium text-muted-foreground">Email</dt>
+              <dd className="mt-1 text-sm text-foreground">
                 {utility.email || (
-                  <span className="text-slate-500">Not provided</span>
+                  <span className="text-muted-foreground">Not provided</span>
                 )}
               </dd>
             </div>
             <div className="sm:col-span-2">
-              <dt className="text-xs font-medium text-slate-400">
+              <dt className="text-xs font-medium text-muted-foreground">
                 Online portal
               </dt>
-              <dd className="mt-1 text-sm text-slate-100">
+              <dd className="mt-1 text-sm text-foreground">
                 {utility.onlinePortalUrl ? (
                   <a
                     href={utility.onlinePortalUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-rose-300 hover:text-rose-200 hover:underline"
+                    title={utility.onlinePortalUrl}
+                    className="text-rose-500 hover:text-rose-400 hover:underline"
                   >
-                    {utility.onlinePortalUrl}
+                    {formatPortalLabel(utility.onlinePortalUrl)}
                   </a>
                 ) : (
-                  <span className="text-slate-500">No portal on file</span>
+                  <span className="text-muted-foreground">No portal on file</span>
                 )}
               </dd>
             </div>
           </dl>
         </section>
 
-        <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
+        <section className="space-y-4 rounded-xl border border-border bg-card p-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Linked property
           </h2>
           {utility.propertyId ? (
-            <div className="space-y-2 text-sm text-slate-200">
+            <div className="space-y-2 text-sm text-foreground">
               <p className="font-medium">
                 {utility.propertyLabel ?? "Linked property"}
               </p>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-muted-foreground">
                 This utility is associated with a specific estate property. Use
                 this when you need to show that a particular house kept lights,
                 water, or gas on for tenants or preservation.
               </p>
               <Link
                 href={`/app/estates/${estateId}/properties/${utility.propertyId}`}
-                className="inline-flex items-center text-xs font-medium text-rose-300 hover:text-rose-200"
+                className="inline-flex items-center text-xs font-medium text-rose-500 hover:text-rose-400"
               >
                 View property details →
               </Link>
             </div>
           ) : (
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-muted-foreground">
               This utility is not currently linked to a specific property. You
               can update it later to keep your records clean for court and
               accounting.
@@ -509,21 +527,21 @@ export default async function UtilityDetailPage({ params }: PageProps) {
       </div>
 
       {/* Notes */}
-      <section className="space-y-3 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+      <section className="space-y-3 rounded-xl border border-border bg-card p-4">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Internal notes
           </h2>
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-muted-foreground">
             These stay inside LegatePro — they&apos;re not shared with the
             utility company.
           </span>
         </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-950/80 p-3 text-sm text-slate-100">
+        <div className="rounded-lg border border-border bg-muted/20 p-3 text-sm text-foreground">
           {utility.notes ? (
             <p className="whitespace-pre-wrap">{utility.notes}</p>
           ) : (
-            <p className="text-slate-500">
+            <p className="text-muted-foreground">
               No notes yet. You might keep track of call reference numbers,
               hardship programs, or instructions from your attorney here.
             </p>
@@ -533,12 +551,12 @@ export default async function UtilityDetailPage({ params }: PageProps) {
 
       {/* Quick edit */}
       {canEdit ? (
-        <section className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+        <section className="space-y-4 rounded-xl border border-border bg-card p-4">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Update this account
             </h2>
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-muted-foreground">
               Small changes you make here will refresh this page and the estate
               utilities list.
             </span>
@@ -550,100 +568,100 @@ export default async function UtilityDetailPage({ params }: PageProps) {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-1">
-                <label className="text-xs font-medium text-slate-400">
+                <label className="text-xs font-medium text-muted-foreground">
                   Provider
                 </label>
                 <input
                   name="provider"
                   defaultValue={utility.provider}
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-slate-400">
+                <label className="text-xs font-medium text-muted-foreground">
                   Billing name
                 </label>
                 <input
                   name="billingName"
                   defaultValue={utility.billingName}
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-slate-400">
+                <label className="text-xs font-medium text-muted-foreground">
                   Utility type
                 </label>
                 <input
                   name="type"
                   defaultValue={utility.type}
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                   placeholder="electric, gas, water..."
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-slate-400">
+                <label className="text-xs font-medium text-muted-foreground">
                   Status
                 </label>
                 <input
                   name="status"
                   defaultValue={utility.status}
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                   placeholder="active, closed..."
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-slate-400">
+                <label className="text-xs font-medium text-muted-foreground">
                   Phone
                 </label>
                 <input
                   name="phone"
                   defaultValue={utility.phone}
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-slate-400">
+                <label className="text-xs font-medium text-muted-foreground">
                   Email
                 </label>
                 <input
                   name="email"
                   defaultValue={utility.email}
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 />
               </div>
               <div className="space-y-1 md:col-span-2">
-                <label className="text-xs font-medium text-slate-400">
+                <label className="text-xs font-medium text-muted-foreground">
                   Online portal URL
                 </label>
                 <input
                   name="onlinePortalUrl"
                   defaultValue={utility.onlinePortalUrl}
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                   placeholder="https://"
                 />
               </div>
             </div>
 
             <div className="flex items-center justify-between gap-4">
-              <label className="inline-flex items-center gap-2 text-xs text-slate-300">
+              <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
                 <input
                   type="checkbox"
                   name="isAutoPay"
                   defaultChecked={utility.isAutoPay}
-                  className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-rose-500"
+                  className="h-3.5 w-3.5 rounded border-border bg-background text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 />
                 Autopay enabled
               </label>
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-400">
+              <label className="text-xs font-medium text-muted-foreground">
                 Internal notes
               </label>
               <textarea
                 name="notes"
                 defaultValue={utility.notes}
-                className="min-h-[80px] w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500/70"
+                className="min-h-[80px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 placeholder="Court reference numbers, hardship program notes, attorney guidance..."
               />
             </div>
@@ -651,7 +669,7 @@ export default async function UtilityDetailPage({ params }: PageProps) {
             <div className="flex justify-end">
               <button
                 type="submit"
-                className="inline-flex items-center rounded-md bg-rose-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-400"
+                className="inline-flex items-center rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background shadow-sm hover:bg-foreground/90"
               >
                 Save changes
               </button>

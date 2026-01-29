@@ -13,6 +13,7 @@ type PageProps = {
     estateId: string;
     taskId: string;
   };
+  searchParams?: Record<string, string | string[] | undefined>;
 };
 
 type TaskForForm = {
@@ -25,18 +26,38 @@ type TaskForForm = {
   date?: string | Date;
 };
 
-export default async function EditTaskPage({ params }: PageProps) {
+function firstParam(value: string | string[] | undefined): string {
+  return typeof value === "string" ? value : Array.isArray(value) ? value[0] ?? "" : "";
+}
+
+function buildEditUrl(estateId: string, taskId: string, params?: Record<string, string | undefined>) {
+  const sp = new URLSearchParams();
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (v) sp.set(k, v);
+    }
+  }
+  const qs = sp.toString();
+  return `/app/estates/${encodeURIComponent(estateId)}/tasks/${encodeURIComponent(taskId)}/edit${qs ? `?${qs}` : ""}`;
+}
+
+export default async function EditTaskPage({ params, searchParams }: PageProps) {
   const session = await auth();
   if (!session?.user?.id) {
     redirect(
-      `/login?callbackUrl=/app/estates/${params.estateId}/tasks/${params.taskId}/edit`,
+      `/login?callbackUrl=${encodeURIComponent(
+        `/app/estates/${params.estateId}/tasks/${params.taskId}/edit`,
+      )}`,
     );
   }
 
   await connectToDatabase();
 
   // Permission gate (shared estates supported)
-  const access = await requireEstateAccess({ estateId: params.estateId });
+  const access = await requireEstateAccess({
+    estateId: params.estateId,
+    userId: session.user.id,
+  });
 
   // VIEWERs can view tasks, but cannot edit them.
   const isViewer = access.role === "VIEWER";
@@ -59,6 +80,11 @@ export default async function EditTaskPage({ params }: PageProps) {
 
   const task = serializeMongoDoc(taskDoc) as TaskForForm;
 
+  // Banner helpers
+  const sp = searchParams;
+  const savedFlag = firstParam(sp?.saved) === "1";
+  const errorCode = firstParam(sp?.error).trim();
+
   const dateInputValue = (() => {
     const d = task.date;
     if (d instanceof Date) return d.toISOString().slice(0, 10);
@@ -72,7 +98,9 @@ export default async function EditTaskPage({ params }: PageProps) {
     const sessionInner = await auth();
     if (!sessionInner?.user?.id) {
       redirect(
-        `/login?callbackUrl=/app/estates/${params.estateId}/tasks/${params.taskId}/edit`,
+        `/login?callbackUrl=${encodeURIComponent(
+          `/app/estates/${params.estateId}/tasks/${params.taskId}/edit`,
+        )}`,
       );
     }
 
@@ -81,7 +109,7 @@ export default async function EditTaskPage({ params }: PageProps) {
     const estateId = params.estateId;
     const taskId = params.taskId;
 
-    const access = await requireEstateAccess({ estateId });
+    const access = await requireEstateAccess({ estateId, userId: sessionInner.user.id });
     if (access.role === "VIEWER") {
       redirect(`/app/estates/${estateId}/tasks/${taskId}`);
     }
@@ -94,7 +122,7 @@ export default async function EditTaskPage({ params }: PageProps) {
     const dateStr = String(formData.get("date") || "").trim();
 
     if (!subject) {
-      throw new Error("Subject is required");
+      redirect(buildEditUrl(estateId, taskId, { error: "subject_required" }) + "#form");
     }
 
     const allowedStatuses: TaskStatus[] = ["OPEN", "DONE"];
@@ -150,131 +178,222 @@ export default async function EditTaskPage({ params }: PageProps) {
     revalidatePath(`/app/estates/${estateId}/tasks`);
     revalidatePath(`/app/estates/${estateId}/tasks/${taskId}`);
 
-    redirect(`/app/estates/${estateId}/tasks`);
+    redirect(`/app/estates/${estateId}/tasks/${taskId}?saved=1`);
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-50">Edit Task</h1>
-          <p className="text-sm text-slate-400">
-            Estate · Task #{String(task._id).slice(-6)}
-          </p>
-        </div>
-        <div className="rounded-full bg-slate-900/60 px-3 py-1 text-xs text-slate-400">
-          Status:{" "}
-          <span className="font-medium text-slate-100">
-            {task.status === "DONE" ? "Done" : "Open"}
-          </span>
-        </div>
-      </div>
+    <div className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+      <header className="space-y-4">
+        <nav className="text-xs text-slate-500">
+          <Link
+            href="/app/estates"
+            className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+          >
+            Estates
+          </Link>
+          <span className="mx-1 text-slate-600">/</span>
+          <Link
+            href={`/app/estates/${params.estateId}`}
+            className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+          >
+            Estate
+          </Link>
+          <span className="mx-1 text-slate-600">/</span>
+          <Link
+            href={`/app/estates/${params.estateId}/tasks`}
+            className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+          >
+            Tasks
+          </Link>
+          <span className="mx-1 text-slate-600">/</span>
+          <Link
+            href={`/app/estates/${params.estateId}/tasks/${params.taskId}`}
+            className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+          >
+            Task
+          </Link>
+          <span className="mx-1 text-slate-600">/</span>
+          <span className="text-rose-300">Edit</span>
+        </nav>
 
-      {/* Form */}
-      <form
-        action={updateTask}
-        className="max-w-2xl space-y-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-sm"
-      >
-        {/* Subject */}
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-300">
-            Subject
-          </label>
-          <input
-            name="subject"
-            defaultValue={task.subject}
-            required
-            className="w-full rounded-md border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none ring-0 focus:border-indigo-500"
-          />
-        </div>
+        {savedFlag ? (
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+            <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="font-medium">Changes saved</p>
+                <p className="text-xs text-emerald-200">Your task updates have been stored and the list has been refreshed.</p>
+              </div>
+              <Link
+                href={`/app/estates/${params.estateId}/tasks/${params.taskId}`}
+                className="mt-2 inline-flex items-center justify-center rounded-md border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-500/25 md:mt-0"
+              >
+                Back to task
+              </Link>
+            </div>
+          </div>
+        ) : null}
 
-        {/* Description */}
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-300">
-            Description
-          </label>
-          <textarea
-            name="description"
-            defaultValue={task.description || ""}
-            rows={3}
-            className="w-full rounded-md border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none ring-0 focus:border-indigo-500"
-          />
-        </div>
+        {errorCode === "subject_required" ? (
+          <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="font-medium">Subject required</p>
+                <p className="text-xs text-rose-200">Add a clear subject before saving changes.</p>
+              </div>
+              <Link
+                href={buildEditUrl(params.estateId, params.taskId) + "#form"}
+                className="mt-2 inline-flex items-center justify-center rounded-md border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/25 md:mt-0"
+              >
+                Back to form
+              </Link>
+            </div>
+          </div>
+        ) : null}
 
-        {/* Row: Date / Status / Priority */}
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-300">
-              Task Date
-            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Edit task</span>
+              <span className="rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-300">
+                Access: {access.role}
+              </span>
+              <span
+                className={
+                  task.status === "DONE"
+                    ? "rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-200"
+                    : "rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-300"
+                }
+              >
+                Status: {task.status === "DONE" ? "Done" : "Open"}
+              </span>
+            </div>
+
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-50">Edit task</h1>
+            <p className="mt-1 text-sm text-slate-400">
+              Task <span className="text-slate-500">#</span>
+              <span className="font-medium text-slate-100">{String(task._id).slice(-6)}</span>
+              <span className="text-slate-500"> · </span>
+              Update the subject, status, priority, and internal notes.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <Link
+              href={`/app/estates/${params.estateId}/tasks/${params.taskId}`}
+              className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 font-medium text-slate-200 hover:border-rose-500/70 hover:text-rose-100"
+            >
+              ← Back to task
+            </Link>
+            <Link
+              href={`/app/estates/${params.estateId}/tasks`}
+              className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 font-medium text-slate-200 hover:border-rose-500/70 hover:text-rose-100"
+            >
+              Back to tasks
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      <form
+        id="form"
+        action={updateTask}
+        className="max-w-3xl space-y-4 rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm shadow-sm"
+      >
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="md:col-span-2">
+            <label className="mb-1 block text-xs font-medium text-slate-300">Subject</label>
             <input
-              type="date"
-              name="date"
-              defaultValue={dateInputValue}
-              className="w-full rounded-md border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none ring-0 focus:border-indigo-500"
+              name="subject"
+              defaultValue={task.subject}
+              required
+              placeholder="e.g. Call bank about estate account"
+              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 placeholder:text-slate-500 outline-none ring-0 focus:border-rose-500/70"
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="mb-1 block text-xs font-medium text-slate-300">Description</label>
+            <textarea
+              name="description"
+              defaultValue={task.description || ""}
+              rows={3}
+              placeholder="Optional context to help you remember what this is about…"
+              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 placeholder:text-slate-500 outline-none ring-0 focus:border-rose-500/70"
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-300">
-              Status
-            </label>
+            <label className="mb-1 block text-xs font-medium text-slate-300">Task date</label>
+            <input
+              type="date"
+              name="date"
+              defaultValue={dateInputValue}
+              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none ring-0 focus:border-rose-500/70"
+            />
+            <p className="mt-1 text-[11px] text-slate-500">Useful for calls, filings, and follow-ups.</p>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-300">Status</label>
             <select
               name="status"
               defaultValue={task.status}
-              className="w-full rounded-md border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none ring-0 focus:border-indigo-500"
+              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none ring-0 focus:border-rose-500/70"
             >
               <option value="OPEN">Open</option>
               <option value="DONE">Done</option>
             </select>
+            <p className="mt-1 text-[11px] text-slate-500">Mark done to timestamp completion.</p>
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-300">
-              Priority
-            </label>
+            <label className="mb-1 block text-xs font-medium text-slate-300">Priority</label>
             <select
               name="priority"
               defaultValue={task.priority}
-              className="w-full rounded-md border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none ring-0 focus:border-indigo-500"
+              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none ring-0 focus:border-rose-500/70"
             >
               <option value="LOW">Low</option>
               <option value="MEDIUM">Medium</option>
               <option value="HIGH">High</option>
             </select>
+            <p className="mt-1 text-[11px] text-slate-500">Helps you triage what matters today.</p>
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="mb-1 block text-xs font-medium text-slate-300">Internal notes</label>
+            <textarea
+              name="notes"
+              defaultValue={task.notes || ""}
+              rows={3}
+              placeholder="Private notes (not shared outside your team)."
+              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 placeholder:text-slate-500 outline-none ring-0 focus:border-rose-500/70"
+            />
           </div>
         </div>
 
-        {/* Notes */}
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-300">
-            Internal Notes
-          </label>
-          <textarea
-            name="notes"
-            defaultValue={task.notes || ""}
-            rows={3}
-            placeholder="Private notes about this task (not shown to outside parties)"
-            className="w-full rounded-md border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none ring-0 focus:border-indigo-500"
-          />
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center justify-between gap-3 pt-2">
+        <div className="flex flex-col gap-2 border-t border-slate-800 pt-3 sm:flex-row sm:items-center sm:justify-between">
           <Link
-            href={`/app/estates/${params.estateId}/tasks`}
+            href={`/app/estates/${params.estateId}/tasks/${params.taskId}`}
             className="text-xs text-slate-400 underline-offset-2 hover:text-slate-200 hover:underline"
           >
-            Cancel and go back
+            Cancel
           </Link>
 
-          <button
-            type="submit"
-            className="inline-flex items-center gap-2 rounded-md bg-indigo-500 px-4 py-2 text-xs font-medium text-white shadow-sm hover:bg-indigo-400"
-          >
-            Save changes
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={`/app/estates/${params.estateId}/tasks/${params.taskId}`}
+              className="inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-900/40"
+            >
+              Back
+            </Link>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center rounded-md bg-rose-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-rose-400"
+            >
+              Save changes
+            </button>
+          </div>
         </div>
       </form>
     </div>

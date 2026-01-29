@@ -10,17 +10,10 @@ import mongoose from "mongoose";
 
 type InvoiceStatus = "DRAFT" | "SENT" | "UNPAID" | "PARTIAL" | "PAID" | "VOID";
 
-type PageSearchParams = {
-  status?: string;
-  q?: string;
-  timeframe?: string;
-  estateId?: string;
-  sortBy?: string;
-  invoiceNumber?: string;
-};
 
 type PageProps = {
-  searchParams?: PageSearchParams;
+  // Next 16: searchParams is a Promise-like dynamic API
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 type PopulatedEstate = {
@@ -94,6 +87,23 @@ function formatDate(value?: Date): string {
   }
 }
 
+function getInvoiceStatusClasses(status: string): string {
+  switch (status) {
+    case "PAID":
+      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-600";
+    case "PARTIAL":
+      return "border-amber-500/30 bg-amber-500/10 text-amber-600";
+    case "UNPAID":
+    case "SENT":
+    case "DRAFT":
+      return "border-sky-500/30 bg-sky-500/10 text-sky-600";
+    case "VOID":
+      return "border-border bg-muted/20 text-muted-foreground";
+    default:
+      return "border-border bg-muted/20 text-muted-foreground";
+  }
+}
+
 /**
  * Handle legacy invoices that stored dollars directly AND
  * new invoices that store integer cents.
@@ -139,14 +149,14 @@ function escapeRegex(input: string): string {
 }
 
 export default async function InvoicesPage({ searchParams }: PageProps) {
-  const {
-    status: statusRaw,
-    q: qRaw,
-    timeframe: timeframeRaw,
-    estateId: estateIdRaw,
-    sortBy: sortByRaw,
-    invoiceNumber: invoiceNumberRaw,
-  } = searchParams ?? {};
+  const sp = (await searchParams) ?? {};
+
+  const statusRaw = sp.status;
+  const qRaw = sp.q;
+  const timeframeRaw = sp.timeframe;
+  const estateIdRaw = sp.estateId;
+  const sortByRaw = sp.sortBy;
+  const invoiceNumberRaw = sp.invoiceNumber;
 
   const session = await auth();
   if (!session?.user?.id) {
@@ -163,12 +173,12 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
     .lean()
     .exec()) as EstateOption[];
 
-  const q = (qRaw ?? "").trim();
-  const statusFilter = (statusRaw ?? "ALL").toUpperCase();
-  const timeframe = timeframeRaw ?? "all";
-  const estateFilter = (estateIdRaw ?? "").trim();
-  const sortBy = sortByRaw ?? "recent";
-  const invoiceNumberFilter = (invoiceNumberRaw ?? "").trim();
+  const q = (typeof qRaw === "string" ? qRaw : "").trim();
+  const statusFilter = (typeof statusRaw === "string" ? statusRaw : "ALL").toUpperCase();
+  const timeframe = typeof timeframeRaw === "string" ? timeframeRaw : "all";
+  const estateFilter = (typeof estateIdRaw === "string" ? estateIdRaw : "").trim();
+  const sortBy = typeof sortByRaw === "string" ? sortByRaw : "recent";
+  const invoiceNumberFilter = (typeof invoiceNumberRaw === "string" ? invoiceNumberRaw : "").trim();
 
   // Constrain invoices to estates this user can access (owner OR collaborator).
   // Invoices may store `estateId` as an ObjectId; we include both string ids and ObjectIds
@@ -744,7 +754,11 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                         {estateLabel}
                       </td>
                       <td className="py-2 pr-4">
-                        <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-300">
+                        <span
+                          className={`rounded-full border px-2 py-0.5 text-[11px] uppercase tracking-wide ${getInvoiceStatusClasses(
+                            inv.status
+                          )}`}
+                        >
                           {inv.status}
                         </span>
                       </td>

@@ -14,7 +14,8 @@ export const metadata: Metadata = {
 };
 
 type PageProps = {
-  searchParams?: Record<string, string | string[] | undefined>;
+  // Next 16: searchParams is a Promise-like dynamic API
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 type TaskRow = {
@@ -84,9 +85,9 @@ function statusBadgeClass(status: string): string {
     case "DONE":
       return "bg-emerald-500/10 text-emerald-300 border-emerald-500/40";
     case "CANCELLED":
-      return "bg-slate-600/20 text-slate-300 border-slate-500/40";
+      return "bg-muted/20 text-muted-foreground border-border";
     default:
-      return "bg-slate-700/40 text-slate-200 border-slate-500/40";
+      return "bg-muted/20 text-muted-foreground border-border";
   }
 }
 
@@ -144,7 +145,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
     notFound();
   }
 
-  const queryParams = (searchParams ?? {}) as Record<
+  const queryParams = ((await searchParams) ?? {}) as Record<
     string,
     string | string[] | undefined
   >;
@@ -301,25 +302,27 @@ export default async function TasksPage({ searchParams }: PageProps) {
     (t) => t.status !== "DONE" && t.status !== "CANCELLED",
   );
   const completedTasks = tasks.filter((t) => t.status === "DONE");
+  const overdueCount = openTasks.filter((t) => isOverdue(t.dueDate)).length;
+  const dueSoonCount = openTasks.filter((t) => isDueSoon(t.dueDate, 2)).length;
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8 px-4 py-8">
       {!hasAnyTasks && estateOptions.length === 0 && !hasActiveFilters ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 text-xs text-slate-200 shadow-sm">
-          <p className="text-sm font-semibold text-slate-100">Create your first estate</p>
-          <p className="mt-0.5 text-[11px] text-slate-500">
+        <div className="rounded-2xl border border-border bg-card p-4 text-xs text-muted-foreground shadow-sm">
+          <p className="text-sm font-semibold text-foreground">Create your first estate</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
             Tasks are tied to estates. Create an estate first, then add tasks to build your probate checklist.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Link
               href="/app/estates/new"
-              className="inline-flex h-9 items-center rounded-md bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500"
+              className="inline-flex h-9 items-center rounded-md bg-sky-500 px-3 text-xs font-semibold text-background hover:bg-sky-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               New estate
             </Link>
             <Link
               href="/app/estates"
-              className="inline-flex h-9 items-center rounded-md border border-slate-700 bg-slate-950 px-3 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+              className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               View estates
             </Link>
@@ -332,7 +335,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
         actions={
           <Link
             href="/app"
-            className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-950/60 px-3 text-xs font-semibold text-slate-200 hover:bg-slate-900/60"
+            className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             ← Back to dashboard
           </Link>
@@ -341,36 +344,51 @@ export default async function TasksPage({ searchParams }: PageProps) {
 
       {/* Summary row */}
       <section className="grid gap-6 sm:grid-cols-3">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6">
-          <p className="text-xs uppercase tracking-wide text-slate-500">
+        <div className="rounded-xl border border-border bg-card p-6">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Total tasks
           </p>
-          <p className="mt-2 text-2xl font-semibold text-slate-100">
+          <p className="mt-2 text-2xl font-semibold text-foreground">
             {totalTasks}
           </p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-muted-foreground">
             All tasks for your workspace.
           </p>
         </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6">
-          <p className="text-xs uppercase tracking-wide text-slate-500">
+        <div className="rounded-xl border border-border bg-card p-6">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Open tasks
           </p>
           <p className="mt-2 text-2xl font-semibold text-amber-300">
             {openTasks.length}
           </p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-muted-foreground">
             Not completed or cancelled yet.
           </p>
+
+          {overdueCount > 0 || dueSoonCount > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {overdueCount > 0 ? (
+                <span className="inline-flex items-center rounded-full border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-[11px] font-semibold text-rose-600">
+                  {overdueCount} overdue
+                </span>
+              ) : null}
+              {dueSoonCount > 0 ? (
+                <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-600">
+                  {dueSoonCount} due soon
+                </span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6">
-          <p className="text-xs uppercase tracking-wide text-slate-500">
+        <div className="rounded-xl border border-border bg-card p-6">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Completed
           </p>
           <p className="mt-2 text-2xl font-semibold text-emerald-300">
             {completedTasks.length}
           </p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-muted-foreground">
             Finished tasks across all estates.
           </p>
         </div>
@@ -379,33 +397,33 @@ export default async function TasksPage({ searchParams }: PageProps) {
       {/* Filters + actions */}
       <section className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-            <span className="text-slate-500">Showing</span>
-            <span className="font-semibold text-slate-200">{totalTasks}</span>
-            <span className="text-slate-500">task{totalTasks === 1 ? "" : "s"}</span>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span className="text-muted-foreground">Showing</span>
+            <span className="font-semibold text-foreground">{totalTasks}</span>
+            <span className="text-muted-foreground">task{totalTasks === 1 ? "" : "s"}</span>
 
             {hasActiveFilters ? (
-              <span className="text-slate-500">
+              <span className="text-muted-foreground">
                 · Filtered by
                 {statusFilter !== "ALL" ? (
-                  <span className="ml-1 text-slate-300">
-                    status <span className="font-semibold text-slate-200">{humanizeStatus(statusFilter)}</span>
+                  <span className="ml-1 text-muted-foreground">
+                    status <span className="font-semibold text-foreground">{humanizeStatus(statusFilter)}</span>
                   </span>
                 ) : null}
                 {activeEstateName ? (
-                  <span className="ml-1 text-slate-300">
-                    {statusFilter !== "ALL" ? "and" : ""} estate <span className="font-semibold text-slate-200">{activeEstateName}</span>
+                  <span className="ml-1 text-muted-foreground">
+                    {statusFilter !== "ALL" ? "and" : ""} estate <span className="font-semibold text-foreground">{activeEstateName}</span>
                   </span>
                 ) : null}
               </span>
             ) : (
-              <span className="text-slate-500">· No filters applied</span>
+              <span className="text-muted-foreground">· No filters applied</span>
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-slate-500">Status:</span>
+              <span className="text-muted-foreground">Status:</span>
               <div className="flex flex-wrap gap-1">
                 {ALL_STATUSES.map((status) => {
                   const isActive = status === statusFilter;
@@ -424,8 +442,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
                       className={[
                         "inline-flex h-7 items-center rounded-full border px-2 text-[11px]",
                         isActive
-                          ? "border-sky-500 bg-sky-500/10 text-sky-200"
-                          : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500",
+                          ? "border-sky-500/30 bg-sky-500/10 text-sky-600"
+                          : "border-border bg-muted/20 text-muted-foreground hover:bg-muted/30 hover:text-foreground",
                       ].join(" ")}
                     >
                       {status === "ALL" ? "All" : humanizeStatus(status)}
@@ -440,14 +458,14 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 {statusFilter !== "ALL" ? (
                   <input type="hidden" name="status" value={statusFilter} />
                 ) : null}
-                <label className="text-slate-500" htmlFor="estateId">
+                <label className="text-muted-foreground" htmlFor="estateId">
                   Estate:
                 </label>
                 <select
                   id="estateId"
                   name="estateId"
                   defaultValue={rawEstateId ?? ""}
-                  className="h-9 rounded-md border border-slate-700 bg-slate-950 px-2 text-[11px] text-slate-200"
+                  className="h-9 rounded-md border border-border bg-background px-2 text-[11px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 >
                   <option value="">All estates</option>
                   {estateOptions.map((opt) => (
@@ -458,7 +476,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 </select>
                 <button
                   type="submit"
-                  className="inline-flex h-9 items-center rounded-md border border-slate-700 bg-slate-950 px-3 text-[11px] font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+                  className="inline-flex h-9 items-center rounded-md bg-foreground px-3 text-[11px] font-semibold text-background hover:bg-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 >
                   Apply
                 </button>
@@ -469,7 +487,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
         <div className="flex flex-wrap gap-2">
           <Link
             href="/app/tasks/new"
-            className="inline-flex h-9 items-center rounded-md bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500"
+            className="inline-flex h-9 items-center rounded-md bg-sky-500 px-3 text-xs font-semibold text-background hover:bg-sky-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             + New task
           </Link>
@@ -477,7 +495,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
           {hasActiveFilters ? (
             <Link
               href="/app/tasks"
-              className="inline-flex h-9 items-center rounded-md border border-slate-700 bg-slate-950 px-3 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+              className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               Reset
             </Link>
@@ -486,33 +504,33 @@ export default async function TasksPage({ searchParams }: PageProps) {
       </section>
 
       {/* Tasks */}
-      <section className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/70">
+      <section className="overflow-hidden rounded-xl border border-border bg-card">
         {tasks.length === 0 ? (
-          <div className="px-4 py-10 text-center text-sm text-slate-400">
+          <div className="px-4 py-10 text-center text-sm text-muted-foreground">
             {hasActiveFilters ? (
               <>
-                <p className="text-sm font-semibold text-slate-100">No tasks match your filters</p>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="text-sm font-semibold text-foreground">No tasks match your filters</p>
+                <p className="mt-1 text-xs text-muted-foreground">
                   Try a different status / estate, or reset filters to see everything.
                 </p>
                 <div className="mt-4 flex flex-wrap justify-center gap-2">
                   <Link
                     href="/app/tasks"
-                    className="inline-flex h-9 items-center rounded-md border border-slate-700 bg-slate-950 px-3 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+                    className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                   >
                     Reset filters
                   </Link>
                   {estateOptions.length > 0 ? (
                     <Link
                       href="/app/tasks/new"
-                      className="inline-flex h-9 items-center rounded-md bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500"
+                      className="inline-flex h-9 items-center rounded-md bg-sky-500 px-3 text-xs font-semibold text-background hover:bg-sky-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                     >
                       + New task
                     </Link>
                   ) : (
                     <Link
                       href="/app/estates/new"
-                      className="inline-flex h-9 items-center rounded-md bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500"
+                      className="inline-flex h-9 items-center rounded-md bg-sky-500 px-3 text-xs font-semibold text-background hover:bg-sky-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                     >
                       New estate
                     </Link>
@@ -521,20 +539,20 @@ export default async function TasksPage({ searchParams }: PageProps) {
               </>
             ) : estateOptions.length === 0 ? (
               <>
-                <p className="text-sm font-semibold text-slate-100">Create an estate first</p>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="text-sm font-semibold text-foreground">Create an estate first</p>
+                <p className="mt-1 text-xs text-muted-foreground">
                   Tasks are tied to estates. Once you create an estate, you can build your probate checklist here.
                 </p>
                 <div className="mt-4 flex flex-wrap justify-center gap-2">
                   <Link
                     href="/app/estates/new"
-                    className="inline-flex h-9 items-center rounded-md bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500"
+                    className="inline-flex h-9 items-center rounded-md bg-sky-500 px-3 text-xs font-semibold text-background hover:bg-sky-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                   >
                     New estate
                   </Link>
                   <Link
                     href="/app/estates"
-                    className="inline-flex h-9 items-center rounded-md border border-slate-700 bg-slate-950 px-3 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+                    className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                   >
                     View estates
                   </Link>
@@ -542,29 +560,29 @@ export default async function TasksPage({ searchParams }: PageProps) {
               </>
             ) : (
               <>
-                <p className="text-sm font-semibold text-slate-100">Add your first tasks</p>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="text-sm font-semibold text-foreground">Add your first tasks</p>
+                <p className="mt-1 text-xs text-muted-foreground">
                   Start with 3–5 items you’re already thinking about (court filings, bank account, notifications, inventory).
                 </p>
 
                 <div className="mx-auto mt-4 grid max-w-2xl gap-3 text-left md:grid-cols-3">
-                  <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-                    <p className="text-xs font-semibold text-slate-100">Quick ideas</p>
-                    <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] text-slate-500">
+                  <div className="rounded-xl border border-border bg-muted/20 p-4">
+                    <p className="text-xs font-semibold text-foreground">Quick ideas</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] text-muted-foreground">
                       <li>Open estate bank account</li>
                       <li>File Letters of Authority</li>
                       <li>Inventory assets</li>
                     </ul>
                   </div>
-                  <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-                    <p className="text-xs font-semibold text-slate-100">Stay on track</p>
-                    <p className="mt-2 text-[11px] text-slate-500">
+                  <div className="rounded-xl border border-border bg-muted/20 p-4">
+                    <p className="text-xs font-semibold text-foreground">Stay on track</p>
+                    <p className="mt-2 text-[11px] text-muted-foreground">
                       Add due dates to surface “Overdue” and “Due soon” badges.
                     </p>
                   </div>
-                  <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-                    <p className="text-xs font-semibold text-slate-100">Link to estates</p>
-                    <p className="mt-2 text-[11px] text-slate-500">
+                  <div className="rounded-xl border border-border bg-muted/20 p-4">
+                    <p className="text-xs font-semibold text-foreground">Link to estates</p>
+                    <p className="mt-2 text-[11px] text-muted-foreground">
                       Tasks roll up to each estate checklist automatically.
                     </p>
                   </div>
@@ -573,13 +591,13 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 <div className="mt-4 flex flex-wrap justify-center gap-2">
                   <Link
                     href="/app/tasks/new"
-                    className="inline-flex h-9 items-center rounded-md bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500"
+                    className="inline-flex h-9 items-center rounded-md bg-sky-500 px-3 text-xs font-semibold text-background hover:bg-sky-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                   >
                     + New task
                   </Link>
                   <Link
                     href="/app/estates"
-                    className="inline-flex h-9 items-center rounded-md border border-slate-700 bg-slate-950 px-3 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+                    className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                   >
                     View estates
                   </Link>
@@ -593,23 +611,23 @@ export default async function TasksPage({ searchParams }: PageProps) {
             <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full border-separate border-spacing-0 text-sm">
                 <thead>
-                  <tr className="bg-slate-900/70">
-                    <th className="sticky left-0 z-10 border-b border-slate-800 bg-slate-900/90 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  <tr className="bg-muted/30">
+                    <th className="sticky left-0 z-10 border-b border-border bg-muted/30 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       Task
                     </th>
-                    <th className="border-b border-slate-800 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    <th className="border-b border-border px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       Estate
                     </th>
-                    <th className="border-b border-slate-800 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    <th className="border-b border-border px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       Status
                     </th>
-                    <th className="border-b border-slate-800 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    <th className="border-b border-border px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       Due
                     </th>
-                    <th className="border-b border-slate-800 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    <th className="border-b border-border px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       Priority
                     </th>
-                    <th className="border-b border-slate-800 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    <th className="border-b border-border px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       Actions
                     </th>
                   </tr>
@@ -622,16 +640,16 @@ export default async function TasksPage({ searchParams }: PageProps) {
                       <tr
                         key={task.id}
                         className={[
-                          isOdd ? "bg-slate-900/40" : "bg-slate-950/40",
-                          "transition-colors hover:bg-slate-800/25",
+                          isOdd ? "bg-muted/10" : "bg-card",
+                          "transition-colors hover:bg-muted/20",
                         ].join(" ")}
                       >
-                        <td className="sticky left-0 z-10 max-w-md border-b border-slate-800 bg-inherit px-4 py-3 align-top text-sm text-slate-50">
+                        <td className="sticky left-0 z-10 max-w-md border-b border-border bg-inherit px-4 py-3 align-top text-sm text-foreground">
                           <div className="flex flex-col gap-0.5">
                             <div className="flex flex-wrap items-center gap-2">
                               <Link
                                 href={`/app/tasks/${task.id}`}
-                                className="font-medium text-slate-50 hover:text-sky-300 hover:underline underline-offset-2"
+                                className="font-medium text-foreground hover:text-sky-600 hover:underline underline-offset-2"
                               >
                                 {task.title}
                               </Link>
@@ -644,13 +662,13 @@ export default async function TasksPage({ searchParams }: PageProps) {
                               ) : null}
                             </div>
                             {task.createdAt ? (
-                              <span className="text-[11px] text-slate-500">
+                              <span className="text-[11px] text-muted-foreground">
                                 Created {formatDate(task.createdAt)}
                               </span>
                             ) : null}
                           </div>
                         </td>
-                        <td className="border-b border-slate-800 px-4 py-3 align-top text-sm">
+                        <td className="border-b border-border px-4 py-3 align-top text-sm">
                           {task.estateId ? (
                             <Link
                               href={`/app/estates/${task.estateId}`}
@@ -659,10 +677,10 @@ export default async function TasksPage({ searchParams }: PageProps) {
                               {task.estateName ?? "Estate"}
                             </Link>
                           ) : (
-                            <span className="text-xs text-slate-500">—</span>
+                            <span className="text-xs text-muted-foreground">—</span>
                           )}
                         </td>
-                        <td className="border-b border-slate-800 px-4 py-3 align-top">
+                        <td className="border-b border-border px-4 py-3 align-top">
                           <span
                             className={`inline-flex h-7 items-center rounded-full border px-2 text-[11px] font-medium ${statusBadgeClass(
                               task.status,
@@ -671,24 +689,24 @@ export default async function TasksPage({ searchParams }: PageProps) {
                             {humanizeStatus(task.status)}
                           </span>
                         </td>
-                        <td className="border-b border-slate-800 px-4 py-3 align-top text-sm text-slate-200">
+                        <td className="border-b border-border px-4 py-3 align-top text-sm text-muted-foreground">
                           {task.dueDate ? (
                             <span>{formatDate(task.dueDate)}</span>
                           ) : (
-                            <span className="text-xs text-slate-500">No due date</span>
+                            <span className="text-xs text-muted-foreground">No due date</span>
                           )}
                         </td>
-                        <td className="border-b border-slate-800 px-4 py-3 align-top text-sm text-slate-200">
+                        <td className="border-b border-border px-4 py-3 align-top text-sm text-muted-foreground">
                           {task.priority ? (
-                            <span className="text-xs text-slate-200">{task.priority}</span>
+                            <span className="text-xs text-foreground">{task.priority}</span>
                           ) : (
-                            <span className="text-xs text-slate-500">—</span>
+                            <span className="text-xs text-muted-foreground">—</span>
                           )}
                         </td>
-                        <td className="border-b border-slate-800 px-4 py-3 align-top text-right text-xs">
+                        <td className="border-b border-border px-4 py-3 align-top text-right text-xs">
                           <Link
                             href={`/app/tasks/${task.id}`}
-                            className="inline-flex items-center rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] font-semibold text-slate-200 hover:border-slate-500 hover:bg-slate-900/40"
+                            className="inline-flex items-center rounded-md border border-border bg-card px-2 py-1 text-[11px] font-semibold text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                           >
                             View
                           </Link>
@@ -707,14 +725,14 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 return (
                   <div
                     key={task.id}
-                    className="rounded-xl border border-slate-800 bg-slate-900/40 p-4"
+                    className="rounded-xl border border-border bg-card p-4"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <Link
                             href={`/app/tasks/${task.id}`}
-                            className="block max-w-full truncate text-sm font-semibold text-slate-50 hover:text-sky-300 underline-offset-2 hover:underline"
+                            className="block max-w-full truncate text-sm font-semibold text-foreground hover:text-sky-600 underline-offset-2 hover:underline"
                           >
                             {task.title}
                           </Link>
@@ -744,25 +762,25 @@ export default async function TasksPage({ searchParams }: PageProps) {
                               {task.estateName ?? "Estate"}
                             </Link>
                           ) : (
-                            <span className="text-xs text-slate-500">No estate</span>
+                            <span className="text-xs text-muted-foreground">No estate</span>
                           )}
                         </div>
 
-                        <div className="mt-2 text-xs text-slate-400">
+                        <div className="mt-2 text-xs text-muted-foreground">
                           {task.dueDate ? (
                             <span>Due {formatDate(task.dueDate)}</span>
                           ) : (
                             <span>No due date</span>
                           )}
                           {task.priority ? (
-                            <span className="text-slate-500"> · Priority {task.priority}</span>
+                            <span className="text-muted-foreground"> · Priority {task.priority}</span>
                           ) : null}
                         </div>
                       </div>
 
                       <Link
                         href={`/app/tasks/${task.id}`}
-                        className="shrink-0 text-xs font-semibold text-sky-400 hover:text-sky-300"
+                        className="shrink-0 text-xs font-semibold text-sky-600 hover:text-sky-500"
                       >
                         View
                       </Link>

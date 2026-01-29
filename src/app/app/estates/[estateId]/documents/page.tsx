@@ -57,17 +57,52 @@ function firstParam(value: string | string[] | undefined): string {
   return typeof value === "string" ? value : Array.isArray(value) ? value[0] ?? "" : "";
 }
 
+function getPropertyTag(propertyId: string): string {
+  return `property:${propertyId}`.toLowerCase();
+}
+
+function parsePropertyIdFromTag(tag: string): string | null {
+  const t = (tag ?? "").trim().toLowerCase();
+  if (!t.startsWith("property:")) return null;
+  const id = t.slice("property:".length).trim();
+  return id ? id : null;
+}
+
 function buildDocumentsUrl(
   estateId: string,
-  params: { q?: string; subject?: string; sensitive?: boolean; tag?: string }
+  params: {
+    q?: string;
+    subject?: string;
+    sensitive?: boolean;
+    tag?: string;
+    propertyId?: string;
+  }
 ): string {
   const sp = new URLSearchParams();
   if (params.q) sp.set("q", params.q);
   if (params.subject) sp.set("subject", params.subject);
   if (params.sensitive) sp.set("sensitive", "1");
   if (params.tag) sp.set("tag", params.tag);
+  if (params.propertyId) sp.set("propertyId", params.propertyId);
   const qs = sp.toString();
   return `/app/estates/${encodeURIComponent(estateId)}/documents${qs ? `?${qs}` : ""}`;
+}
+
+function safeExternalUrl(raw: string | undefined | null): string | null {
+  if (!raw) return null;
+  const v = raw.trim();
+  if (!v) return null;
+
+  // Only allow http(s) links to avoid `javascript:` or other schemes.
+  if (!/^https?:\/\//i.test(v)) return null;
+
+  try {
+    const u = new URL(v);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return u.toString();
+  } catch {
+    return null;
+  }
 }
 
 export const dynamic = "force-dynamic";
@@ -98,6 +133,7 @@ async function createDocumentEntry(formData: FormData): Promise<void> {
   const label = formData.get("label")?.toString().trim();
   const url = formData.get("url")?.toString().trim() || "";
   const tagsRaw = formData.get("tags")?.toString().trim() || "";
+  const propertyTagRaw = formData.get("propertyTag")?.toString().trim() || "";
   const notes = formData.get("notes")?.toString().trim() || "";
   const isSensitive = formData.get("isSensitive") === "on";
 
@@ -113,16 +149,13 @@ async function createDocumentEntry(formData: FormData): Promise<void> {
     redirect(`/app/estates/${estateId}/documents?forbidden=1`);
   }
 
-  const tags = Array.from(
-    new Set(
-      tagsRaw
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean)
-        .map((t) => t.toLowerCase())
-    )
-  );
-  
+  const tagsInput = [...tagsRaw.split(","), propertyTagRaw]
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .map((t) => t.toLowerCase());
+
+  const tags = Array.from(new Set(tagsInput));
+
   const res = await fetch(
     `${await getBaseUrl()}/api/estates/${encodeURIComponent(estateId)}/documents`,
     {
@@ -144,7 +177,13 @@ async function createDocumentEntry(formData: FormData): Promise<void> {
     redirect(`/app/estates/${estateId}/documents?error=create_failed`);
   }
 
-  redirect(`/app/estates/${estateId}/documents`);
+  const basePath = `/app/estates/${estateId}/documents`;
+  const nextUrl = propertyTagRaw
+    ? `${basePath}?tag=${encodeURIComponent(propertyTagRaw.toLowerCase())}`
+    : basePath;
+
+  revalidatePath(basePath);
+  redirect(nextUrl);
 }
 
 async function deleteDocument(formData: FormData): Promise<void> {
@@ -167,7 +206,7 @@ async function deleteDocument(formData: FormData): Promise<void> {
 
   const res = await fetch(
     `${await getBaseUrl()}/api/estates/${encodeURIComponent(estateId)}/documents/${encodeURIComponent(documentId)}`,
-    { method: "DELETE" },
+    { method: "DELETE" }
   );
 
   if (!res.ok) {
@@ -188,7 +227,8 @@ export default async function EstateDocumentsPage({
 
   const session = await auth();
   if (!session?.user?.id) {
-    redirect(`/login?callbackUrl=/app/estates/${estateId}/documents`);
+    const callbackUrl = encodeURIComponent(`/app/estates/${estateId}/documents`);
+    redirect(`/login?callbackUrl=${callbackUrl}`);
   }
 
   let access: Awaited<ReturnType<typeof requireEstateAccess>>;
@@ -220,28 +260,41 @@ export default async function EstateDocumentsPage({
     const subject = firstParam(sp.subject);
     const tag = firstParam(sp.tag).trim();
     const sensitive = firstParam(sp.sensitive);
+    const propertyIdParam = firstParam(
+      (sp as Record<string, string | string[] | undefined>).propertyId
+    ).trim();
 
     searchQuery = q;
     subjectFilter = subject;
-    tagFilter = tag;
+
+    // Property-scoped view: allow either `?tag=property:<id>` or `?propertyId=<id>`.
+    if (tag) {
+      tagFilter = tag;
+    } else if (propertyIdParam) {
+      tagFilter = getPropertyTag(propertyIdParam);
+    } else {
+      tagFilter = "";
+    }
 
     sensitiveOnly = sensitive === "1" || sensitive === "true" || sensitive === "on";
   }
 
   const forbidden = firstParam(sp?.forbidden) === "1";
 
+  const propertyScopeId = parsePropertyIdFromTag(tagFilter);
+  const isPropertyScoped = Boolean(propertyScopeId);
+
   if (!canViewSensitive) {
     sensitiveOnly = false;
   }
 
-  const apiUrl = new URL(
-    `/api/estates/${encodeURIComponent(estateId)}/documents`,
-    await getBaseUrl(),
-  );
+  const apiUrl = new URL(`/api/estates/${encodeURIComponent(estateId)}/documents`, await getBaseUrl());
 
   if (searchQuery) apiUrl.searchParams.set("q", searchQuery);
   if (subjectFilter) apiUrl.searchParams.set("subject", subjectFilter);
-  if (tagFilter) apiUrl.searchParams.set("tag", tagFilter);
+  if (tagFilter) {
+    apiUrl.searchParams.set("tag", isPropertyScoped ? getPropertyTag(propertyScopeId!) : tagFilter);
+  }
   if (canViewSensitive && sensitiveOnly) apiUrl.searchParams.set("sensitive", "1");
 
   const res = await fetch(apiUrl.toString(), {
@@ -309,10 +362,7 @@ export default async function EstateDocumentsPage({
               Estates
             </Link>
             <span className="mx-1 text-slate-600">/</span>
-            <Link
-              href={`/app/estates/${estateId}`}
-              className="text-slate-300 hover:text-slate-100"
-            >
+            <Link href={`/app/estates/${estateId}`} className="text-slate-300 hover:text-slate-100">
               Estate
             </Link>
             <span className="mx-1 text-slate-600">/</span>
@@ -330,13 +380,17 @@ export default async function EstateDocumentsPage({
             <span className="text-[11px] text-slate-500">
               Use this index when assembling your final inventory or accounting.
             </span>
-
+            {isPropertyScoped ? (
+              <span className="inline-flex items-center rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-emerald-100 shadow-sm">
+                Property-scoped
+              </span>
+            ) : null}
             {canCreate ? (
               <Link
                 href="#add-document"
                 className="inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20"
               >
-                Add document
+                {isPropertyScoped ? "Add / tag document" : "Add document"}
               </Link>
             ) : (
               <Link
@@ -356,7 +410,8 @@ export default async function EstateDocumentsPage({
             <div>
               <p className="font-medium">Action blocked</p>
               <p className="text-xs text-rose-200">
-                You don’t have edit permissions for this estate. Request access from the owner to add, edit, or remove documents.
+                You don’t have edit permissions for this estate. Request access from the owner to add, edit, or remove
+                documents.
               </p>
             </div>
             <Link
@@ -397,10 +452,7 @@ export default async function EstateDocumentsPage({
         </span>
         {canViewSensitive ? (
           <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5">
-            Sensitive:{" "}
-            <span className="ml-1 text-slate-200">
-              {documents.filter((d) => d.isSensitive).length}
-            </span>
+            Sensitive: <span className="ml-1 text-slate-200">{documents.filter((d) => d.isSensitive).length}</span>
           </span>
         ) : null}
       </div>
@@ -408,9 +460,7 @@ export default async function EstateDocumentsPage({
       {topTags.length > 0 ? (
         <section className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-              Top tags
-            </div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Top tags</div>
             {tagFilter ? (
               <Link
                 href={buildDocumentsUrl(estateId, {
@@ -418,6 +468,7 @@ export default async function EstateDocumentsPage({
                   subject: subjectFilter || undefined,
                   sensitive: sensitiveOnly,
                   tag: "",
+                  propertyId: propertyScopeId ?? undefined,
                 })}
                 className="text-[11px] text-slate-400 hover:text-slate-200"
               >
@@ -435,6 +486,7 @@ export default async function EstateDocumentsPage({
                   subject: subjectFilter || undefined,
                   sensitive: sensitiveOnly,
                   tag,
+                  propertyId: propertyScopeId ?? undefined,
                 })}
                 className={
                   tagFilter && tag.toLowerCase() === tagFilter.toLowerCase()
@@ -451,6 +503,40 @@ export default async function EstateDocumentsPage({
         </section>
       ) : null}
 
+      {isPropertyScoped ? (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+          <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-medium">Property-scoped view</p>
+              <p className="text-xs text-emerald-200">
+                You’re viewing documents tagged to this property. Clear the filter to return to the full estate index.
+              </p>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2 md:mt-0">
+              <Link
+                href={buildDocumentsUrl(estateId, {
+                  q: searchQuery || undefined,
+                  subject: subjectFilter || undefined,
+                  sensitive: sensitiveOnly,
+                  tag: "",
+                })}
+                className="inline-flex items-center justify-center rounded-md border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-500/25"
+              >
+                Clear property filter
+              </Link>
+              {propertyScopeId ? (
+                <Link
+                  href={`/app/estates/${estateId}/properties/${propertyScopeId}/documents`}
+                  className="inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/40"
+                >
+                  Property documents
+                </Link>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* New document entry form */}
       {canCreate ? (
         <section
@@ -459,20 +545,19 @@ export default async function EstateDocumentsPage({
         >
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-rose-200">
-                Add a document to the index
-              </h2>
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-rose-200">Add a document to the index</h2>
               <p className="mt-1 text-xs text-slate-400">
                 You’re not uploading files here—just keeping a precise record of where each document lives.
               </p>
             </div>
-            <p className="hidden text-[11px] text-slate-500 md:block">
-              Tip: group by subject to keep things scannable.
-            </p>
+            <p className="hidden text-[11px] text-slate-500 md:block">Tip: group by subject to keep things scannable.</p>
           </div>
 
           <form action={createDocumentEntry} className="space-y-3 pt-1">
             <input type="hidden" name="estateId" value={estateId} />
+            {isPropertyScoped && propertyScopeId ? (
+              <input type="hidden" name="propertyTag" value={getPropertyTag(propertyScopeId)} />
+            ) : null}
 
             <div className="grid gap-3 md:grid-cols-[1.1fr,1.1fr]">
               <div className="space-y-1">
@@ -481,7 +566,7 @@ export default async function EstateDocumentsPage({
                   name="subject"
                   required
                   className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50"
-                  defaultValue=""
+                  defaultValue={isPropertyScoped ? "PROPERTY" : ""}
                 >
                   <option value="" disabled>
                     Select a subject
@@ -529,6 +614,7 @@ export default async function EstateDocumentsPage({
                 <label className="text-xs font-medium text-slate-200">Tags (comma-separated)</label>
                 <input
                   name="tags"
+                  defaultValue={isPropertyScoped && propertyScopeId ? getPropertyTag(propertyScopeId) : ""}
                   placeholder="e.g. Chase, statements"
                   className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-50"
                 />
@@ -561,10 +647,7 @@ export default async function EstateDocumentsPage({
           </form>
         </section>
       ) : (
-        <section
-          id="add-document"
-          className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3"
-        >
+        <section id="add-document" className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
           <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-sm font-semibold text-slate-100">Add a document</p>
@@ -644,20 +727,18 @@ export default async function EstateDocumentsPage({
 
             {canViewSensitive ? (
               <label className="flex items-center gap-2 text-[11px] text-slate-400">
-                <input
-                  type="checkbox"
-                  name="sensitive"
-                  value="1"
-                  defaultChecked={sensitiveOnly}
-                  className="h-3 w-3"
-                />
+                <input type="checkbox" name="sensitive" value="1" defaultChecked={sensitiveOnly} className="h-3 w-3" />
                 Sensitive only
               </label>
             ) : null}
 
             {(!!searchQuery || !!subjectFilter || !!tagFilter || sensitiveOnly) ? (
               <Link
-                href={`/app/estates/${estateId}/documents`}
+                href={
+                  propertyScopeId
+                    ? `/app/estates/${estateId}/documents?propertyId=${encodeURIComponent(propertyScopeId)}`
+                    : `/app/estates/${estateId}/documents`
+                }
                 className="whitespace-nowrap text-[11px] text-slate-400 hover:text-slate-200"
               >
                 Clear
@@ -710,9 +791,7 @@ export default async function EstateDocumentsPage({
         <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/60 px-6 py-6">
           <div className="max-w-2xl">
             <div className="text-sm font-semibold text-slate-100">No matching documents</div>
-            <div className="mt-1 text-xs text-slate-400">
-              Try adjusting your search, subject, or sensitivity filter.
-            </div>
+            <div className="mt-1 text-xs text-slate-400">Try adjusting your search, subject, or sensitivity filter.</div>
 
             <div className="mt-4 flex flex-wrap gap-2">
               <Link
@@ -749,13 +828,8 @@ export default async function EstateDocumentsPage({
                 const tags = doc.tags ?? [];
 
                 return (
-                  <tr
-                    key={doc._id}
-                    className="border-t border-slate-800 bg-slate-950/40 hover:bg-slate-900/60"
-                  >
-                    <td className="px-3 py-2 text-slate-200">
-                      {SUBJECT_LABELS[doc.subject] ?? doc.subject}
-                    </td>
+                  <tr key={doc._id} className="border-t border-slate-800 bg-slate-950/40 hover:bg-slate-900/60">
+                    <td className="px-3 py-2 text-slate-200">{SUBJECT_LABELS[doc.subject] ?? doc.subject}</td>
                     <td className="px-3 py-2 text-slate-100">
                       <Link
                         href={`/app/estates/${estateId}/documents/${doc._id}`}
@@ -778,6 +852,7 @@ export default async function EstateDocumentsPage({
                                 subject: subjectFilter || undefined,
                                 sensitive: sensitiveOnly,
                                 tag,
+                                propertyId: propertyScopeId ?? undefined,
                               })}
                               className={
                                 tagFilter && tag.toLowerCase() === tagFilter.toLowerCase()
@@ -793,18 +868,21 @@ export default async function EstateDocumentsPage({
                       )}
                     </td>
                     <td className="px-3 py-2">
-                      {doc.url ? (
-                        <a
-                          href={doc.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-emerald-400 hover:text-emerald-300 underline-offset-2 hover:underline"
-                        >
-                          Open
-                        </a>
-                      ) : (
-                        <span className="text-slate-500">—</span>
-                      )}
+                      {(() => {
+                        const safeUrl = safeExternalUrl(doc.url);
+                        if (!safeUrl) return <span className="text-slate-500">—</span>;
+
+                        return (
+                          <a
+                            href={safeUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-emerald-400 hover:text-emerald-300 underline-offset-2 hover:underline"
+                          >
+                            Open
+                          </a>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 py-2">
                       {doc.isSensitive ? (

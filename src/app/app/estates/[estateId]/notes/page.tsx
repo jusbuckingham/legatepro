@@ -275,7 +275,7 @@ export default async function EstateNotesPage({
             </Link>
             <span className="mx-1 text-slate-600">/</span>
             <Link
-              href={`/app/estates/${estateId}`}
+              href={`/app/estates/${encodeURIComponent(estateId)}`}
               className="hover:underline"
             >
               Overview
@@ -318,14 +318,14 @@ export default async function EstateNotesPage({
           </span>
           {writeEnabled ? (
             <Link
-              href="#add-note"
+              href="#add"
               className="inline-flex items-center justify-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-100 hover:bg-rose-500/20"
             >
               Add note
             </Link>
           ) : (
             <Link
-              href={`/app/estates/${estateId}/collaborators`}
+              href={`/app/estates/${encodeURIComponent(estateId)}/collaborators`}
               className="inline-flex items-center justify-center rounded-md border border-amber-500/50 bg-amber-500/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-100 hover:bg-amber-500/25"
             >
               Request edit access
@@ -344,7 +344,7 @@ export default async function EstateNotesPage({
               </p>
             </div>
             <Link
-              href={`/app/estates/${estateId}/notes`}
+              href={`/app/estates/${encodeURIComponent(estateId)}/notes`}
               className="mt-2 inline-flex items-center justify-center rounded-md border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-500/25 md:mt-0"
             >
               Dismiss
@@ -362,7 +362,7 @@ export default async function EstateNotesPage({
               </p>
             </div>
             <Link
-              href={`/app/estates/${estateId}/collaborators`}
+              href={`/app/estates/${encodeURIComponent(estateId)}/collaborators`}
               className="mt-2 inline-flex items-center justify-center rounded-md border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/25 md:mt-0"
             >
               Request edit access
@@ -380,7 +380,7 @@ export default async function EstateNotesPage({
               </p>
             </div>
             <Link
-              href={`/app/estates/${estateId}/collaborators`}
+              href={`/app/estates/${encodeURIComponent(estateId)}/collaborators`}
               className="mt-2 inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-xs font-medium text-amber-100 hover:bg-amber-500/25 md:mt-0"
             >
               Request edit access
@@ -391,7 +391,7 @@ export default async function EstateNotesPage({
 
       {/* New note form */}
       <section
-        id="add-note"
+        id="add"
         className="space-y-3 rounded-xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm"
       >
         <div className="flex items-center justify-between gap-3">
@@ -411,7 +411,7 @@ export default async function EstateNotesPage({
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <p className="font-medium">Read-only mode</p>
               <Link
-                href={`/app/estates/${estateId}/collaborators`}
+                href={`/app/estates/${encodeURIComponent(estateId)}/collaborators`}
                 className="inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-100 hover:bg-amber-500/25"
               >
                 Request edit access
@@ -424,10 +424,11 @@ export default async function EstateNotesPage({
           <input type="hidden" name="estateId" value={estateId} />
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-200">
+            <label htmlFor="note-body" className="text-xs font-medium text-slate-200">
               Note text
             </label>
             <textarea
+              id="note-body"
               name="body"
               required
               rows={4}
@@ -518,7 +519,7 @@ export default async function EstateNotesPage({
 
             {hasFilters && (
               <Link
-                href={`/app/estates/${estateId}/notes`}
+                href={`/app/estates/${encodeURIComponent(estateId)}/notes`}
                 className="whitespace-nowrap text-[11px] text-slate-400 hover:text-slate-200"
               >
                 Clear filters
@@ -540,21 +541,21 @@ export default async function EstateNotesPage({
             <div className="flex flex-wrap gap-2">
               {writeEnabled ? (
                 <Link
-                  href="#add-note"
+                  href="#add"
                   className="inline-flex items-center rounded-md border border-rose-500/60 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/20"
                 >
                   Add your first note
                 </Link>
               ) : (
                 <Link
-                  href={`/app/estates/${estateId}/collaborators`}
+                  href={`/app/estates/${encodeURIComponent(estateId)}/collaborators`}
                   className="inline-flex items-center rounded-md border border-amber-500/50 bg-amber-500/15 px-3 py-1.5 text-xs font-medium text-amber-100 hover:bg-amber-500/25"
                 >
                   Request edit access
                 </Link>
               )}
               <Link
-                href={`/app/estates/${estateId}`}
+                href={`/app/estates/${encodeURIComponent(estateId)}`}
                 className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/70"
               >
                 Back to overview
@@ -567,7 +568,7 @@ export default async function EstateNotesPage({
             <p className="text-sm text-slate-400">No notes match this search or filter.</p>
             {hasFilters ? (
               <Link
-                href={`/app/estates/${estateId}/notes`}
+                href={`/app/estates/${encodeURIComponent(estateId)}/notes`}
                 className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/70"
               >
                 Clear filters
@@ -605,7 +606,7 @@ export default async function EstateNotesPage({
                               </span>
                             ) : null}
                             <Link
-                              href={`/app/estates/${estateId}/notes/${note._id}`}
+                              href={`/app/estates/${encodeURIComponent(estateId)}/notes/${note._id}`}
                               className="text-sm font-medium text-slate-50 hover:text-emerald-300 underline-offset-2 hover:underline"
                             >
                               {truncate(note.body, 140)}
@@ -622,7 +623,7 @@ export default async function EstateNotesPage({
                       <td className="px-3 py-2 align-top">
                         <div className="flex items-center justify-end gap-3 text-xs">
                           <Link
-                            href={`/app/estates/${estateId}/notes/${note._id}`}
+                            href={`/app/estates/${encodeURIComponent(estateId)}/notes/${note._id}`}
                             className="text-slate-300 hover:text-emerald-300 hover:underline"
                           >
                             View
@@ -630,7 +631,7 @@ export default async function EstateNotesPage({
 
                           {writeEnabled ? (
                             <Link
-                              href={`/app/estates/${estateId}/notes/${note._id}/edit`}
+                              href={`/app/estates/${encodeURIComponent(estateId)}/notes/${note._id}/edit`}
                               className="text-slate-300 hover:text-emerald-300 hover:underline"
                             >
                               Edit
@@ -702,7 +703,7 @@ export default async function EstateNotesPage({
                       </div>
 
                       <Link
-                        href={`/app/estates/${estateId}/notes/${note._id}`}
+                        href={`/app/estates/${encodeURIComponent(estateId)}/notes/${note._id}`}
                         className="mt-1 block text-sm font-medium text-slate-50 hover:text-emerald-300 underline-offset-2 hover:underline"
                       >
                         {truncate(note.body, 140)}
@@ -715,7 +716,7 @@ export default async function EstateNotesPage({
 
                   <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
                     <Link
-                      href={`/app/estates/${estateId}/notes/${note._id}`}
+                      href={`/app/estates/${encodeURIComponent(estateId)}/notes/${note._id}`}
                       className="text-slate-300 hover:text-emerald-300 hover:underline"
                     >
                       View
@@ -723,7 +724,7 @@ export default async function EstateNotesPage({
 
                     {writeEnabled ? (
                       <Link
-                        href={`/app/estates/${estateId}/notes/${note._id}/edit`}
+                        href={`/app/estates/${encodeURIComponent(estateId)}/notes/${note._id}/edit`}
                         className="text-slate-300 hover:text-emerald-300 hover:underline"
                       >
                         Edit

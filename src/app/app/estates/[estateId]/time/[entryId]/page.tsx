@@ -1,12 +1,14 @@
 "use client";
 
 import {
+  Fragment,
+  FormEvent,
   use as usePromise,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
-  FormEvent,
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -28,6 +30,34 @@ interface PageProps {
     estateId: string;
     entryId: string;
   }>;
+}
+
+function formatDisplayDate(value: string): string {
+  const d = new Date(value);
+  return Number.isNaN(d.getTime())
+    ? value
+    : d.toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
+}
+
+function formatHours(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(2) : "0.00";
+}
+
+function buildTimeUrl(estateId: string, params?: { anchor?: string; date?: string }): string {
+  const sp = new URLSearchParams();
+  if (params?.date) sp.set("date", params.date);
+  const qs = sp.toString();
+  const base = `/app/estates/${encodeURIComponent(estateId)}/time${qs ? `?${qs}` : ""}`;
+  return params?.anchor ? `${base}#${params.anchor}` : base;
+}
+
+function confirmLeaveIfDirty(isDirty: boolean): boolean {
+  if (!isDirty) return true;
+  return window.confirm("You have unsaved changes. Leave without saving?");
 }
 
 function getErrorFromApiPayload(payload: unknown): string | null {
@@ -73,6 +103,38 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
   const [notes, setNotes] = useState<string>("");
   const [isBillable, setIsBillable] = useState<boolean>(true);
 
+  const isDirty = useMemo(() => {
+    if (!entry) return false;
+
+    const parsedHours = Number(hours);
+    const hoursNormalized = Number.isFinite(parsedHours) ? parsedHours : NaN;
+
+    const entryHours = Number.isFinite(entry.hours) ? entry.hours : NaN;
+
+    const sameHours =
+      Number.isFinite(hoursNormalized) &&
+      Number.isFinite(entryHours) &&
+      Math.abs(hoursNormalized - entryHours) < 0.0001;
+
+    const sameDate = (date || "") === (entry.date || "");
+    const sameDesc = (description || "").trim() === (entry.description || "").trim();
+    const sameNotes = (notes || "").trim() === ((entry.notes ?? "") || "").trim();
+    const sameBillable = Boolean(isBillable) === Boolean(entry.isBillable !== false);
+
+    return !(sameHours && sameDate && sameDesc && sameNotes && sameBillable);
+  }, [entry, date, hours, description, notes, isBillable]);
+
+  const hoursHelp = useMemo(() => {
+    const parsed = Number(hours);
+    if (!Number.isFinite(parsed) || parsed <= 0) return "";
+    const minutes = Math.round(parsed * 60);
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    if (h <= 0) return `${m} minutes`;
+    if (m === 0) return `${h} hour${h === 1 ? "" : "s"}`;
+    return `${h} hour${h === 1 ? "" : "s"} ${m} min`;
+  }, [hours]);
+
   const loadEntry = useCallback(
     async (force = false) => {
       const loadKey = `${estateId}:${entryId}`;
@@ -87,9 +149,12 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
 
       try {
         const res = await fetch(
-          `/api/estates/${encodeURIComponent(
-            estateId
-          )}/time/${encodeURIComponent(entryId)}`
+          `/api/estates/${encodeURIComponent(estateId)}/time/${encodeURIComponent(entryId)}`,
+          {
+            headers: {
+              "Cache-Control": "no-store",
+            },
+          },
         );
 
         const data: unknown = await safeJson(res);
@@ -136,7 +201,8 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
               ? new Date(rawEntry.date).toISOString().slice(0, 10)
               : new Date().toISOString().slice(0, 10),
           hours: Number.isFinite(hoursValue) ? hoursValue : 0,
-          description: typeof rawEntry.description === "string" ? rawEntry.description : "",
+          description:
+            typeof rawEntry.description === "string" ? rawEntry.description : "",
           notes: typeof rawEntry.notes === "string" ? rawEntry.notes : "",
           isBillable: rawEntry.isBillable === false ? false : true,
         };
@@ -151,7 +217,6 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
         setEntry(null);
         setError(err instanceof Error ? err.message : "Unable to load time entry.");
 
-        // If we failed before setting a specific missing kind, default to a generic error state.
         if (!localMissingKind) {
           localMissingKind = "error";
           setMissingKind("error");
@@ -160,10 +225,9 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
         setLoading(false);
       }
     },
-    [estateId, entryId]
+    [estateId, entryId],
   );
 
-  // Load the entry on mount / param change
   useEffect(() => {
     void loadEntry(false);
   }, [loadEntry]);
@@ -190,22 +254,23 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
     try {
       setSaving(true);
       const res = await fetch(
-        `/api/estates/${encodeURIComponent(
-          estateId
-        )}/time/${encodeURIComponent(entryId)}`,
+        `/api/estates/${encodeURIComponent(estateId)}/time/${encodeURIComponent(
+          entryId,
+        )}`,
         {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
+            "Cache-Control": "no-store",
           },
           body: JSON.stringify({
             date,
             hours: parsedHours,
             description: description.trim(),
-            notes: notes.trim() || undefined,
+            notes: notes.trim() ? notes.trim() : undefined,
             isBillable,
           }),
-        }
+        },
       );
 
       const data: unknown = await safeJson(res);
@@ -215,7 +280,6 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
         throw new Error(apiError || "Failed to update time entry.");
       }
 
-      // Update local entry from response if available
       const updated =
         data &&
         typeof data === "object" &&
@@ -225,23 +289,16 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
           : null;
 
       if (updated) {
-        const minutes =
-          typeof updated.minutes === "number"
-            ? updated.minutes
-            : 0;
+        const minutes = typeof updated.minutes === "number" ? updated.minutes : 0;
         const hoursValue =
-          typeof updated.hours === "number"
-            ? updated.hours
-            : minutes / 60;
+          typeof updated.hours === "number" ? updated.hours : minutes / 60;
 
         const normalized: TimeEntry = {
           _id: String(updated._id ?? entry._id),
           estateId: String(updated.estateId ?? entry.estateId),
           date:
             typeof updated.date === "string"
-              ? new Date(updated.date)
-                  .toISOString()
-                  .slice(0, 10)
+              ? new Date(updated.date).toISOString().slice(0, 10)
               : date,
           hours: Number.isFinite(hoursValue) ? hoursValue : parsedHours,
           description:
@@ -252,17 +309,15 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
             typeof updated.notes === "string"
               ? updated.notes
               : notes.trim() || undefined,
-          isBillable:
-            updated.isBillable === false ? false : true,
+          isBillable: updated.isBillable === false ? false : true,
         };
         setEntry(normalized);
       }
 
       setSuccess("Time entry updated.");
+      router.refresh();
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to update time entry."
-      );
+      setError(err instanceof Error ? err.message : "Unable to update time entry.");
     } finally {
       setSaving(false);
     }
@@ -272,9 +327,13 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
     if (!entry) return;
     if (saving) return;
 
-    const confirmed = window.confirm(
-      "Delete this time entry? This cannot be undone."
-    );
+    const label = entry
+      ? `${new Date(entry.date).toLocaleDateString()} • ${entry.hours.toFixed(
+          2,
+        )}h • ${entry.description || "(no description)"}`
+      : "this time entry";
+
+    const confirmed = window.confirm(`Delete ${label}? This cannot be undone.`);
     if (!confirmed) return;
 
     setError(null);
@@ -283,12 +342,15 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
     try {
       setDeleting(true);
       const res = await fetch(
-        `/api/estates/${encodeURIComponent(
-          estateId
-        )}/time/${encodeURIComponent(entryId)}`,
+        `/api/estates/${encodeURIComponent(estateId)}/time/${encodeURIComponent(
+          entryId,
+        )}`,
         {
           method: "DELETE",
-        }
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        },
       );
 
       const data: unknown = await safeJson(res);
@@ -301,101 +363,219 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
       router.push(`/app/estates/${estateId}/time`);
       router.refresh();
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to delete time entry."
-      );
+      setError(err instanceof Error ? err.message : "Unable to delete time entry.");
     } finally {
       setDeleting(false);
     }
   }
 
-  const titleDate = entry
-    ? new Date(entry.date).toLocaleDateString()
-    : "";
+  const titleDate = entry?.date ? formatDisplayDate(entry.date) : "";
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
       {/* Header */}
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-xs text-slate-500">
-            <Link
-              href={`/app/estates/${estateId}/time`}
-              className="text-slate-400 hover:text-slate-200"
-            >
-              ← Back to timecard
-            </Link>
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-50">
-            Time entry
-          </h1>
-          {entry && (
-            <p className="text-sm text-slate-400">
-              {titleDate} • {entry.hours.toFixed(2)} hours
-              {entry.isBillable === false ? " (non-billable)" : ""}
-            </p>
-          )}
-        </div>
-
-        {entry && (
-          <button
-            type="button"
-            onClick={handleDelete}
-            disabled={isBusy}
-            className="inline-flex items-center justify-center rounded-md border border-red-800/60 bg-red-950/40 px-3 py-1.5 text-xs font-medium text-red-200 hover:bg-red-900/50 disabled:cursor-not-allowed disabled:opacity-60"
+      <header className="space-y-4">
+        <nav className="text-xs text-slate-500">
+          <Link
+            href="/app/estates"
+            className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+            onClick={(e) => {
+              if (!confirmLeaveIfDirty(isDirty)) e.preventDefault();
+            }}
           >
-            {deleting ? "Deleting…" : "Delete entry"}
-          </button>
-        )}
+            Estates
+          </Link>
+          <span className="mx-1 text-slate-600">/</span>
+          <Link
+            href={`/app/estates/${estateId}`}
+            className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+            onClick={(e) => {
+              if (!confirmLeaveIfDirty(isDirty)) e.preventDefault();
+            }}
+          >
+            Estate
+          </Link>
+          <span className="mx-1 text-slate-600">/</span>
+          <Link
+            href={buildTimeUrl(estateId)}
+            className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+            onClick={(e) => {
+              if (!confirmLeaveIfDirty(isDirty)) e.preventDefault();
+            }}
+          >
+            Time
+          </Link>
+          <span className="mx-1 text-slate-600">/</span>
+          <span className="text-rose-300">Entry</span>
+        </nav>
+
+        {entry && isDirty ? (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-medium">Unsaved changes</p>
+                <p className="text-xs text-amber-200">You have edits that haven’t been saved yet.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!entry) return;
+                  setDate(entry.date);
+                  setHours(entry.hours.toString());
+                  setDescription(entry.description);
+                  setNotes(entry.notes ?? "");
+                  setIsBillable(entry.isBillable !== false);
+                  setError(null);
+                  setSuccess(null);
+                }}
+                className="mt-2 inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-xs font-medium text-amber-100 hover:bg-amber-500/25 sm:mt-0"
+              >
+                Discard changes
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {error && !loading ? (
+          <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-medium">Something went wrong</p>
+                <p className="text-xs text-rose-200">{error}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadEntry(true)}
+                disabled={loading}
+                className="mt-2 inline-flex items-center justify-center rounded-md border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/25 disabled:cursor-not-allowed disabled:opacity-60 sm:mt-0"
+              >
+                {loading ? "Retrying…" : "Retry"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {success ? (
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+            <p className="font-medium">{success}</p>
+          </div>
+        ) : null}
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Time entry</span>
+              {entry ? (
+                <span className="rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-300">
+                  {titleDate}
+                </span>
+              ) : null}
+              {entry?.isBillable === false ? (
+                <span className="rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-300">
+                  Non-billable
+                </span>
+              ) : entry ? (
+                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-200">
+                  Billable
+                </span>
+              ) : null}
+            </div>
+
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-50">Entry details</h1>
+            <p className="mt-1 text-sm text-slate-400">
+              Review, edit, or remove this time entry. Changes update your estate time totals.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <Link
+              href={buildTimeUrl(estateId)}
+              className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 font-medium text-slate-200 hover:border-rose-500/70 hover:text-rose-100"
+              onClick={(e) => {
+                if (!confirmLeaveIfDirty(isDirty)) e.preventDefault();
+              }}
+            >
+              ← Back to time
+            </Link>
+
+            {entry ? (
+              <Link
+                href={`/app/estates/${estateId}/time/new?date=${encodeURIComponent(entry.date)}`}
+                className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-3 py-1 font-semibold text-white hover:bg-rose-500"
+                onClick={(e) => {
+                  if (!confirmLeaveIfDirty(isDirty)) e.preventDefault();
+                }}
+              >
+                + New entry
+              </Link>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={!entry || loading || isBusy}
+              className="inline-flex items-center justify-center rounded-full border border-rose-800/60 bg-rose-950/40 px-3 py-1 text-xs font-semibold text-rose-100 hover:bg-rose-900/50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        </div>
       </header>
 
-      {/* Status + meta */}
-      {entry && (
-        <section className="grid gap-3 text-sm sm:grid-cols-3">
-          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500">
-              Billable
-            </p>
-            <p className="mt-1 text-sm font-medium text-slate-50">
-              {entry.isBillable === false ? "No" : "Yes"}
-            </p>
+      {/* Summary cards */}
+      {entry ? (
+        <section className="grid gap-4 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 text-sm">
+            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Hours</p>
+            <p className="mt-1 text-lg font-semibold text-slate-50">{formatHours(entry.hours)}</p>
+            <p className="mt-1 text-xs text-slate-500">{hoursHelp ? (
+              <Fragment>
+                {hoursHelp} total
+              </Fragment>
+            ) : ""}</p>
           </div>
-          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500">
-              Date
-            </p>
-            <p className="mt-1 text-sm font-medium text-slate-50">
-              {titleDate}
-            </p>
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 text-sm">
+            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Date</p>
+            <p className="mt-1 text-lg font-semibold text-slate-50">{titleDate || "—"}</p>
+            <p className="mt-1 text-xs text-slate-500">Log entries daily for clean accounting.</p>
           </div>
-          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500">
-              Hours logged
-            </p>
-            <p className="mt-1 text-sm font-semibold text-slate-50">
-              {entry.hours.toFixed(2)}
-            </p>
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 text-sm">
+            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Billable</p>
+            <p className="mt-1 text-lg font-semibold text-slate-50">{entry.isBillable === false ? "No" : "Yes"}</p>
+            <p className="mt-1 text-xs text-slate-500">Controls billing totals and reporting.</p>
           </div>
         </section>
-      )}
+      ) : null}
 
-      {/* Edit form */}
-      <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-        <h2 className="mb-3 text-sm font-semibold text-slate-100">
-          Edit time entry
-        </h2>
+      {/* Body */}
+      <section className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-100">Edit entry</h2>
+            <p className="text-xs text-slate-500">Update the date, hours, description, and notes.</p>
+          </div>
+          <div className="text-[11px] text-slate-500">{entry ? `ID • ${String(entry._id).slice(-6)}` : ""}</div>
+        </div>
 
         {loading ? (
-          <p className="text-sm text-slate-400">Loading…</p>
+          <div className="space-y-3">
+            <div className="h-4 w-40 animate-pulse rounded bg-slate-800" />
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="h-10 animate-pulse rounded bg-slate-800" />
+              <div className="h-10 animate-pulse rounded bg-slate-800" />
+              <div className="h-10 animate-pulse rounded bg-slate-800" />
+              <div className="h-24 animate-pulse rounded bg-slate-800 md:col-span-2" />
+            </div>
+          </div>
         ) : !entry ? (
-          <div className="rounded-md border border-slate-800 bg-slate-950/40 p-4">
-            <h3 className="text-sm font-semibold text-slate-100">
+          <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/40 p-6">
+            <p className="text-sm font-medium text-slate-100">
               {missingKind === "unauthorized"
                 ? "Unauthorized"
                 : missingKind === "not_found"
                 ? "Time entry not found"
                 : "Unable to load time entry"}
-            </h3>
+            </p>
             <p className="mt-1 text-sm text-slate-400">
               {error ||
                 (missingKind === "unauthorized"
@@ -405,24 +585,23 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
                   : "Something went wrong while loading this entry.")}
             </p>
 
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-4 flex flex-wrap gap-2">
               <Link
-                href={`/app/estates/${estateId}/time`}
-                className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
+                href={buildTimeUrl(estateId)}
+                className="inline-flex items-center rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-900/40"
               >
-                Back to timecard
+                Back to time
               </Link>
 
-              {missingKind === "error" && (
+              {missingKind === "error" ? (
                 <button
                   type="button"
                   onClick={() => void loadEntry(true)}
-                  className="inline-flex items-center rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={loading}
+                  className="inline-flex items-center rounded-md bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-500"
                 >
-                  {loading ? "Retrying…" : "Retry"}
+                  Retry
                 </button>
-              )}
+              ) : null}
             </div>
           </div>
         ) : (
@@ -446,7 +625,7 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
                     setSuccess(null);
                     setDate(e.target.value);
                   }}
-                  className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
+                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-500"
                 />
               </div>
 
@@ -466,11 +645,16 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
                     setSuccess(null);
                     setHours(e.target.value);
                   }}
-                  className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
+                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-500"
                 />
                 <p className="text-[11px] text-slate-500">
-                  Use decimals for partial hours (e.g. 1.5 = 1 hour 30
-                  minutes).
+                  Use decimals for partial hours (e.g. 1.5 = 1 hour 30 minutes).
+                  {hoursHelp ? (
+                    <Fragment>
+                      {" "}
+                      <span className="text-slate-400">({hoursHelp})</span>
+                    </Fragment>
+                  ) : null}
                 </p>
               </div>
 
@@ -484,7 +668,7 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
                     setSuccess(null);
                     setIsBillable(e.target.checked);
                   }}
-                  className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-red-500 focus:ring-red-500"
+                  className="h-4 w-4 rounded border-slate-700 bg-slate-950 text-rose-500 focus:ring-rose-500"
                 />
                 Billable to estate
               </label>
@@ -506,7 +690,7 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
                     setDescription(e.target.value);
                   }}
                   placeholder="Reviewed mail, called attorney, organized documents…"
-                  className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
+                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-500"
                 />
               </div>
 
@@ -524,48 +708,57 @@ export default function TimeEntryDetailPage({ params }: PageProps) {
                     setNotes(e.target.value);
                   }}
                   rows={4}
-                  className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500"
+                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-500"
                 />
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() =>
-                    router.push(`/app/estates/${estateId}/time`)
-                  }
+                  onClick={() => {
+                    if (!confirmLeaveIfDirty(isDirty)) return;
+                    router.push(buildTimeUrl(estateId));
+                  }}
                   disabled={isBusy}
-                  className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/40 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={isBusy}
-                  className="rounded-md bg-red-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={isBusy || !isDirty}
+                  className="rounded-md bg-rose-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  title={!isDirty ? "No changes to save" : undefined}
                 >
-                  {saving ? "Saving…" : "Save changes"}
+                  {saving ? "Saving…" : !isDirty ? "Saved" : "Save changes"}
                 </button>
               </div>
             </div>
-
-            {(error || success) && (
-              <div className="md:col-span-2">
-                {error && (
-                  <p className="text-xs text-red-400" role="alert">
-                    {error}
-                  </p>
-                )}
-                {success && (
-                  <p className="text-xs text-emerald-400" role="status">
-                    {success}
-                  </p>
-                )}
-              </div>
-            )}
           </form>
         )}
       </section>
+
+      {/* Danger zone */}
+      {entry && !loading ? (
+        <section className="rounded-2xl border border-rose-900/40 bg-rose-950/20 p-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-rose-100">Danger zone</h3>
+              <p className="mt-1 text-xs text-rose-200">
+                Deleting removes the entry permanently and updates time totals.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={isBusy}
+              className="inline-flex items-center justify-center rounded-md border border-rose-800/60 bg-rose-950/40 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-900/50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {deleting ? "Deleting…" : "Delete entry"}
+            </button>
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

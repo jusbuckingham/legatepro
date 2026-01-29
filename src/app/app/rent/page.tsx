@@ -48,6 +48,19 @@ function formatDate(date: Date | string | null | undefined): string {
   });
 }
 
+function formatPeriod(month?: number, year?: number): string {
+  if (!month || !year) return "—";
+  if (month < 1 || month > 12) return "—";
+
+  const d = new Date(year, month - 1, 1);
+  if (Number.isNaN(d.getTime())) return "—";
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    year: "numeric",
+  }).format(d);
+}
+
 function getEstateLabel(estateId: LeanRentPaymentWithEstate["estateId"]): string {
   if (!estateId) return "Unknown estate";
 
@@ -117,7 +130,7 @@ export default async function GlobalRentOverviewPage() {
   const hasPayments = payments.length > 0;
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-8 space-y-8">
+    <div className="mx-auto w-full max-w-6xl space-y-8 px-4 py-8">
       <PageHeader
         eyebrow="Rent & income"
         title="Rent overview"
@@ -138,14 +151,14 @@ export default async function GlobalRentOverviewPage() {
               </p>
             </div>
 
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-right shadow-sm shadow-slate-950/50">
-              <p className="text-[0.7rem] font-medium uppercase tracking-[0.18em] text-slate-400">
+            <div className="rounded-2xl border border-border bg-card px-4 py-3 text-right shadow-sm">
+              <p className="text-[0.7rem] font-medium uppercase tracking-[0.18em] text-muted-foreground">
                 Rent entries
               </p>
-              <p className="mt-1 text-lg font-semibold text-slate-100">
+              <p className="mt-1 text-lg font-semibold text-foreground">
                 {payments.length}
               </p>
-              <p className="mt-0.5 text-[0.7rem] text-slate-500">
+              <p className="mt-0.5 text-[0.7rem] text-muted-foreground">
                 Individual payments
               </p>
             </div>
@@ -155,44 +168,44 @@ export default async function GlobalRentOverviewPage() {
 
       {/* By estate summary */}
       <PageSection>
-        <h2 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+        <h2 className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
           By estate
         </h2>
 
         {estateSummaries.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/40 p-6">
-            <p className="text-sm font-semibold text-slate-100">No rent recorded yet</p>
-            <p className="mt-1 text-xs text-slate-400">
+          <div className="rounded-2xl border border-dashed border-border bg-muted/10 p-6">
+            <p className="text-sm font-semibold text-foreground">No rent recorded yet</p>
+            <p className="mt-1 text-xs text-muted-foreground">
               Add rent entries inside an estate and we&apos;ll automatically roll up totals here.
             </p>
 
             <div className="mt-4 flex flex-wrap gap-2">
               <Link
                 href="/app/estates"
-                className="inline-flex h-9 items-center rounded-md bg-emerald-500 px-3 text-xs font-semibold text-slate-950 hover:bg-emerald-400"
+                className="inline-flex h-9 items-center rounded-md bg-emerald-500 px-3 text-xs font-semibold text-background hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 Go to an estate
               </Link>
               <Link
                 href="/app/dashboard"
-                className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-950/60 px-3 text-xs font-semibold text-slate-200 hover:bg-slate-900"
+                className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 Dashboard
               </Link>
             </div>
 
             <div className="mt-5 grid gap-3 md:grid-cols-3">
-              <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-                <p className="text-xs font-semibold text-slate-100">Step 1</p>
-                <p className="mt-1 text-[11px] text-slate-500">Open an estate → Rent tab.</p>
+              <div className="rounded-xl border border-border bg-muted/20 p-4">
+                <p className="text-xs font-semibold text-foreground">Step 1</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">Open an estate → Rent tab.</p>
               </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-                <p className="text-xs font-semibold text-slate-100">Step 2</p>
-                <p className="mt-1 text-[11px] text-slate-500">Add tenant + payment date + amount.</p>
+              <div className="rounded-xl border border-border bg-muted/20 p-4">
+                <p className="text-xs font-semibold text-foreground">Step 2</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">Add tenant + payment date + amount.</p>
               </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-                <p className="text-xs font-semibold text-slate-100">Step 3</p>
-                <p className="mt-1 text-[11px] text-slate-500">See totals by estate and across all estates here.</p>
+              <div className="rounded-xl border border-border bg-muted/20 p-4">
+                <p className="text-xs font-semibold text-foreground">Step 3</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">See totals by estate and across all estates here.</p>
               </div>
             </div>
           </div>
@@ -201,14 +214,14 @@ export default async function GlobalRentOverviewPage() {
             {estateSummaries.map((item) => (
               <div
                 key={item.label}
-                className="flex flex-col justify-between rounded-2xl border border-slate-800 bg-slate-900/40 p-4"
+                className="flex flex-col justify-between rounded-2xl border border-border bg-card p-4"
               >
                 <div>
-                  <p className="text-xs font-medium text-slate-400">
+                  <p className="text-xs font-medium text-muted-foreground">
                     {item.label}
                   </p>
                 </div>
-                <p className="mt-3 text-lg font-semibold text-slate-50">
+                <p className="mt-3 text-lg font-semibold text-foreground">
                   {formatCurrency(item.amount)}
                 </p>
               </div>
@@ -220,36 +233,36 @@ export default async function GlobalRentOverviewPage() {
       {/* All payments table */}
       <PageSection>
         <div className="flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+          <h2 className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
             All rent payments
           </h2>
         </div>
 
         {!hasPayments ? (
-          <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/40 p-6">
-            <p className="text-sm font-semibold text-slate-100">No payments yet</p>
-            <p className="mt-1 text-xs text-slate-400">
-              Add rent from the <span className="font-semibold text-slate-200">Rent</span> tab inside any estate to start tracking income.
+          <div className="rounded-2xl border border-dashed border-border bg-muted/10 p-6">
+            <p className="text-sm font-semibold text-foreground">No payments yet</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Add rent from the <span className="font-semibold text-foreground">Rent</span> tab inside any estate to start tracking income.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <Link
                 href="/app/estates"
-                className="inline-flex h-9 items-center rounded-md bg-emerald-500 px-3 text-xs font-semibold text-slate-950 hover:bg-emerald-400"
+                className="inline-flex h-9 items-center rounded-md bg-emerald-500 px-3 text-xs font-semibold text-background hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 Go to an estate
               </Link>
               <Link
                 href="/app/estates?sort=updated"
-                className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-950/60 px-3 text-xs font-semibold text-slate-200 hover:bg-slate-900"
+                className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 Recently updated
               </Link>
             </div>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/40">
+          <div className="overflow-hidden rounded-2xl border border-border bg-card">
             <table className="min-w-full text-left text-sm">
-              <thead className="border-b border-slate-800 bg-slate-900/60 text-xs uppercase tracking-[0.18em] text-slate-400">
+              <thead className="border-b border-border bg-muted/30 text-xs uppercase tracking-[0.18em] text-muted-foreground">
                 <tr>
                   <th scope="col" className="px-4 py-3">Date</th>
                   <th scope="col" className="px-4 py-3">Estate</th>
@@ -261,26 +274,23 @@ export default async function GlobalRentOverviewPage() {
               <tbody>
                 {payments.map((payment: LeanRentPaymentWithEstate) => {
                   const estateLabel = getEstateLabel(payment.estateId);
-                  const period =
-                    payment.periodMonth && payment.periodYear
-                      ? `${payment.periodMonth}/${payment.periodYear}`
-                      : "—";
+                  const period = formatPeriod(payment.periodMonth, payment.periodYear);
 
                   return (
                     <tr
                       key={
                         typeof payment._id === "string" ? payment._id : payment._id.toString()
                       }
-                      className="border-t border-slate-800/70 hover:bg-slate-900/60"
+                      className="border-t border-border/60 hover:bg-muted/20"
                     >
-                      <td className="px-4 py-3 text-slate-200">
+                      <td className="px-4 py-3 text-foreground">
                         {formatDate(payment.paymentDate)}
                       </td>
-                      <td className="px-4 py-3 text-slate-300">{estateLabel}</td>
-                      <td className="px-4 py-3 text-slate-300">
+                      <td className="px-4 py-3 text-muted-foreground">{estateLabel}</td>
+                      <td className="px-4 py-3 text-muted-foreground">
                         {payment.tenantName || "—"}
                       </td>
-                      <td className="px-4 py-3 text-slate-400">{period}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{period}</td>
                       <td className="px-4 py-3 text-right font-medium text-emerald-300">
                         {formatCurrency(payment.amount)}
                       </td>

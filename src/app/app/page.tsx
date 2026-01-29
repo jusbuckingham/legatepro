@@ -2,19 +2,21 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 
-export const metadata = {
-  title: "App | LegatePro",
+export const metadata: { title: string } = {
+  title: "App · LegatePro",
 };
 
+// This route depends on auth state and should never be statically cached.
 export const dynamic = "force-dynamic";
 
 export default async function AppIndexPage() {
   const session = await auth();
 
   if (!session?.user?.id) {
-    // Send users back to the app entry route; it will forward to the dashboard after auth.
+    // Redirect to login, then return to /app for post-auth routing.
     redirect("/login?callbackUrl=/app");
   }
 
+  // Authenticated users always land on the dashboard.
   redirect("/app/dashboard");
 }

@@ -2,7 +2,13 @@ import Skeleton from "@/components/ui/Skeleton";
 
 export default function DashboardLoading() {
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6">
+    <div
+      className="mx-auto max-w-6xl space-y-6 p-6"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading dashboard"
+    >
+      <span className="sr-only">Loading your dashboard…</span>
       <div className="space-y-2">
         <Skeleton className="h-8 w-56" />
         <Skeleton className="h-4 w-96" />

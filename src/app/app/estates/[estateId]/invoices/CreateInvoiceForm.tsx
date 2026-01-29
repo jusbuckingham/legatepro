@@ -3,34 +3,42 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { getApiErrorMessage, safeJson } from "@/lib/utils";
+import { safeJson } from "@/lib/utils";
 
 type Props = {
   estateId: string;
 };
 
 type CreateInvoiceResponse =
-  | { ok: true; invoice?: { _id?: string } }
+  | { ok: true; invoice: { _id: string } }
   | { ok: false; error?: string }
-  | { invoice?: { _id?: string } };
-
+  | { invoice?: { _id?: string }; error?: string };
 
 function parseDateToIso(dateStr: string): string | undefined {
   const trimmed = dateStr.trim();
   if (!trimmed) return undefined;
 
-  // Interpret date inputs as a calendar date (not local-time midnight) to avoid timezone drift.
-  const d = new Date(`${trimmed}T00:00:00.000Z`);
-  if (Number.isNaN(d.getTime())) return undefined;
-  return d.toISOString();
-}
+  // Expect YYYY-MM-DD from <input type="date">.
+  const match = /^\d{4}-\d{2}-\d{2}$/.exec(trimmed);
+  if (!match) return undefined;
 
-function getErrorStringFromResponse(data: unknown): string | undefined {
-  if (!data || typeof data !== "object") return undefined;
-  const maybe = data as { error?: unknown };
-  return typeof maybe.error === "string" && maybe.error.trim().length > 0
-    ? maybe.error
-    : undefined;
+  const [y, m, d] = trimmed.split("-").map((part) => Number(part));
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return undefined;
+
+  // Create a stable ISO date at UTC midnight for the selected calendar day.
+  const utc = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
+  if (Number.isNaN(utc.getTime())) return undefined;
+
+  // Guard against overflow (e.g., 2026-02-31).
+  if (
+    utc.getUTCFullYear() !== y ||
+    utc.getUTCMonth() !== m - 1 ||
+    utc.getUTCDate() !== d
+  ) {
+    return undefined;
+  }
+
+  return utc.toISOString();
 }
 
 export default function CreateInvoiceForm({ estateId }: Props) {
@@ -41,9 +49,7 @@ export default function CreateInvoiceForm({ estateId }: Props) {
   const [issueDate, setIssueDate] = useState("");
   const [dueDate, setDueDate] = useState("");
 
-  const [status, setStatus] = useState<"idle" | "creating" | "created" | "error">(
-    "idle"
-  );
+  const [status, setStatus] = useState<"idle" | "creating" | "created" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
 
   const isSubmitting = status === "creating";
@@ -102,23 +108,31 @@ export default function CreateInvoiceForm({ estateId }: Props) {
 
       const data = (await safeJson(res)) as CreateInvoiceResponse | null;
 
-      if (!res.ok || (data && !Array.isArray(data) && "ok" in data && data.ok === false)) {
-        const apiMessage = await Promise.resolve(getApiErrorMessage(res));
-        const message = getErrorStringFromResponse(data) || apiMessage || "Failed to create invoice.";
+      const apiMessage = res.ok ? undefined : (await res.text().catch(() => ""))?.trim();
 
+      const explicitError =
+        data && typeof data === "object" && !Array.isArray(data) && typeof (data as { error?: unknown }).error === "string"
+          ? ((data as { error?: string }).error || "").trim()
+          : "";
+
+      if (!res.ok) {
         setStatus("error");
-        setError(message);
+        setError((explicitError || apiMessage || "Failed to create invoice.").trim());
         return;
       }
 
-      const invoiceId =
-        data &&
-        typeof data === "object" &&
-        "invoice" in data &&
-        (data as { invoice?: { _id?: unknown } }).invoice &&
-        typeof (data as { invoice?: { _id?: unknown } }).invoice?._id !== "undefined"
-          ? String((data as { invoice?: { _id?: unknown } }).invoice?._id)
-          : null;
+      if (data && typeof data === "object" && !Array.isArray(data) && "ok" in data && (data as { ok?: unknown }).ok === false) {
+        setStatus("error");
+        setError((explicitError || "Failed to create invoice.").trim());
+        return;
+      }
+
+      const invoiceIdRaw =
+        data && typeof data === "object" && !Array.isArray(data)
+          ? (data as { invoice?: { _id?: unknown } }).invoice?._id
+          : undefined;
+
+      const invoiceId = typeof invoiceIdRaw === "string" ? invoiceIdRaw : invoiceIdRaw != null ? String(invoiceIdRaw) : null;
 
       setStatus("created");
 
@@ -130,6 +144,8 @@ export default function CreateInvoiceForm({ estateId }: Props) {
 
       if (invoiceId) {
         router.push(`/app/estates/${estateIdEncoded}/invoices/${encodeURIComponent(invoiceId)}/edit`);
+        router.refresh();
+        return;
       }
 
       router.refresh();
@@ -159,9 +175,18 @@ export default function CreateInvoiceForm({ estateId }: Props) {
           </span>
         ) : null}
       </div>
+      <p className="sr-only" aria-live="polite">
+        {status === "creating"
+          ? "Creating invoice"
+          : status === "created"
+            ? "Invoice created"
+            : status === "error"
+              ? "Invoice creation failed"
+              : ""}
+      </p>
 
       {error ? (
-        <div className="rounded-md border border-red-900/40 bg-red-950/40 px-3 py-2 text-xs text-red-200" role="alert">
+        <div className="rounded-md border border-red-900/40 bg-red-950/40 px-3 py-2 text-xs text-red-200" role="alert" aria-live="assertive">
           {error}
         </div>
       ) : null}
@@ -189,6 +214,7 @@ export default function CreateInvoiceForm({ estateId }: Props) {
             type="number"
             min="0"
             step="0.01"
+            inputMode="decimal"
             className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-rose-500"
             value={amount}
             onChange={(e) => {

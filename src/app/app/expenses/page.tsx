@@ -1,4 +1,4 @@
-// Replaced file contents as requested.
+// src/app/app/expenses/page.tsx
 "use client";
 
 import Link from "next/link";
@@ -68,6 +68,17 @@ function normalizeAmountToDollars(doc: RawExpense): number {
   return 0;
 }
 
+function toIsoOrUndefined(value: unknown): string | undefined {
+  if (!value) return undefined;
+  const d = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(d.getTime())) return undefined;
+  try {
+    return d.toISOString();
+  } catch {
+    return undefined;
+  }
+}
+
 async function fetchExpensesForUser(): Promise<NormalizedExpenseRow[]> {
   const res = await fetch("/api/expenses", {
     method: "GET",
@@ -116,11 +127,7 @@ async function fetchExpensesForUser(): Promise<NormalizedExpenseRow[]> {
       estateId = normalizeObjectId(doc.estateId);
     }
 
-    const incurredAtIso = doc.date
-      ? new Date(doc.date).toISOString()
-      : doc.incurredAt
-        ? new Date(doc.incurredAt).toISOString()
-        : undefined;
+    const incurredAtIso = toIsoOrUndefined(doc.date) ?? toIsoOrUndefined(doc.incurredAt);
 
     const amountDollars = normalizeAmountToDollars(doc);
 
@@ -188,6 +195,11 @@ export default function GlobalExpensesPage() {
     return initial && initial.trim().length > 0 ? initial : "all";
   });
 
+  const [estateIdFilter, setEstateIdFilter] = useState<string>(() => {
+    const initial = searchParams?.get("estateId");
+    return initial && initial.trim().length > 0 ? initial.trim() : "all";
+  });
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -196,8 +208,7 @@ export default function GlobalExpensesPage() {
       const data = await fetchExpensesForUser();
       setRows(data);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Unable to load expenses right now.";
+      const message = err instanceof Error ? err.message : "Unable to load expenses right now.";
       setError(message || "Unable to load expenses right now.");
     } finally {
       setLoading(false);
@@ -211,32 +222,88 @@ export default function GlobalExpensesPage() {
   // Keep local state aligned if URL query changes (back/forward navigation)
   useEffect(() => {
     const categoryParam = searchParams?.get("category");
-    const nextValue =
-      categoryParam && categoryParam.trim().length > 0 ? categoryParam : "all";
-    setCategoryFilter((prev) => (prev === nextValue ? prev : nextValue));
+    const nextCategory = categoryParam && categoryParam.trim().length > 0 ? categoryParam : "all";
+    setCategoryFilter((prev) => (prev === nextCategory ? prev : nextCategory));
+
+    const estateIdParam = searchParams?.get("estateId");
+    const nextEstateId =
+      estateIdParam && estateIdParam.trim().length > 0 ? estateIdParam.trim() : "all";
+    setEstateIdFilter((prev) => (prev === nextEstateId ? prev : nextEstateId));
   }, [searchParams]);
 
+  const updateQuery = useCallback(
+    (updater: (params: URLSearchParams) => void) => {
+      const params = new URLSearchParams(searchParams?.toString());
+      updater(params);
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname);
+    },
+    [router, pathname, searchParams],
+  );
+
   const filteredRows = useMemo(() => {
-    if (!categoryFilter || categoryFilter === "all") return rows;
-    return rows.filter((row) => row.category === categoryFilter);
-  }, [rows, categoryFilter]);
+    let next = rows;
+
+    if (estateIdFilter && estateIdFilter !== "all") {
+      next = next.filter((row) => row.estateId === estateIdFilter);
+    }
+
+    if (categoryFilter && categoryFilter !== "all") {
+      next = next.filter((row) => row.category === categoryFilter);
+    }
+
+    return next;
+  }, [rows, categoryFilter, estateIdFilter]);
 
   const totalSpent = useMemo(
     () => filteredRows.reduce((sum, row) => sum + (row.amount ?? 0), 0),
     [filteredRows],
   );
 
+  const estateOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of rows) {
+      if (!row.estateId) continue;
+      if (!map.has(row.estateId)) {
+        map.set(row.estateId, row.estateLabel || row.estateId);
+      }
+    }
+
+    return Array.from(map.entries())
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [rows]);
+
+  const totalCount = filteredRows.length;
+
   const handleCategoryChange = (event: ChangeEvent<HTMLSelectElement>) => {
     const next = event.target.value;
     setCategoryFilter(next);
 
-    const params = new URLSearchParams(searchParams?.toString());
-    if (!next || next === "all") params.delete("category");
-    else params.set("category", next);
-
-    const qs = params.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname);
+    updateQuery((params) => {
+      if (!next || next === "all") params.delete("category");
+      else params.set("category", next);
+    });
   };
+
+  const handleEstateChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const next = event.target.value;
+    setEstateIdFilter(next);
+
+    updateQuery((params) => {
+      if (!next || next === "all") params.delete("estateId");
+      else params.set("estateId", next);
+    });
+  };
+
+  const clearFilters = useCallback(() => {
+    setCategoryFilter("all");
+    setEstateIdFilter("all");
+    updateQuery((params) => {
+      params.delete("category");
+      params.delete("estateId");
+    });
+  }, [updateQuery]);
 
   if (loading) {
     return (
@@ -259,19 +326,51 @@ export default function GlobalExpensesPage() {
                 <div className="font-semibold text-slate-50">—</div>
               </div>
 
-              <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
-                <label htmlFor="category-filter" className="text-[11px] text-slate-400">
-                  Category
-                </label>
-                <select
-                  id="category-filter"
-                  value={categoryFilter}
-                  onChange={handleCategoryChange}
-                  disabled
-                  className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-rose-500 disabled:opacity-60"
-                >
-                  <option value="all">All</option>
-                </select>
+              {estateIdFilter !== "all" ? (
+                <div className="flex items-center gap-2 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold text-rose-100">
+                  <span className="opacity-90">Estate</span>
+                  <span className="font-mono text-[10px] text-rose-100/90">{estateIdFilter}</span>
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="ml-1 rounded-full border border-rose-500/30 bg-rose-950/40 px-2 py-0.5 text-[10px] font-semibold text-rose-100 hover:bg-rose-950/60"
+                    aria-label="Clear estate filter"
+                  >
+                    Clear
+                  </button>
+                </div>
+              ) : null}
+
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <label htmlFor="estate-filter" className="text-[11px] text-slate-400">
+                    Estate
+                  </label>
+                  <select
+                    id="estate-filter"
+                    value={estateIdFilter}
+                    disabled
+                    className="max-w-[220px] truncate rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-rose-500 disabled:opacity-60"
+                  >
+                    <option value="all">All</option>
+                  </select>
+                </div>
+
+                <div className="h-4 w-px bg-slate-800" />
+
+                <div className="flex items-center gap-2">
+                  <label htmlFor="category-filter" className="text-[11px] text-slate-400">
+                    Category
+                  </label>
+                  <select
+                    id="category-filter"
+                    value={categoryFilter}
+                    disabled
+                    className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-rose-500 disabled:opacity-60"
+                  >
+                    <option value="all">All</option>
+                  </select>
+                </div>
               </div>
             </div>
           }
@@ -366,36 +465,69 @@ export default function GlobalExpensesPage() {
             </Link>
 
             <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-4 py-2">
-              <div className="text-[11px] uppercase tracking-wide text-slate-500">
-                Total (filtered)
-              </div>
-              <div className="font-semibold text-slate-50">
-                {formatCurrency(totalSpent)}
-              </div>
+              <div className="text-[11px] uppercase tracking-wide text-slate-500">Total (filtered)</div>
+              <div className="font-semibold text-slate-50">{formatCurrency(totalSpent)}</div>
+              <div className="mt-0.5 text-[11px] text-slate-500">{totalCount} item{totalCount === 1 ? "" : "s"}</div>
             </div>
 
-            <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
-              <label htmlFor="category-filter" className="text-[11px] text-slate-400">
-                Category
-              </label>
-              <select
-                id="category-filter"
-                value={categoryFilter}
-                onChange={handleCategoryChange}
-                className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-rose-500"
-              >
-                <option value="all">All</option>
-                <option value="REPAIRS_MAINTENANCE">Repairs &amp; Maintenance</option>
-                <option value="PROPERTY_TAXES">Property taxes</option>
-                <option value="INSURANCE">Insurance</option>
-                <option value="UTILITIES">Utilities</option>
-                <option value="LEGAL_FEES">Legal fees</option>
-                <option value="ADMINISTRATIVE">Administrative</option>
-                <option value="TRAVEL">Travel</option>
-                <option value="PROFESSIONAL_FEES">Professional fees</option>
-                <option value="MORTGAGE">Mortgage</option>
-                <option value="MISCELLANEOUS">Miscellaneous</option>
-              </select>
+            {estateIdFilter !== "all" ? (
+              <div className="flex items-center gap-2 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold text-rose-100">
+                <span className="opacity-90">Estate</span>
+                <span className="font-mono text-[10px] text-rose-100/90">{estateIdFilter}</span>
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="ml-1 rounded-full border border-rose-500/30 bg-rose-950/40 px-2 py-0.5 text-[10px] font-semibold text-rose-100 hover:bg-rose-950/60"
+                  aria-label="Clear estate filter"
+                >
+                  Clear
+                </button>
+              </div>
+            ) : null}
+
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+              <div className="flex items-center gap-2">
+                <label htmlFor="estate-filter" className="text-[11px] text-slate-400">
+                  Estate
+                </label>
+                <select
+                  id="estate-filter"
+                  value={estateIdFilter}
+                  onChange={handleEstateChange}
+                  className="max-w-[220px] truncate rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-rose-500"
+                >
+                  <option value="all">All</option>
+                  {estateOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="h-4 w-px bg-slate-800" />
+
+              <div className="flex items-center gap-2">
+                <label htmlFor="category-filter" className="text-[11px] text-slate-400">
+                  Category
+                </label>
+                <select
+                  id="category-filter"
+                  value={categoryFilter}
+                  onChange={handleCategoryChange}
+                  className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-slate-100 outline-none focus:border-rose-500"
+                >
+                  <option value="all">All</option>
+                  {Object.entries(CATEGORY_LABELS)
+                    .filter(([value]) => value !== "UNCATEGORIZED")
+                    .map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  <option value="UNCATEGORIZED">Uncategorized</option>
+                </select>
+              </div>
             </div>
           </div>
         }
@@ -414,7 +546,7 @@ export default function GlobalExpensesPage() {
         {filteredRows.length === 0 ? (
           <div className="px-4 py-10">
             <div className="mx-auto max-w-2xl text-center">
-              {categoryFilter !== "all" ? (
+              {categoryFilter !== "all" || estateIdFilter !== "all" ? (
                 <>
                   <div className="text-sm font-semibold text-slate-100">No expenses match your filters</div>
                   <div className="mt-1 text-xs text-slate-400">
@@ -424,13 +556,7 @@ export default function GlobalExpensesPage() {
                   <div className="mt-5 flex flex-wrap justify-center gap-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        setCategoryFilter("all");
-                        const params = new URLSearchParams(searchParams?.toString());
-                        params.delete("category");
-                        const qs = params.toString();
-                        router.replace(qs ? `${pathname}?${qs}` : pathname);
-                      }}
+                      onClick={clearFilters}
                       className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-900"
                     >
                       Clear filters
@@ -494,11 +620,20 @@ export default function GlobalExpensesPage() {
         ) : (
           <ul className="divide-y divide-slate-800 text-xs">
             {filteredRows.map((row) => (
-              <li
-                key={row.id}
-                className="grid grid-cols-12 items-center px-4 py-2 hover:bg-slate-900/60"
-              >
-                <div className="col-span-2 text-slate-200">{formatDate(row.incurredAt)}</div>
+              <li key={row.id} className="grid grid-cols-12 items-center px-4 py-2 hover:bg-slate-900/60">
+                <div className="col-span-2 text-slate-200">
+                  {row.estateId ? (
+                    <Link
+                      href={`/app/estates/${row.estateId}/expenses/${row.id}`}
+                      className="text-[11px] font-medium text-slate-200 hover:text-rose-200"
+                    >
+                      {formatDate(row.incurredAt)}
+                    </Link>
+                  ) : (
+                    formatDate(row.incurredAt)
+                  )}
+                </div>
+
                 <div className="col-span-3 text-slate-100">
                   {row.estateId ? (
                     <Link
@@ -511,14 +646,19 @@ export default function GlobalExpensesPage() {
                     <span className="truncate text-[11px] text-slate-300">{row.estateLabel}</span>
                   )}
                 </div>
+
                 <div className="col-span-2 text-slate-200">{formatCategoryLabel(row.category)}</div>
                 <div className="col-span-2 text-slate-300">{row.payee ?? "—"}</div>
-                <div className="col-span-2 text-right font-medium text-slate-50">
-                  {formatCurrency(row.amount)}
-                </div>
+
+                <div className="col-span-2 text-right font-medium text-slate-50">{formatCurrency(row.amount)}</div>
+
                 <div className="col-span-1 text-right">
                   <Link
-                    href={`/app/expenses/${row.id}/edit`}
+                    href={
+                      row.estateId
+                        ? `/app/estates/${row.estateId}/expenses/${row.id}/edit`
+                        : `/app/expenses/${row.id}/edit`
+                    }
                     className="text-[11px] font-medium text-rose-300 hover:text-rose-100"
                   >
                     Edit

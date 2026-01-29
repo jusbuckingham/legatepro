@@ -84,10 +84,20 @@ export default async function PrintableInvoicePage({ params }: PageProps) {
 
   await connectToDatabase();
 
+  // Ensure the current user can access this estate (OWNER/EDITOR/VIEWER)
+  // We intentionally do NOT scope queries by ownerId here so collaborators can print.
+  // Authorization is enforced by estate access.
+  const { requireEstateAccess } = await import("@/lib/estateAccess");
+  try {
+    await requireEstateAccess({ estateId, userId: session.user.id });
+  } catch {
+    notFound();
+  }
+
   const [workspaceSettings, invoiceDoc, estateDoc] = await Promise.all([
     WorkspaceSettings.findOne({ ownerId: session.user.id }).lean().exec(),
-    Invoice.findOne({ _id: invoiceId, ownerId: session.user.id }).lean().exec(),
-    Estate.findOne({ _id: estateId, ownerId: session.user.id }).lean().exec(),
+    Invoice.findOne({ _id: invoiceId, estateId }).lean().exec(),
+    Estate.findOne({ _id: estateId }).lean().exec(),
   ]);
 
   if (!invoiceDoc || !estateDoc) {
@@ -117,7 +127,7 @@ export default async function PrintableInvoicePage({ params }: PageProps) {
       : "DRAFT"
   ) as InvoiceStatus;
 
-  const statusLabel = STATUS_LABELS[status];
+  const statusLabel = STATUS_LABELS[status] ?? "Draft";
   const isDraft = status === "DRAFT";
   const isVoid = status === "VOID";
   const isPaid = status === "PAID";
@@ -171,17 +181,33 @@ export default async function PrintableInvoicePage({ params }: PageProps) {
   const estateName =
     (estateDoc as { name?: string | null }).name ?? "Estate";
 
+  const invoiceIdStr = String((invoiceDoc as { _id?: unknown })._id ?? "");
+
   const displayInvoiceTitle =
     invoiceNumber && invoiceNumber.trim().length > 0
       ? `Invoice ${invoiceNumber}`
-      : `Invoice …${String(
-          (invoiceDoc as { _id?: unknown })._id ?? "",
-        ).slice(-6)}`;
+      : invoiceIdStr
+        ? `Invoice …${invoiceIdStr.slice(-6)}`
+        : "Invoice";
 
   const amountDueCents = totalCents; // can be adjusted later if partial payments are added
 
   return (
     <div className="min-h-screen bg-white text-slate-900">
+      <div className="mx-auto max-w-3xl px-6 pt-6 print:hidden">
+        <div className="flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+          <p className="text-xs text-slate-600">Print view</p>
+          <div className="flex items-center gap-3">
+            <a
+              href={`/app/estates/${estateId}/invoices/${invoiceId}`}
+              className="text-xs font-medium text-slate-700 underline-offset-2 hover:text-slate-900 hover:underline"
+            >
+              Back to invoice
+            </a>
+            <span className="text-xs text-slate-400">Tip: Use your browser print dialog.</span>
+          </div>
+        </div>
+      </div>
       {isDraft || isVoid ? (
         <div className="pointer-events-none fixed inset-0 z-0 flex items-center justify-center print:fixed">
           <p

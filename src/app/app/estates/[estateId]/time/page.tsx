@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  Fragment,
 } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import Link from "next/link";
@@ -68,6 +69,22 @@ function formatUsd(amount: number): string {
   }).format(amount);
 }
 
+function formatHoursHuman(hoursValue: number): string {
+  if (!Number.isFinite(hoursValue) || hoursValue <= 0) return "";
+  const minutes = Math.round(hoursValue * 60);
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h <= 0) return `${m} minutes`;
+  if (m === 0) return `${h} hour${h === 1 ? "" : "s"}`;
+  return `${h} hour${h === 1 ? "" : "s"} ${m} min`;
+}
+
+function monthGroupLabel(isoLike: string): string {
+  const d = new Date(isoLike);
+  if (Number.isNaN(d.getTime())) return "Unknown";
+  return d.toLocaleDateString("en-US", { year: "numeric", month: "long" });
+}
+
 function getEntryId(entry: TimeEntry): string | null {
   const candidate =
     typeof entry._id === "string"
@@ -102,6 +119,52 @@ export default function EstateTimecardPage({ params }: PageProps) {
   const [isBillable, setIsBillable] = useState(true);
   const [hourlyRate, setHourlyRate] = useState<string>("0.00");
 
+  const parsedHours = useMemo(() => {
+    const parsed = Number(hours);
+    return Number.isFinite(parsed) ? parsed : NaN;
+  }, [hours]);
+
+  const hoursHelp = useMemo(() => {
+    if (!Number.isFinite(parsedHours) || parsedHours <= 0) return "";
+    return formatHoursHuman(parsedHours);
+  }, [parsedHours]);
+
+  const canSubmit = useMemo(() => {
+    return !submitting && !loadingEntries && Number.isFinite(parsedHours) && parsedHours > 0 && !!description.trim();
+  }, [submitting, loadingEntries, parsedHours, description]);
+
+  const QUICK_ADD_PRESETS = useMemo(
+    () =>
+      [
+        {
+          label: "Bank call",
+          description: "Called bank re: estate account / balances",
+          notes: "Spoke with: ____ | Outcome: ____",
+        },
+        {
+          label: "Court / filing",
+          description: "Reviewed/updated court filing requirements",
+          notes: "Docs needed: ____ | Deadline: ____",
+        },
+        {
+          label: "Property visit",
+          description: "Visited property / coordinated access",
+          notes: "Who met: ____ | Condition: ____ | Next step: ____",
+        },
+        {
+          label: "Document review",
+          description: "Reviewed mail, statements, and records",
+          notes: "Key findings: ____",
+        },
+        {
+          label: "Vendor / maintenance",
+          description: "Coordinated vendor/maintenance for estate property",
+          notes: "Vendor: ____ | Quote: ____ | Scheduled: ____",
+        },
+      ] as const,
+    [],
+  );
+
   const loadEntries = useCallback(async () => {
     try {
       setLoadingEntries(true);
@@ -114,6 +177,12 @@ export default function EstateTimecardPage({ params }: PageProps) {
       });
 
       const data: unknown = await safeJson(res);
+
+      if (res.status === 401) {
+        const callbackUrl = encodeURIComponent(`/app/estates/${estateIdEncoded}/time`);
+        router.push(`/login?callbackUrl=${callbackUrl}`);
+        return;
+      }
 
       if (!res.ok) {
         const msg = getErrorFromApiPayload(data, "Failed to load time entries");
@@ -186,7 +255,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
     } finally {
       setLoadingEntries(false);
     }
-  }, [estateId, estateIdEncoded]);
+  }, [estateId, estateIdEncoded, router]);
 
   useEffect(() => {
     void loadEntries();
@@ -226,8 +295,8 @@ export default function EstateTimecardPage({ params }: PageProps) {
     e.preventDefault();
     setError(null);
 
-    const parsedHours = Number(hours);
-    if (Number.isNaN(parsedHours) || parsedHours <= 0) {
+    const parsedHoursLocal = Number(hours);
+    if (Number.isNaN(parsedHoursLocal) || parsedHoursLocal <= 0) {
       setError("Please enter a valid number of hours.");
       return;
     }
@@ -248,7 +317,7 @@ export default function EstateTimecardPage({ params }: PageProps) {
         body: JSON.stringify({
           estateId,
           date,
-          hours: parsedHours,
+          hours: parsedHoursLocal,
           description: description.trim(),
           notes: notes.trim() || undefined,
           isBillable,
@@ -256,6 +325,12 @@ export default function EstateTimecardPage({ params }: PageProps) {
       });
 
       const data: unknown = await safeJson(res);
+
+      if (res.status === 401) {
+        const callbackUrl = encodeURIComponent(`/app/estates/${estateIdEncoded}/time`);
+        router.push(`/login?callbackUrl=${callbackUrl}`);
+        return;
+      }
 
       if (!res.ok) {
         const msg = getErrorFromApiPayload(data, "Failed to create time entry.");
@@ -280,19 +355,74 @@ export default function EstateTimecardPage({ params }: PageProps) {
 
   const totalHours = useMemo(
     () => entries.reduce((sum, entry) => sum + (entry.hours || 0), 0),
-    [entries]
+    [entries],
   );
 
   const billableHours = useMemo(
     () =>
       entries.reduce(
         (sum, entry) => (entry.isBillable === false ? sum : sum + (entry.hours || 0)),
-        0
+        0,
       ),
-    [entries]
+    [entries],
   );
 
   const nonBillableHours = useMemo(() => totalHours - billableHours, [totalHours, billableHours]);
+
+  const now = useMemo(() => new Date(), []);
+
+  const { weekTotalHours, weekBillableHours, monthTotalHours, monthBillableHours } = useMemo(() => {
+    const safeDate = (value: string) => {
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+
+    // Week starts on Monday.
+    const startOfWeek = new Date(now);
+    const day = startOfWeek.getDay();
+    const diffToMonday = (day + 6) % 7;
+    startOfWeek.setDate(startOfWeek.getDate() - diffToMonday);
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(endOfWeek.getDate() + 7);
+
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    endOfMonth.setHours(0, 0, 0, 0);
+
+    let weekTotal = 0;
+    let weekBillable = 0;
+    let monthTotal = 0;
+    let monthBillable = 0;
+
+    for (const entry of entries) {
+      const d = safeDate(entry.date);
+      if (!d) continue;
+
+      const hrs = Number.isFinite(entry.hours) ? entry.hours : 0;
+      const isBillableEntry = entry.isBillable !== false;
+
+      if (d >= startOfWeek && d < endOfWeek) {
+        weekTotal += hrs;
+        if (isBillableEntry) weekBillable += hrs;
+      }
+
+      if (d >= startOfMonth && d < endOfMonth) {
+        monthTotal += hrs;
+        if (isBillableEntry) monthBillable += hrs;
+      }
+    }
+
+    return {
+      weekTotalHours: weekTotal,
+      weekBillableHours: weekBillable,
+      monthTotalHours: monthTotal,
+      monthBillableHours: monthBillable,
+    };
+  }, [entries, now]);
 
   const rateNumber = useMemo(() => {
     const parsed = Number.parseFloat(hourlyRate);
@@ -300,6 +430,29 @@ export default function EstateTimecardPage({ params }: PageProps) {
   }, [hourlyRate]);
 
   const billableTotalAmount = useMemo(() => billableHours * rateNumber, [billableHours, rateNumber]);
+
+  const groupedEntries = useMemo(() => {
+    const groups = new Map<string, TimeEntry[]>();
+
+    for (const entry of entries) {
+      const label = monthGroupLabel(entry.date);
+      const list = groups.get(label) ?? [];
+      list.push(entry);
+      groups.set(label, list);
+    }
+
+    // Preserve current sort (entries already sorted desc by date) while keeping groups in that order.
+    const orderedLabels: string[] = [];
+    for (const entry of entries) {
+      const label = monthGroupLabel(entry.date);
+      if (!orderedLabels.includes(label)) orderedLabels.push(label);
+    }
+
+    return orderedLabels.map((label) => ({
+      label,
+      entries: groups.get(label) ?? [],
+    }));
+  }, [entries]);
 
   function handleExportCsv(mode: "all" | "billable" = "all") {
     if (!entries.length) return;
@@ -345,7 +498,11 @@ export default function EstateTimecardPage({ params }: PageProps) {
   const hasBillableEntries = entries.some((entry) => entry.isBillable !== false);
 
   return (
-    <div className="space-y-8 p-6" aria-busy={isBusy} aria-live="polite">
+    <div
+      className="mx-auto w-full max-w-6xl space-y-8 px-4 py-6 sm:px-6 lg:px-8"
+      aria-busy={isBusy}
+      aria-live="polite"
+    >
       <PageHeader
         eyebrow={
           <nav className="text-xs text-slate-500">
@@ -369,52 +526,72 @@ export default function EstateTimecardPage({ params }: PageProps) {
         title="Timecard"
         description="Track your personal representative time for this estate. These entries help you prepare a court-ready time log."
         actions={
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Link
-              href={`/app/estates/${estateIdEncoded}/time/new`}
-              className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white hover:bg-rose-400"
-            >
-              New entry
-            </Link>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+              <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5">
+                Entries: <span className="ml-1 text-slate-200">{entries.length}</span>
+              </span>
+              <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5">
+                All-time: <span className="ml-1 text-slate-200">{totalHours.toFixed(2)}h</span>
+              </span>
+              <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5">
+                Billable: <span className="ml-1 text-slate-200">{billableHours.toFixed(2)}h</span>
+              </span>
+              <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5">
+                Week: <span className="ml-1 text-slate-200">{weekTotalHours.toFixed(2)}h</span>
+              </span>
+              <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5">
+                Month: <span className="ml-1 text-slate-200">{monthTotalHours.toFixed(2)}h</span>
+              </span>
+            </div>
 
-            <button
-              type="button"
-              onClick={() => handleExportCsv("all")}
-              disabled={!canExport}
-              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60 disabled:cursor-not-allowed disabled:opacity-60"
-              title={
-                loadingEntries
-                  ? "Loading entries…"
-                  : !canExport
-                    ? "No entries to export"
-                    : "Export all entries as CSV"
-              }
-            >
-              Export all
-            </button>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Link
+                href={`/app/estates/${estateIdEncoded}/time/new`}
+                className="inline-flex items-center justify-center rounded-md bg-rose-500 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white hover:bg-rose-400"
+              >
+                New entry
+              </Link>
 
-            <button
-              type="button"
-              onClick={() => handleExportCsv("billable")}
-              disabled={!canExport || !hasBillableEntries}
-              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60 disabled:cursor-not-allowed disabled:opacity-60"
-              title={
-                loadingEntries
-                  ? "Loading entries…"
-                  : !hasBillableEntries
-                    ? "No billable entries to export"
-                    : "Export billable entries as CSV"
-              }
-            >
-              Export billable
-            </button>
+              <button
+                type="button"
+                onClick={() => handleExportCsv("all")}
+                disabled={!canExport}
+                className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60 disabled:cursor-not-allowed disabled:opacity-60"
+                title={
+                  loadingEntries
+                    ? "Loading entries…"
+                    : !canExport
+                      ? "No entries to export"
+                      : "Export all entries as CSV"
+                }
+              >
+                Export all
+              </button>
 
-            <Link
-              href={`/app/estates/${estateIdEncoded}`}
-              className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
-            >
-              Back
-            </Link>
+              <button
+                type="button"
+                onClick={() => handleExportCsv("billable")}
+                disabled={!canExport || !hasBillableEntries}
+                className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60 disabled:cursor-not-allowed disabled:opacity-60"
+                title={
+                  loadingEntries
+                    ? "Loading entries…"
+                    : !hasBillableEntries
+                      ? "No billable entries to export"
+                      : "Export billable entries as CSV"
+                }
+              >
+                Export billable
+              </button>
+
+              <Link
+                href={`/app/estates/${estateIdEncoded}`}
+                className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-200 hover:bg-slate-900/60"
+              >
+                Back
+              </Link>
+            </div>
           </div>
         }
       />
@@ -463,22 +640,37 @@ export default function EstateTimecardPage({ params }: PageProps) {
         </div>
       ) : null}
 
-      <section className="grid gap-3 sm:grid-cols-3">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
           <p className="text-[11px] uppercase tracking-wide text-slate-500">Total hours</p>
           <p className="mt-1 text-lg font-semibold text-slate-50">{totalHours.toFixed(2)}</p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Billable {billableHours.toFixed(2)}h · Non-billable {nonBillableHours.toFixed(2)}h
+          </p>
         </div>
+
         <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
           <p className="text-[11px] uppercase tracking-wide text-slate-500">Billable hours</p>
           <p className="mt-1 text-lg font-semibold text-slate-50">{billableHours.toFixed(2)}</p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Est. value {formatUsd(billableTotalAmount)} @ {rateNumber.toFixed(2)}/hr
+          </p>
         </div>
+
         <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-          <p className="text-[11px] uppercase tracking-wide text-slate-500">Non-billable hours</p>
-          <p className="mt-1 text-lg font-semibold text-slate-50">{nonBillableHours.toFixed(2)}</p>
+          <p className="text-[11px] uppercase tracking-wide text-slate-500">This week</p>
+          <p className="mt-1 text-lg font-semibold text-slate-50">{weekTotalHours.toFixed(2)}h</p>
+          <p className="mt-1 text-[11px] text-slate-500">Billable {weekBillableHours.toFixed(2)}h</p>
+        </div>
+
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+          <p className="text-[11px] uppercase tracking-wide text-slate-500">This month</p>
+          <p className="mt-1 text-lg font-semibold text-slate-50">{monthTotalHours.toFixed(2)}h</p>
+          <p className="mt-1 text-[11px] text-slate-500">Billable {monthBillableHours.toFixed(2)}h</p>
         </div>
       </section>
 
-      <section className="flex flex-col gap-2 text-xs sm:flex-row sm:items-center sm:justify-between">
+      <section className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-xs sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
           <span className="text-slate-400">Hourly rate</span>
           <input
@@ -502,7 +694,12 @@ export default function EstateTimecardPage({ params }: PageProps) {
       </section>
 
       <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-        <h2 className="mb-3 text-sm font-semibold text-slate-100">Add time entry</h2>
+        <div className="flex flex-col gap-1">
+          <h2 className="text-sm font-semibold text-slate-100">Add time entry</h2>
+          <p className="text-[11px] text-slate-500">
+            Tip: keep descriptions concrete (who/what/outcome) so you can export a court-ready log later.
+          </p>
+        </div>
 
         <form onSubmit={handleSubmit} className="grid gap-3 md:grid-cols-4 md:items-end">
           <div className="flex flex-col gap-1 text-sm">
@@ -541,6 +738,12 @@ export default function EstateTimecardPage({ params }: PageProps) {
               }}
               className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-500"
             />
+            <p className="text-[11px] text-slate-500">
+              Use decimals for partial hours (e.g. 1.5 = 1h 30m).
+              {hoursHelp ? (
+                <> <span className="text-slate-400">({hoursHelp})</span></>
+              ) : null}
+            </p>
           </div>
 
           <div className="flex flex-col gap-1 text-sm md:col-span-2">
@@ -598,13 +801,43 @@ export default function EstateTimecardPage({ params }: PageProps) {
 
             <button
               type="submit"
-              disabled={isBusy}
+              disabled={!canSubmit}
               className="inline-flex items-center justify-center rounded-md bg-rose-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+              title={
+                !canSubmit
+                  ? "Add a description and a valid hour amount to save"
+                  : "Save time entry"
+              }
             >
               {submitting ? "Saving…" : "Save entry"}
             </button>
           </div>
         </form>
+
+        <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Quick add</p>
+            <p className="text-[11px] text-slate-500">Prefill a common entry, then tweak and save.</p>
+          </div>
+
+          <div className="mt-2 flex flex-wrap gap-2">
+            {QUICK_ADD_PRESETS.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => {
+                  setDescription(preset.description);
+                  setNotes(preset.notes);
+                  setError(null);
+                  setSuccess(null);
+                }}
+                className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-3 py-1 text-[11px] font-medium text-slate-200 hover:bg-slate-900/60"
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div aria-live="polite" className="sr-only" role="status">
           {error ?? ""}
@@ -644,6 +877,12 @@ export default function EstateTimecardPage({ params }: PageProps) {
               visits, or document review.
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
+              <Link
+                href={`/app/estates/${estateIdEncoded}/time/new`}
+                className="inline-flex items-center justify-center rounded-md bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-500"
+              >
+                New entry
+              </Link>
               <button
                 type="button"
                 onClick={() => {
@@ -664,61 +903,138 @@ export default function EstateTimecardPage({ params }: PageProps) {
             </div>
           </div>
         ) : (
-          <div className="overflow-x-auto text-sm">
-            <table className="min-w-full border-collapse">
-              <thead>
-                <tr className="border-b border-slate-800 text-xs uppercase tracking-wide text-slate-400">
-                  <th className="py-2 pr-4 text-left">Date</th>
-                  <th className="py-2 pr-4 text-left">Description</th>
-                  <th className="py-2 pr-4 text-right">Hours</th>
-                  <th className="py-2 pr-4 text-left">Notes</th>
-                  <th className="py-2 pr-4 text-right">Billable</th>
-                  <th className="py-2 pl-2 pr-0 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map((entry, index) => {
-                  const entryId = getEntryId(entry);
-                  return (
-                    <tr
-                      key={entryId ?? `${entry.date}-${index}`}
-                      className="border-b border-slate-800/60 last:border-b-0"
-                    >
-                      <td className="py-2 pr-4 align-top text-slate-100">{formatDisplayDate(entry.date)}</td>
-                      <td className="py-2 pr-4 align-top text-slate-100">{entry.description}</td>
-                      <td className="py-2 pr-4 align-top text-right text-slate-100">
-                        {Number.isFinite(entry.hours) ? entry.hours.toFixed(2) : "0.00"}
-                      </td>
-                      <td className="py-2 pr-4 align-top text-slate-300">{entry.notes || "—"}</td>
-                      <td className="py-2 pr-4 align-top text-right text-slate-300">
-                        {entry.isBillable ? "Yes" : "No"}
-                      </td>
-                      <td className="py-2 pl-2 pr-0 align-top text-right">
-                        {entryId ? (
-                          <Link
-                            href={`/app/estates/${estateIdEncoded}/time/${encodeURIComponent(entryId)}`}
-                            className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800"
+          <>
+                {/* Mobile cards */}
+                <div className="space-y-2 md:hidden">
+                  {groupedEntries.map((group) => (
+                    <div key={group.label} className="space-y-2">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                        {group.label}
+                      </div>
+
+                      {group.entries.map((entry, index) => {
+                        const entryId = getEntryId(entry);
+                        const hoursText = Number.isFinite(entry.hours) ? entry.hours.toFixed(2) : "0.00";
+                        return (
+                          <div
+                            key={entryId ?? `${entry.date}-${index}`}
+                            className="rounded-xl border border-slate-800 bg-slate-950/40 p-3"
                           >
-                            View / edit
-                          </Link>
-                        ) : (
-                          <span className="text-[11px] text-slate-500">No ID available</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-                <tr className="border-t border-slate-700 font-semibold text-slate-100">
-                  <td className="py-2 pr-4 align-top">Totals</td>
-                  <td className="py-2 pr-4 align-top"></td>
-                  <td className="py-2 pr-4 align-top text-right">{totalHours.toFixed(2)}</td>
-                  <td className="py-2 pr-4 align-top"></td>
-                  <td className="py-2 pr-4 align-top"></td>
-                  <td className="py-2 pl-2 pr-0 align-top"></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-xs font-medium text-slate-200">
+                                  {formatDisplayDate(entry.date)}
+                                </div>
+                                <div className="mt-1 text-sm font-semibold text-slate-100 line-clamp-2">
+                                  {entry.description}
+                                </div>
+                                <div className="mt-1 text-xs text-slate-400 line-clamp-2">
+                                  {entry.notes || "—"}
+                                </div>
+                              </div>
+
+                              <div className="flex flex-col items-end gap-2">
+                                <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5 text-[11px] text-slate-200">
+                                  {hoursText}h
+                                </span>
+                                <span className="text-[11px] text-slate-400">
+                                  {entry.isBillable ? "Billable" : "Non-billable"}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="mt-3 flex justify-end">
+                              {entryId ? (
+                                <Link
+                                  href={`/app/estates/${estateIdEncoded}/time/${encodeURIComponent(entryId)}`}
+                                  className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800"
+                                >
+                                  View / edit
+                                </Link>
+                              ) : (
+                                <span className="text-[11px] text-slate-500">No ID available</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desktop table */}
+                <div className="hidden overflow-x-auto text-sm md:block">
+                  <table className="min-w-full border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-xs uppercase tracking-wide text-slate-400">
+                        <th className="py-2 pr-4 text-left">Date</th>
+                        <th className="py-2 pr-4 text-left">Description</th>
+                        <th className="py-2 pr-4 text-right">Hours</th>
+                        <th className="py-2 pr-4 text-left">Notes</th>
+                        <th className="py-2 pr-4 text-right">Billable</th>
+                        <th className="py-2 pl-2 pr-0 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {groupedEntries.map((group) => (
+                        <Fragment key={group.label}>
+                          <tr>
+                            <td
+                              colSpan={6}
+                              className="pt-4 pb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400"
+                            >
+                              {group.label}
+                            </td>
+                          </tr>
+
+                          {group.entries.map((entry, index) => {
+                            const entryId = getEntryId(entry);
+                            return (
+                              <tr
+                                key={entryId ?? `${entry.date}-${index}`}
+                                className="border-b border-slate-800/60 last:border-b-0"
+                              >
+                                <td className="py-2 pr-4 align-top text-slate-100">
+                                  {formatDisplayDate(entry.date)}
+                                </td>
+                                <td className="py-2 pr-4 align-top text-slate-100">{entry.description}</td>
+                                <td className="py-2 pr-4 align-top text-right text-slate-100">
+                                  {Number.isFinite(entry.hours) ? entry.hours.toFixed(2) : "0.00"}
+                                </td>
+                                <td className="py-2 pr-4 align-top text-slate-300">{entry.notes || "—"}</td>
+                                <td className="py-2 pr-4 align-top text-right text-slate-300">
+                                  {entry.isBillable ? "Yes" : "No"}
+                                </td>
+                                <td className="py-2 pl-2 pr-0 align-top text-right">
+                                  {entryId ? (
+                                    <Link
+                                      href={`/app/estates/${estateIdEncoded}/time/${encodeURIComponent(entryId)}`}
+                                      className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800"
+                                    >
+                                      View / edit
+                                    </Link>
+                                  ) : (
+                                    <span className="text-[11px] text-slate-500">No ID available</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </Fragment>
+                      ))}
+
+                      <tr className="border-t border-slate-700 font-semibold text-slate-100">
+                        <td className="py-2 pr-4 align-top">Totals</td>
+                        <td className="py-2 pr-4 align-top"></td>
+                        <td className="py-2 pr-4 align-top text-right">{totalHours.toFixed(2)}</td>
+                        <td className="py-2 pr-4 align-top"></td>
+                        <td className="py-2 pr-4 align-top"></td>
+                        <td className="py-2 pl-2 pr-0 align-top"></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+          </>
         )}
       </section>
 

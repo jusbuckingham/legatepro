@@ -1,7 +1,6 @@
-import React from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { redirect, notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 import { requireEstateAccess } from "@/lib/estateAccess";
@@ -48,12 +47,17 @@ export const metadata: Metadata = {
   title: "Estate expenses | LegatePro",
 };
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+const safeCallbackUrl = (path: string): string => encodeURIComponent(path);
+
 export default async function EstateExpensesPage({ params }: PageProps) {
   const { estateId } = await params;
 
   const session = await auth();
   if (!session?.user?.id) {
-    redirect(`/login?callbackUrl=/app/estates/${estateId}/expenses`);
+    redirect(`/login?callbackUrl=${safeCallbackUrl(`/app/estates/${estateId}/expenses`)}`);
   }
 
   await connectToDatabase();
@@ -65,9 +69,14 @@ export default async function EstateExpensesPage({ params }: PageProps) {
 
   const canEdit = access.canEdit;
 
+  const requestAccessHref = `/app/estates/${estateId}/collaborators?${new URLSearchParams({
+    request: "EDITOR",
+    from: "expenses",
+  }).toString()}`;
+
   const estateDoc = await Estate.findOne({ _id: estateId }).lean().exec();
   if (!estateDoc) {
-    notFound();
+    redirect("/app/estates");
   }
 
   const expensesRaw = await Expense.find({
@@ -139,21 +148,21 @@ export default async function EstateExpensesPage({ params }: PageProps) {
               ← Back
             </Link>
             <Link
-              href="/app/expenses"
+              href={`/app/expenses?${new URLSearchParams({ estateId }).toString()}`}
               className="inline-flex items-center rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
             >
               View all
             </Link>
             {canEdit ? (
               <Link
-                href={`/app/expenses/new?estateId=${encodeURIComponent(estateId)}`}
+                href={`/app/estates/${estateId}/expenses/new`}
                 className="inline-flex items-center rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
               >
                 + Add expense
               </Link>
             ) : (
               <Link
-                href={`/app/estates/${estateId}?requestAccess=1`}
+                href={requestAccessHref}
                 className="inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
               >
                 Request edit access
@@ -206,21 +215,21 @@ export default async function EstateExpensesPage({ params }: PageProps) {
             <div className="mt-4 flex flex-wrap justify-center gap-2">
               {canEdit ? (
                 <Link
-                  href={`/app/expenses/new?estateId=${encodeURIComponent(estateId)}`}
+                  href={`/app/estates/${estateId}/expenses/new`}
                   className="inline-flex items-center rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
                 >
                   + Add expense
                 </Link>
               ) : (
                 <Link
-                  href={`/app/estates/${estateId}?requestAccess=1`}
+                  href={requestAccessHref}
                   className="inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
                 >
                   Request edit access
                 </Link>
               )}
               <Link
-                href="/app/expenses"
+                href={`/app/expenses?${new URLSearchParams({ estateId }).toString()}`}
                 className="inline-flex items-center rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
               >
                 View all expenses
@@ -286,14 +295,14 @@ export default async function EstateExpensesPage({ params }: PageProps) {
                       <div className="inline-flex items-center gap-2">
                         {canEdit ? (
                           <Link
-                            href={`/app/expenses/${exp.id}/edit`}
+                            href={`/app/estates/${estateId}/expenses/${exp.id}/edit`}
                             className="text-[11px] font-medium text-sky-400 hover:text-sky-300"
                           >
                             Edit
                           </Link>
                         ) : null}
                         <Link
-                          href={`/app/expenses/${exp.id}`}
+                          href={`/app/estates/${estateId}/expenses/${exp.id}`}
                           className="text-[11px] text-slate-400 hover:text-slate-200"
                         >
                           View

@@ -2,7 +2,13 @@
 import { DeletePropertyButton } from "@/components/estate/DeletePropertyButton";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import mongoose from "mongoose";
+import { Types } from "mongoose";
+export const metadata = {
+  title: "Properties | LegatePro",
+};
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 import { connectToDatabase } from "@/lib/db";
 import { auth } from "@/lib/auth";
@@ -33,7 +39,7 @@ interface PageProps {
 }
 
 function isValidObjectId(value: string): boolean {
-  return mongoose.Types.ObjectId.isValid(value);
+  return Types.ObjectId.isValid(value);
 }
 
 function normalizeObjectId(value: string): string | null {
@@ -68,7 +74,9 @@ async function getProperties(
     (estate as unknown as { displayName?: string; name?: string; estateName?: string }).estateName ||
     "Estate";
 
-  const properties = await EstateProperty.find({ estateId: estateObjectId })
+  const properties = await EstateProperty.find({
+    $or: [{ estateId: estateObjectId }, { estate: estateObjectId }],
+  })
     .select({
       _id: 1,
       nickname: 1,

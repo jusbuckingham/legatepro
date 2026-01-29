@@ -5,11 +5,10 @@ import { redirect } from "next/navigation";
 
 import { getApiErrorMessage, safeJson } from "@/lib/utils";
 import { auth } from "@/lib/auth";
+import { requireEstateAccess } from "@/lib/estateAccess";
 
 import CreateInvoiceForm from "./CreateInvoiceForm";
 import InvoiceStatusButtons from "./InvoiceStatusButtons";
-
-import { requireEstateAccess } from "@/lib/estateAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +51,7 @@ function isOverdue(inv: { dueDate?: string; status?: string }): boolean {
   const s = normalizeStatus(inv.status);
   if (s === "paid" || s === "void") return false;
   if (!inv.dueDate) return false;
+
   const due = new Date(inv.dueDate);
   if (Number.isNaN(due.getTime())) return false;
 
@@ -82,7 +82,6 @@ function toDateLabel(d?: string): string {
 }
 
 async function getBaseUrl(): Promise<string> {
-  // Prefer a configured base URL (useful in prod), otherwise derive from request headers.
   const envBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL;
   if (envBase) return envBase.replace(/\/$/, "");
 
@@ -98,16 +97,17 @@ async function getInvoices(
   try {
     const baseUrl = await getBaseUrl();
 
-    // IMPORTANT: When a Server Component calls an internal API route, it does NOT
-    // automatically forward auth cookies. If the API route uses `auth()`, we must
-    // forward the cookie header or the request may 401 and the UI will look empty.
+    // Server Components calling internal API routes must forward cookies for auth().
     const h = await headers();
     const cookie = h.get("cookie") ?? "";
 
-    const res = await fetch(`${baseUrl}/api/estates/${encodeURIComponent(estateId)}/invoices`, {
-      cache: "no-store",
-      headers: cookie ? { cookie } : undefined,
-    });
+    const res = await fetch(
+      `${baseUrl}/api/estates/${encodeURIComponent(estateId)}/invoices`,
+      {
+        cache: "no-store",
+        headers: cookie ? { cookie } : undefined,
+      }
+    );
 
     if (!res.ok) {
       const msg = await getApiErrorMessage(res);
@@ -124,7 +124,6 @@ async function getInvoices(
       return { invoices: data as InvoiceLean[] };
     }
 
-    // New contract: { ok: false, error: string }
     if (data && data.ok === false) {
       return {
         invoices: [],
@@ -141,13 +140,13 @@ async function getInvoices(
 
 export default async function InvoicesPage({ params, searchParams }: PageProps) {
   const { estateId } = params;
+  const estateIdEnc = encodeURIComponent(estateId);
 
   const session = await auth();
   if (!session?.user?.id) {
-    redirect(`/login?callbackUrl=/app/estates/${encodeURIComponent(estateId)}/invoices`);
+    redirect(`/login?callbackUrl=/app/estates/${estateIdEnc}/invoices`);
   }
 
-  // Access control (redirects / throws inside helper as appropriate)
   const access = await requireEstateAccess({ estateId, userId: session.user.id });
   const role = access.role;
   const canEdit = role !== "VIEWER";
@@ -159,40 +158,36 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
   let searchQuery = "";
   let statusFilter = "";
   let overdueOnly = false;
+
   if (searchParams) {
-    const sp = searchParams;
-    if (sp?.q && typeof sp.q === "string") searchQuery = sp.q.trim();
-    if (sp?.status && typeof sp.status === "string") statusFilter = sp.status.toLowerCase();
-    if (sp?.overdue && (sp.overdue === "1" || sp.overdue === "true")) overdueOnly = true;
+    if (typeof searchParams.q === "string") searchQuery = searchParams.q.trim();
+    if (typeof searchParams.status === "string") statusFilter = searchParams.status.toLowerCase();
+    if (searchParams.overdue === "1" || searchParams.overdue === "true") overdueOnly = true;
   }
 
   const { invoices, error } = await getInvoices(estateId);
-  // computedInvoices: derive status "overdue" if dueDate passed and not paid/void
-  const computedInvoices = invoices.map((inv) => {
-    const locked = isLockedStatus(inv.status);
-    const overdue = !locked && isOverdue(inv);
-    return {
-      ...inv,
-      status: overdue ? "overdue" : inv.status,
-    };
-  });
-  computedInvoices.sort((a, b) => {
-    const aKey = a.issueDate || a.createdAt || "";
-    const bKey = b.issueDate || b.createdAt || "";
-    const aTime = new Date(aKey).getTime();
-    const bTime = new Date(bKey).getTime();
-    if (Number.isNaN(aTime) && Number.isNaN(bTime)) return 0;
-    if (Number.isNaN(aTime)) return 1;
-    if (Number.isNaN(bTime)) return -1;
-    return bTime - aTime;
-  });
+
+  const computedInvoices = invoices
+    .map((inv) => {
+      const locked = isLockedStatus(inv.status);
+      const overdue = !locked && isOverdue(inv);
+      return { ...inv, status: overdue ? "overdue" : inv.status };
+    })
+    .sort((a, b) => {
+      const aKey = a.issueDate || a.createdAt || "";
+      const bKey = b.issueDate || b.createdAt || "";
+      const aTime = new Date(aKey).getTime();
+      const bTime = new Date(bKey).getTime();
+      if (Number.isNaN(aTime) && Number.isNaN(bTime)) return 0;
+      if (Number.isNaN(aTime)) return 1;
+      if (Number.isNaN(bTime)) return -1;
+      return bTime - aTime;
+    });
 
   // Filtering
   let filteredInvoices = computedInvoices;
   if (statusFilter && statusFilter !== "all") {
-    filteredInvoices = filteredInvoices.filter(
-      (inv) => normalizeStatus(inv.status) === statusFilter
-    );
+    filteredInvoices = filteredInvoices.filter((inv) => normalizeStatus(inv.status) === statusFilter);
   }
   if (overdueOnly) {
     filteredInvoices = filteredInvoices.filter((inv) => normalizeStatus(inv.status) === "overdue");
@@ -217,18 +212,13 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
       return s !== "paid" && s !== "void";
     })
     .reduce((sum, inv) => sum + inv.amount, 0);
+
   const overdueCount = computedInvoices.filter((inv) => normalizeStatus(inv.status) === "overdue").length;
   const paidCount = computedInvoices.filter((inv) => normalizeStatus(inv.status) === "paid").length;
 
-  // Any filters active?
-  const anyFilters = !!(
-    searchQuery ||
-    (statusFilter && statusFilter !== "all") ||
-    overdueOnly
-  );
+  const anyFilters = !!(searchQuery || (statusFilter && statusFilter !== "all") || overdueOnly);
 
-  // Filter form action URL
-  const filterAction = `/app/estates/${encodeURIComponent(estateId)}/invoices`;
+  const filterAction = `/app/estates/${estateIdEnc}/invoices`;
 
   return (
     <div className="space-y-6 p-6">
@@ -236,9 +226,11 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
       <header className="flex flex-col gap-3 md:flex-row md:items-baseline md:justify-between">
         <div>
           <nav className="mb-1 flex items-center gap-2 text-xs text-slate-400">
-            <Link href="/app/estates" className="hover:underline text-slate-400">Estates</Link>
+            <Link href="/app/estates" className="text-slate-400 hover:underline">
+              Estates
+            </Link>
             <span className="mx-1">/</span>
-            <Link href={`/app/estates/${estateId}`} className="hover:underline text-slate-400">
+            <Link href={`/app/estates/${estateIdEnc}`} className="text-slate-400 hover:underline">
               Estate
             </Link>
             <span className="mx-1">/</span>
@@ -246,13 +238,14 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
           </nav>
           <h1 className="text-2xl font-semibold text-slate-50">Invoices</h1>
         </div>
+
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/80 px-2 py-0.5 text-[11px] font-semibold uppercase text-slate-300">
             Role: {role}
           </span>
           {!canEdit && (
             <Link
-              href={`/app/estates/${estateId}?requestAccess=1`}
+              href={`/app/estates/${estateIdEnc}?requestAccess=1`}
               className="text-xs text-rose-400 hover:underline"
             >
               Request edit access
@@ -271,7 +264,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
               </div>
             </div>
             <Link
-              href={`/app/estates/${estateId}?requestAccess=1`}
+              href={`/app/estates/${estateIdEnc}?requestAccess=1`}
               className="inline-flex items-center justify-center rounded-md border border-rose-500/30 bg-slate-950/60 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-slate-900/50"
             >
               Request edit access
@@ -289,13 +282,13 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
             </div>
             <div className="flex flex-wrap gap-2">
               <Link
-                href={`/app/estates/${estateId}/invoices`}
+                href={filterAction}
                 className="inline-flex items-center justify-center rounded-md border border-rose-500/30 bg-slate-950/60 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-slate-900/50"
               >
                 Retry
               </Link>
               <Link
-                href={`/app/estates/${estateId}`}
+                href={`/app/estates/${estateIdEnc}`}
                 className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-900/50"
               >
                 Back to overview
@@ -347,25 +340,26 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
         </section>
       )}
 
-      {/* Anchor for readiness deep-links (expenses) */}
-      <section id="add-expense" className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+      {/* Quick action: expenses */}
+      <section className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
         <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-sm font-semibold text-slate-100">Add an expense</p>
             <p className="text-xs text-slate-400">
-              Expenses will appear alongside invoices in your estate accounting.
+              Expenses show up in the estate ledger and reimbursement summary.
             </p>
           </div>
+
           {canEdit ? (
             <Link
-              href={`${filterAction}#add-invoice`}
+              href={`/app/estates/${estateIdEnc}/expenses/new?from=invoices`}
               className="mt-2 inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/15 md:mt-0"
             >
               Add expense
             </Link>
           ) : (
             <Link
-              href={`/app/estates/${estateId}?requestAccess=1`}
+              href={`/app/estates/${estateIdEnc}?requestAccess=1`}
               className="mt-2 inline-flex items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-500/15 md:mt-0"
             >
               Request edit access
@@ -385,12 +379,9 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
               </span>
             )}
           </div>
+
           {computedInvoices.length > 0 && (
-            <form
-              action={filterAction}
-              method="get"
-              className="flex flex-col gap-2 md:flex-row md:items-end md:gap-3"
-            >
+            <form action={filterAction} method="get" className="flex flex-col gap-2 md:flex-row md:items-end md:gap-3">
               <div className="flex flex-col gap-1">
                 <label htmlFor="invoice-search" className="sr-only">
                   Search invoices
@@ -401,10 +392,11 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
                   name="q"
                   placeholder="Search description…"
                   defaultValue={searchQuery}
-                  className="rounded-md border border-slate-700 bg-slate-900/70 px-2 py-1 text-slate-100 placeholder:text-slate-500 text-sm"
+                  className="rounded-md border border-slate-700 bg-slate-900/70 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500"
                   autoComplete="off"
                 />
               </div>
+
               <div className="flex flex-col gap-1">
                 <label htmlFor="invoice-status" className="sr-only">
                   Filter by status
@@ -413,7 +405,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
                   id="invoice-status"
                   name="status"
                   defaultValue={statusFilter || "all"}
-                  className="rounded-md border border-slate-700 bg-slate-900/70 px-2 py-1 text-slate-100 text-sm"
+                  className="rounded-md border border-slate-700 bg-slate-900/70 px-2 py-1 text-sm text-slate-100"
                 >
                   <option value="all">All statuses</option>
                   <option value="draft">Draft</option>
@@ -424,24 +416,21 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
                   <option value="overdue">Overdue</option>
                 </select>
               </div>
+
               <label className="inline-flex items-center gap-1 text-xs text-slate-400">
-                <input
-                  type="checkbox"
-                  name="overdue"
-                  value="1"
-                  defaultChecked={overdueOnly}
-                  className="accent-rose-500"
-                />
+                <input type="checkbox" name="overdue" value="1" defaultChecked={overdueOnly} className="accent-rose-500" />
                 Overdue only
               </label>
+
               {anyFilters && (
                 <Link
                   href={filterAction}
-                  className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-transparent px-3 py-1.5 text-sm font-medium text-slate-300 hover:bg-slate-900/40 whitespace-nowrap"
+                  className="inline-flex items-center justify-center whitespace-nowrap rounded-md border border-slate-800 bg-transparent px-3 py-1.5 text-sm font-medium text-slate-300 hover:bg-slate-900/40"
                 >
                   Clear
                 </Link>
               )}
+
               <button
                 type="submit"
                 className="inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-sm font-medium text-slate-100 hover:bg-slate-900"
@@ -480,7 +469,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
                   </Link>
                 ) : (
                   <Link
-                    href={`/app/estates/${estateId}?requestAccess=1`}
+                    href={`/app/estates/${estateIdEnc}?requestAccess=1`}
                     className="inline-flex items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-500/15"
                   >
                     Request edit access
@@ -488,7 +477,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
                 )}
 
                 <Link
-                  href={`/app/estates/${estateId}`}
+                  href={`/app/estates/${estateIdEnc}`}
                   className="inline-flex items-center justify-center rounded-md border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-900"
                 >
                   Back to overview
@@ -503,10 +492,7 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
         ) : filteredInvoices.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10">
             <div className="mb-2 text-rose-400">No invoices match your filters.</div>
-            <Link
-              href={filterAction}
-              className="text-xs text-rose-300 hover:underline"
-            >
+            <Link href={filterAction} className="text-xs text-rose-300 hover:underline">
               Clear
             </Link>
           </div>
@@ -519,28 +505,33 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
                 const overdue = normalizeStatus(inv.status) === "overdue";
                 const canEditInvoice = canEdit && !locked;
 
+                const invoiceIdEnc = encodeURIComponent(inv._id);
+
                 return (
                   <div
                     key={inv._id}
                     className={
-                      "rounded-xl border bg-slate-950/80 p-4 flex flex-col gap-2 " +
+                      "flex flex-col gap-2 rounded-xl border bg-slate-950/80 p-4 " +
                       (overdue ? "border-rose-500/30" : "border-slate-800")
                     }
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <Link
-                          href={`/app/estates/${estateId}/invoices/${inv._id}`}
+                          href={`/app/estates/${estateIdEnc}/invoices/${invoiceIdEnc}`}
                           className="text-base font-semibold text-blue-300 hover:underline"
                         >
                           {invoiceTitle(inv.description)}
                         </Link>
-                        <div className="text-slate-400 text-xs mt-0.5">
+                        <div className="mt-0.5 text-xs text-slate-400">
                           Issued: {toDateLabel(inv.issueDate)} &nbsp;|&nbsp; Due: {toDateLabel(inv.dueDate)}
                         </div>
                       </div>
-                      <div className="text-lg font-bold text-slate-100 shrink-0">{formatMoney(inv.amount)}</div>
+                      <div className="shrink-0 text-lg font-bold text-slate-100">
+                        {formatMoney(inv.amount)}
+                      </div>
                     </div>
+
                     <div className="flex items-center gap-2">
                       {canEdit && !locked ? (
                         <InvoiceStatusButtons invoiceId={inv._id} initialStatus={inv.status ?? "draft"} />
@@ -552,16 +543,14 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
                         </span>
                       )}
                     </div>
-                    <div className="flex gap-3 mt-2 text-xs">
-                      <Link
-                        href={`/app/estates/${estateId}/invoices/${inv._id}`}
-                        className="text-blue-400 hover:underline"
-                      >
+
+                    <div className="mt-2 flex gap-3 text-xs">
+                      <Link href={`/app/estates/${estateIdEnc}/invoices/${invoiceIdEnc}`} className="text-blue-400 hover:underline">
                         View
                       </Link>
                       {canEditInvoice ? (
                         <Link
-                          href={`/app/estates/${estateId}/invoices/${inv._id}/edit`}
+                          href={`/app/estates/${estateIdEnc}/invoices/${invoiceIdEnc}/edit`}
                           className="text-blue-400 hover:underline"
                         >
                           Edit
@@ -570,12 +559,13 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
                         <span className="cursor-not-allowed text-slate-500">Edit</span>
                       )}
                       <Link
-                        href={`/app/estates/${estateId}/invoices/${inv._id}/print`}
+                        href={`/app/estates/${estateIdEnc}/invoices/${invoiceIdEnc}/print`}
                         className="text-blue-400 hover:underline"
                       >
                         Print
                       </Link>
                     </div>
+
                     {locked && (
                       <p className="mt-1 text-[11px] text-slate-500">
                         This invoice is locked because it is {normalizeStatus(inv.status)}.
@@ -585,8 +575,9 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
                 );
               })}
             </div>
+
             {/* Desktop: table */}
-            <div className="hidden md:block overflow-x-auto">
+            <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-800 text-xs uppercase text-slate-400">
@@ -598,31 +589,34 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
                     <th className="px-3 py-2 text-right">Actions</th>
                   </tr>
                 </thead>
+
                 <tbody>
                   {filteredInvoices.map((inv) => {
                     const locked = isLockedStatus(inv.status);
                     const overdue = normalizeStatus(inv.status) === "overdue";
                     const canEditInvoice = canEdit && !locked;
+                    const invoiceIdEnc = encodeURIComponent(inv._id);
 
                     return (
                       <tr
                         key={inv._id}
                         className={
-                          "border-b last:border-0 " +
-                          (overdue ? "border-rose-500/20" : "border-slate-800")
+                          "border-b last:border-0 " + (overdue ? "border-rose-500/20" : "border-slate-800")
                         }
                       >
                         <td className="px-3 py-2 align-top">
                           <Link
-                            href={`/app/estates/${estateId}/invoices/${inv._id}`}
-                            className="text-slate-100 hover:underline font-medium"
+                            href={`/app/estates/${estateIdEnc}/invoices/${invoiceIdEnc}`}
+                            className="font-medium text-slate-100 hover:underline"
                           >
                             {invoiceTitle(inv.description)}
                           </Link>
                         </td>
+
                         <td className="px-3 py-2 align-top text-slate-200">{formatMoney(inv.amount)}</td>
                         <td className="px-3 py-2 align-top text-slate-400">{toDateLabel(inv.issueDate)}</td>
                         <td className="px-3 py-2 align-top text-slate-400">{toDateLabel(inv.dueDate)}</td>
+
                         <td className="px-3 py-2 align-top">
                           {canEdit && !locked ? (
                             <InvoiceStatusButtons invoiceId={inv._id} initialStatus={inv.status ?? "draft"} />
@@ -634,17 +628,19 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
                             </span>
                           )}
                         </td>
+
                         <td className="px-3 py-2 align-top">
                           <div className="flex justify-end gap-2 text-xs">
                             <Link
-                              href={`/app/estates/${estateId}/invoices/${inv._id}`}
+                              href={`/app/estates/${estateIdEnc}/invoices/${invoiceIdEnc}`}
                               className="text-blue-400 hover:underline"
                             >
                               View
                             </Link>
+
                             {canEditInvoice ? (
                               <Link
-                                href={`/app/estates/${estateId}/invoices/${inv._id}/edit`}
+                                href={`/app/estates/${estateIdEnc}/invoices/${invoiceIdEnc}/edit`}
                                 className="text-blue-400 hover:underline"
                               >
                                 Edit
@@ -652,13 +648,15 @@ export default async function InvoicesPage({ params, searchParams }: PageProps) 
                             ) : (
                               <span className="cursor-not-allowed text-slate-500">Edit</span>
                             )}
+
                             <Link
-                              href={`/app/estates/${estateId}/invoices/${inv._id}/print`}
+                              href={`/app/estates/${estateIdEnc}/invoices/${invoiceIdEnc}/print`}
                               className="text-blue-400 hover:underline"
                             >
                               Print
                             </Link>
                           </div>
+
                           {locked && (
                             <span className="ml-2 inline-flex items-center rounded-full border border-slate-700 bg-slate-900/60 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-400">
                               Locked

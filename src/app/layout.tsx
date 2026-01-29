@@ -50,14 +50,14 @@ export default function RootLayout({
             GeistSans.variable,
             GeistMono.variable,
             // Global baseline
-            "min-h-screen bg-slate-950 text-slate-50 antialiased",
+            "min-h-screen bg-background text-foreground antialiased",
             // Typography rhythm
             "leading-6 tracking-[-0.012em]",
             // Better text rendering + selection
-            "[text-rendering:optimizeLegibility] selection:bg-slate-200/20 selection:text-slate-50",
+            "[text-rendering:optimizeLegibility] selection:bg-rose-500/15 selection:text-foreground",
             // Accessible focus styles
             "focus:outline-none",
-            "[&_*]:focus-visible:outline-none [&_*]:focus-visible:ring-2 [&_*]:focus-visible:ring-slate-200/60 [&_*]:focus-visible:ring-offset-2 [&_*]:focus-visible:ring-offset-slate-950",
+            "[&_*]:focus-visible:outline-none [&_*]:focus-visible:ring-2 [&_*]:focus-visible:ring-foreground/15 [&_*]:focus-visible:ring-offset-2 [&_*]:focus-visible:ring-offset-background",
           ].join(" ")
         }
       >

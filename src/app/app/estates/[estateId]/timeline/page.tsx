@@ -113,13 +113,15 @@ function formatDateTime(value: string): string {
   if (Number.isNaN(d.getTime())) return "";
 
   // Consistent server-side formatting (Node) to avoid hydration/locale drift.
+  // Use a stable, readable format without seconds.
   try {
     return new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
       month: "short",
       day: "2-digit",
+      year: "numeric",
       hour: "numeric",
       minute: "2-digit",
+      hour12: true,
     }).format(d);
   } catch {
     return d.toLocaleString();
@@ -143,9 +145,10 @@ function getDayLabelFromKey(dateKey: string, todayKey: string, yesterdayKey: str
 
   try {
     return new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
+      weekday: "short",
       month: "short",
       day: "2-digit",
+      year: "numeric",
     }).format(d);
   } catch {
     return d.toLocaleDateString();
@@ -194,6 +197,7 @@ function kindIcon(kind: TimelineKind): string {
     case "activity":
       return "📌";
     case "event":
+      return "⚙️";
     default:
       return "•";
   }
@@ -752,7 +756,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
       kind: "document",
       estateId,
       title: label,
-      detail: subject ? `Document · ${subject}` : "Document added",
+      detail: subject ? subject : "Document added",
       timestamp: ts,
       href: `/app/estates/${estateId}/documents/${String(doc._id)}`,
     });
@@ -765,14 +769,21 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
     const title = typeof t.title === "string" && t.title.trim() ? t.title.trim() : "Task";
     const status = typeof t.status === "string" ? t.status : "";
     const due = toISO(t.dueDate);
-    const dueLabel = due ? `Due ${new Date(due).toLocaleDateString()}` : "";
+    const dueLabel = due
+      ? `Due ${new Intl.DateTimeFormat(undefined, { month: "short", day: "2-digit", year: "numeric" }).format(new Date(due))}`
+      : "";
 
     events.push({
       id: `task-${String(t._id)}`,
       kind: "task",
       estateId,
       title,
-      detail: ["Task", status && `Status: ${status}`, dueLabel].filter(Boolean).join(" · "),
+      detail: [
+        status ? `Status: ${titleCaseWord(status)}` : null,
+        dueLabel ? dueLabel : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
       timestamp: ts,
       href: `/app/estates/${estateId}/tasks/${String(t._id)}`,
     });
@@ -1013,7 +1024,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-gray-900">Activity timeline</h1>
             <p className="mt-1 max-w-2xl text-sm text-gray-600">
-              A day-grouped view of what happened in this estate—now including explicit activity events like invoice status changes.
+              A day-grouped feed of what changed in this estate, including system logs like invoice status updates.
             </p>
           </div>
         </div>
@@ -1072,7 +1083,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
                 <span className="ml-1 text-[11px] text-gray-400">(of {events.length})</span>
               )}
             </span>
-            <span className="text-[11px] text-gray-400">Includes invoices, documents, tasks, notes, and activity logs.</span>
+            <span className="text-[11px] text-gray-400">Includes invoices, documents, tasks, notes, and system logs.</span>
           </div>
         </div>
       </div>
@@ -1086,7 +1097,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
             { key: "document", label: "Documents" },
             { key: "note", label: "Notes" },
             { key: "activity", label: "Activity" },
-            { key: "event", label: "Legacy events" },
+            { key: "event", label: "System events" },
           ].map((opt) => {
             const isActive = typeFilter === opt.key;
             return (
@@ -1238,13 +1249,13 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
       <section className="space-y-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
         {events.length === 0 ? (
           <div className="space-y-2">
-            <p className="text-sm text-gray-500">No activity yet. As you work, entries will appear here.</p>
+            <p className="text-sm text-gray-500">No activity yet. As you add work to this estate, it will show up here.</p>
             <p className="text-xs text-gray-400">
               Tip: create a task, invoice, note, or upload a document—then come back to see it grouped here by day.
             </p>
           </div>
         ) : filteredEvents.length === 0 ? (
-          <p className="text-sm text-gray-500">No events match this search or type filter.</p>
+          <p className="text-sm text-gray-500">No results for this search or filter.</p>
         ) : (
           <div className="space-y-6">
             <div className="flex flex-col gap-2 rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between">
@@ -1312,7 +1323,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
                       badgeLabel = "Note";
                       badgeClass = "bg-yellow-100 text-yellow-800 border border-yellow-200";
                     } else if (ev.kind === "event") {
-                      badgeLabel = "Legacy";
+                      badgeLabel = "System";
                       badgeClass = "bg-gray-100 text-gray-800 border border-gray-200";
                     }
 
@@ -1397,7 +1408,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
                   href={buildHref(typeFilter, nextCursor)}
                   className="inline-flex items-center rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
                 >
-                  Load older
+                  Load older activity
                 </Link>
 
                 {hasCutoff ? (
@@ -1405,7 +1416,7 @@ export default async function EstateTimelinePage({ params, searchParams }: PageP
                     Back to newest
                   </Link>
                 ) : (
-                  <span className="text-sm font-medium text-gray-400">Newest</span>
+                  <span className="text-sm font-medium text-gray-400">You’re at the newest activity</span>
                 )}
               </div>
             )}

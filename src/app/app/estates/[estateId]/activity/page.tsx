@@ -36,11 +36,11 @@ function formatWhen(value?: string | Date) {
   if (Number.isNaN(d.getTime())) return "";
   try {
     return new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
       month: "short",
       day: "2-digit",
       hour: "numeric",
       minute: "2-digit",
+      hour12: true,
     }).format(d);
   } catch {
     return d.toLocaleString();
@@ -54,6 +54,8 @@ const TYPE_LABELS: Record<string, string> = {
   COLLABORATOR_ADDED: "Collaborator added",
   COLLABORATOR_REMOVED: "Collaborator removed",
   COLLABORATOR_ROLE_CHANGED: "Collaborator role changed",
+  NOTE_ADDED: "Note added",
+  NOTE_CREATED: "Note added",
 };
 
 function getMetaString(meta: Record<string, unknown> | null | undefined, key: string): string | null {
@@ -283,7 +285,7 @@ export default function EstateActivityPage({
           </p>
           <h1 className="mt-1 text-2xl font-semibold">Activity</h1>
           <p className="mt-1 text-sm text-neutral-500">
-            A timeline of actions taken on this estate.
+            A running log of what happened, when it happened, and where to find it.
           </p>
         </div>
 
@@ -294,12 +296,15 @@ export default function EstateActivityPage({
           >
             Timeline
           </Link>
-          <label className="text-sm text-neutral-600">Filter</label>
+          <label className="text-sm text-neutral-600" htmlFor="activity-filter">
+            Filter
+          </label>
           <select
+            id="activity-filter"
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
             className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm"
-            disabled={loading}
+            disabled={loading || saving || loadingMore}
           >
             <option value="ALL">All</option>
             {/* Prefer a stable, known list, but also show anything else that appears */}
@@ -316,34 +321,47 @@ export default function EstateActivityPage({
                 </option>
               ))}
           </select>
+          <button
+            type="button"
+            onClick={() => setTypeFilter("ALL")}
+            disabled={loading || loadingMore || saving || typeFilter === "ALL"}
+            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-900 hover:bg-neutral-50 disabled:opacity-50"
+            title="Clear filter"
+          >
+            Clear
+          </button>
 
           <button
             type="button"
             onClick={() => void fetchFirstPage()}
             disabled={loading || loadingMore || saving}
-            className="h-10 rounded-md border border-neutral-300 bg-white px-4 text-sm disabled:opacity-50"
+            aria-busy={loading}
+            className="h-10 rounded-md border border-neutral-300 bg-white px-4 text-sm hover:bg-neutral-50 disabled:opacity-50"
+            title="Reload activity"
           >
-            Refresh
+            {loading ? "Refreshing…" : "Refresh"}
           </button>
         </div>
       </div>
 
       {error ? (
         <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
+          <div className="font-medium">Something went wrong</div>
+          <div className="mt-1">{error}</div>
+          <div className="mt-2 text-xs text-red-700/80">Try refreshing, or come back in a minute.</div>
         </div>
       ) : null}
 
       <section className="mb-4 rounded-md border border-neutral-200 bg-white p-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-neutral-900">Add note</h2>
+          <h2 className="text-sm font-medium text-neutral-900">Add a note</h2>
           {saving ? <span className="text-xs text-neutral-500">Saving…</span> : null}
         </div>
 
         <textarea
           value={noteText}
           onChange={(e) => setNoteText(e.target.value)}
-          placeholder="Write a note that will appear in the activity timeline…"
+          placeholder="Add context for you or collaborators (shows up in the activity log)…"
           className="mt-3 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
           rows={3}
           disabled={saving || loading || viewerBlocked}
@@ -355,19 +373,29 @@ export default function EstateActivityPage({
             onClick={() => void addNote()}
             disabled={saving || loading || viewerBlocked || noteText.trim().length === 0}
             className="h-10 rounded-md bg-black px-4 text-sm font-medium text-white disabled:opacity-50"
+            title="Add this note to the activity log"
           >
-            Add note
+            Post note
           </button>
         </div>
       </section>
 
       {loading ? (
-        <div className="rounded-md border border-neutral-200 bg-white p-4 text-sm text-neutral-600">
-          Loading…
+        <div className="rounded-md border border-neutral-200 bg-white p-4">
+          <div className="h-4 w-40 animate-pulse rounded bg-neutral-200" />
+          <div className="mt-3 space-y-2">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-3 w-full animate-pulse rounded bg-neutral-100" />
+            ))}
+          </div>
         </div>
       ) : events.length === 0 ? (
-        <div className="rounded-md border border-neutral-200 bg-white p-4 text-sm text-neutral-600">
-          No activity yet.
+        <div className="rounded-md border border-neutral-200 bg-white p-6">
+          <div className="text-sm font-medium text-neutral-900">No activity yet</div>
+          <div className="mt-1 text-sm text-neutral-600">
+            As you add documents, tasks, invoices, and notes, they’ll show up here.
+          </div>
+          <div className="mt-3 text-xs text-neutral-500">Tip: Use “Add a note” above to record decisions and context.</div>
         </div>
       ) : (
         <div className="overflow-hidden rounded-md border border-neutral-200 bg-white">
@@ -391,7 +419,7 @@ export default function EstateActivityPage({
                           href={href}
                           className="text-xs font-medium text-blue-600 hover:underline"
                         >
-                          Open
+                          View
                         </Link>
                       ) : null}
                       {when ? (
@@ -407,7 +435,7 @@ export default function EstateActivityPage({
                   {ev.meta && Object.keys(ev.meta).length > 0 ? (
                     <details className="mt-2">
                       <summary className="cursor-pointer text-xs text-neutral-500">
-                        Details
+                        Technical details
                       </summary>
                       <pre className="mt-2 overflow-auto rounded-md bg-neutral-50 p-3 text-xs text-neutral-700">
                         {JSON.stringify(ev.meta, null, 2)}
@@ -432,7 +460,7 @@ export default function EstateActivityPage({
             {loadingMore ? "Loading…" : "Load more"}
           </button>
         ) : events.length > 0 && !loading ? (
-          <div className="text-sm text-neutral-500">End of activity</div>
+          <div className="text-sm text-neutral-500">You’re all caught up.</div>
         ) : null}
       </div>
     </div>

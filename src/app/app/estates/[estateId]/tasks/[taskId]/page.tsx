@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { requireEstateAccess } from "@/lib/estateAccess";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import { Task } from "@/models/Task";
 
 interface TaskDoc {
@@ -35,8 +35,7 @@ function isValidObjectId(value: string): boolean {
 
 async function loadTask(
   estateId: string,
-  taskId: string,
-  ownerId: string
+  taskId: string
 ): Promise<TaskDoc | null> {
   await connectToDatabase();
 
@@ -49,7 +48,6 @@ async function loadTask(
   const doc = await Task.findOne({
     _id: taskId,
     estateId,
-    ownerId,
   }).lean<TaskDoc | null>();
 
   return doc ?? null;
@@ -57,8 +55,7 @@ async function loadTask(
 
 function formatDate(value?: Date | string | null): string {
   if (!value) return "—";
-  const date =
-    typeof value === "string" ? new Date(value) : (value as Date);
+  const date = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) return "—";
   return date.toLocaleDateString("en-US", {
     month: "short",
@@ -69,8 +66,7 @@ function formatDate(value?: Date | string | null): string {
 
 function formatDateTime(value?: Date | string | null): string {
   if (!value) return "—";
-  const date =
-    typeof value === "string" ? new Date(value) : (value as Date);
+  const date = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) return "—";
   return date.toLocaleString("en-US", {
     month: "short",
@@ -142,7 +138,7 @@ async function toggleTaskStatusAction(formData: FormData): Promise<void> {
     redirect(`/login?callbackUrl=/app/estates/${estateId}/tasks/${taskId}`);
   }
 
-  const access = await requireEstateAccess({ estateId });
+  const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
   if (access.role === "VIEWER") {
     redirect(`/app/estates/${estateId}/tasks/${taskId}?requestAccess=1`);
   }
@@ -157,7 +153,6 @@ async function toggleTaskStatusAction(formData: FormData): Promise<void> {
   const current = await Task.findOne({
     _id: taskId,
     estateId,
-    ownerId: session.user.id,
   }).lean<{ status?: "OPEN" | "DONE" } | null>();
 
   if (!current?.status) {
@@ -167,8 +162,13 @@ async function toggleTaskStatusAction(formData: FormData): Promise<void> {
   const nextStatus: "OPEN" | "DONE" = current.status === "DONE" ? "OPEN" : "DONE";
 
   await Task.findOneAndUpdate(
-    { _id: taskId, estateId, ownerId: session.user.id },
-    { $set: { status: nextStatus } },
+    { _id: taskId, estateId },
+    {
+      $set: {
+        status: nextStatus,
+        completedAt: nextStatus === "DONE" ? new Date() : null,
+      },
+    },
     { new: false }
   );
 
@@ -191,7 +191,7 @@ async function deleteTaskAction(formData: FormData): Promise<void> {
     redirect(`/login?callbackUrl=/app/estates/${estateId}/tasks/${taskId}`);
   }
 
-  const access = await requireEstateAccess({ estateId });
+  const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
   if (access.role === "VIEWER") {
     redirect(`/app/estates/${estateId}/tasks/${taskId}?requestAccess=1`);
   }
@@ -202,7 +202,7 @@ async function deleteTaskAction(formData: FormData): Promise<void> {
     notFound();
   }
 
-  await Task.findOneAndDelete({ _id: taskId, estateId, ownerId: session.user.id });
+  await Task.findOneAndDelete({ _id: taskId, estateId });
 
   revalidatePath(`/app/estates/${estateId}/tasks`);
 
@@ -263,10 +263,10 @@ export default async function TaskDetailPage({ params, searchParams }: PageProps
     redirect(`/login?callbackUrl=/app/estates/${estateId}/tasks/${taskId}`);
   }
 
-  const access = await requireEstateAccess({ estateId });
+  const access = await requireEstateAccess({ estateId, userId: session.user.id });
   const canEdit = access.role !== "VIEWER";
 
-  const task = await loadTask(estateId, taskId, session.user.id);
+  const task = await loadTask(estateId, taskId);
 
   if (!task) {
     notFound();
@@ -278,30 +278,30 @@ export default async function TaskDetailPage({ params, searchParams }: PageProps
   const overdue = isOverdue(task.status, task.date);
 
   return (
-    <div className="space-y-6">
-      <nav className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+      <nav className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
         <Link
           href="/app"
-          className="hover:text-slate-200"
+          className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
         >
           App
         </Link>
         <span className="text-slate-600">/</span>
         <Link
           href={`/app/estates/${estateId}`}
-          className="hover:text-slate-200"
+          className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
         >
           Estate
         </Link>
         <span className="text-slate-600">/</span>
         <Link
           href={`/app/estates/${estateId}/tasks`}
-          className="hover:text-slate-200"
+          className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
         >
           Tasks
         </Link>
         <span className="text-slate-600">/</span>
-        <span className="text-slate-200">Task</span>
+        <span className="text-rose-300">Task</span>
       </nav>
 
       {!canEdit ? (
@@ -361,6 +361,9 @@ export default async function TaskDetailPage({ params, searchParams }: PageProps
               {overdue ? <span className="ml-2 text-[10px] font-semibold">Overdue</span> : null}
             </span>
           </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Keep tasks concrete and time-bound so your final accounting and court timeline stay defensible.
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center justify-start gap-2 text-xs sm:justify-end">
@@ -374,7 +377,7 @@ export default async function TaskDetailPage({ params, searchParams }: PageProps
           {canEdit ? (
             <Link
               href={`/app/estates/${estateId}/tasks/${id}/edit`}
-              className="inline-flex items-center rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-1.5 font-semibold text-slate-200 shadow-sm shadow-black/40 hover:border-slate-500/70 hover:bg-slate-900"
+              className="inline-flex items-center rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-1.5 font-semibold text-slate-200 shadow-sm shadow-black/40 hover:border-rose-500/60 hover:bg-slate-900"
             >
               Edit
             </Link>
@@ -400,7 +403,7 @@ export default async function TaskDetailPage({ params, searchParams }: PageProps
                 !canEdit
                   ? "cursor-not-allowed border border-slate-800/60 bg-slate-950 text-slate-600"
                   : isDone
-                  ? "border border-emerald-500/40 bg-slate-950 text-emerald-300 hover:border-emerald-400 hover:bg-slate-900"
+                  ? "border border-emerald-500/40 bg-slate-950 text-emerald-200 hover:border-emerald-400 hover:bg-slate-900"
                   : "bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
               )}
             >
@@ -490,6 +493,9 @@ export default async function TaskDetailPage({ params, searchParams }: PageProps
                 </dd>
               </div>
             </dl>
+            <p className="mt-3 text-[11px] text-slate-500">
+              Tip: use Internal notes for private context; Description is what collaborators should rely on.
+            </p>
           </div>
         </aside>
       </div>

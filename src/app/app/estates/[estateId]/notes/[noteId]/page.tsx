@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import type { Types } from "mongoose";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
@@ -22,17 +21,33 @@ type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
+type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
+
 type RawNote = {
-  _id: Types.ObjectId;
-  ownerId: Types.ObjectId | string;
-  estateId: Types.ObjectId | string;
-  subject?: string;
-  body: string;
-  category?: string;
-  isPinned: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  _id: unknown;
+  ownerId?: unknown;
+  estateId?: unknown;
+  subject?: string | null;
+  body?: string | null;
+  category?: string | null;
+  pinned?: boolean | null;
+  createdAt?: Date | string | null;
+  updatedAt?: Date | string | null;
 };
+
+function getStringParam(
+  sp: Record<string, string | string[] | undefined> | undefined,
+  key: string,
+): string {
+  const raw = sp?.[key];
+  if (typeof raw === "string") return raw;
+  if (Array.isArray(raw)) return raw[0] ?? "";
+  return "";
+}
+
+function safeCallbackUrl(path: string): string {
+  return encodeURIComponent(path);
+}
 
 function coerceDate(value: unknown): Date | null {
   if (value == null) return null;
@@ -63,17 +78,21 @@ function formatDateTime(value: unknown): string {
   });
 }
 
-async function loadNote(
-  estateId: string,
-  noteId: string
-): Promise<RawNote | null> {
+function roleLabel(role: EstateRole): string {
+  if (role === "OWNER") return "Owner";
+  if (role === "EDITOR") return "Editor";
+  return "Viewer";
+}
+
+async function loadNote(estateId: string, noteId: string): Promise<RawNote | null> {
   await connectToDatabase();
 
-  // Estate-scoped note: access is enforced by `requireEstateAccess`.
-  const note = await EstateNote.findOne({
-    _id: noteId,
-    estateId,
-  }).lean<RawNote | null>();
+  const note = await EstateNote.findOne(
+    { _id: noteId, estateId },
+    { subject: 1, body: 1, category: 1, pinned: 1, createdAt: 1, updatedAt: 1, ownerId: 1, estateId: 1 },
+  )
+    .lean<RawNote | null>()
+    .exec();
 
   return note;
 }
@@ -82,18 +101,22 @@ export default async function NoteDetailPage({ params, searchParams }: PageProps
   const { estateId, noteId } = await params;
 
   const sp = searchParams ? await searchParams : undefined;
-  const forbidden = sp?.forbidden === "1";
+  const forbidden = getStringParam(sp, "forbidden") === "1";
 
   const session = await auth();
   if (!session?.user?.id) {
-    redirect("/login");
+    redirect(
+      `/login?callbackUrl=${safeCallbackUrl(
+        `/app/estates/${estateId}/notes/${noteId}`,
+      )}`,
+    );
   }
 
   const access = await requireEstateAccess({ estateId, userId: session.user.id });
-  const canEdit = access.role !== "VIEWER";
+  const role = (access?.role as EstateRole) ?? "VIEWER";
+  const canEdit = role === "OWNER" || role === "EDITOR";
 
   const note = await loadNote(estateId, noteId);
-
   if (!note) {
     notFound();
   }
@@ -103,24 +126,40 @@ export default async function NoteDetailPage({ params, searchParams }: PageProps
 
     const innerSession = await auth();
     if (!innerSession?.user?.id) {
-      redirect("/login");
+      redirect(
+        `/login?callbackUrl=${safeCallbackUrl(
+          `/app/estates/${estateId}/notes/${noteId}`,
+        )}`,
+      );
     }
-    const editAccess = await requireEstateEditAccess({ estateId, userId: innerSession.user.id });
+
+    const editAccess = await requireEstateEditAccess({
+      estateId,
+      userId: innerSession.user.id,
+    });
+
     if (editAccess.role === "VIEWER") {
       redirect(`/app/estates/${estateId}/notes?forbidden=1`);
     }
+
     await connectToDatabase();
+
     await EstateNote.findOneAndDelete({
       _id: noteId,
       estateId,
-    });
+    }).exec();
+
     revalidatePath(`/app/estates/${estateId}/notes`);
     revalidatePath(`/app/estates/${estateId}/notes/${noteId}`);
+
     redirect(`/app/estates/${estateId}/notes?deleted=1`);
   }
 
   const createdAt = formatDateTime(note.createdAt);
   const updatedAt = formatDateTime(note.updatedAt);
+  const title = (note.subject ?? "").trim() ? (note.subject as string).trim() : "Untitled note";
+  const body = (note.body ?? "").toString();
+  const isPinned = Boolean(note.pinned);
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6 p-6">
@@ -136,7 +175,7 @@ export default async function NoteDetailPage({ params, searchParams }: PageProps
           href={`/app/estates/${estateId}`}
           className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
         >
-          Estate
+          Overview
         </Link>
         <span className="mx-1 text-slate-600">/</span>
         <Link
@@ -148,6 +187,7 @@ export default async function NoteDetailPage({ params, searchParams }: PageProps
         <span className="mx-1 text-slate-600">/</span>
         <span className="text-rose-300">View</span>
       </nav>
+
       {forbidden && (
         <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
           <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
@@ -158,7 +198,7 @@ export default async function NoteDetailPage({ params, searchParams }: PageProps
               </p>
             </div>
             <Link
-              href={`/app/estates/${estateId}?requestAccess=1`}
+              href={`/app/estates/${estateId}/collaborators`}
               className="mt-2 inline-flex items-center justify-center rounded-md border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/25 md:mt-0"
             >
               Request edit access
@@ -166,6 +206,7 @@ export default async function NoteDetailPage({ params, searchParams }: PageProps
           </div>
         </div>
       )}
+
       {!canEdit && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
           <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
@@ -176,7 +217,7 @@ export default async function NoteDetailPage({ params, searchParams }: PageProps
               </p>
             </div>
             <Link
-              href={`/app/estates/${estateId}?requestAccess=1`}
+              href={`/app/estates/${estateId}/collaborators`}
               className="mt-2 inline-flex items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-xs font-medium text-amber-100 hover:bg-amber-500/25 md:mt-0"
             >
               Request edit access
@@ -184,33 +225,40 @@ export default async function NoteDetailPage({ params, searchParams }: PageProps
           </div>
         </div>
       )}
+
       <div className="flex flex-col gap-3 border-b border-slate-800 pb-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold text-slate-50">
-              {(note.subject ?? "").trim() ? note.subject : "Untitled note"}
-            </h1>
-            {note.isPinned && (
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-semibold text-slate-50">{title}</h1>
+
+            <span className="rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-300">
+              {roleLabel(role)}
+            </span>
+
+            {isPinned && (
               <span className="rounded-full border border-amber-400/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
                 Pinned
               </span>
             )}
-            {note.category && (
+
+            {note.category && note.category.trim() ? (
               <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-300">
                 {note.category.toLowerCase()}
               </span>
-            )}
+            ) : null}
           </div>
-          <p className="mt-1 text-xs text-slate-400">
+
+          <p className="text-xs text-slate-400">
             Created <span className="font-medium text-slate-200">{createdAt}</span>
-            {updatedAt !== createdAt && (
+            {updatedAt !== createdAt ? (
               <>
                 {" • Updated "}
                 <span className="font-medium text-slate-200">{updatedAt}</span>
               </>
-            )}
+            ) : null}
           </p>
         </div>
+
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href={`/app/estates/${estateId}/notes`}
@@ -227,6 +275,7 @@ export default async function NoteDetailPage({ params, searchParams }: PageProps
               >
                 Edit note
               </Link>
+
               <form action={deleteNote}>
                 <button
                   type="submit"
@@ -241,10 +290,8 @@ export default async function NoteDetailPage({ params, searchParams }: PageProps
       </div>
 
       <article className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-100 shadow-sm shadow-rose-950/40">
-        {(note.body ?? "").trim() ? (
-          <pre className="whitespace-pre-wrap text-sm leading-relaxed text-slate-100">
-            {note.body}
-          </pre>
+        {body.trim() ? (
+          <pre className="whitespace-pre-wrap text-sm leading-relaxed text-slate-100">{body}</pre>
         ) : (
           <div className="space-y-3">
             <p className="text-sm text-slate-400">This note doesn’t have any content yet.</p>

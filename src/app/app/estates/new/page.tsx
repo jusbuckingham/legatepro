@@ -343,10 +343,10 @@ export default function NewEstatePage() {
     <div className="max-w-2xl space-y-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             New estate
           </h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-muted-foreground">
             Capture the essentials now. You can refine details later inside the estate workspace.
           </p>
         </div>
@@ -354,48 +354,48 @@ export default function NewEstatePage() {
         <div className="flex items-center gap-2">
           <Link
             href="/app/estates"
-            className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900/30 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-900/60"
+            className="inline-flex items-center rounded-md border border-border bg-muted/20 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground"
           >
             Cancel
           </Link>
         </div>
       </header>
 
-      <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 text-xs text-slate-300">
-        <p className="font-medium text-slate-100">Getting started</p>
-        <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] text-slate-400">
-          <li><span className="text-slate-200">Estate name</span> is required and should match court paperwork.</li>
+      <div className="rounded-xl border border-border bg-card p-4 text-xs text-muted-foreground">
+        <p className="font-medium text-foreground">Getting started</p>
+        <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] text-muted-foreground">
+          <li><span className="text-foreground">Estate name</span> is required and should match court paperwork.</li>
           <li>All other fields are optional and can be filled in later.</li>
-          <li>You’ll be able to add <span className="text-slate-200">tasks, documents, time, and invoices</span> after creation.</li>
+          <li>You’ll be able to add <span className="text-foreground">tasks, documents, time, and invoices</span> after creation.</li>
         </ul>
       </div>
       {billingPlanId && typeof estatesCount === "number" ? (
-        <p className="text-[11px] text-slate-500">
-          Plan: <span className="text-slate-300">{billingPlanId}</span> • Estates: <span className="text-slate-300">{estatesCount}</span>
+        <p className="text-[11px] text-muted-foreground">
+          Plan: <span className="text-foreground">{billingPlanId}</span> • Estates: <span className="text-foreground">{estatesCount}</span>
         </p>
       ) : null}
       {requiresUpgrade ? (
         <div className="rounded-xl border border-[#F15A43]/50 bg-[#F15A43]/10 p-4 text-xs text-[#fbd0c8]">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <p className="font-semibold text-slate-50">Upgrade required to create another estate</p>
-              <p className="mt-1 text-[11px] text-slate-200/80">
-                The Starter plan includes <span className="font-semibold text-slate-50">1 active estate workspace</span>.
+              <p className="font-semibold text-foreground">Upgrade required to create another estate</p>
+              <p className="mt-1 text-[11px] text-foreground/80">
+                The Starter plan includes <span className="font-semibold text-foreground">1 active estate workspace</span>.
                 Upgrade to Pro to create unlimited estates.
               </p>
               {billingPlanId === "free" && typeof estatesCount === "number" ? (
-                <p className="mt-1 text-[11px] text-slate-200/70">Detected: {estatesCount} existing estate workspace{estatesCount === 1 ? "" : "s"}.</p>
+                <p className="mt-1 text-[11px] text-foreground/70">Detected: {estatesCount} existing estate workspace{estatesCount === 1 ? "" : "s"}.</p>
               ) : null}
             </div>
 
             <div className="flex flex-col gap-2 sm:items-end">
               <Link
                 href={BILLING_LIMIT_URL}
-                className="inline-flex items-center justify-center rounded-md bg-[#F15A43] px-3 py-2 text-xs font-semibold text-slate-950 shadow-sm hover:bg-[#f26b56]"
+                className="inline-flex items-center justify-center rounded-md bg-[#F15A43] px-3 py-2 text-xs font-semibold text-background shadow-sm hover:bg-[#f26b56]"
               >
                 Upgrade to Pro
               </Link>
-              <p className="text-[11px] text-slate-200/70">You can still view and manage your existing estate.</p>
+              <p className="text-[11px] text-foreground/70">You can still view and manage your existing estate.</p>
             </div>
           </div>
         </div>
@@ -403,18 +403,19 @@ export default function NewEstatePage() {
       <form
         onSubmit={handleSubmit}
         aria-busy={isSubmitting}
-        className={`space-y-5 rounded-2xl border border-slate-800 bg-slate-900/70 p-5 text-sm text-slate-100 shadow-sm shadow-black/40 ${
+        aria-live="polite"
+        className={`space-y-5 rounded-2xl border border-border bg-card p-5 text-sm text-foreground shadow-sm ${
           isSubmitting ? "pointer-events-none opacity-[0.98]" : ""
         }`}
       >
         {error && (
-          <p className="rounded-md border border-red-500/60 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+          <p className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-500">
             {error}
           </p>
         )}
 
         <div className="space-y-1.5">
-          <label htmlFor="name" className="text-xs font-medium text-slate-300">
+          <label htmlFor="name" className="text-xs font-medium text-muted-foreground">
             Estate name<span className="text-red-400">*</span>
           </label>
           <input
@@ -425,18 +426,18 @@ export default function NewEstatePage() {
             placeholder="e.g., Estate of John Q. Doe"
             aria-invalid={Boolean(fieldErrors.name)}
             aria-describedby={fieldErrors.name ? "name-error" : undefined}
-            className={`w-full rounded-md border bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none ring-0 placeholder:text-slate-500 focus:ring-1 ${
+            className={`w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
               fieldErrors.name
-                ? "border-red-500/70 focus:border-red-500 focus:ring-red-500/40"
-                : "border-slate-700 focus:border-emerald-500 focus:ring-emerald-500/60"
+                ? "border-red-500/70 focus-visible:ring-red-500/30"
+                : "border-border focus-visible:ring-emerald-500/25"
             }`}
           />
-          <p className="text-[11px] text-slate-500">
+          <p className="text-[11px] text-muted-foreground">
             Use something that matches court paperwork so it’s easy to
             recognize.
           </p>
           {fieldErrors.name ? (
-            <p id="name-error" className="text-[11px] text-red-200">
+            <p id="name-error" className="text-[11px] text-red-500">
               {fieldErrors.name}
             </p>
           ) : null}
@@ -445,7 +446,7 @@ export default function NewEstatePage() {
         <div className="space-y-1.5">
           <label
             htmlFor="decedentName"
-            className="text-xs font-medium text-slate-300"
+            className="text-xs font-medium text-muted-foreground"
           >
             Decedent name
           </label>
@@ -455,7 +456,7 @@ export default function NewEstatePage() {
             value={form.decedentName}
             onChange={handleChange}
             placeholder="Full legal name of the decedent"
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none ring-0 placeholder:text-slate-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/60"
+            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           />
         </div>
 
@@ -463,7 +464,7 @@ export default function NewEstatePage() {
           <div className="space-y-1.5">
             <label
               htmlFor="court"
-              className="text-xs font-medium text-slate-300"
+              className="text-xs font-medium text-muted-foreground"
             >
               Court
             </label>
@@ -473,14 +474,14 @@ export default function NewEstatePage() {
               value={form.court}
               onChange={handleChange}
               placeholder="e.g., LA County Superior Court – Probate"
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none ring-0 placeholder:text-slate-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/60"
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             />
           </div>
 
           <div className="space-y-1.5">
             <label
               htmlFor="caseNumber"
-              className="text-xs font-medium text-slate-300"
+              className="text-xs font-medium text-muted-foreground"
             >
               Case number
             </label>
@@ -490,7 +491,7 @@ export default function NewEstatePage() {
               value={form.caseNumber}
               onChange={handleChange}
               placeholder="Court’s case number"
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none ring-0 placeholder:text-slate-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/60"
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             />
           </div>
         </div>
@@ -499,7 +500,7 @@ export default function NewEstatePage() {
           <div className="space-y-1.5">
             <label
               htmlFor="city"
-              className="text-xs font-medium text-slate-300"
+              className="text-xs font-medium text-muted-foreground"
             >
               City
             </label>
@@ -509,14 +510,14 @@ export default function NewEstatePage() {
               value={form.city}
               onChange={handleChange}
               placeholder="Primary city for the estate"
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none ring-0 placeholder:text-slate-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/60"
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             />
           </div>
 
           <div className="space-y-1.5">
             <label
               htmlFor="state"
-              className="text-xs font-medium text-slate-300"
+              className="text-xs font-medium text-muted-foreground"
             >
               State
             </label>
@@ -531,14 +532,14 @@ export default function NewEstatePage() {
               autoCapitalize="characters"
               aria-invalid={Boolean(fieldErrors.state)}
               aria-describedby={fieldErrors.state ? "state-error" : undefined}
-              className={`w-full rounded-md border bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none ring-0 placeholder:text-slate-500 focus:ring-1 ${
+              className={`w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
                 fieldErrors.state
-                  ? "border-red-500/70 focus:border-red-500 focus:ring-red-500/40"
-                  : "border-slate-700 focus:border-emerald-500 focus:ring-emerald-500/60"
+                  ? "border-red-500/70 focus-visible:ring-red-500/30"
+                  : "border-border focus-visible:ring-emerald-500/25"
               }`}
             />
             {fieldErrors.state ? (
-              <p id="state-error" className="text-[11px] text-red-200">
+              <p id="state-error" className="text-[11px] text-red-500">
                 {fieldErrors.state}
               </p>
             ) : null}
@@ -549,7 +550,7 @@ export default function NewEstatePage() {
           <div className="space-y-1.5">
             <label
               htmlFor="dateOfDeath"
-              className="text-xs font-medium text-slate-300"
+              className="text-xs font-medium text-muted-foreground"
             >
               Date of death
             </label>
@@ -561,17 +562,17 @@ export default function NewEstatePage() {
               onChange={handleChange}
               aria-invalid={Boolean(fieldErrors.dateOfDeath)}
               aria-describedby={fieldErrors.dateOfDeath ? "dod-error" : "dod-help"}
-              className={`w-full rounded-md border bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none ring-0 placeholder:text-slate-500 focus:ring-1 ${
+              className={`w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
                 fieldErrors.dateOfDeath
-                  ? "border-red-500/70 focus:border-red-500 focus:ring-red-500/40"
-                  : "border-slate-700 focus:border-emerald-500 focus:ring-emerald-500/60"
+                  ? "border-red-500/70 focus-visible:ring-red-500/30"
+                  : "border-border focus-visible:ring-emerald-500/25"
               }`}
             />
-            <p id="dod-help" className="text-[11px] text-slate-500">
+            <p id="dod-help" className="text-[11px] text-muted-foreground">
               Optional — add it now or later.
             </p>
             {fieldErrors.dateOfDeath ? (
-              <p id="dod-error" className="text-[11px] text-red-200">
+              <p id="dod-error" className="text-[11px] text-red-500">
                 {fieldErrors.dateOfDeath}
               </p>
             ) : null}
@@ -580,7 +581,7 @@ export default function NewEstatePage() {
           <div className="space-y-1.5">
             <label
               htmlFor="notes"
-              className="text-xs font-medium text-slate-300"
+              className="text-xs font-medium text-muted-foreground"
             >
               Notes
             </label>
@@ -591,7 +592,7 @@ export default function NewEstatePage() {
               onChange={handleChange}
               placeholder="Additional information or notes"
               rows={3}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none ring-0 placeholder:text-slate-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/60"
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             />
           </div>
         </div>
@@ -600,7 +601,7 @@ export default function NewEstatePage() {
           <button
             type="submit"
             disabled={isSubmitting || requiresUpgrade}
-            className="inline-flex w-full items-center justify-center rounded-md bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-emerald-500"
+            className="inline-flex w-full items-center justify-center rounded-md bg-emerald-500 px-4 py-2 text-sm font-medium text-background hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-emerald-500"
           >
             {requiresUpgrade ? "Upgrade to create another estate" : isSubmitting ? "Creating…" : "Create estate"}
           </button>
@@ -608,11 +609,11 @@ export default function NewEstatePage() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <Link
               href="/app/estates"
-              className="text-xs font-medium text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+              className="text-xs font-medium text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
             >
               Back to estates
             </Link>
-            <p className="text-[11px] text-slate-500">
+            <p className="text-[11px] text-muted-foreground">
               You can add documents, notes, tasks, invoices, and contacts after creation.
             </p>
           </div>

@@ -9,6 +9,7 @@ import { EstateDocument } from "@/models/EstateDocument";
 import { requireEstateEditAccess } from "@/lib/estateAccess";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 interface PageProps {
   params: Promise<{
@@ -46,6 +47,33 @@ const SUBJECT_LABELS: Record<string, string> = {
   OTHER: "Other",
 };
 
+function getStringParam(
+  sp: Record<string, string | string[] | undefined> | undefined,
+  key: string,
+): string {
+  const raw = sp?.[key];
+  if (typeof raw === "string") return raw;
+  if (Array.isArray(raw)) return raw[0] ?? "";
+  return "";
+}
+
+function safeCallbackUrl(path: string): string {
+  return encodeURIComponent(path);
+}
+
+function normalizeExternalUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+
+  try {
+    const u = new URL(trimmed);
+    if (u.protocol === "http:" || u.protocol === "https:") return u.toString();
+    return "";
+  } catch {
+    return "";
+  }
+}
+
 async function updateDocument(formData: FormData): Promise<void> {
   "use server";
 
@@ -59,7 +87,7 @@ async function updateDocument(formData: FormData): Promise<void> {
   const label = formData.get("label")?.toString().trim();
   const subject = formData.get("subject")?.toString().trim();
   const location = formData.get("location")?.toString().trim() || "";
-  const url = formData.get("url")?.toString().trim() || "";
+  const url = normalizeExternalUrl(formData.get("url")?.toString() || "");
   const tagsRaw = formData.get("tags")?.toString().trim() || "";
   const notes = formData.get("notes")?.toString().trim() || "";
   const isSensitive = formData.get("isSensitive") === "on";
@@ -72,7 +100,9 @@ async function updateDocument(formData: FormData): Promise<void> {
 
   if (!session?.user?.id) {
     redirect(
-      `/login?callbackUrl=/app/estates/${estateId}/documents/${documentId}/edit`,
+      `/login?callbackUrl=${safeCallbackUrl(
+        `/app/estates/${estateId}/documents/${documentId}/edit`,
+      )}`,
     );
   }
 
@@ -80,8 +110,18 @@ async function updateDocument(formData: FormData): Promise<void> {
 
   // Permission check (OWNER/EDITOR can edit)
   const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
-  if (access.role === "VIEWER") {
-    redirect(`/app/estates/${estateId}/documents?forbidden=1`);
+  const role = access?.role;
+  if (!role) {
+    redirect(`/app/estates/${estateId}/documents/${documentId}/edit?notFound=1`);
+  }
+
+  if (role === "VIEWER") {
+    const requestAccessHref = `/app/estates/${estateId}/collaborators?${new URLSearchParams({
+      request: "EDITOR",
+      from: "document-edit",
+      documentId,
+    }).toString()}`;
+    redirect(requestAccessHref);
   }
 
   const tags = Array.from(
@@ -119,6 +159,7 @@ async function updateDocument(formData: FormData): Promise<void> {
 
   revalidatePath(`/app/estates/${estateId}/documents`);
   revalidatePath(`/app/estates/${estateId}/documents/${documentId}`);
+  revalidatePath(`/app/estates/${estateId}`);
 
   redirect(`/app/estates/${estateId}/documents/${documentId}`);
 }
@@ -127,28 +168,34 @@ export default async function EditDocumentPage({ params, searchParams }: PagePro
   const { estateId, documentId } = await params;
 
   const sp = searchParams ? await searchParams : undefined;
-  const notFoundFlag = sp?.notFound === "1";
-  const forbiddenFlag = sp?.forbidden === "1";
+  const notFoundFlag = getStringParam(sp, "notFound") === "1";
 
   const session = await auth();
 
   if (!session?.user?.id) {
     redirect(
-      `/login?callbackUrl=/app/estates/${estateId}/documents/${documentId}/edit`,
+      `/login?callbackUrl=${safeCallbackUrl(
+        `/app/estates/${estateId}/documents/${documentId}/edit`,
+      )}`,
     );
   }
 
   await connectToDatabase();
 
   const access = await requireEstateEditAccess({ estateId, userId: session.user.id });
-  const role = access.role;
+  const role = access?.role;
 
   if (!role) {
     notFound();
   }
 
   if (role === "VIEWER") {
-    redirect(`/app/estates/${estateId}/documents?forbidden=1`);
+    const requestAccessHref = `/app/estates/${estateId}/collaborators?${new URLSearchParams({
+      request: "EDITOR",
+      from: "document-edit",
+      documentId,
+    }).toString()}`;
+    redirect(requestAccessHref);
   }
 
   const doc = await EstateDocument.findOne({
@@ -165,7 +212,7 @@ export default async function EditDocumentPage({ params, searchParams }: PagePro
   const tagsValue = Array.isArray(doc.tags) ? doc.tags.join(", ") : "";
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 p-6">
       <PageHeader
         eyebrow={
           <div className="flex flex-wrap items-center gap-2">
@@ -194,15 +241,6 @@ export default async function EditDocumentPage({ params, searchParams }: PagePro
           </div>
         }
       />
-      {forbiddenFlag ? (
-        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-          <div className="font-medium">Action blocked</div>
-          <div className="mt-1 text-xs text-rose-200">
-            You don’t have edit permissions for this estate. Request access from the owner to make changes.
-          </div>
-        </div>
-      ) : null}
-
       {notFoundFlag ? (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
           <div className="font-medium">Document not found</div>

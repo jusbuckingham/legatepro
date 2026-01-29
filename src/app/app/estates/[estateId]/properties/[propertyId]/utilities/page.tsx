@@ -1,15 +1,21 @@
-export const dynamic = "force-dynamic";
-
 import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
+
+import { auth } from "@/lib/auth";
 import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
+import { requireEstateAccess } from "@/lib/estateAccess";
+
 import { UtilityAccount } from "@/models/UtilityAccount";
 import { EstateProperty } from "@/models/EstateProperty";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 interface PropertyUtilitiesPageProps {
-  params: {
+  params: Promise<{
     estateId: string;
     propertyId: string;
-  };
+  }>;
 }
 
 interface PropertyItem {
@@ -34,6 +40,12 @@ interface UtilityItem {
 }
 
 type PlainObject = Record<string, unknown>;
+
+type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
+
+function canEditRole(role: EstateRole): boolean {
+  return role === "OWNER" || role === "EDITOR";
+}
 
 function isPlainObject(value: unknown): value is PlainObject {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -102,19 +114,36 @@ function formatAddress(property: PropertyItem) {
 export default async function PropertyUtilitiesPage({
   params,
 }: PropertyUtilitiesPageProps) {
-  const { estateId, propertyId } = params;
+  const { estateId, propertyId } = await params;
+  if (!estateId || !propertyId) notFound();
+
+  const session = await auth();
+  if (!session?.user?.id) {
+    const callbackUrl = encodeURIComponent(
+      `/app/estates/${estateId}/properties/${propertyId}/utilities`,
+    );
+    redirect(`/login?callbackUrl=${callbackUrl}`);
+  }
+
+  const access = await requireEstateAccess({ estateId, userId: session.user.id });
+  const role: EstateRole = (access?.role as EstateRole) ?? "VIEWER";
+  const editEnabled = canEditRole(role);
 
   await connectToDatabase();
 
   // Fetch property metadata
   const propertyRaw = (await EstateProperty.findOne({
     _id: propertyId,
-    estateId,
+    estate: estateId,
   })
     .lean()
     .exec()) as unknown;
 
   const property = toPropertyItem(propertyRaw);
+
+  if (!property) {
+    notFound();
+  }
 
   // Fetch utility accounts for this property
   const utilitiesRaw = (await UtilityAccount.find({
@@ -200,12 +229,21 @@ export default async function PropertyUtilitiesPage({
             </div>
 
             <div className="flex flex-col items-start gap-2 sm:items-end">
-              <Link
-                href={`/app/estates/${estateId}/properties/${propertyId}/utilities/new`}
-                className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-rose-500"
-              >
-                + Add utility account
-              </Link>
+              {editEnabled ? (
+                <Link
+                  href={`/app/estates/${estateId}/properties/${propertyId}/utilities/new`}
+                  className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-rose-500"
+                >
+                  + Add utility account
+                </Link>
+              ) : (
+                <Link
+                  href={`/app/estates/${estateId}?requestAccess=1`}
+                  className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/15"
+                >
+                  Request edit access
+                </Link>
+              )}
               <Link
                 href={`/app/estates/${estateId}/properties/${propertyId}`}
                 className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-xs font-medium text-slate-200 hover:border-rose-500/70 hover:text-rose-100"
@@ -217,6 +255,17 @@ export default async function PropertyUtilitiesPage({
         </div>
       </header>
 
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+        <span className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5">
+          Total accounts: <span className="ml-1 text-slate-200">{utilities.length}</span>
+        </span>
+        {!editEnabled ? (
+          <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-semibold uppercase tracking-wide text-amber-200">
+            Read-only
+          </span>
+        ) : null}
+      </div>
+
       {utilities.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/60 px-6 py-8 text-sm text-slate-300">
           <p className="font-medium text-slate-100">No utility accounts yet.</p>
@@ -225,12 +274,21 @@ export default async function PropertyUtilitiesPage({
             this property so you have a clean record of what was paid.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Link
-              href={`/app/estates/${estateId}/properties/${propertyId}/utilities/new`}
-              className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-rose-500"
-            >
-              + Add utility account
-            </Link>
+            {editEnabled ? (
+              <Link
+                href={`/app/estates/${estateId}/properties/${propertyId}/utilities/new`}
+                className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-rose-500"
+              >
+                + Add utility account
+              </Link>
+            ) : (
+              <Link
+                href={`/app/estates/${estateId}?requestAccess=1`}
+                className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/15"
+              >
+                Request edit access
+              </Link>
+            )}
             <Link
               href={`/app/estates/${estateId}/properties/${propertyId}`}
               className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1.5 text-xs font-medium text-slate-200 hover:border-rose-500/70 hover:text-rose-100"
@@ -259,18 +317,14 @@ export default async function PropertyUtilitiesPage({
                 <th className="px-4 py-2 text-left font-medium text-slate-300">
                   Notes
                 </th>
+                <th className="px-4 py-2 text-right font-medium text-slate-300">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
               {utilities.map((u: UtilityItem) => (
                 <tr key={u.id} className="hover:bg-slate-800/30">
                   <td className="px-4 py-2 text-slate-200">
-                    <Link
-                      href={`/app/estates/${estateId}/properties/${propertyId}/utilities/${u.id}`}
-                      className="font-medium hover:text-rose-200"
-                    >
-                      {u.provider || "Utility account"}
-                    </Link>
+                    {u.provider || "Utility account"}
                   </td>
                   <td className="px-4 py-2 text-slate-200 capitalize">
                     {u.type || "—"}
@@ -293,6 +347,14 @@ export default async function PropertyUtilitiesPage({
                   </td>
                   <td className="px-4 py-2 text-xs text-slate-400">
                     {u.notes || "—"}
+                  </td>
+                  <td className="px-4 py-2 text-right text-xs">
+                    <Link
+                      href={`/app/estates/${estateId}/properties/${propertyId}/utilities/${u.id}`}
+                      className="text-slate-300 hover:text-rose-200 underline-offset-2 hover:underline"
+                    >
+                      View
+                    </Link>
                   </td>
                 </tr>
               ))}

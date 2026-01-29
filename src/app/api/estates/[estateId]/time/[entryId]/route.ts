@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Types } from "mongoose";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { TimeEntry } from "@/models/TimeEntry";
@@ -13,16 +14,22 @@ type RouteContext = {
 interface TimeEntryRecord {
   _id: unknown;
   estateId: unknown;
+  ownerId: unknown;
   date: Date;
   description: string;
-  minutes: number;
+  minutes?: number;
+  hours?: number;
   notes?: string;
-  billable: boolean;
-  rate?: number;
-  amount?: number;
-  taskId?: unknown;
-  createdAt: Date;
-  updatedAt: Date;
+  billable?: boolean;
+  rate?: number | null;
+  amount?: number | null;
+  taskId?: unknown | null;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+function isValidObjectId(value: string): boolean {
+  return Types.ObjectId.isValid(value);
 }
 
 // ---- helpers --------------------------------------------------------------
@@ -81,6 +88,20 @@ export async function GET(_req: NextRequest, context: RouteContext) {
 
   const { estateId, entryId } = await context.params;
 
+  if (!estateId || !entryId) {
+    return NextResponse.json(
+      { ok: false, error: "Missing estateId or entryId" },
+      { status: 400 },
+    );
+  }
+
+  if (!isValidObjectId(estateId) || !isValidObjectId(entryId)) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid estateId or entryId" },
+      { status: 400 },
+    );
+  }
+
   await connectToDatabase();
 
   const entry = await TimeEntry.findOne({
@@ -105,6 +126,21 @@ export async function PUT(req: NextRequest, context: RouteContext) {
   }
 
   const { estateId, entryId } = await context.params;
+
+  if (!estateId || !entryId) {
+    return NextResponse.json(
+      { ok: false, error: "Missing estateId or entryId" },
+      { status: 400 },
+    );
+  }
+
+  if (!isValidObjectId(estateId) || !isValidObjectId(entryId)) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid estateId or entryId" },
+      { status: 400 },
+    );
+  }
+
   const body = await req.json();
 
   const {
@@ -129,7 +165,14 @@ export async function PUT(req: NextRequest, context: RouteContext) {
 
   if (date) {
     // Accept YYYY-MM-DD or full ISO; normalize to Date
-    update.date = new Date(date);
+    const parsed = new Date(date);
+    if (Number.isNaN(parsed.getTime())) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid date" },
+        { status: 400 },
+      );
+    }
+    update.date = parsed;
   }
 
   if (typeof description === "string") {
@@ -154,12 +197,22 @@ export async function PUT(req: NextRequest, context: RouteContext) {
 
   if (rate !== undefined && rate !== null && rate !== "") {
     const parsedRate = Number(rate);
-    if (!Number.isNaN(parsedRate) && parsedRate >= 0) {
-      update.rate = parsedRate;
+    if (Number.isNaN(parsedRate) || parsedRate < 0) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid rate" },
+        { status: 400 },
+      );
     }
+    update.rate = parsedRate;
   }
 
   if (taskId && typeof taskId === "string" && taskId.length > 0) {
+    if (!isValidObjectId(taskId)) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid taskId" },
+        { status: 400 },
+      );
+    }
     update.taskId = taskId;
   } else if (taskId === "") {
     // allow clearing taskId
@@ -239,6 +292,20 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
   }
 
   const { estateId, entryId } = await context.params;
+
+  if (!estateId || !entryId) {
+    return NextResponse.json(
+      { ok: false, error: "Missing estateId or entryId" },
+      { status: 400 },
+    );
+  }
+
+  if (!isValidObjectId(estateId) || !isValidObjectId(entryId)) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid estateId or entryId" },
+      { status: 400 },
+    );
+  }
 
   await connectToDatabase();
 

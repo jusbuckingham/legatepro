@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { Types } from "mongoose";
 import { TimeEntry } from "@/models/TimeEntry";
-import { serializeMongoDoc } from "@/lib/db";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 
 // Next's generated route validator (in .next/dev/types/validator.ts) currently expects
 // `context.params` to be a Promise for dynamic segments.
@@ -11,11 +12,27 @@ type RouteContext = {
   }>;
 };
 
+function isValidObjectId(value: string): boolean {
+  return Types.ObjectId.isValid(value);
+}
+
 export async function GET(_request: NextRequest, { params }: RouteContext) {
   const { entryId } = await params;
 
+  await connectToDatabase();
+
   if (!entryId || entryId.trim().length === 0) {
-    return NextResponse.json({ ok: false, error: "Missing entryId" }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "Missing entryId" },
+      { status: 400 },
+    );
+  }
+
+  if (!isValidObjectId(entryId)) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid entryId" },
+      { status: 400 },
+    );
   }
 
   const doc = await TimeEntry.findById(entryId).lean().exec();
@@ -30,13 +47,28 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
   const { entryId } = await params;
 
+  await connectToDatabase();
+
   if (!entryId || entryId.trim().length === 0) {
-    return NextResponse.json({ ok: false, error: "Missing entryId" }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "Missing entryId" },
+      { status: 400 },
+    );
+  }
+
+  if (!isValidObjectId(entryId)) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid entryId" },
+      { status: 400 },
+    );
   }
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body || typeof body !== "object") {
-    return NextResponse.json({ ok: false, error: "Invalid body" }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "Invalid body" },
+      { status: 400 },
+    );
   }
 
   // Only allow updating known fields; keep this conservative.
@@ -61,8 +93,20 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
 export async function DELETE(_request: NextRequest, { params }: RouteContext) {
   const { entryId } = await params;
 
+  await connectToDatabase();
+
   if (!entryId || entryId.trim().length === 0) {
-    return NextResponse.json({ ok: false, error: "Missing entryId" }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "Missing entryId" },
+      { status: 400 },
+    );
+  }
+
+  if (!isValidObjectId(entryId)) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid entryId" },
+      { status: 400 },
+    );
   }
 
   const deleted = await TimeEntry.findByIdAndDelete(entryId).lean().exec();

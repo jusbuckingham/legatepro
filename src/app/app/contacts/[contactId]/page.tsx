@@ -19,7 +19,7 @@ function formatRole(role?: string): string {
     case "ADMINISTRATOR":
       return "Administrator";
     case "HEIR":
-      return "Heir / Beneficiary";
+      return "Beneficiary";
     case "ATTORNEY":
       return "Attorney";
     case "CREDITOR":
@@ -92,13 +92,13 @@ export default async function ContactDetailPage({ params }: PageProps) {
       <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs uppercase tracking-wide text-slate-500">
-            Contact
+            Contact details
           </p>
           <h1 className="text-2xl font-semibold text-slate-100">
             {name}
           </h1>
           <p className="text-xs text-slate-400">
-            {formatRole(role)}
+            Role: {formatRole(role)}
           </p>
         </div>
 
@@ -107,13 +107,13 @@ export default async function ContactDetailPage({ params }: PageProps) {
             href="/app/contacts"
             className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
           >
-            Back to contacts
+            Back
           </Link>
           <Link
             href={`/app/contacts/${contactIdEncoded}/edit`}
             className="rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400"
           >
-            Edit contact
+            Edit
           </Link>
         </div>
       </header>
@@ -121,7 +121,7 @@ export default async function ContactDetailPage({ params }: PageProps) {
       <section className="grid gap-4 rounded-lg border border-slate-800 bg-slate-900/60 p-4 sm:grid-cols-2">
         <div>
           <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Email
+            Email address
           </h2>
           <p className="mt-1 text-sm text-slate-100">
             {email ? (
@@ -138,7 +138,7 @@ export default async function ContactDetailPage({ params }: PageProps) {
         </div>
         <div>
           <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Phone
+            Phone number
           </h2>
           <p className="mt-1 text-sm text-slate-100">
             {phone ? (
@@ -158,22 +158,23 @@ export default async function ContactDetailPage({ params }: PageProps) {
             Notes
           </h2>
           <p className="mt-1 whitespace-pre-wrap text-sm text-slate-100">
-            {notes?.trim() || "No notes added yet."}
+            {notes?.trim() || "No notes yet."}
           </p>
         </div>
       </section>
 
       <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-100">
-            Linked estates
-          </h2>
+        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-100">Linked estates</h2>
+            <p className="text-xs text-slate-500">Estates this contact is associated with.</p>
+          </div>
           {/* Future: “Link to estate” action */}
         </div>
 
         {estates.length === 0 ? (
           <p className="text-xs text-slate-500">
-            This contact is not linked to any estates yet.
+            No linked estates yet.
           </p>
         ) : (
           <ul className="space-y-1 text-sm">

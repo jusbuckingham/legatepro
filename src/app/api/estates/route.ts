@@ -120,7 +120,7 @@ async function readJsonBody(
 
 /* ----------------------------------- GET ---------------------------------- */
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const headers = headersNoStore();
   addSecurityHeaders(headers);
 
@@ -129,18 +129,92 @@ export async function GET() {
     return jsonErr("Unauthorized", 401, "UNAUTHORIZED", { headers });
   }
 
+  const url = new URL(req.url);
+  const compactParam = url.searchParams.get("compact");
+  const limitParam = url.searchParams.get("limit");
+  const statusParam = url.searchParams.get("status");
+
+  const compact = compactParam === "1" || compactParam === "true";
+  let limit = 500;
+  if (limitParam !== null) {
+    const parsedLimit = parseInt(limitParam, 10);
+    if (!isNaN(parsedLimit)) {
+      limit = Math.min(Math.max(parsedLimit, 1), 1000);
+    }
+  }
+  const statusFilter = (statusParam ?? "all").toLowerCase();
+
   try {
     await connectToDatabase();
 
-    const estatesRaw = await Estate.find({ ownerId: session.user.id })
-      .sort({ createdAt: -1 })
-      .lean()
-      .exec();
+    const query: Record<string, unknown> = { ownerId: session.user.id };
+    if (statusFilter === "open") {
+      query.status = "OPEN";
+    } else if (statusFilter === "closed") {
+      query.status = "CLOSED";
+    }
 
-    return jsonOk(
-      { estates: estatesRaw.map(serializeMongoDoc) },
-      { headers },
-    );
+    const estatesRaw = (await Estate.find(query)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean()
+      .exec()) as unknown[];
+
+    const asRecord = (v: unknown): Record<string, unknown> =>
+      v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+
+    const asStringOrNull = (v: unknown): string | null => {
+      if (typeof v !== "string") return null;
+      const s = v.trim();
+      return s ? s : null;
+    };
+
+    const idToString = (id: unknown): string => {
+      if (typeof id === "string") return id;
+      if (typeof id === "number") return String(id);
+      if (id && typeof id === "object" && "toString" in id) {
+        const fn = (id as { toString?: unknown }).toString;
+        if (typeof fn === "function") {
+          const out = fn.call(id);
+          if (typeof out === "string") return out;
+        }
+      }
+      return String(id ?? "");
+    };
+
+    const estateCompact = (e: unknown) => {
+      const rec = asRecord(e);
+      const displayName =
+        asStringOrNull(rec.displayName) ??
+        asStringOrNull(rec.name) ??
+        asStringOrNull(rec.estateName) ??
+        "";
+
+      return {
+        _id: idToString(rec._id),
+        displayName,
+        status: asStringOrNull(rec.status),
+        caseNumber: asStringOrNull(rec.caseNumber) ?? asStringOrNull(rec.courtCaseNumber),
+        decedentName: asStringOrNull(rec.decedentName),
+        county: asStringOrNull(rec.county),
+        jurisdiction: asStringOrNull(rec.jurisdiction),
+        updatedAt: rec.updatedAt ?? null,
+      };
+    };
+
+    if (!compact) {
+      return jsonOk(
+        { estates: estatesRaw.map(serializeMongoDoc) },
+        { headers },
+      );
+    } else {
+      return jsonOk(
+        {
+          estates: estatesRaw.map(estateCompact),
+        },
+        { headers },
+      );
+    }
   } catch (error) {
     console.error("[GET /api/estates]", safeErrorMessage(error));
     return jsonErr("Failed to fetch estates", 500, "INTERNAL_ERROR", { headers });

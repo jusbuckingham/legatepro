@@ -75,6 +75,31 @@ function toObjectId(id: string) {
     : null;
 }
 
+function formatShortDate(d: Date): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+  }).format(d);
+}
+
+function getInvoiceStatusClasses(status: InvoiceStatus | string): string {
+  switch (status) {
+    case "PAID":
+      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-600";
+    case "PARTIAL":
+      return "border-amber-500/30 bg-amber-500/10 text-amber-600";
+    case "UNPAID":
+    case "SENT":
+    case "DRAFT":
+      return "border-sky-500/30 bg-sky-500/10 text-sky-600";
+    case "VOID":
+      return "border-border bg-muted/20 text-muted-foreground";
+    default:
+      return "border-border bg-muted/20 text-muted-foreground";
+  }
+}
+
 export default async function ARAgingPage() {
   const session = await getServerSession(authOptions);
 
@@ -264,17 +289,17 @@ export default async function ARAgingPage() {
     totalOutstandingCents > 0 ? totalOutstandingCents : 0;
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 space-y-8">
+    <div className="mx-auto w-full max-w-6xl space-y-8 px-4 py-8">
       <header className="space-y-2">
-        <p className="text-xs uppercase tracking-wide text-slate-500">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Invoices
         </p>
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-100">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
               Accounts receivable aging
             </h1>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-muted-foreground">
               Detailed breakdown of outstanding invoices by how long they have
               been past due. This uses the due date when available, otherwise
               the issue date or created date.
@@ -283,28 +308,28 @@ export default async function ARAgingPage() {
           <div className="flex items-center gap-2">
             <Link
               href="/app/invoices"
-              className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
+              className="inline-flex items-center rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               All invoices
             </Link>
             <Link
               href="/app/dashboard"
-              className="inline-flex items-center rounded-md border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
+              className="inline-flex items-center rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               Billing dashboard
             </Link>
           </div>
         </div>
-        <nav className="mt-4 inline-flex items-center gap-1 rounded-full bg-slate-900/60 p-1 text-xs">
+        <nav className="mt-4 inline-flex items-center gap-1 rounded-full border border-border bg-card p-1 text-xs">
           <Link
             href="/app/invoices"
-            className="rounded-full px-3 py-1 text-slate-300 hover:text-slate-100 hover:bg-slate-800"
+            className="rounded-full px-3 py-1 text-muted-foreground hover:bg-muted/30 hover:text-foreground"
           >
             All invoices
           </Link>
           <Link
             href="/app/invoices/aging"
-            className="rounded-full px-3 py-1 bg-sky-500 text-slate-950 font-medium shadow-sm hover:bg-sky-400"
+            className="rounded-full bg-sky-500 px-3 py-1 font-medium text-background shadow-sm hover:bg-sky-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             AR aging
           </Link>
@@ -313,39 +338,39 @@ export default async function ARAgingPage() {
 
       {/* Summary cards */}
       <section className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-1">
+        <div className="rounded-lg border border-border bg-card p-4 space-y-1">
           <p className="text-xs font-medium text-amber-400">
             Total outstanding
           </p>
           <p className="text-xl font-semibold text-amber-300">
             {formatMoney(safeTotalOutstanding, currency)}
           </p>
-          <p className="text-[11px] text-slate-500">
+          <p className="text-[11px] text-muted-foreground">
             Sum of all invoices in SENT, UNPAID, or PARTIAL status.
           </p>
         </div>
 
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-1">
-          <p className="text-xs font-medium text-slate-400">
+        <div className="rounded-lg border border-border bg-card p-4 space-y-1">
+          <p className="text-xs font-medium text-muted-foreground">
             Buckets with balance
           </p>
-          <p className="text-xl font-semibold text-slate-100">
+          <p className="text-xl font-semibold text-foreground">
             {buckets.filter(
               (b) =>
                 (bucketTotals.get(b.key) ?? 0) > 0 &&
                 (bucketMap.get(b.key)?.length ?? 0) > 0,
             ).length}
           </p>
-          <p className="text-[11px] text-slate-500">
+          <p className="text-[11px] text-muted-foreground">
             Count of aging buckets that currently have outstanding balances.
           </p>
         </div>
 
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-1">
-          <p className="text-xs font-medium text-slate-400">
+        <div className="rounded-lg border border-border bg-card p-4 space-y-1">
+          <p className="text-xs font-medium text-muted-foreground">
             Oldest invoices
           </p>
-          <p className="text-xl font-semibold text-slate-100">
+          <p className="text-xl font-semibold text-foreground">
             {(() => {
               const ninetyPlus = bucketMap.get("AGE_90_PLUS") ?? [];
               if (ninetyPlus.length === 0) return "None";
@@ -357,7 +382,7 @@ export default async function ARAgingPage() {
               return `${maxDays} days past due`;
             })()}
           </p>
-          <p className="text-[11px] text-slate-500">
+          <p className="text-[11px] text-muted-foreground">
             Based on invoices that are more than 90 days past their due date.
           </p>
         </div>
@@ -377,30 +402,40 @@ export default async function ARAgingPage() {
           return (
             <div
               key={bucket.key}
-              className="rounded-lg border border-slate-800 bg-slate-900/60"
+              className="rounded-lg border border-border bg-card"
             >
-              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-                <div>
-                  <p className="text-xs font-medium text-slate-200">
+              <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                <div className="w-full">
+                  <p className="text-xs font-medium text-foreground">
                     {bucket.label}
                   </p>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-[11px] text-muted-foreground">
                     {bucketTotal > 0
                       ? `${formatMoney(bucketTotal, currency)} · ${percent}% of outstanding · ${rows.length} invoice${rows.length === 1 ? "" : "s"}`
                       : "No invoices currently in this bucket."}
                   </p>
+
+                  <div
+                    className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted/30"
+                    aria-hidden={bucketTotal <= 0}
+                  >
+                    <div
+                      className="h-full rounded-full bg-sky-500/20"
+                      style={{ width: `${bucketTotal > 0 ? percent : 0}%` }}
+                    />
+                  </div>
                 </div>
               </div>
 
               {rows.length === 0 ? (
-                <div className="px-4 py-3 text-[11px] text-slate-500">
+                <div className="px-4 py-3 text-[11px] text-muted-foreground">
                   Nothing to show here yet.
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-xs">
-                    <thead className="bg-slate-900/80">
-                      <tr className="text-left text-slate-400">
+                    <thead className="bg-muted/30">
+                      <tr className="text-left text-muted-foreground">
                         <th className="px-3 py-2 font-medium">
                           Invoice
                         </th>
@@ -424,24 +459,13 @@ export default async function ARAgingPage() {
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-800">
+                    <tbody className="divide-y divide-border">
                       {rows
                         .slice()
                         .sort((a, b) => b.daysPastDue - a.daysPastDue)
                         .map((row) => {
-                          const statusColor =
-                            row.status === "PAID"
-                              ? "text-emerald-400"
-                              : row.status === "VOID"
-                              ? "text-slate-500"
-                              : row.status === "SENT" ||
-                                row.status === "UNPAID" ||
-                                row.status === "PARTIAL"
-                              ? "text-amber-400"
-                              : "text-slate-400";
-
                           return (
-                            <tr key={row.id} className="text-slate-200">
+                            <tr key={row.id} className="text-foreground hover:bg-muted/10">
                               <td className="px-3 py-2">
                                 <div className="flex flex-col">
                                   <span className="font-medium">
@@ -450,7 +474,7 @@ export default async function ARAgingPage() {
                                         -6,
                                       ).toUpperCase()}`}
                                   </span>
-                                  <span className="text-[11px] text-slate-500">
+                                  <span className="text-[11px] text-muted-foreground">
                                     {row.id}
                                   </span>
                                 </div>
@@ -464,27 +488,35 @@ export default async function ARAgingPage() {
                                     {row.estateLabel}
                                   </Link>
                                 ) : (
-                                  <span className="text-slate-500">
+                                  <span className="text-muted-foreground">
                                     Unassigned
                                   </span>
                                 )}
                               </td>
                               <td className="px-3 py-2">
-                                <span className={statusColor}>
+                                <span
+                                  className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${getInvoiceStatusClasses(
+                                    row.status
+                                  )}`}
+                                >
                                   {row.status}
                                 </span>
                               </td>
                               <td className="px-3 py-2">
-                                {row.dueDate.toLocaleDateString("en-US", {
-                                  month: "short",
-                                  day: "numeric",
-                                  year: "numeric",
-                                })}
+                                {formatShortDate(row.dueDate)}
                               </td>
                               <td className="px-3 py-2">
-                                {row.daysPastDue > 0
-                                  ? `${row.daysPastDue} days`
-                                  : "Not yet due"}
+                                <span
+                                  className={
+                                    row.daysPastDue > 0
+                                      ? "text-foreground"
+                                      : "text-muted-foreground"
+                                  }
+                                >
+                                  {row.daysPastDue > 0
+                                    ? `${row.daysPastDue} days`
+                                    : "Not yet due"}
+                                </span>
                               </td>
                               <td className="px-3 py-2 text-amber-300">
                                 {formatMoney(row.amountCents, currency)}
@@ -499,7 +531,7 @@ export default async function ARAgingPage() {
                                   </Link>
                                   <Link
                                     href={`/app/estates/${row.estateId ?? ""}/invoices/${row.id}/edit`}
-                                    className="text-[11px] text-slate-400 hover:text-slate-200"
+                                    className="text-[11px] text-muted-foreground hover:text-foreground"
                                   >
                                     Edit
                                   </Link>

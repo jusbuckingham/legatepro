@@ -1,19 +1,91 @@
+// src/app/app/estates/[estateId]/rent/[paymentId]/edit/page.tsx
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import { RentPayment } from "@/models/RentPayment";
 
-interface PageProps {
-  params: {
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+export const metadata = {
+  title: "Edit rent payment | LegatePro",
+};
+
+type PageProps = {
+  params: Promise<{
     estateId: string;
     paymentId: string;
-  };
+  }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
+
+function firstParam(value: string | string[] | undefined): string {
+  return typeof value === "string" ? value : Array.isArray(value) ? value[0] ?? "" : "";
 }
 
-interface RentPaymentLeanFromDb {
+function safeCallbackUrl(path: string): string {
+  return encodeURIComponent(path);
+}
+
+function coerceInt(value: unknown, fallback: number): number {
+  const n = typeof value === "number" ? value : Number(String(value ?? ""));
+  return Number.isFinite(n) ? Math.trunc(n) : fallback;
+}
+
+function coerceNumber(value: unknown, fallback: number): number {
+  const n = typeof value === "number" ? value : Number(String(value ?? ""));
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, n));
+}
+
+function parseDateInput(value: unknown): Date | null {
+  const s = String(value ?? "").trim();
+  if (!s) return null;
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function toDateInputValue(date?: Date): string {
+  if (!date) return "";
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+function formatDateTime(value: Date): string {
+  try {
+    return value.toLocaleString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  } catch {
+    return value.toISOString();
+  }
+}
+
+function roleLabel(role: EstateRole): string {
+  if (role === "OWNER") return "Owner";
+  if (role === "EDITOR") return "Editor";
+  return "Viewer";
+}
+
+function canEditRole(role: EstateRole): boolean {
+  return role === "OWNER" || role === "EDITOR";
+}
+
+type RentPaymentLeanFromDb = {
   _id: { toString(): string };
   estateId: { toString(): string };
   propertyId?: { toString(): string };
@@ -33,45 +105,58 @@ interface RentPaymentLeanFromDb {
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
-}
+};
 
-interface LeanRentPayment {
+type LeanRentPayment = {
   _id: string;
   estateId: string;
   propertyId?: string;
+
   tenantName: string;
   unit?: string;
+
   periodMonth: number;
   periodYear: number;
+
   amount: number;
   paymentDate: string; // YYYY-MM-DD
+
   method?: string;
   reference?: string;
   status?: string;
+
   receivedAt?: string; // YYYY-MM-DD
   periodStart?: string; // YYYY-MM-DD
   periodEnd?: string; // YYYY-MM-DD
+
   memo?: string;
   notes?: string;
+
   createdAt: string;
   updatedAt: string;
-}
+};
 
-function toDateInputValue(date?: Date): string {
-  if (!date) return "";
-  return date.toISOString().slice(0, 10);
-}
+export default async function EditRentPaymentPage({ params, searchParams }: PageProps) {
+  const { estateId, paymentId } = await params;
 
-function toIsoString(date: Date): string {
-  return date.toISOString();
-}
-
-export default async function EditRentPaymentPage(props: PageProps) {
-  const { estateId, paymentId } = props.params;
+  const sp = searchParams ? await searchParams : undefined;
+  const forbiddenFlag = firstParam(sp?.forbidden) === "1";
+  const errorCode = firstParam(sp?.error);
 
   const session = await auth();
   if (!session?.user?.id) {
-    redirect("/login");
+    const cb = `/app/estates/${estateId}/rent/${paymentId}/edit`;
+    redirect(`/login?callbackUrl=${safeCallbackUrl(cb)}`);
+  }
+
+  // Access: page-level (lets us show role chip + read-only guard UI)
+  const access = await requireEstateAccess({ estateId, userId: session.user.id });
+  const role: EstateRole = (access?.role as EstateRole) ?? "VIEWER";
+  const editEnabled = canEditRole(role);
+
+  // Hard edit guard: if you can't edit, keep it deterministic and bounce with a banner.
+  if (!editEnabled) {
+    redirect(`/app/estates/${estateId}/rent/${paymentId}?forbidden=1`);
   }
 
   await connectToDatabase();
@@ -79,7 +164,6 @@ export default async function EditRentPaymentPage(props: PageProps) {
   const doc = await RentPayment.findOne({
     _id: paymentId,
     estateId,
-    $or: [{ ownerId: session.user.id }, { ownerId: { $exists: false } }],
   }).lean<RentPaymentLeanFromDb | null>();
 
   if (!doc) {
@@ -90,22 +174,29 @@ export default async function EditRentPaymentPage(props: PageProps) {
     _id: doc._id.toString(),
     estateId: doc.estateId.toString(),
     propertyId: doc.propertyId ? doc.propertyId.toString() : undefined,
+
     tenantName: doc.tenantName,
     unit: doc.unit,
+
     periodMonth: doc.periodMonth,
     periodYear: doc.periodYear,
+
     amount: doc.amount,
     paymentDate: toDateInputValue(doc.paymentDate),
+
     method: doc.method,
     reference: doc.reference,
     status: doc.status,
+
     receivedAt: doc.receivedAt ? toDateInputValue(doc.receivedAt) : undefined,
     periodStart: doc.periodStart ? toDateInputValue(doc.periodStart) : undefined,
     periodEnd: doc.periodEnd ? toDateInputValue(doc.periodEnd) : undefined,
+
     memo: doc.memo,
     notes: doc.notes,
-    createdAt: toIsoString(doc.createdAt),
-    updatedAt: toIsoString(doc.updatedAt),
+
+    createdAt: doc.createdAt.toISOString(),
+    updatedAt: doc.updatedAt.toISOString(),
   };
 
   async function updateRentPayment(formData: FormData) {
@@ -116,54 +207,65 @@ export default async function EditRentPaymentPage(props: PageProps) {
       redirect("/login");
     }
 
+    // Re-check edit access on mutation (never trust just the UI)
+    const editAccess = await requireEstateEditAccess({
+      estateId,
+      userId: innerSession.user.id,
+    });
+
+    if (editAccess.role === "VIEWER") {
+      redirect(`/app/estates/${estateId}/rent/${paymentId}/edit?forbidden=1`);
+    }
+
     await connectToDatabase();
 
-    const tenantName = (formData.get("tenantName") ?? "").toString().trim();
-    const unitRaw = (formData.get("unit") ?? "").toString().trim();
+    const tenantName = String(formData.get("tenantName") ?? "").trim();
+    const unitRaw = String(formData.get("unit") ?? "").trim();
     const unit = unitRaw || undefined;
 
-    const periodMonth = Number(formData.get("periodMonth") ?? payment.periodMonth);
-    const periodYear = Number(formData.get("periodYear") ?? payment.periodYear);
+    // Period + amount
+    const rawMonth = coerceInt(formData.get("periodMonth"), payment.periodMonth);
+    const rawYear = coerceInt(formData.get("periodYear"), payment.periodYear);
+    const periodMonth = clamp(rawMonth, 1, 12);
+    const currentYear = new Date().getFullYear();
+    const periodYear = clamp(rawYear, currentYear - 25, currentYear + 2);
 
-    const amount = Number(formData.get("amount") ?? payment.amount);
+    const amountRaw = coerceNumber(formData.get("amount"), payment.amount);
+    const amount = Math.max(0, amountRaw);
 
-    const paymentDateStr = (formData.get("paymentDate") ?? "").toString();
-    const paymentDate = paymentDateStr ? new Date(paymentDateStr) : undefined;
+    // Optional dates (only write if provided; otherwise keep existing)
+    const paymentDate = parseDateInput(formData.get("paymentDate"));
+    const receivedAt = parseDateInput(formData.get("receivedAt"));
+    const periodStart = parseDateInput(formData.get("periodStart"));
+    const periodEnd = parseDateInput(formData.get("periodEnd"));
 
-    const methodRaw = (formData.get("method") ?? "").toString().trim();
-    const referenceRaw = (formData.get("reference") ?? "").toString().trim();
-    const statusRaw = (formData.get("status") ?? "").toString().trim();
-    const memoRaw = (formData.get("memo") ?? "").toString().trim();
-    const notesRaw = (formData.get("notes") ?? "").toString().trim();
+    const methodRaw = String(formData.get("method") ?? "").trim();
+    const referenceRaw = String(formData.get("reference") ?? "").trim();
+    const statusRaw = String(formData.get("status") ?? "").trim();
+    const memoRaw = String(formData.get("memo") ?? "").trim();
+    const notesRaw = String(formData.get("notes") ?? "").trim();
 
-    const receivedAtStr = (formData.get("receivedAt") ?? "").toString();
-    const periodStartStr = (formData.get("periodStart") ?? "").toString();
-    const periodEndStr = (formData.get("periodEnd") ?? "").toString();
-
-    const receivedAt = receivedAtStr ? new Date(receivedAtStr) : undefined;
-    const periodStart = periodStartStr ? new Date(periodStartStr) : undefined;
-    const periodEnd = periodEndStr ? new Date(periodEndStr) : undefined;
+    if (!tenantName) {
+      redirect(`/app/estates/${estateId}/rent/${paymentId}/edit?error=missing_tenant`);
+    }
 
     await RentPayment.findOneAndUpdate(
-      {
-        _id: paymentId,
-        estateId,
-        $or: [{ ownerId: innerSession.user.id }, { ownerId: { $exists: false } }],
-      },
+      { _id: paymentId, estateId },
       {
         tenantName,
         unit,
         periodMonth,
         periodYear,
         amount,
-        // only set dates if provided; otherwise leave existing values
+
         ...(paymentDate ? { paymentDate } : {}),
+        ...(receivedAt ? { receivedAt } : {}),
+        ...(periodStart ? { periodStart } : {}),
+        ...(periodEnd ? { periodEnd } : {}),
+
         method: methodRaw || undefined,
         reference: referenceRaw || undefined,
         status: statusRaw || undefined,
-        receivedAt,
-        periodStart,
-        periodEnd,
         memo: memoRaw || undefined,
         notes: notesRaw || undefined,
       },
@@ -172,7 +274,11 @@ export default async function EditRentPaymentPage(props: PageProps) {
 
     revalidatePath(`/app/estates/${estateId}/rent`);
     revalidatePath(`/app/estates/${estateId}/rent/${paymentId}`);
-    redirect(`/app/estates/${estateId}/rent/${paymentId}`);
+    if (payment.propertyId) {
+      revalidatePath(`/app/estates/${estateId}/properties/${payment.propertyId}/rent`);
+    }
+
+    redirect(`/app/estates/${estateId}/rent/${paymentId}?updated=1`);
   }
 
   const statusOptions = [
@@ -189,34 +295,132 @@ export default async function EditRentPaymentPage(props: PageProps) {
     label: new Date(2000, index, 1).toLocaleString("en-US", { month: "short" }),
   }));
 
-  const yearOptions = Array.from({ length: 10 }).map((_, index) => {
+  const yearOptions = Array.from({ length: 12 }).map((_, index) => {
     const baseYear = new Date().getFullYear();
-    const year = baseYear - 5 + index;
+    const year = baseYear - 6 + index;
     return { value: year, label: year.toString() };
   });
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-lg font-semibold text-slate-50">
-            Edit Rent Payment
-          </h1>
-          <p className="text-sm text-slate-400">
-            Update rent payment for{" "}
-            <span className="font-medium text-slate-100">
-              {payment.tenantName || "Tenant"}
-            </span>{" "}
-            — {payment.periodMonth}/{payment.periodYear}
-          </p>
+    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+      <header className="space-y-4">
+        <nav className="text-xs text-slate-500">
+          <Link
+            href="/app/estates"
+            className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+          >
+            Estates
+          </Link>
+          <span className="mx-1 text-slate-600">/</span>
+          <Link
+            href={`/app/estates/${estateId}`}
+            className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+          >
+            Estate
+          </Link>
+          <span className="mx-1 text-slate-600">/</span>
+          <Link
+            href={`/app/estates/${estateId}/rent`}
+            className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+          >
+            Rent
+          </Link>
+          <span className="mx-1 text-slate-600">/</span>
+          <Link
+            href={`/app/estates/${estateId}/rent/${paymentId}`}
+            className="text-slate-300 hover:text-emerald-300 underline-offset-2 hover:underline"
+          >
+            Payment
+          </Link>
+          <span className="mx-1 text-slate-600">/</span>
+          <span className="text-rose-300">Edit</span>
+        </nav>
+
+        {forbiddenFlag ? (
+          <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="font-medium">Action blocked</p>
+                <p className="text-xs text-rose-200">
+                  You don’t have edit permissions for this estate. Request access from the owner to update rent payments.
+                </p>
+              </div>
+              <Link
+                href={`/app/estates/${estateId}?requestAccess=1`}
+                className="mt-2 inline-flex items-center justify-center rounded-md border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/25 md:mt-0"
+              >
+                Request edit access
+              </Link>
+            </div>
+          </div>
+        ) : null}
+
+        {errorCode ? (
+          <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="font-medium">Something went wrong</p>
+                <p className="text-xs text-rose-200">
+                  We couldn’t save your changes. Please review the form and try again.
+                </p>
+              </div>
+              <Link
+                href={`/app/estates/${estateId}/rent/${paymentId}/edit`}
+                className="mt-2 inline-flex items-center justify-center rounded-md border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/25 md:mt-0"
+              >
+                Refresh
+              </Link>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                Edit payment
+              </span>
+              <span className="rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-300">
+                Role: {roleLabel(role)}
+              </span>
+              {payment.propertyId ? (
+                <span className="rounded-full border border-slate-800 bg-slate-950 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-300">
+                  Property-scoped
+                </span>
+              ) : null}
+            </div>
+
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
+              Rent payment
+            </h1>
+            <p className="text-sm text-slate-400">
+              Update payment for{" "}
+              <span className="font-medium text-slate-100">
+                {payment.tenantName || "Tenant"}
+              </span>{" "}
+              <span className="text-slate-500">•</span>{" "}
+              <span className="text-slate-200">
+                {payment.periodMonth}/{payment.periodYear}
+              </span>
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <Link
+              href={`/app/estates/${estateId}/rent/${paymentId}`}
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium text-slate-100 hover:border-rose-700 hover:bg-slate-900/60"
+            >
+              Back to payment
+            </Link>
+            <Link
+              href={`/app/estates/${estateId}/rent`}
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium text-slate-100 hover:border-rose-700 hover:bg-slate-900/60"
+            >
+              Estate rent ledger
+            </Link>
+          </div>
         </div>
-        <Link
-          href={`/app/estates/${estateId}/rent/${paymentId}`}
-          className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-100 hover:border-rose-700 hover:bg-slate-900/60"
-        >
-          Back to payment detail
-        </Link>
-      </div>
+      </header>
 
       <form
         action={updateRentPayment}
@@ -309,6 +513,9 @@ export default async function EditRentPaymentPage(props: PageProps) {
                 defaultValue={payment.paymentDate}
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-500"
               />
+              <p className="mt-1 text-[11px] text-slate-500">
+                Leave blank to keep the existing date.
+              </p>
             </div>
 
             <div>
@@ -321,6 +528,9 @@ export default async function EditRentPaymentPage(props: PageProps) {
                 defaultValue={payment.receivedAt ?? ""}
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 outline-none focus:border-rose-500"
               />
+              <p className="mt-1 text-[11px] text-slate-500">
+                If blank, we keep the existing value.
+              </p>
             </div>
           </div>
 
@@ -431,24 +641,24 @@ export default async function EditRentPaymentPage(props: PageProps) {
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-slate-500">Created</dt>
-                <dd className="text-slate-200">
-                  {new Date(payment.createdAt).toLocaleString()}
-                </dd>
+                <dd className="text-slate-200">{formatDateTime(new Date(payment.createdAt))}</dd>
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-slate-500">Last updated</dt>
-                <dd className="text-slate-200">
-                  {new Date(payment.updatedAt).toLocaleString()}
-                </dd>
+                <dd className="text-slate-200">{formatDateTime(new Date(payment.updatedAt))}</dd>
               </div>
+              {payment.propertyId ? (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-slate-500">Property</dt>
+                  <dd className="truncate text-slate-200">{payment.propertyId}</dd>
+                </div>
+              ) : null}
             </dl>
           </div>
 
           <div className="flex flex-col gap-3 rounded-xl border border-rose-900/60 bg-slate-950/80 p-4 text-xs">
             <p className="text-[11px] text-slate-400">
-              Changes will update this payment and refresh the estate&apos;s rent
-              ledger. You can always see the full history via your database if
-              needed.
+              Changes update this payment and refresh the estate&apos;s rent ledger so your accounting stays court-ready.
             </p>
 
             <div className="flex items-center justify-between gap-3">
@@ -465,6 +675,15 @@ export default async function EditRentPaymentPage(props: PageProps) {
                 Save changes
               </button>
             </div>
+
+            {payment.propertyId ? (
+              <Link
+                href={`/app/estates/${estateId}/properties/${payment.propertyId}/rent`}
+                className="text-[11px] text-slate-400 hover:text-slate-200 underline-offset-2 hover:underline"
+              >
+                View this property’s rent ledger
+              </Link>
+            ) : null}
           </div>
         </div>
       </form>

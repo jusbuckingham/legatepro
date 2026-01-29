@@ -49,12 +49,16 @@ async function getUtilityRows(estateId: string): Promise<UtilityRow[]> {
     .lean()) as RawUtilityAccount[];
 
   const accounts = accountsRaw
-    .map((a) => serializeMongoDoc(a) as Record<string, unknown>)
+    .map((doc) => serializeMongoDoc(doc) as Record<string, unknown>)
     .map((a) => {
       const propertyId = a.propertyId != null ? String(a.propertyId) : undefined;
-      const lastBillDate = a.lastBillDate as unknown;
+      const rawLastBillDate = a.lastBillDate as unknown;
+
+      const idCandidate = a.id ?? a._id;
+      const id = idCandidate != null ? String(idCandidate) : "";
+
       return {
-        id: String(a.id ?? ""),
+        id,
         propertyId,
         provider: typeof a.provider === "string" ? a.provider : "",
         type: typeof a.type === "string" ? a.type : "",
@@ -65,9 +69,17 @@ async function getUtilityRows(estateId: string): Promise<UtilityRow[]> {
             : "active",
         isAutoPay: typeof a.isAutoPay === "boolean" ? a.isAutoPay : undefined,
         lastBillAmount: typeof a.lastBillAmount === "number" ? a.lastBillAmount : undefined,
-        lastBillDate,
+        lastBillDate: rawLastBillDate,
       };
     });
+  function toISODate(input: unknown): string | undefined {
+    if (!input) return undefined;
+
+    const d = input instanceof Date ? input : new Date(String(input));
+    if (Number.isNaN(d.getTime())) return undefined;
+
+    return d.toISOString().slice(0, 10);
+  }
 
   if (accounts.length === 0) {
     return [];
@@ -100,12 +112,7 @@ async function getUtilityRows(estateId: string): Promise<UtilityRow[]> {
       ? propertyLabelById.get(createdForPropertyId) || "Estate-level"
       : "Estate-level";
 
-    const rawDate = account.lastBillDate;
-    const lastBillDateISO = rawDate
-      ? rawDate instanceof Date
-        ? rawDate.toISOString().slice(0, 10)
-        : new Date(String(rawDate)).toISOString().slice(0, 10)
-      : undefined;
+    const lastBillDateISO = toISODate(account.lastBillDate);
 
     return {
       id: account.id,
@@ -213,10 +220,22 @@ export default async function EstateUtilitiesPage({ params }: EstateUtilitiesPag
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border bg-card">
+          <div className="flex flex-col gap-1 border-b bg-muted/20 px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-medium text-foreground">
+                {utilities.length} utility account{utilities.length === 1 ? "" : "s"}
+              </p>
+              <p className="text-xs text-muted-foreground">Sorted by provider, then type</p>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Tip: keep account numbers + last bill details current to prevent shutoffs and simplify court accountings.
+            </p>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-border text-sm">
-            <thead className="bg-muted/40">
-              <tr>
+              <thead className="bg-muted/40">
+                <tr>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">Provider</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">Type</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">Property</th>
@@ -227,15 +246,15 @@ export default async function EstateUtilitiesPage({ params }: EstateUtilitiesPag
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">Autopay</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">Last bill</th>
                 <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border bg-card/50">
-              {utilities.map((u) => (
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border bg-card/50">
+                {utilities.map((u) => (
                 <tr key={u.id} className="hover:bg-muted/40">
                   <td className="px-4 py-3 font-medium text-foreground">{u.provider}</td>
                   <td className="px-4 py-3 text-muted-foreground">{u.type}</td>
                   <td className="px-4 py-3 text-muted-foreground">{u.propertyLabel}</td>
-                  <td className="px-4 py-3 text-muted-foreground">
+                  <td className="px-4 py-3 text-muted-foreground font-mono">
                     {u.accountNumber || (
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
@@ -256,7 +275,9 @@ export default async function EstateUtilitiesPage({ params }: EstateUtilitiesPag
                     </span>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
-                    {u.isAutoPay ? (
+                    {typeof u.isAutoPay !== "boolean" ? (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    ) : u.isAutoPay ? (
                       <span className="rounded-full bg-emerald-500/5 px-2 py-0.5 text-xs font-medium text-emerald-600">
                         On
                       </span>
@@ -285,8 +306,8 @@ export default async function EstateUtilitiesPage({ params }: EstateUtilitiesPag
                     </Link>
                   </td>
                 </tr>
-              ))}
-            </tbody>
+                ))}
+              </tbody>
             </table>
           </div>
         </div>

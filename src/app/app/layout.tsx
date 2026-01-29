@@ -2,7 +2,7 @@
 import type { ReactNode } from "react";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import Link from "next/link";
+import SidebarNav from "@/components/app/SidebarNav";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -16,10 +16,14 @@ type NavItem = {
 
 function SignOutForm({ className }: { className?: string }) {
   return (
-    <form action="/api/auth/signout?callbackUrl=/login" method="post" className={className}>
+    <form
+      action="/api/auth/signout?callbackUrl=/login"
+      method="post"
+      className={className}
+    >
       <button
         type="submit"
-        className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-100 transition-colors hover:border-slate-500 hover:bg-slate-800"
+        className="inline-flex items-center rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
         Sign out
       </button>
@@ -49,75 +53,33 @@ export default async function AppLayout({ children }: AppLayoutProps) {
   const navSystem: NavItem[] = [{ href: "/app/settings", label: "Settings" }];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-50 flex">
+    <div className="flex min-h-screen bg-background text-foreground">
       {/* Sidebar */}
-      <aside className="hidden w-64 flex-col border-r border-slate-800 bg-slate-950/80 px-4 py-6 md:flex">
+      <aside className="hidden w-64 flex-col border-r border-border bg-card px-4 py-6 md:flex">
         <div className="mb-6">
-          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
             LegatePro
           </div>
-          <div className="mt-2 text-sm text-slate-300">Estate workspace</div>
+          <div className="mt-2 text-sm text-muted-foreground">Estate workspace</div>
         </div>
 
-        <nav className="flex-1 space-y-1 text-sm" aria-label="App navigation">
-          <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-            Overview
-          </p>
-          {navOverview.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="mt-1 flex items-center justify-between rounded-lg px-2 py-1.5 text-slate-200 hover:bg-slate-900"
-            >
-              <span>{item.label}</span>
-              {item.badge ? (
-                <span className="text-[10px] uppercase text-emerald-400">{item.badge}</span>
-              ) : null}
-            </Link>
-          ))}
+        <SidebarNav overview={navOverview} estates={navEstates} system={navSystem} />
 
-          <p className="mt-4 px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-            Estates
-          </p>
-          {navEstates.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="flex items-center rounded-lg px-2 py-1.5 text-slate-300 hover:bg-slate-900"
-            >
-              {item.label}
-            </Link>
-          ))}
-
-          <p className="mt-4 px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-            System
-          </p>
-          {navSystem.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="flex items-center rounded-lg px-2 py-1.5 text-slate-300 hover:bg-slate-900"
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-
-        <div className="mt-6 border-t border-slate-800 pt-4 text-xs text-slate-500">
-          <div className="text-slate-300">{userName}</div>
+        <div className="mt-6 border-t border-border pt-4 text-xs text-muted-foreground">
+          <div className="text-foreground">{userName}</div>
           <SignOutForm className="mt-2" />
         </div>
       </aside>
 
       {/* Main column */}
       <div className="flex min-h-screen flex-1 flex-col">
-        <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur-sm">
+        <header className="border-b border-border bg-card/80 backdrop-blur-sm">
           <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
             <div>
               <h1 className="text-lg font-semibold tracking-tight">LegatePro</h1>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-muted-foreground">
                 Signed in as{" "}
-                <span className="font-medium text-slate-200">{userName}</span>
+                <span className="font-medium text-foreground">{userName}</span>
               </p>
             </div>
             <SignOutForm />

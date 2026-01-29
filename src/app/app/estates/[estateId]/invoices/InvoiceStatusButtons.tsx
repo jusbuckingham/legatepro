@@ -1,11 +1,11 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { getApiErrorMessage, safeJson } from "@/lib/utils";
 
-type InvoiceStatus = "draft" | "sent" | "paid" | "void" | string;
+type InvoiceStatus = "draft" | "sent" | "paid" | "void" | (string & {});
 
 type Props = {
   invoiceId: string;
@@ -38,6 +38,21 @@ type ErrorResponse = {
   error?: string;
 };
 
+function getSuccessMessage(nextStatus: InvoiceStatus): string {
+  switch (String(nextStatus)) {
+    case "paid":
+      return "Invoice marked as paid. (Locked)";
+    case "void":
+      return "Invoice voided. (Locked)";
+    case "sent":
+      return "Invoice marked as sent.";
+    case "draft":
+      return "Invoice reverted to draft.";
+    default:
+      return "Invoice status updated.";
+  }
+}
+
 export default function InvoiceStatusButtons({
   invoiceId,
   initialStatus,
@@ -63,64 +78,58 @@ export default function InvoiceStatusButtons({
 
   const canInteract = !(isSaving || isPending);
 
-  const updateStatus = async (nextStatus: InvoiceStatus) => {
-    if (!canInteract) return;
+  const updateStatus = useCallback(
+    async (nextStatus: InvoiceStatus) => {
+      if (!canInteract) return;
 
-    const previousStatus = status;
-    setStatus(nextStatus);
-    setIsSaving(true);
-    setFeedback(null);
-    setFeedbackType(null);
+      const previousStatus = status;
+      setStatus(nextStatus);
+      setIsSaving(true);
+      setFeedback(null);
+      setFeedbackType(null);
 
-    try {
-      const res = await fetch(
-        `/api/invoices/${encodeURIComponent(invoiceId)}/status`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: nextStatus }),
+      try {
+        const res = await fetch(
+          `/api/invoices/${encodeURIComponent(invoiceId)}/status`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: nextStatus }),
+          }
+        );
+
+        const data = (await safeJson(res)) as OkResponse | ErrorResponse | null;
+
+        if (!res.ok || data?.ok === false) {
+          const apiMessage = await Promise.resolve(getApiErrorMessage(res));
+          const message =
+            (data && "error" in data ? data.error : undefined) ||
+            apiMessage ||
+            "Could not update invoice.";
+
+          setStatus(previousStatus);
+          setFeedback(message);
+          setFeedbackType("error");
+          return;
         }
-      );
 
-      const data = (await safeJson(res)) as OkResponse | ErrorResponse | null;
+        setFeedback(getSuccessMessage(nextStatus));
+        setFeedbackType("success");
 
-      if (!res.ok || data?.ok === false) {
-        const apiMessage = await Promise.resolve(getApiErrorMessage(res));
-        const message =
-          (data && "error" in data ? data.error : undefined) ||
-          apiMessage ||
-          "Could not update invoice.";
-
+        startTransition(() => {
+          router.refresh();
+        });
+      } catch (err) {
+        console.error(err);
         setStatus(previousStatus);
-        setFeedback(message);
+        setFeedback("Network error while updating status.");
         setFeedbackType("error");
-        return;
+      } finally {
+        setIsSaving(false);
       }
-
-      const msg =
-        nextStatus === "paid"
-          ? "Invoice marked as paid. (Locked)"
-          : nextStatus === "void"
-          ? "Invoice voided. (Locked)"
-          : nextStatus === "sent"
-          ? "Invoice marked as sent."
-          : "Invoice reverted to draft.";
-
-      setFeedback(msg);
-      setFeedbackType("success");
-
-      startTransition(() => {
-        router.refresh();
-      });
-    } catch (err) {
-      console.error(err);
-      setStatus(previousStatus);
-      setFeedback("Network error while updating status.");
-      setFeedbackType("error");
-    } finally {
-      setIsSaving(false);
-    }
-  };
+    },
+    [canInteract, invoiceId, router, startTransition, status]
+  );
 
   const label = getStatusLabel(status);
 
@@ -143,6 +152,8 @@ export default function InvoiceStatusButtons({
             className={`text-[11px] ${
               feedbackType === "error" ? "text-red-400" : "text-emerald-400"
             }`}
+            role={feedbackType === "error" ? "alert" : "status"}
+            aria-live={feedbackType === "error" ? "assertive" : "polite"}
           >
             {feedback}
           </p>
@@ -159,7 +170,11 @@ export default function InvoiceStatusButtons({
     status === "draft"
       ? [{ key: "sent", label: "Mark as Sent", title: "Mark invoice as sent" }]
       : status === "sent"
-      ? [{ key: "draft", label: "Revert to Draft", title: "Move back to draft" }]
+      ? [{
+          key: "draft",
+          label: "Revert to Draft",
+          title: "Move back to draft",
+        }]
       : [{ key: "draft", label: "Set Draft", title: "Move back to draft" }];
 
   return (
@@ -245,6 +260,7 @@ export default function InvoiceStatusButtons({
             feedbackType === "error" ? "text-red-400" : "text-emerald-400"
           }`}
           role={feedbackType === "error" ? "alert" : "status"}
+          aria-live={feedbackType === "error" ? "assertive" : "polite"}
         >
           {feedback}
         </p>

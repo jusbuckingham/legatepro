@@ -64,8 +64,6 @@ function toIdString(id: unknown): string | undefined {
 function toObjectId(id: string) {
   return Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : null;
 }
-
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -391,7 +389,7 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
           <div className="flex flex-wrap gap-2">
             <Link
               href="/app/estates"
-              className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-100 hover:border-slate-500 hover:bg-slate-800"
+              className="inline-flex items-center rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               View Estates
             </Link>
@@ -402,18 +400,18 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
       <PageSection title="Filters" description="Narrow results by estate, date range, and sort order.">
         <form
           method="GET"
-          className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-xs sm:flex-row sm:items-end sm:justify-between"
+          className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 text-xs sm:flex-row sm:items-end sm:justify-between"
         >
           <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-4">
             {/* Estate select */}
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                 Estate
               </label>
               <select
                 name="estateId"
                 defaultValue={estateFilter ?? ""}
-                className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100"
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 <option value="">All estates</option>
                 {estates.map((estate) => {
@@ -429,39 +427,39 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
 
             {/* From date */}
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                 From
               </label>
               <input
                 type="date"
                 name="from"
                 defaultValue={fromInput ?? ""}
-                className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100"
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               />
             </div>
 
             {/* To date */}
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                 To
               </label>
               <input
                 type="date"
                 name="to"
                 defaultValue={toInput ?? ""}
-                className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100"
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               />
             </div>
 
             {/* Sort */}
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                 Sort By
               </label>
               <select
                 name="sort"
                 defaultValue={sortKey}
-                className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100"
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 <option value="date-desc">Date (newest first)</option>
                 <option value="date-asc">Date (oldest first)</option>
@@ -476,13 +474,13 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
           <div className="flex gap-2">
             <button
               type="submit"
-              className="inline-flex items-center rounded-md bg-rose-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-rose-500"
+              className="inline-flex items-center rounded-md bg-rose-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-rose-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               Apply
             </button>
             <Link
               href="/app/time"
-              className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-100 hover:border-slate-500 hover:bg-slate-800"
+              className="inline-flex items-center rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               Reset
             </Link>
@@ -492,38 +490,38 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
 
       <PageSection title="Summary" description="High-level totals based on the current filters.">
         <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+          <div className="rounded-xl border border-border bg-card p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Total Hours (Filtered)
             </p>
-            <p className="mt-1 text-2xl font-semibold text-slate-50">
+            <p className="mt-1 text-2xl font-semibold text-foreground">
               {totalHours.toFixed(2)}h
             </p>
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-muted-foreground">
               Across {entries.length} time entries.
             </p>
           </div>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+          <div className="rounded-xl border border-border bg-card p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               This Month (Filtered)
             </p>
-            <p className="mt-1 text-lg font-semibold text-slate-50">
+            <p className="mt-1 text-lg font-semibold text-foreground">
               {monthHours.toFixed(2)}h · {formatCurrency(monthAmount)}
             </p>
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-muted-foreground">
               Hours + value logged this calendar month.
             </p>
           </div>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+          <div className="rounded-xl border border-border bg-card p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Total Value (Filtered)
             </p>
-            <p className="mt-1 text-2xl font-semibold text-slate-50">
+            <p className="mt-1 text-2xl font-semibold text-foreground">
               {formatCurrency(totalAmount)}
             </p>
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-muted-foreground">
               Based on time entries and hourly rates.
             </p>
           </div>
@@ -531,9 +529,9 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
       </PageSection>
 
       <PageSection title="Top Estates" description="The estates with the most time logged in the filtered set.">
-        <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
+        <div className="rounded-xl border border-border bg-card p-4">
           {topEstateEntries.length === 0 ? (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               No time entries match the current filters.
             </p>
           ) : (
@@ -541,18 +539,18 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
               {topEstateEntries.map((item) => (
                 <li
                   key={item.estateId}
-                  className="flex items-center justify-between rounded-lg border border-slate-800/70 bg-slate-900/70 px-3 py-2"
+                  className="flex items-center justify-between rounded-lg border border-border bg-muted/10 px-3 py-2"
                 >
                   <div>
-                    <p className="font-medium text-slate-100">{item.label}</p>
-                    <p className="text-[11px] text-slate-400">
+                    <p className="font-medium text-foreground">{item.label}</p>
+                    <p className="text-[11px] text-muted-foreground">
                       {item.hours.toFixed(2)}h · {formatCurrency(item.amount)}
                     </p>
                   </div>
                   {item.estateId !== "unassigned" && (
                     <Link
                       href={`/app/estates/${item.estateId}/time`}
-                      className="text-[11px] font-medium text-rose-300 hover:text-rose-200"
+                      className="text-[11px] font-medium text-rose-600 hover:text-rose-500"
                     >
                       View
                     </Link>
@@ -568,26 +566,26 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
         title="Time Entries"
         description={`Showing ${sortedEntries.length} entries matching filters.`}
       >
-        <div className="rounded-xl border border-slate-800 bg-slate-950/80">
+        <div className="rounded-xl border border-border bg-card">
           {sortedEntries.length === 0 ? (
             <div className="px-4 py-8">
               <div className="mx-auto max-w-2xl text-center">
                 {hasActiveFilters ? (
                   <>
-                    <p className="text-sm font-semibold text-slate-100">No time entries match your filters</p>
-                    <p className="mt-1 text-xs text-slate-400">
+                    <p className="text-sm font-semibold text-foreground">No time entries match your filters</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
                       Try a different estate or date range — or reset filters to see everything.
                     </p>
                     <div className="mt-4 flex flex-wrap justify-center gap-2">
                       <Link
                         href="/app/time"
-                        className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-950/60 px-3 text-xs font-semibold text-slate-200 hover:bg-slate-900"
+                        className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                       >
                         Reset filters
                       </Link>
                       <Link
                         href="/app/estates"
-                        className="inline-flex h-9 items-center rounded-md bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-500"
+                        className="inline-flex h-9 items-center rounded-md bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                       >
                         Go to an estate
                       </Link>
@@ -595,20 +593,20 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
                   </>
                 ) : estates.length === 0 ? (
                   <>
-                    <p className="text-sm font-semibold text-slate-100">Create an estate to start tracking time</p>
-                    <p className="mt-1 text-xs text-slate-400">
+                    <p className="text-sm font-semibold text-foreground">Create an estate to start tracking time</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
                       Time entries are linked to estates so work stays organized and audit-friendly.
                     </p>
                     <div className="mt-4 flex flex-wrap justify-center gap-2">
                       <Link
                         href="/app/estates/new"
-                        className="inline-flex h-9 items-center rounded-md bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-500"
+                        className="inline-flex h-9 items-center rounded-md bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                       >
                         New estate
                       </Link>
                       <Link
                         href="/app/dashboard"
-                        className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-950/60 px-3 text-xs font-semibold text-slate-200 hover:bg-slate-900"
+                        className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                       >
                         Dashboard
                       </Link>
@@ -616,36 +614,36 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
                   </>
                 ) : (
                   <>
-                    <p className="text-sm font-semibold text-slate-100">No time entries yet</p>
-                    <p className="mt-1 text-xs text-slate-400">
+                    <p className="text-sm font-semibold text-foreground">No time entries yet</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
                       Log time inside an estate (Estate → Time) and you&apos;ll see totals and analysis here.
                     </p>
 
                     <div className="mx-auto mt-5 grid max-w-2xl gap-3 text-left md:grid-cols-3">
-                      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-                        <p className="text-xs font-semibold text-slate-100">Step 1</p>
-                        <p className="mt-1 text-[11px] text-slate-500">Open an estate → Time.</p>
+                      <div className="rounded-xl border border-border bg-muted/20 p-4">
+                        <p className="text-xs font-semibold text-foreground">Step 1</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">Open an estate → Time.</p>
                       </div>
-                      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-                        <p className="text-xs font-semibold text-slate-100">Step 2</p>
-                        <p className="mt-1 text-[11px] text-slate-500">Add a date, minutes, and optional rate.</p>
+                      <div className="rounded-xl border border-border bg-muted/20 p-4">
+                        <p className="text-xs font-semibold text-foreground">Step 2</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">Add a date, minutes, and optional rate.</p>
                       </div>
-                      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-                        <p className="text-xs font-semibold text-slate-100">Step 3</p>
-                        <p className="mt-1 text-[11px] text-slate-500">Use filters here to review totals.</p>
+                      <div className="rounded-xl border border-border bg-muted/20 p-4">
+                        <p className="text-xs font-semibold text-foreground">Step 3</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">Use filters here to review totals.</p>
                       </div>
                     </div>
 
                     <div className="mt-4 flex flex-wrap justify-center gap-2">
                       <Link
                         href="/app/estates"
-                        className="inline-flex h-9 items-center rounded-md bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-500"
+                        className="inline-flex h-9 items-center rounded-md bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                       >
                         Go to an estate
                       </Link>
                       <Link
                         href="/app/estates?sort=updated"
-                        className="inline-flex h-9 items-center rounded-md border border-slate-800 bg-slate-950/60 px-3 text-xs font-semibold text-slate-200 hover:bg-slate-900"
+                        className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                       >
                         Recently updated
                       </Link>
@@ -656,8 +654,8 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-full border-t border-slate-800 text-xs">
-                <thead className="bg-slate-950/90 text-[10px] uppercase tracking-wide text-slate-400">
+              <table className="min-w-full border-t border-border text-xs">
+                <thead className="bg-muted/30 text-[10px] uppercase tracking-wide text-muted-foreground">
                   <tr>
                     <th scope="col" className="px-4 py-2 text-left">
                       Date
@@ -696,47 +694,47 @@ export default async function GlobalTimePage({ searchParams }: PageProps) {
                     return (
                       <tr
                         key={idStr}
-                        className="border-t border-slate-800/70 hover:bg-slate-900/60"
+                        className="border-t border-border/60 hover:bg-muted/20"
                       >
-                        <td className="px-4 py-2 align-top text-slate-200">
+                        <td className="px-4 py-2 align-top text-foreground">
                           {formatDate(entry.date)}
                         </td>
-                        <td className="px-4 py-2 align-top text-slate-200">
+                        <td className="px-4 py-2 align-top text-foreground">
                           {estate ? (
                             <Link
                               href={`/app/estates/${estateIdStr}/time`}
-                              className="hover:underline"
+                              className="hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                             >
                               {getEstateDisplayName(estate)}
                             </Link>
                           ) : (
-                            <span className="text-slate-500">Unassigned</span>
+                            <span className="text-muted-foreground">Unassigned</span>
                           )}
                         </td>
-                        <td className="px-4 py-2 align-top text-slate-300">
+                        <td className="px-4 py-2 align-top text-muted-foreground">
                           {entry.taskId
                             ? `Task ${toIdString(entry.taskId)}`
                             : "—"}
                         </td>
-                        <td className="px-4 py-2 align-top text-right text-slate-100">
+                        <td className="px-4 py-2 align-top text-right text-foreground">
                           {((entry.minutes ?? 0) / 60).toFixed(2)}
                         </td>
-                        <td className="px-4 py-2 align-top text-right text-slate-100">
+                        <td className="px-4 py-2 align-top text-right text-foreground">
                           {formatCurrency(amount)}
                         </td>
-                        <td className="px-4 py-2 align-top text-slate-300">
+                        <td className="px-4 py-2 align-top text-muted-foreground">
                           {noteText.length > 0 ? noteText : "—"}
                         </td>
                         <td className="px-4 py-2 align-top text-right">
                           {estateIdStr ? (
                             <Link
                               href={`/app/estates/${estateIdStr}/time/${idStr}`}
-                              className="text-[11px] font-medium text-rose-300 hover:text-rose-200"
+                              className="text-[11px] font-medium text-rose-600 hover:text-rose-500"
                             >
                               View
                             </Link>
                           ) : (
-                            <span className="text-[11px] text-slate-600">—</span>
+                            <span className="text-[11px] text-muted-foreground">—</span>
                           )}
                         </td>
                       </tr>

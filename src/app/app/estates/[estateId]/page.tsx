@@ -92,8 +92,6 @@ type EstateNoteLean = {
   pinned?: boolean | null;
   createdAt?: Date | string | null;
 };
-
-
 type EstateNoteRow = {
   _id: string;
   body: string;
@@ -165,6 +163,10 @@ function formatDate(value: string | null | undefined): string {
 function truncate(text: string, max = 200): string {
   if (text.length <= max) return text;
   return text.slice(0, max).trimEnd() + "…";
+}
+
+function pluralize(count: number, singular: string, plural?: string): string {
+  return count === 1 ? singular : plural ?? `${singular}s`;
 }
 
 function formatBytes(bytes: number | null | undefined): string {
@@ -518,7 +520,16 @@ export default async function EstateOverviewPage({ params }: PageProps) {
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-semibold">{estateName}</h1>
-            <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-700">
+            <span
+              className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-700"
+              title={
+                access.role === "OWNER"
+                  ? "Owner: full access"
+                  : access.role === "EDITOR"
+                  ? "Editor: can add and edit"
+                  : "Viewer: read-only"
+              }
+            >
               {access.role === "OWNER"
                 ? "Owner"
                 : access.role === "EDITOR"
@@ -528,9 +539,9 @@ export default async function EstateOverviewPage({ params }: PageProps) {
           </div>
           {access.role === "VIEWER" && (
             <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-              <div className="font-semibold">Read-only access</div>
+              <div className="font-semibold">Read-only</div>
               <div className="mt-1 text-xs text-blue-900/80">
-                You can view this estate, but creating, editing, and deleting are disabled.
+                You can view everything here, but changes are disabled.
               </div>
             </div>
           )}
@@ -612,7 +623,7 @@ export default async function EstateOverviewPage({ params }: PageProps) {
                   href={`/app/estates/${estateId}/invoices/new`}
                   className="rounded-md bg-gray-900 px-3 py-1 text-xs font-semibold text-white shadow-sm hover:bg-black"
                 >
-                  New invoice
+                  Create invoice
                 </Link>
                 <Link
                   href={`/app/estates/${estateId}/documents#add-document`}
@@ -647,7 +658,7 @@ export default async function EstateOverviewPage({ params }: PageProps) {
             <div>
               <h2 className="text-lg font-semibold text-gray-900">Getting started</h2>
               <p className="mt-1 text-xs text-gray-500">
-                Add a few basics and this overview will start populating automatically.
+                Add a few basics and your overview will populate automatically.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -845,14 +856,12 @@ export default async function EstateOverviewPage({ params }: PageProps) {
               <div className="mt-1 text-xs text-amber-900/80">
                 {overdueCount > 0 && (
                   <span className="mr-3">
-                    <span className="font-semibold">{overdueCount}</span> overdue invoice
-                    {overdueCount === 1 ? "" : "s"}
+                    <span className="font-semibold">{overdueCount}</span> overdue {pluralize(overdueCount, "invoice")}
                   </span>
                 )}
                 {overdueTasksCount > 0 && (
                   <span>
-                    <span className="font-semibold">{overdueTasksCount}</span> overdue task
-                    {overdueTasksCount === 1 ? "" : "s"}
+                    <span className="font-semibold">{overdueTasksCount}</span> overdue {pluralize(overdueTasksCount, "task")}
                   </span>
                 )}
               </div>
@@ -1022,13 +1031,15 @@ export default async function EstateOverviewPage({ params }: PageProps) {
         </div>
 
         {recentActivity.length === 0 ? (
-          <p className="text-sm text-gray-500">No activity yet.</p>
+          <p className="text-sm text-gray-500">
+            No activity yet. Actions you take will show up here.
+          </p>
         ) : (
           <div className="overflow-hidden rounded-md border border-gray-200">
             <div className="grid grid-cols-[140px_1fr_120px] gap-2 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase text-gray-600">
               <div>Type</div>
               <div>Summary</div>
-              <div className="text-right">When</div>
+              <div className="text-right">Date</div>
             </div>
 
             {recentActivity.map((evt: EstateEventRow) => (
@@ -1081,18 +1092,16 @@ export default async function EstateOverviewPage({ params }: PageProps) {
         <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-sm font-semibold text-gray-900">
-              Notes (private)
+              Private notes
             </h2>
             <p className="mt-1 text-xs text-gray-500">
-              Use notes for anything that doesn&apos;t fit in invoices or
-              documents—conversations, ideas, reminders.
+              Keep context that doesn’t belong in invoices or documents: calls, decisions, reminders.
             </p>
           </div>
           <div className="flex flex-col items-end gap-1 text-xs text-gray-500">
             {notes.length > 0 && (
               <span>
-                <span className="font-medium">{notes.length}</span> note
-                {notes.length === 1 ? "" : "s"}
+                <span className="font-medium">{notes.length}</span> {pluralize(notes.length, "note")}
               </span>
             )}
             <Link
@@ -1211,7 +1220,7 @@ export default async function EstateOverviewPage({ params }: PageProps) {
       {/* Recent invoices */}
       <section className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Recent Invoices</h2>
+          <h2 className="text-lg font-semibold">Recent invoices</h2>
           <Link
             href={`/app/estates/${estateId}/invoices`}
             className="text-xs font-medium text-blue-600 hover:underline"
@@ -1222,7 +1231,7 @@ export default async function EstateOverviewPage({ params }: PageProps) {
 
         {recentInvoices.length === 0 ? (
           <p className="text-sm text-gray-500">
-            No invoices have been created for this estate yet.
+            No invoices yet.
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -1339,7 +1348,7 @@ export default async function EstateOverviewPage({ params }: PageProps) {
         {/* Auto-hide when checklist is complete */}
         {tasks.length === 0 ? (
           <p className="text-sm text-gray-500">
-            No tasks yet. Start by listing the first 3–5 things you need to do for this estate.
+            No tasks yet. Start with 3–5 items: court steps, banking, and property actions.
           </p>
         ) : checklistComplete ? (
           <details className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
@@ -1516,7 +1525,10 @@ export default async function EstateOverviewPage({ params }: PageProps) {
 
               {/* Sensitive only toggle (mirrors index page behavior) */}
               {canViewSensitive && (
-                <label className="flex items-center gap-1 text-[11px] text-gray-500">
+                <label
+                  className="flex items-center gap-1 text-[11px] text-gray-500"
+                  title="Show only documents marked sensitive (visible to authorized roles)"
+                >
                   <input
                     type="checkbox"
                     name="sensitive"
@@ -1538,14 +1550,14 @@ export default async function EstateOverviewPage({ params }: PageProps) {
               href={`/app/estates/${estateId}/documents`}
               className="text-xs font-medium text-blue-600 hover:underline"
             >
-              View all documents
+              Open document index
             </Link>
             {canEdit && canViewSensitive && (
               <Link
                 href={`/app/estates/${estateId}/documents?newSensitive=1#add-document`}
                 className="text-xs font-medium text-rose-600 hover:underline"
               >
-                Create sensitive doc
+                Add sensitive document
               </Link>
             )}
             {access.role === "VIEWER" && (
@@ -1558,7 +1570,7 @@ export default async function EstateOverviewPage({ params }: PageProps) {
 
         {recentDocuments.length === 0 ? (
           <p className="text-sm text-gray-500">
-            No documents have been recorded for this estate yet.
+            No documents yet.
           </p>
         ) : (
           <div className="overflow-x-auto">
