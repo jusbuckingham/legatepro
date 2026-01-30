@@ -1,7 +1,11 @@
 // src/components/ui/Badge.tsx
 import * as React from "react";
-import { cn } from "../../lib/utils";
 
+function cx(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
+
+/** Visual variants for status, emphasis, and feedback badges */
 export type BadgeVariant =
   | "default"
   | "secondary"
@@ -14,7 +18,7 @@ export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
 }
 
 const baseClasses =
-  "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 dark:focus:ring-slate-800";
+  "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 const variantClasses: Record<BadgeVariant, string> = {
   default:
@@ -22,7 +26,7 @@ const variantClasses: Record<BadgeVariant, string> = {
   secondary:
     "border-transparent bg-slate-100 text-slate-900 hover:bg-slate-100/80 dark:bg-slate-800 dark:text-slate-50 dark:hover:bg-slate-800/80",
   outline:
-    "border-slate-200 text-slate-900 dark:border-slate-800 dark:text-slate-50",
+    "border-slate-300 text-slate-700 hover:bg-slate-100/60 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800/60",
   destructive:
     "border-transparent bg-red-500 text-red-50 hover:bg-red-500/80",
   success:
@@ -35,12 +39,12 @@ export function Badge({
   children,
   ...props
 }: BadgeProps) {
-  const liveRegion =
+  const ariaLive: React.AriaAttributes["aria-live"] =
     variant === "success" || variant === "destructive" ? "polite" : undefined;
   return (
     <span
-      className={cn(baseClasses, variantClasses[variant], className)}
-      aria-live={liveRegion}
+      className={cx(baseClasses, variantClasses[variant], className)}
+      aria-live={ariaLive}
       {...props}
     >
       {children}

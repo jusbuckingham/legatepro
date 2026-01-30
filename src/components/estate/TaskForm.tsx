@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 
 import { getApiErrorMessage } from "@/lib/utils";
 
+function cx(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
+
 type TaskStatus = "OPEN" | "DONE";
 type TaskPriority = "LOW" | "MEDIUM" | "HIGH";
 
@@ -57,7 +61,10 @@ export function TaskForm({
   const subjectTrimmed = useMemo(() => values.subject.trim(), [values.subject]);
   const canSubmit = !isSubmitting && subjectTrimmed.length > 0;
 
-  const handleChange = (field: keyof TaskFormInitialValues, value: string): void => {
+  const handleChange = (
+    field: keyof TaskFormInitialValues,
+    value: string,
+  ): void => {
     // Clear any previous banner error as soon as the user edits again.
     if (error) setError(null);
 
@@ -113,6 +120,8 @@ export function TaskForm({
           priority: values.priority,
           date: values.date || null,
         }),
+        credentials: "include",
+        cache: "no-store",
       });
 
       const data = (await res
@@ -120,8 +129,11 @@ export function TaskForm({
         .catch(() => null)) as { ok?: boolean; error?: string } | null;
 
       if (!res.ok || data?.ok !== true) {
-        const apiMessage = await Promise.resolve(getApiErrorMessage(res));
-        const message = data?.error || apiMessage || "Failed to save task.";
+        const apiMessage = await getApiErrorMessage(res);
+        const message =
+          (typeof data?.error === "string" ? data.error : "") ||
+          apiMessage ||
+          "Failed to save task.";
         setError(message);
         return;
       }
@@ -173,11 +185,16 @@ export function TaskForm({
             if (values.subject !== subjectTrimmed) handleChange("subject", subjectTrimmed);
           }}
           placeholder="e.g. File inventory with the court"
-          className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none placeholder:text-slate-500 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60"
+          className={cx(
+            "w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none placeholder:text-slate-500 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+          )}
           required
           aria-invalid={Boolean(fieldErrors.subject)}
           aria-describedby={fieldErrors.subject ? "task-subject-error" : "task-subject-help"}
           disabled={isSubmitting}
+          maxLength={160}
+          autoFocus
         />
         <p id="task-subject-help" className="text-[11px] text-slate-500">
           Short and specific is best (e.g. “Call probate clerk to confirm filing”).
@@ -204,8 +221,12 @@ export function TaskForm({
           onChange={(e) => handleChange("description", e.target.value)}
           rows={3}
           placeholder="Add more detail about what needs to be done, steps, and context."
-          className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none placeholder:text-slate-500 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60"
+          className={cx(
+            "w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none placeholder:text-slate-500 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+          )}
           disabled={isSubmitting}
+          maxLength={2000}
         />
       </div>
 
@@ -224,8 +245,12 @@ export function TaskForm({
           onChange={(e) => handleChange("notes", e.target.value)}
           rows={2}
           placeholder="Private notes for yourself—court calls, phone logs, etc."
-          className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none placeholder:text-slate-500 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60"
+          className={cx(
+            "w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none placeholder:text-slate-500 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+          )}
           disabled={isSubmitting}
+          maxLength={2000}
         />
       </div>
 
@@ -244,7 +269,10 @@ export function TaskForm({
             name="status"
             value={values.status}
             onChange={(e) => handleChange("status", e.target.value)}
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60"
+            className={cx(
+              "w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
             disabled={isSubmitting}
           >
             <option value="OPEN">Open</option>
@@ -265,7 +293,10 @@ export function TaskForm({
             name="priority"
             value={values.priority}
             onChange={(e) => handleChange("priority", e.target.value)}
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60"
+            className={cx(
+              "w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
             disabled={isSubmitting}
           >
             <option value="LOW">Low</option>
@@ -288,8 +319,12 @@ export function TaskForm({
             name="date"
             value={values.date ?? ""}
             onChange={(e) => handleChange("date", e.target.value)}
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60"
+            className={cx(
+              "w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-50 shadow-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/60",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
             disabled={isSubmitting}
+            spellCheck={false}
           />
         </div>
       </div>
@@ -299,14 +334,24 @@ export function TaskForm({
         <button
           type="button"
           onClick={handleCancel}
-          className="inline-flex items-center rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:border-slate-500 hover:bg-slate-900"
+          aria-disabled={isSubmitting}
+          className={cx(
+            "inline-flex items-center rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200",
+            "hover:border-slate-500 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-70",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-200/20 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+          )}
           disabled={isSubmitting}
         >
           Cancel
         </button>
         <button
           type="submit"
-          className="inline-flex items-center rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-emerald-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-70"
+          aria-disabled={!canSubmit}
+          className={cx(
+            "inline-flex items-center rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-emerald-950",
+            "hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-70",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+          )}
           disabled={!canSubmit}
         >
           {isSubmitting

@@ -4,6 +4,10 @@ import { FormEvent, useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getApiErrorMessage } from "@/lib/utils";
 
+function cx(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
+
 type EstateFormData = {
   name?: string;
   caseNumber?: string;
@@ -23,27 +27,37 @@ interface EditEstateFormProps {
 
 export function EditEstateForm({
   estateId,
-  initialData
+  initialData,
 }: EditEstateFormProps) {
   const router = useRouter();
 
+  const initialName = initialData.name ?? "";
+  const initialCaseNumber = initialData.caseNumber ?? "";
+  const initialCounty = initialData.county ?? "";
+  const initialDecedentName = initialData.decedentName ?? "";
+  const initialStatus = initialData.status ?? "Draft";
+  const initialDod = initialData.decedentDateOfDeath ?? "";
+  const initialNotes = initialData.notes ?? "";
+
   const [form, setForm] = useState<EstateFormData>({
-    name: initialData.name ?? "",
-    caseNumber: initialData.caseNumber ?? "",
-    county: initialData.county ?? "",
-    decedentName: initialData.decedentName ?? "",
-    status: initialData.status ?? "Draft",
-    decedentDateOfDeath: initialData.decedentDateOfDeath ?? "",
-    notes: initialData.notes ?? ""
+    name: initialName,
+    caseNumber: initialCaseNumber,
+    county: initialCounty,
+    decedentName: initialDecedentName,
+    status: initialStatus,
+    decedentDateOfDeath: initialDod,
+    notes: initialNotes,
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
+  const canSubmit = !isSubmitting && (form.name ?? "").trim().length > 0;
+
   const handleChange = useCallback(
     (field: keyof EstateFormData, value: string): void => {
-      setError((prev) => (prev ? null : prev));
+      setError(null);
       setSaved(false);
       setForm((prev) => ({ ...prev, [field]: value }));
     },
@@ -65,7 +79,7 @@ export function EditEstateForm({
       decedentName: form.decedentName ?? "",
       status: form.status ?? "Draft",
       decedentDateOfDeath: form.decedentDateOfDeath ?? "",
-      notes: form.notes ?? ""
+      notes: form.notes ?? "",
     };
 
     try {
@@ -76,7 +90,7 @@ export function EditEstateForm({
           credentials: "include",
           cache: "no-store",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
         }
       );
 
@@ -84,8 +98,11 @@ export function EditEstateForm({
       const data = (await response.json().catch(() => null)) as ApiResponse | null;
 
       if (!response.ok || data?.ok !== true) {
-        const apiMessage = await Promise.resolve(getApiErrorMessage(responseForError));
-        const message = data?.error || apiMessage || "Failed to update estate.";
+        const apiMessage = await getApiErrorMessage(responseForError);
+        const message =
+          (typeof data?.error === "string" ? data.error : "") ||
+          apiMessage ||
+          "Failed to update estate.";
         setError(message);
         return;
       }
@@ -118,6 +135,8 @@ export function EditEstateForm({
             type="text"
             value={form.name ?? ""}
             onChange={(e) => handleChange("name", e.target.value)}
+            maxLength={160}
+            autoFocus
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
             placeholder="Example: The John Doe Estate"
             disabled={isSubmitting}
@@ -136,6 +155,8 @@ export function EditEstateForm({
             type="text"
             value={form.caseNumber ?? ""}
             onChange={(e) => handleChange("caseNumber", e.target.value)}
+            maxLength={80}
+            spellCheck={false}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
             placeholder="Court case number"
             disabled={isSubmitting}
@@ -154,6 +175,7 @@ export function EditEstateForm({
             type="text"
             value={form.county ?? ""}
             onChange={(e) => handleChange("county", e.target.value)}
+            maxLength={160}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
             placeholder="Example: Wayne County, MI"
             disabled={isSubmitting}
@@ -187,6 +209,7 @@ export function EditEstateForm({
             type="text"
             value={form.decedentName ?? ""}
             onChange={(e) => handleChange("decedentName", e.target.value)}
+            maxLength={160}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
             placeholder="Name of the person whose estate this is"
             disabled={isSubmitting}
@@ -216,6 +239,7 @@ export function EditEstateForm({
         <textarea
           value={form.notes ?? ""}
           onChange={(e) => handleChange("notes", e.target.value)}
+          maxLength={4000}
           className="min-h-[120px] w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
           placeholder="Key details, history, decisions, or anything you want to remember for this estate."
           disabled={isSubmitting}
@@ -227,16 +251,26 @@ export function EditEstateForm({
         <div className="flex items-center gap-3">
           <button
             type="submit"
-            disabled={isSubmitting}
-            className="inline-flex items-center rounded-lg border border-emerald-500 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-100 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!canSubmit}
+            aria-disabled={!canSubmit}
+            className={cx(
+              "inline-flex items-center rounded-lg border border-emerald-500 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-100",
+              "hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+            )}
           >
             {isSubmitting ? "Saving…" : "Save changes"}
           </button>
           <button
             type="button"
             disabled={isSubmitting}
+            aria-disabled={isSubmitting}
             onClick={() => router.push(`/app/estates/${encodeURIComponent(estateId)}`)}
-            className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className={cx(
+              "inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-100",
+              "hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-200/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+            )}
           >
             Cancel
           </button>

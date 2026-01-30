@@ -2,18 +2,23 @@ import * as React from "react";
 
 export type PageContainerProps = {
   children: React.ReactNode;
+  /** Additional Tailwind classes */
   className?: string;
   /** Use for tighter pages like forms */
   size?: "default" | "narrow";
 };
 
+/**
+ * Standardized page-width wrapper for app views.
+ * - default: max-w-6xl (most dashboards & lists)
+ * - narrow:  max-w-3xl (forms, wizards, focused flows)
+ */
 export default function PageContainer({
   children,
   className,
   size = "default",
 }: PageContainerProps) {
-  const maxWidthClass =
-    size === "narrow" ? "max-w-3xl" : "max-w-6xl";
+  const maxWidthClass = size === "narrow" ? "max-w-3xl" : "max-w-6xl";
 
   const containerClassName = [
     "w-full",

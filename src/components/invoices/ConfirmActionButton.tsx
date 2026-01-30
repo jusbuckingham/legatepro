@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+const { useCallback } = React;
 
 type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   confirmTitle?: string;
@@ -8,8 +9,6 @@ type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   confirmButtonText?: string;
   cancelButtonText?: string;
 };
-
-import { useCallback } from "react";
 
 export default function ConfirmActionButton({
   confirmTitle = "Are you sure?",
@@ -29,7 +28,7 @@ export default function ConfirmActionButton({
         e.preventDefault();
         return;
       }
-      onClick?.(e);
+      if (onClick) onClick(e);
     },
     [
       props.disabled,
@@ -40,11 +39,12 @@ export default function ConfirmActionButton({
       onClick,
     ]
   );
+  // NOTE: visual styles are intentionally inherited via props.className
   return (
     <button
       {...props}
-      type={props.type ?? "button"}
-      aria-disabled={props.disabled ? "true" : undefined}
+      type={props.type || "button"}
+      aria-disabled={props.disabled}
       onClick={handleClick}
     />
   );

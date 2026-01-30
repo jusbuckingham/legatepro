@@ -4,10 +4,14 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { getApiErrorMessage } from "@/lib/utils";
 
+function cx(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
+
 interface DeletePropertyButtonProps {
   estateId: string;
   propertyId: string;
-  propertyTitle?: string,
+  propertyTitle?: string;
 }
 
 export function DeletePropertyButton({
@@ -49,9 +53,9 @@ export function DeletePropertyButton({
         | null;
 
       if (!response.ok || !data?.ok) {
-        const apiMessage = await Promise.resolve(
-          getApiErrorMessage(responseForError)
-        ).catch(() => "");
+        const apiMessage = await getApiErrorMessage(responseForError).catch(
+          () => "",
+        );
         const message = data?.error || apiMessage || "Failed to delete property.";
         setError(message);
         return;
@@ -73,12 +77,23 @@ export function DeletePropertyButton({
         type="button"
         onClick={handleDelete}
         disabled={isDeleting}
-        className="inline-flex items-center rounded-lg border border-rose-500 bg-rose-500/10 px-2.5 py-1 text-[11px] font-medium text-rose-100 hover:bg-rose-500/20 disabled:opacity-60"
+        aria-disabled={isDeleting}
+        className={cx(
+          "inline-flex items-center rounded-lg border border-rose-500 bg-rose-500/10 px-2.5 py-1 text-[11px] font-medium text-rose-100",
+          "hover:bg-rose-500/20 disabled:opacity-60",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        )}
       >
         {isDeleting ? "Deleting…" : "Delete"}
       </button>
       {error && (
-        <span className="max-w-xs text-[10px] text-rose-400" role="alert" aria-live="polite">{error}</span>
+        <span
+          className="max-w-xs text-[10px] text-rose-400"
+          role="alert"
+          aria-live="polite"
+        >
+          {error}
+        </span>
       )}
     </div>
   );

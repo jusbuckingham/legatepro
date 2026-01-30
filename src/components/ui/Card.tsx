@@ -3,6 +3,10 @@ import * as React from "react";
 
 type ClassValue = string | undefined | null | false;
 
+/**
+ * Lightweight utility for conditionally joining class names.
+ * Keeps UI primitives dependency-free.
+ */
 function cx(...values: ClassValue[]): string {
   return values.filter(Boolean).join(" ");
 }
@@ -18,20 +22,25 @@ export type CardProps = React.HTMLAttributes<HTMLDivElement> & {
 
 export const Card = React.forwardRef<HTMLDivElement, CardProps>(
   ({ className, variant = "default", ...props }, ref) => {
-    const base =
-      "rounded-xl border shadow-sm";
+    const base = "rounded-xl border shadow-sm";
 
-    const variants: Record<NonNullable<CardProps["variant"]>, string> = {
+    const variants: Record<Exclude<CardProps["variant"], undefined>, string> = {
       default: "border-slate-800 bg-slate-950/70",
       muted: "border-slate-800 bg-slate-900/40",
     };
 
     return (
-      <div
-        ref={ref}
-        className={cx(base, variants[variant], className)}
-        {...props}
-      />
+      <>
+        {/*
+          NOTE: aria-* attributes (e.g., aria-label, role) are intentionally
+          passed through via props for maximum flexibility.
+        */}
+        <div
+          ref={ref}
+          className={cx(base, variants[variant], className)}
+          {...props}
+        />
+      </>
     );
   }
 );
@@ -89,7 +98,7 @@ export const CardFooter = React.forwardRef<
     ref={ref}
     className={cx(
       "flex flex-wrap items-center justify-end gap-2 border-t border-slate-800 p-4",
-      className
+      className,
     )}
     {...props}
   />

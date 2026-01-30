@@ -5,6 +5,10 @@ import type { FormEvent } from "react";
 
 import { getApiErrorMessage } from "@/lib/utils";
 
+function cx(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
+
 const invoiceTermsOptions: { value: string; label: string }[] = [
   { value: "DUE_ON_RECEIPT", label: "Due on receipt" },
   { value: "NET_15", label: "Net 15" },
@@ -74,7 +78,7 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
       const trimmed = value.trim();
       if (trimmed !== value) setter(trimmed);
     },
-    []
+    [],
   );
 
   const trimUpperOnBlur = useCallback(
@@ -82,7 +86,7 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
       const next = value.trim().toUpperCase();
       if (next !== value) setter(next);
     },
-    []
+    [],
   );
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
@@ -130,14 +134,16 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include",
+        cache: "no-store",
         body: JSON.stringify(payload),
       });
 
       const data = (await res.json().catch(() => null)) as ApiResponse | null;
 
       if (!res.ok || !data?.ok) {
-        const apiMessage = await Promise.resolve(getApiErrorMessage(res));
-        const msg = data?.error || apiMessage;
+        const apiMessage = await getApiErrorMessage(res);
+        const msg = (typeof data?.error === "string" ? data.error : "") || apiMessage;
         setStatus("error");
         setErrorMessage(msg || "Failed to save settings.");
         return;
@@ -174,7 +180,10 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
                 setFirmName(e.target.value);
               }}
               onBlur={() => trimOnBlur(firmName, setFirmName)}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
+              className={cx(
+                "w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+              )}
               placeholder="Kofa Legal"
             />
           </div>
@@ -194,7 +203,10 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
                 setFirmAddressLine1(e.target.value);
               }}
               onBlur={() => trimOnBlur(firmAddressLine1, setFirmAddressLine1)}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
+              className={cx(
+                "w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+              )}
               placeholder="123 Main St"
             />
           </div>
@@ -214,7 +226,10 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
                 setFirmAddressLine2(e.target.value);
               }}
               onBlur={() => trimOnBlur(firmAddressLine2, setFirmAddressLine2)}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
+              className={cx(
+                "w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+              )}
               placeholder="Suite 400"
             />
           </div>
@@ -232,7 +247,10 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
                 setFirmCity(e.target.value);
               }}
               onBlur={() => trimOnBlur(firmCity, setFirmCity)}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
+              className={cx(
+                "w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+              )}
               placeholder="Los Angeles"
             />
           </div>
@@ -252,7 +270,10 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
                 setFirmState(e.target.value);
               }}
               onBlur={() => trimOnBlur(firmState, setFirmState)}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
+              className={cx(
+                "w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+              )}
               placeholder="CA"
             />
           </div>
@@ -272,7 +293,10 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
                 setFirmPostalCode(e.target.value);
               }}
               onBlur={() => trimOnBlur(firmPostalCode, setFirmPostalCode)}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
+              className={cx(
+                "w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+              )}
               placeholder="90001"
             />
           </div>
@@ -290,7 +314,10 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
                 setFirmCountry(e.target.value);
               }}
               onBlur={() => trimOnBlur(firmCountry, setFirmCountry)}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
+              className={cx(
+                "w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+              )}
               placeholder="United States"
             />
           </div>
@@ -320,7 +347,10 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
                 setDefaultHourlyRate(e.target.value);
               }}
               onBlur={() => trimOnBlur(defaultHourlyRate, setDefaultHourlyRate)}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
+              className={cx(
+                "w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+              )}
               placeholder="250"
             />
           </div>
@@ -337,7 +367,10 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
                 resetFeedback();
                 setDefaultInvoiceTerms(e.target.value);
               }}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
+              className={cx(
+                "w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+              )}
             >
               {invoiceTermsOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -355,25 +388,33 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
               id="defaultCurrency"
               inputMode="text"
               autoComplete="off"
+              spellCheck={false}
               maxLength={3}
               type="text"
               value={defaultCurrency}
               disabled={isSaving}
+              aria-describedby="currency-help"
               onChange={(e) => {
                 resetFeedback();
                 setDefaultCurrency(e.target.value);
               }}
               onBlur={() => trimUpperOnBlur(defaultCurrency, setDefaultCurrency)}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
+              className={cx(
+                "w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+              )}
               placeholder="USD"
             />
+            <p id="currency-help" className="text-[11px] text-slate-500">
+              3-letter ISO code (e.g., USD, EUR).
+            </p>
           </div>
         </div>
       </div>
 
       <div className="flex items-center justify-between gap-3">
         <div className="text-xs text-slate-500">
-          <div id="workspace-settings-feedback" className="text-xs">
+          <div id="workspace-settings-feedback" aria-live="polite" className="text-xs">
             {status === "saved" && (
               <span role="status" aria-live="polite" className="text-emerald-400">
                 Settings saved successfully.
@@ -389,7 +430,10 @@ export function WorkspaceSettingsForm({ initial }: WorkspaceSettingsFormProps) {
         <button
           type="submit"
           disabled={isSaving}
-          className="inline-flex items-center rounded-md border border-sky-600 bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+          className={cx(
+            "inline-flex items-center rounded-md border border-sky-600 bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+          )}
         >
           {isSaving ? "Saving…" : "Save changes"}
         </button>

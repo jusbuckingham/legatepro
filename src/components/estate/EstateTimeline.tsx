@@ -4,6 +4,10 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { useMemo } from "react";
 
+function cx(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
+
 export type TimelineItem = {
   id: string;
   kind: "ESTATE_CREATED" | "INVOICE" | "EVENT";
@@ -23,7 +27,9 @@ export function EstateTimeline({ items }: EstateTimelineProps) {
 
     return [...list]
       .map((it) => {
-        const ts = it.timestamp instanceof Date ? it.timestamp : new Date(it.timestamp);
+        const ts = it.timestamp instanceof Date
+          ? it.timestamp
+          : new Date(String(it.timestamp));
         return {
           ...it,
           timestamp: Number.isNaN(ts.getTime()) ? new Date() : ts,
@@ -53,7 +59,10 @@ export function EstateTimeline({ items }: EstateTimelineProps) {
       </div>
 
       {!hasItems ? (
-        <div className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
+        <div
+          role="status"
+          className="rounded-md border border-slate-800 bg-slate-950/40 p-3"
+        >
           <p className="text-xs font-medium text-slate-200">No activity yet</p>
           <p className="mt-1 text-[11px] text-slate-500">
             When you add invoices, time entries, documents, or collaborators, you’ll see it show up here.
@@ -61,23 +70,38 @@ export function EstateTimeline({ items }: EstateTimelineProps) {
         </div>
       ) : (
         <ol className="space-y-3 text-sm">
-          {normalizedItems.map((item) => {
+          {normalizedItems.map((item, index) => {
             const dateLabel = format(item.timestamp, "MMM d, yyyy");
 
             return (
-              <li key={item.id} className="flex gap-3">
+              <li
+                key={item.id}
+                className="flex gap-3"
+                aria-current={index === 0 ? "true" : undefined}
+              >
                 <div className="mt-1 h-2 w-2 flex-shrink-0 rounded-full bg-sky-400" />
 
-                <div className="min-w-0 space-y-0.5">
+                <div
+                  className="min-w-0 space-y-0.5"
+                  aria-describedby={
+                    item.description ? `timeline-desc-${item.id}` : undefined
+                  }
+                >
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-200">
+                    <span
+                      id={`timeline-kind-${item.id}`}
+                      className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-200"
+                    >
                       {kindLabel[item.kind]}
                     </span>
 
                     {item.href ? (
                       <Link
                         href={item.href}
-                        className="truncate font-medium text-sky-400 hover:text-sky-300"
+                        className={cx(
+                          "truncate font-medium text-sky-400 hover:text-sky-300",
+                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+                        )}
                         title={item.label}
                       >
                         {item.label}
@@ -97,7 +121,12 @@ export function EstateTimeline({ items }: EstateTimelineProps) {
                   </div>
 
                   {item.description ? (
-                    <p className="text-[11px] text-slate-400">{item.description}</p>
+                    <p
+                      id={`timeline-desc-${item.id}`}
+                      className="text-[11px] text-slate-400"
+                    >
+                      {item.description}
+                    </p>
                   ) : null}
                 </div>
               </li>

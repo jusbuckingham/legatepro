@@ -64,9 +64,11 @@ export function NewContactForm() {
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
+  const canSubmit = !saving && name.trim().length > 0;
+
   const resetFeedback = (): void => {
-    if (error) setError(null);
-    if (Object.keys(fieldErrors).length > 0) setFieldErrors({});
+    setError(null);
+    setFieldErrors({});
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -131,8 +133,8 @@ export function NewContactForm() {
       const data = (await res.json().catch(() => null)) as Partial<ApiResponse> | null;
 
       if (!res.ok || data?.ok !== true) {
-        const apiMessage = await Promise.resolve(getApiErrorMessage(res));
-        const msg = data?.error || apiMessage;
+        const apiMessage = await getApiErrorMessage(res);
+        const msg = (typeof data?.error === "string" ? data.error : "") || apiMessage;
         setError(msg || "Failed to create contact.");
         return;
       }
@@ -149,37 +151,27 @@ export function NewContactForm() {
   };
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      aria-busy={saving}
-      className="space-y-6 rounded-lg border border-slate-800 bg-slate-900/60 p-4"
-    >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-slate-50">New contact</h1>
-          <p className="text-xs text-slate-400">Add a contact to your workspace.</p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              resetFeedback();
-              router.push("/app/contacts");
-            }}
-            disabled={saving}
-            className="rounded-md border border-slate-700 bg-slate-950/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            aria-disabled={saving}
-            className="rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {saving ? "Saving…" : "Create"}
-          </button>
-        </div>
+    <form onSubmit={handleSubmit} aria-busy={saving} className="space-y-6">
+      <div className="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            resetFeedback();
+            router.push("/app/contacts");
+          }}
+          disabled={saving}
+          className="rounded-md border border-slate-700 bg-slate-950/40 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          aria-disabled={!canSubmit}
+          className="rounded-md bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-400 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {saving ? "Saving…" : "Create contact"}
+        </button>
       </div>
 
       {error && (
@@ -212,6 +204,7 @@ export function NewContactForm() {
             disabled={saving}
             autoComplete="name"
             autoFocus
+            maxLength={160}
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
           {fieldErrors.name && (
@@ -243,6 +236,8 @@ export function NewContactForm() {
             disabled={saving}
             autoComplete="email"
             inputMode="email"
+            maxLength={254}
+            spellCheck={false}
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
           {fieldErrors.email && (
@@ -274,6 +269,7 @@ export function NewContactForm() {
             disabled={saving}
             autoComplete="tel"
             inputMode="tel"
+            maxLength={25}
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
           {fieldErrors.phone && (
@@ -320,6 +316,7 @@ export function NewContactForm() {
           rows={3}
           placeholder="Relationship to the estate, important details, etc."
           disabled={saving}
+          maxLength={4000}
           className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
         />
       </div>

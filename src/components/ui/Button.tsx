@@ -1,9 +1,8 @@
-
-
 "use client";
 
 import * as React from "react";
 
+/** Visual style variants for the Button component */
 type ButtonVariant =
   | "primary"
   | "secondary"
@@ -11,15 +10,17 @@ type ButtonVariant =
   | "ghost"
   | "destructive";
 
+/** Size options controlling height and padding */
 type ButtonSize = "sm" | "md" | "lg";
 
+/** Shared button props with optional variant, size, and loading state */
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
   size?: ButtonSize;
   isLoading?: boolean;
 };
 
-function cn(...parts: Array<string | false | null | undefined>): string {
+function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
 }
 
@@ -45,10 +46,11 @@ const SIZE_CLASSES: Record<ButtonSize, string> = {
 function Spinner({ className }: { className?: string }) {
   return (
     <span
-      aria-hidden="true"
-      className={cn(
+      role="status"
+      aria-label="Loading"
+      className={cx(
         "inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent",
-        className
+        className,
       )}
     />
   );
@@ -76,8 +78,9 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         type={type ?? "button"}
         disabled={isDisabled}
         aria-busy={isLoading || undefined}
-        className={cn(
-          "inline-flex items-center justify-center gap-2 rounded-md font-semibold tracking-wide",
+        aria-disabled={isDisabled}
+        className={cx(
+          "inline-flex items-center justify-center gap-2 rounded-md font-semibold",
           "transition-colors",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
           "disabled:cursor-not-allowed disabled:opacity-60",

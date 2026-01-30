@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { cn } from "../../lib/utils";
+import { cn } from "@/lib/utils";
 
 export type LabelBadgeVariant =
   | "default"
@@ -18,6 +18,11 @@ export interface LabelBadgeProps
   size?: LabelBadgeSize;
 }
 
+/**
+ * LabelBadge
+ * Lightweight inline badge for status / metadata labeling.
+ * Purely presentational (non-interactive).
+ */
 export const LabelBadge = React.forwardRef<
   HTMLSpanElement,
   LabelBadgeProps
@@ -27,12 +32,12 @@ export const LabelBadge = React.forwardRef<
     size = "sm",
     className,
     children,
-    ...rest
+    ...props
   },
   ref
 ) {
   const base =
-    "inline-flex items-center rounded-full font-medium leading-tight whitespace-nowrap";
+    "inline-flex items-center whitespace-nowrap rounded-full border font-medium leading-tight";
 
   const sizeClass =
     size === "md"
@@ -41,20 +46,20 @@ export const LabelBadge = React.forwardRef<
 
   const variantClass =
     variant === "alert"
-      ? "bg-destructive/10 text-destructive border border-destructive/30"
+      ? "border-destructive/30 bg-destructive/10 text-destructive"
       : variant === "success"
-      ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/30"
+      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
       : variant === "outline"
-      ? "border border-border text-foreground bg-background"
+      ? "border-border bg-background text-foreground"
       : variant === "subtle"
-      ? "bg-muted text-muted-foreground"
-      : "bg-primary/10 text-primary border border-primary/20";
+      ? "border-transparent bg-muted text-muted-foreground"
+      : "border-primary/20 bg-primary/10 text-primary";
 
   return (
     <span
       ref={ref}
       className={cn(base, sizeClass, variantClass, className)}
-      {...rest}
+      {...props}
     >
       {children}
     </span>

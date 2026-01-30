@@ -4,7 +4,12 @@ import { useState } from "react";
 import type { FormEventHandler } from "react";
 import { useRouter } from "next/navigation";
 
+
 import { getApiErrorMessage } from "@/lib/utils";
+
+function cx(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
 
 type ApiResponse = {
   ok: boolean;
@@ -90,7 +95,7 @@ export function ExpenseEditForm({
 
   const handleBlurTrim = (
     value: string,
-    setter: (next: string) => void
+    setter: (next: string) => void,
   ): void => {
     const trimmed = value.trim();
     if (trimmed !== value) setter(trimmed);
@@ -109,7 +114,9 @@ export function ExpenseEditForm({
     });
   }
 
-  function parseAmountToCents(input: string): { cents?: number; error?: string } {
+  function parseAmountToCents(
+    input: string,
+  ): { cents?: number; error?: string } {
     const raw = input.trim();
     if (!raw) return {};
 
@@ -207,8 +214,8 @@ export function ExpenseEditForm({
         : null;
 
       if (!res.ok || data?.ok !== true) {
-        const apiMessage = data?.error;
-        const fallbackMessage = await Promise.resolve(getApiErrorMessage(resForError));
+        const apiMessage = typeof data?.error === "string" ? data.error : "";
+        const fallbackMessage = await getApiErrorMessage(resForError);
         const msg = apiMessage || fallbackMessage || "Failed to save expense. Please try again.";
         setErrorMsg(msg);
         return;
@@ -253,9 +260,13 @@ export function ExpenseEditForm({
             onBlur={() => handleBlurTrim(description, setDescription)}
             disabled={isSaving}
             aria-invalid={Boolean(fieldErrors.description)}
-            className={`rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 ${
-              fieldErrors.description ? "focus:ring-red-500" : "focus:ring-sky-500"
-            }`}
+            maxLength={200}
+            autoFocus
+            className={cx(
+              "rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1",
+              fieldErrors.description ? "focus:ring-red-500" : "focus:ring-sky-500",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
             placeholder="e.g. Filing fee, appraisal, travel"
           />
           {fieldErrors.description ? (
@@ -279,7 +290,11 @@ export function ExpenseEditForm({
             }}
             onBlur={() => handleBlurTrim(category, setCategory)}
             disabled={isSaving}
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            maxLength={80}
+            className={cx(
+              "rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
             placeholder="Court costs, travel, professional services..."
           />
         </div>
@@ -307,9 +322,11 @@ export function ExpenseEditForm({
             onBlur={() => handleBlurTrim(amountDollars, setAmountDollars)}
             disabled={isSaving}
             aria-invalid={Boolean(fieldErrors.amount)}
-            className={`rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 ${
-              fieldErrors.amount ? "focus:ring-red-500" : "focus:ring-sky-500"
-            }`}
+            className={cx(
+              "rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1",
+              fieldErrors.amount ? "focus:ring-red-500" : "focus:ring-sky-500",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
             placeholder="e.g. 125.00"
           />
           {fieldErrors.amount ? (
@@ -335,9 +352,11 @@ export function ExpenseEditForm({
             }}
             disabled={isSaving}
             aria-invalid={Boolean(fieldErrors.incurredAt)}
-            className={`rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 ${
-              fieldErrors.incurredAt ? "focus:ring-red-500" : "focus:ring-sky-500"
-            }`}
+            className={cx(
+              "rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1",
+              fieldErrors.incurredAt ? "focus:ring-red-500" : "focus:ring-sky-500",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
           />
           {fieldErrors.incurredAt ? (
             <p className="text-[11px] text-red-300">{fieldErrors.incurredAt}</p>
@@ -359,7 +378,10 @@ export function ExpenseEditForm({
               setStatus(e.target.value);
             }}
             disabled={isSaving}
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            className={cx(
+              "rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
           >
             <option value="PENDING">Pending</option>
             <option value="PAID">Paid</option>
@@ -386,7 +408,11 @@ export function ExpenseEditForm({
             }}
             onBlur={() => handleBlurTrim(payee, setPayee)}
             disabled={isSaving}
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            maxLength={120}
+            className={cx(
+              "rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
             placeholder="Who was paid (or will be paid)?"
           />
         </div>
@@ -400,7 +426,10 @@ export function ExpenseEditForm({
               setReimbursable(e.target.checked);
             }}
             disabled={isSaving}
-            className="h-3 w-3 rounded border-slate-600 bg-slate-900 text-sky-500 focus:ring-sky-500"
+            className={cx(
+              "h-3 w-3 rounded border-slate-600 bg-slate-900 text-sky-500 focus:ring-sky-500",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
           />
           Mark as reimbursable to the personal representative
         </label>
@@ -424,9 +453,13 @@ export function ExpenseEditForm({
           onBlur={() => handleBlurTrim(receiptUrl, setReceiptUrl)}
           disabled={isSaving}
           aria-invalid={Boolean(fieldErrors.receiptUrl)}
-          className={`rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 ${
-            fieldErrors.receiptUrl ? "focus:ring-red-500" : "focus:ring-sky-500"
-          }`}
+          maxLength={500}
+          spellCheck={false}
+          className={cx(
+            "rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1",
+            fieldErrors.receiptUrl ? "focus:ring-red-500" : "focus:ring-sky-500",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+          )}
           placeholder="Link to a PDF or image of the receipt"
         />
         {fieldErrors.receiptUrl ? (
@@ -443,7 +476,10 @@ export function ExpenseEditForm({
                 href={url}
                 target="_blank"
                 rel="noreferrer"
-                className="text-[11px] font-medium text-sky-300 hover:text-sky-200"
+                className={cx(
+                  "text-[11px] font-medium text-sky-300 hover:text-sky-200",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+                )}
               >
                 Open receipt ↗
               </a>
@@ -473,7 +509,11 @@ export function ExpenseEditForm({
           }}
           onBlur={() => handleBlurTrim(notes, setNotes)}
           disabled={isSaving}
-          className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          maxLength={2000}
+          className={cx(
+            "rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+          )}
           placeholder="Anything you want to remember about this expense."
         />
       </div>
@@ -493,7 +533,12 @@ export function ExpenseEditForm({
           type="button"
           onClick={() => router.back()}
           disabled={isSaving}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800"
+          aria-disabled={isSaving}
+          className={cx(
+            "rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200",
+            "hover:bg-slate-800 disabled:opacity-60",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-200/20 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+          )}
         >
           Cancel
         </button>
@@ -501,7 +546,11 @@ export function ExpenseEditForm({
           type="submit"
           disabled={isSubmitDisabled}
           aria-disabled={isSubmitDisabled}
-          className="inline-flex items-center rounded-md bg-sky-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60"
+          className={cx(
+            "inline-flex items-center rounded-md bg-sky-600 px-4 py-1.5 text-xs font-semibold text-white",
+            "hover:bg-sky-500 disabled:opacity-60",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+          )}
         >
           {isSaving ? "Saving…" : "Save expense"}
         </button>

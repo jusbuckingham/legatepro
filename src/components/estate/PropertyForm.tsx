@@ -4,6 +4,10 @@ import { FormEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getApiErrorMessage } from "@/lib/utils";
 
+function cx(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
+
 type PropertyFormState = {
   name: string;
   type: string;
@@ -41,7 +45,7 @@ export function PropertyForm({
   estateId,
   mode = "create",
   propertyId,
-  initialValues
+  initialValues,
 }: PropertyFormProps) {
   const router = useRouter();
 
@@ -186,8 +190,12 @@ export function PropertyForm({
           ? "Failed to update property."
           : "Failed to create property.";
 
-        const apiMessage = await Promise.resolve(getApiErrorMessage(response));
-        setError(data?.error || apiMessage || fallback);
+        const apiMessage = await getApiErrorMessage(response);
+        const message =
+          (typeof data?.error === "string" ? data.error : "") ||
+          apiMessage ||
+          fallback;
+        setError(message);
         return;
       }
 
@@ -228,7 +236,13 @@ export function PropertyForm({
             aria-describedby={fieldErrors.name ? "property-name-error" : "property-name-help"}
             onChange={(e) => handleChange("name", e.target.value)}
             onBlur={() => handleBlur("name")}
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
+            maxLength={160}
+            autoFocus
+            spellCheck={true}
+            className={cx(
+              "w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
             placeholder="Example: 4395 Dickerson - main house"
           />
           <p id="property-name-help" className="text-[11px] text-slate-500">
@@ -253,7 +267,10 @@ export function PropertyForm({
             disabled={isSubmitting}
             onChange={(e) => handleChange("type", e.target.value)}
             onBlur={() => handleBlur("type")}
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
+            className={cx(
+              "w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
           >
             <option value="Real estate">Real estate</option>
             <option value="Land">Land</option>
@@ -278,7 +295,12 @@ export function PropertyForm({
             disabled={isSubmitting}
             onChange={(e) => handleChange("address", e.target.value)}
             onBlur={() => handleBlur("address")}
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
+            maxLength={200}
+            spellCheck={true}
+            className={cx(
+              "w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
             placeholder="Street, unit, etc."
           />
         </div>
@@ -297,7 +319,12 @@ export function PropertyForm({
             disabled={isSubmitting}
             onChange={(e) => handleChange("city", e.target.value)}
             onBlur={() => handleBlur("city")}
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
+            maxLength={120}
+            spellCheck={true}
+            className={cx(
+              "w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
           />
         </div>
 
@@ -315,7 +342,12 @@ export function PropertyForm({
             disabled={isSubmitting}
             onChange={(e) => handleChange("state", e.target.value)}
             onBlur={() => handleBlur("state")}
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
+            maxLength={120}
+            spellCheck={true}
+            className={cx(
+              "w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
           />
         </div>
 
@@ -333,7 +365,12 @@ export function PropertyForm({
             disabled={isSubmitting}
             onChange={(e) => handleChange("postalCode", e.target.value)}
             onBlur={() => handleBlur("postalCode")}
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
+            maxLength={32}
+            spellCheck={false}
+            className={cx(
+              "w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
           />
         </div>
 
@@ -351,7 +388,12 @@ export function PropertyForm({
             disabled={isSubmitting}
             onChange={(e) => handleChange("country", e.target.value)}
             onBlur={() => handleBlur("country")}
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
+            maxLength={120}
+            spellCheck={true}
+            className={cx(
+              "w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
           />
         </div>
 
@@ -372,7 +414,10 @@ export function PropertyForm({
             aria-invalid={Boolean(fieldErrors.estimatedValue)}
             aria-describedby={fieldErrors.estimatedValue ? "estimated-value-error" : undefined}
             onChange={(e) => handleChange("estimatedValue", e.target.value)}
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
+            className={cx(
+              "w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
             placeholder="0.00"
           />
           {fieldErrors.estimatedValue && (
@@ -400,7 +445,10 @@ export function PropertyForm({
             aria-invalid={Boolean(fieldErrors.ownershipPercentage)}
             aria-describedby={fieldErrors.ownershipPercentage ? "ownership-percentage-error" : undefined}
             onChange={(e) => handleChange("ownershipPercentage", e.target.value)}
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
+            className={cx(
+              "w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
             placeholder="100"
           />
           {fieldErrors.ownershipPercentage && (
@@ -427,7 +475,11 @@ export function PropertyForm({
           disabled={isSubmitting}
           onChange={(e) => handleChange("notes", e.target.value)}
           onBlur={() => handleBlur("notes")}
-          className="min-h-[100px] w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500"
+          maxLength={4000}
+          className={cx(
+            "min-h-[100px] w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+          )}
           placeholder="Any details you want to remember about this property."
         />
       </div>
@@ -437,8 +489,13 @@ export function PropertyForm({
           <button
             type="submit"
             disabled={!canSubmit}
+            aria-disabled={!canSubmit}
             title={!canSubmit ? "Add a property name to save." : undefined}
-            className="inline-flex items-center rounded-lg border border-emerald-500 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-100 hover:bg-emerald-500/20 disabled:opacity-60"
+            className={cx(
+              "inline-flex items-center rounded-lg border border-emerald-500 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-100",
+              "hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
           >
             {isSubmitting
               ? isEdit
@@ -451,11 +508,16 @@ export function PropertyForm({
           <button
             type="button"
             disabled={isSubmitting}
+            aria-disabled={isSubmitting}
             title={isSubmitting ? "Please wait…" : undefined}
             onClick={() =>
               router.push(`/app/estates/${encodeURIComponent(estateId)}/properties`)
             }
-            className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-800 disabled:opacity-60"
+            className={cx(
+              "inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-100",
+              "hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-200/20 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+            )}
           >
             Cancel
           </button>

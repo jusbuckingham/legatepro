@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+
 import { getApiErrorMessage, safeJson } from "@/lib/utils";
+
+function cx(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
 
 type Role = "EDITOR" | "VIEWER";
 
@@ -88,6 +93,9 @@ export default function CollaboratorsManager({
     return email.includes("@") && email.includes(".") && !email.includes(" ");
   }, [inviteEmail]);
 
+  const canAddCollaborator = !loading && userId.trim().length > 0;
+  const canCreateInvite = !invitesLoading && isValidEmail;
+
   const canUseClipboard = useMemo(() => {
     if (typeof navigator === "undefined") return false;
     const hasApi = !!navigator.clipboard?.writeText;
@@ -146,7 +154,7 @@ export default function CollaboratorsManager({
           const msg =
             data && data.ok === false
               ? data.error
-              : await Promise.resolve(getApiErrorMessage(res));
+              : await getApiErrorMessage(res);
           setInvitesError(msg || "Failed to load invites");
           return;
         }
@@ -210,7 +218,7 @@ export default function CollaboratorsManager({
       const msg =
         data && data.ok === false
           ? data.error
-          : await Promise.resolve(getApiErrorMessage(res));
+          : await getApiErrorMessage(res);
       setInvitesError(msg || "Failed to create invite");
       return;
     }
@@ -246,7 +254,7 @@ export default function CollaboratorsManager({
       const msg =
         data && data.ok === false
           ? data.error
-          : await Promise.resolve(getApiErrorMessage(res));
+          : await getApiErrorMessage(res);
       setInvitesError(msg || "Failed to revoke invite");
       return;
     }
@@ -284,7 +292,7 @@ export default function CollaboratorsManager({
       const msg =
         data && data.ok === false
           ? data.error
-          : await Promise.resolve(getApiErrorMessage(res));
+          : await getApiErrorMessage(res);
       setError(msg || "Failed to add collaborator");
       return;
     }
@@ -321,7 +329,7 @@ export default function CollaboratorsManager({
       const msg =
         data && data.ok === false
           ? data.error
-          : await Promise.resolve(getApiErrorMessage(res));
+          : await getApiErrorMessage(res);
       setError(msg || "Failed to update role");
       return;
     }
@@ -352,7 +360,7 @@ export default function CollaboratorsManager({
       const msg =
         data && data.ok === false
           ? data.error
-          : await Promise.resolve(getApiErrorMessage(res));
+          : await getApiErrorMessage(res);
       setError(msg || "Failed to remove collaborator");
       return;
     }
@@ -381,6 +389,8 @@ export default function CollaboratorsManager({
               placeholder="User ID (e.g., 123abc...)"
               value={userId}
               onChange={(e) => setUserId(e.target.value)}
+              maxLength={128}
+              spellCheck={false}
               className="flex-1 rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 placeholder:text-gray-400"
             />
             <select
@@ -394,21 +404,28 @@ export default function CollaboratorsManager({
             <button
               type="button"
               onClick={addCollaborator}
-              disabled={loading || !userId.trim()}
+              disabled={!canAddCollaborator}
               className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
             >
               Save
             </button>
           </div>
           {error && (
-            <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+            <div
+              role="alert"
+              className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800"
+            >
               {error}
             </div>
           )}
         </div>
       )}
 
-      {info && <div className="text-xs text-gray-600">{info}</div>}
+      {info ? (
+        <div className="text-xs text-gray-600" aria-live="polite">
+          {info}
+        </div>
+      ) : null}
 
       {isOwner && (
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -425,6 +442,8 @@ export default function CollaboratorsManager({
                 setInviteEmail(e.target.value);
                 if (invitesError) setInvitesError(null);
               }}
+              maxLength={254}
+              spellCheck={false}
               className="flex-1 rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 placeholder:text-gray-400"
             />
             <select
@@ -438,7 +457,7 @@ export default function CollaboratorsManager({
             <button
               type="button"
               onClick={createInvite}
-              disabled={invitesLoading || !isValidEmail}
+              disabled={!canCreateInvite}
               className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
             >
               Create link
@@ -465,7 +484,10 @@ export default function CollaboratorsManager({
             </div>
           )}
           {invitesError && (
-            <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+            <div
+              role="alert"
+              className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800"
+            >
               {invitesError}
             </div>
           )}
@@ -490,14 +512,14 @@ export default function CollaboratorsManager({
             ) : (
               <div className="space-y-2">
                 {invites.map((inv) => {
-                  const badgeClass =
-                    inv.status === "PENDING"
-                      ? "border border-amber-200 bg-amber-50 text-amber-800"
-                      : inv.status === "ACCEPTED"
-                        ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
-                        : inv.status === "EXPIRED"
-                          ? "border border-gray-200 bg-gray-50 text-gray-700"
-                          : "border border-gray-200 bg-gray-50 text-gray-700";
+                  const badgeClass = cx(
+                    "border",
+                    inv.status === "PENDING" && "border-amber-200 bg-amber-50 text-amber-800",
+                    inv.status === "ACCEPTED" && "border-emerald-200 bg-emerald-50 text-emerald-800",
+                    inv.status !== "PENDING" &&
+                      inv.status !== "ACCEPTED" &&
+                      "border-gray-200 bg-gray-50 text-gray-700",
+                  );
                   const invitePath = `/app/invites/${inv.token}`;
                   const inviteUrl = origin ? `${origin}${invitePath}` : invitePath;
                   return (
@@ -515,7 +537,10 @@ export default function CollaboratorsManager({
                               {inv.role}
                             </span>
                             <span
-                              className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${badgeClass}`}
+                              className={cx(
+                                "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                                badgeClass
+                              )}
                             >
                               {inv.status}
                             </span>

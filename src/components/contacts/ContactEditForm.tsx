@@ -60,13 +60,18 @@ function isValidPhone(value: string): boolean {
 export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
   const router = useRouter();
 
-  const [name, setName] = useState(initial.name ?? "");
-  const [email, setEmail] = useState(initial.email ?? "");
-  const [phone, setPhone] = useState(initial.phone ?? "");
+  const initialName = initial.name ?? "";
+  const initialEmail = initial.email ?? "";
+  const initialPhone = initial.phone ?? "";
+  const initialNotes = initial.notes ?? "";
+
+  const [name, setName] = useState(initialName);
+  const [email, setEmail] = useState(initialEmail);
+  const [phone, setPhone] = useState(initialPhone);
   const [role, setRole] = useState<ContactRole>(
     normalizeRole(initial.role ?? "OTHER")
   );
-  const [notes, setNotes] = useState(initial.notes ?? "");
+  const [notes, setNotes] = useState(initialNotes);
 
   const [saving, setSaving] = useState(false);
 
@@ -74,16 +79,20 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const roleInitial = useMemo(() => normalizeRole(initial.role ?? "OTHER"), [initial.role]);
+  const roleInitial = useMemo(
+    () => normalizeRole(initial.role ?? "OTHER"),
+    [initial.role]
+  );
+
   const isDirty = useMemo(() => {
     return (
-      name !== (initial.name ?? "") ||
-      email !== (initial.email ?? "") ||
-      phone !== (initial.phone ?? "") ||
+      name !== initialName ||
+      email !== initialEmail ||
+      phone !== initialPhone ||
       role !== roleInitial ||
-      notes !== (initial.notes ?? "")
+      notes !== initialNotes
     );
-  }, [name, email, phone, role, notes, initial, roleInitial]);
+  }, [name, email, phone, role, notes, initialName, initialEmail, initialPhone, initialNotes, roleInitial]);
 
   const resetFeedback = (): void => {
     if (fieldError) setFieldError(null);
@@ -240,6 +249,8 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
             autoComplete="name"
             aria-invalid={nameHasError}
             aria-describedby={nameHasError ? "contact-form-field-error" : undefined}
+            maxLength={160}
+            autoFocus
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-60"
           />
         </div>
@@ -260,6 +271,8 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
             autoComplete="email"
             aria-invalid={emailHasError}
             aria-describedby={emailHasError ? "contact-form-field-error" : undefined}
+            maxLength={254}
+            spellCheck={false}
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-60"
           />
         </div>
@@ -281,6 +294,7 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
             inputMode="tel"
             aria-invalid={phoneHasError}
             aria-describedby={phoneHasError ? "contact-form-field-error" : undefined}
+            maxLength={25}
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-60"
           />
         </div>
@@ -322,6 +336,7 @@ export function ContactEditForm({ contactId, initial }: ContactEditFormProps) {
           }}
           rows={3}
           placeholder="Relationship to the estate, important details, etc."
+          maxLength={4000}
           className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-60"
         />
       </div>

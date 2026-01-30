@@ -4,7 +4,12 @@ import { useMemo, useState } from "react";
 import type { FormEventHandler } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+
 import { getApiErrorMessage } from "@/lib/utils";
+
+function cx(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
 
 type InvoiceStatus = "DRAFT" | "SENT" | "UNPAID" | "PARTIAL" | "PAID" | "VOID";
 
@@ -55,13 +60,10 @@ function formatDateForInput(value?: string | null): string {
   if (!value) return "";
   return value.slice(0, 10);
 }
-
-
 function clampNonNegativeNumber(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return value < 0 ? 0 : value;
 }
-
 function deriveAmountCents(quantity: number | null | undefined, rateCents: number | null | undefined): number | null {
   if (typeof quantity !== "number" || !Number.isFinite(quantity)) return null;
   if (typeof rateCents !== "number" || !Number.isFinite(rateCents)) return null;
@@ -319,6 +321,8 @@ export function InvoiceEditForm({
           currency: trimmedCurrency,
           lineItems: normalizedLineItems,
         }),
+        credentials: "include",
+        cache: "no-store",
       });
 
       // Prefer JSON contract ({ ok:true, ... } / { ok:false, error }) and fall back to readable text.
@@ -329,8 +333,11 @@ export function InvoiceEditForm({
 
       // Standard contract: all handlers respond with { ok: true, ... } or { ok:false, error }
       if (!response.ok || data?.ok !== true) {
-        const apiMessage = await Promise.resolve(getApiErrorMessage(responseForError));
-        const message = data?.error || apiMessage || "Failed to save invoice.";
+        const apiMessage = await getApiErrorMessage(responseForError);
+        const message =
+          (typeof data?.error === "string" ? data.error : "") ||
+          apiMessage ||
+          "Failed to save invoice.";
         setSaveError(message);
         fireToast({ type: "error", message });
         return;
@@ -370,7 +377,10 @@ export function InvoiceEditForm({
           <button
             type="button"
             onClick={clearSaveError}
-            className="shrink-0 rounded-md border border-red-400/40 bg-red-950/20 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-red-100 hover:bg-red-950/35"
+            className={cx(
+              "shrink-0 rounded-md border border-red-400/40 bg-red-950/20 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-red-100 hover:bg-red-950/35",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            )}
             aria-label="Dismiss error"
           >
             Dismiss
@@ -390,7 +400,10 @@ export function InvoiceEditForm({
               clearSaveError();
               setStatus(event.target.value as InvoiceStatus);
             }}
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            className={cx(
+              "rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            )}
             disabled={isSaving}
           >
             <option value="DRAFT">Draft</option>
@@ -415,7 +428,10 @@ export function InvoiceEditForm({
               if (dateError) setDateError(null);
               setIssueDate(event.target.value);
             }}
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            className={cx(
+              "rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            )}
             disabled={isSaving}
           />
         </div>
@@ -433,7 +449,10 @@ export function InvoiceEditForm({
               if (dateError) setDateError(null);
               setDueDate(event.target.value);
             }}
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            className={cx(
+              "rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            )}
             disabled={isSaving}
           />
           <p className="mt-1 text-[11px] text-slate-500">
@@ -461,16 +480,23 @@ export function InvoiceEditForm({
             if (currencyError) setCurrencyError(null);
             setCurrency(event.target.value.toUpperCase().slice(0, 3));
           }}
-          className="max-w-[120px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          className={cx(
+            "max-w-[120px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+          )}
           disabled={isSaving}
           inputMode="text"
           autoComplete="off"
           maxLength={3}
           aria-invalid={currencyError ? true : undefined}
+          aria-describedby={currencyError ? "currency-help currency-error" : "currency-help"}
+          spellCheck={false}
         />
-        <p className="text-[11px] text-slate-500">Typically USD, but you can set another currency if needed.</p>
+        <p id="currency-help" className="text-[11px] text-slate-500">
+          Typically USD, but you can set another currency if needed.
+        </p>
         {currencyError && (
-          <p className="text-[11px] text-red-300" role="alert">
+          <p id="currency-error" className="text-[11px] text-red-300" role="alert">
             {currencyError}
           </p>
         )}
@@ -482,8 +508,12 @@ export function InvoiceEditForm({
           <button
             type="button"
             onClick={addLineItem}
-            className="inline-flex items-center rounded-md border border-slate-700 px-2 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className={cx(
+              "inline-flex items-center rounded-md border border-slate-700 px-2 py-1 text-[11px] font-medium text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            )}
             disabled={isSaving}
+            aria-disabled={isSaving}
           >
             + Add line item
           </button>
@@ -511,9 +541,14 @@ export function InvoiceEditForm({
                       clearSaveError();
                       handleLineItemChange(index, "label", event.target.value);
                     }}
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                    className={cx(
+                      "w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                    )}
                     placeholder="For example, probate hearing preparation, rent collection, filing fee"
                     disabled={isSaving}
+                    maxLength={200}
+                    autoFocus={index === 0}
                   />
                 </div>
 
@@ -531,7 +566,10 @@ export function InvoiceEditForm({
                       clearSaveError();
                       handleLineItemChange(index, "type", event.target.value as InvoiceEditLineItem["type"]);
                     }}
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                    className={cx(
+                      "w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                    )}
                     disabled={isSaving}
                   >
                     <option value="FEE">Fee</option>
@@ -564,7 +602,10 @@ export function InvoiceEditForm({
                         event.target.value === "" ? null : Number.parseFloat(event.target.value),
                       );
                     }}
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                    className={cx(
+                      "w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                    )}
                     placeholder="For example, 1, 2.5, 10"
                     disabled={isSaving}
                     inputMode="decimal"
@@ -589,7 +630,10 @@ export function InvoiceEditForm({
                       clearSaveError();
                       handleLineItemRateChange(index, event.target.value);
                     }}
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                    className={cx(
+                      "w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                    )}
                     placeholder="For example, 250.00"
                     disabled={isSaving}
                     inputMode="decimal"
@@ -614,7 +658,10 @@ export function InvoiceEditForm({
                         type="button"
                         onClick={() => handleLineItemAutoCalc(index)}
                         disabled={isSaving}
-                        className="text-[10px] font-semibold text-slate-300 hover:text-slate-100 disabled:opacity-60"
+                        className={cx(
+                          "text-[10px] font-semibold text-slate-300 hover:text-slate-100 disabled:opacity-60",
+                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                        )}
                         title="Recalculate amount from quantity × rate"
                       >
                         Auto-calc
@@ -632,7 +679,10 @@ export function InvoiceEditForm({
                         clearSaveError();
                         handleLineItemAmountChange(index, event.target.value);
                       }}
-                      className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                      className={cx(
+                        "w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                      )}
                       placeholder="For example, 500.00"
                       disabled={isSaving}
                       inputMode="decimal"
@@ -640,7 +690,10 @@ export function InvoiceEditForm({
                     <button
                       type="button"
                       onClick={() => removeLineItem(index)}
-                      className="inline-flex items-center rounded-md border border-red-700 px-2 py-1 text-[11px] text-red-200 hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-60"
+                      className={cx(
+                        "inline-flex items-center rounded-md border border-red-700 px-2 py-1 text-[11px] text-red-200 hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-60",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                      )}
                       disabled={isSaving || lineItems.length <= 1}
                     >
                       Remove
@@ -673,9 +726,13 @@ export function InvoiceEditForm({
             clearSaveError();
             setNotes(event.target.value);
           }}
-          className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          className={cx(
+            "rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+          )}
           placeholder="Describe the work performed, services rendered, or the purpose of this invoice."
           disabled={isSaving}
+          maxLength={4000}
         />
         <p className="text-[11px] text-slate-500">
           This appears on the invoice and helps you quickly recognize what was billed.
@@ -685,7 +742,11 @@ export function InvoiceEditForm({
       <div className="flex flex-col-reverse items-stretch justify-between gap-2 pt-2 sm:flex-row sm:items-center">
         <Link
           href={`/app/estates/${encodeURIComponent(estateId)}/invoices/${encodeURIComponent(invoiceId)}`}
-          className="inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-950/40 px-4 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-900/50"
+          className={cx(
+            "inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-950/40 px-4 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-900/50",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-200/20 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+          )}
+          aria-disabled={isSaving ? true : undefined}
         >
           Cancel
         </Link>
@@ -693,8 +754,12 @@ export function InvoiceEditForm({
         <button
           type="submit"
           disabled={!canSubmit}
-          className="inline-flex items-center justify-center rounded-md bg-sky-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+          className={cx(
+            "inline-flex items-center justify-center rounded-md bg-sky-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+          )}
           aria-busy={isSaving}
+          aria-disabled={!canSubmit}
         >
           {isSaving ? "Saving…" : canSubmit ? "Save invoice" : "Add a line item to save"}
         </button>

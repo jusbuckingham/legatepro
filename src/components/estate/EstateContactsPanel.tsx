@@ -4,6 +4,10 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { getApiErrorMessage, safeJson } from "@/lib/utils";
 
+function cx(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
+
 type LinkedContact = {
   _id: string;
   name: string;
@@ -64,7 +68,7 @@ export function EstateContactsPanel({
 
   const busy = linking || unlinkingId !== null;
 
-  const estateIdEncoded = useMemo(() => encodeURIComponent(estateId), [estateId]);
+  const canLink = !busy && selectedContactId.length > 0 && availableContacts.length > 0;
 
   const sortedAvailableContacts = useMemo(() => {
     return availableContacts
@@ -72,7 +76,9 @@ export function EstateContactsPanel({
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [availableContacts]);
 
-  const readOkResponse = async (res: Response): Promise<{ ok?: boolean; error?: string } | null> => {
+  const readOkResponse = async (
+    res: Response,
+  ): Promise<{ ok?: boolean; error?: string } | null> => {
     return (await safeJson(res)) as { ok?: boolean; error?: string } | null;
   };
 
@@ -87,13 +93,16 @@ export function EstateContactsPanel({
     setSuccess(null);
 
     try {
-      const res = await fetch(`/api/estates/${estateIdEncoded}/contacts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contactId: selectedContactId }),
-        credentials: "include",
-        cache: "no-store",
-      });
+      const res = await fetch(
+        `/api/estates/${encodeURIComponent(estateId)}/contacts`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contactId: selectedContactId }),
+          credentials: "include",
+          cache: "no-store",
+        },
+      );
 
       const resForError = res.clone();
       const data = await readOkResponse(res);
@@ -138,7 +147,7 @@ export function EstateContactsPanel({
 
     try {
       const res = await fetch(
-        `/api/estates/${estateIdEncoded}/contacts?contactId=${encodeURIComponent(contactId)}`,
+        `/api/estates/${encodeURIComponent(estateId)}/contacts?contactId=${encodeURIComponent(contactId)}`,
         {
           method: "DELETE",
           credentials: "include",
@@ -155,7 +164,7 @@ export function EstateContactsPanel({
         return;
       }
 
-      const contactToUnlink = linkedContacts.find((c) => c._id === contactId);
+      const contactToUnlink = linkedContacts.find((c) => c._id === contactId) ?? null;
 
       if (!contactToUnlink) {
         setError("Contact is no longer linked.");
@@ -226,6 +235,7 @@ export function EstateContactsPanel({
               setSelectedContactId(e.target.value);
             }}
             disabled={busy}
+            aria-disabled={busy}
             className="mt-1 w-full rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
           >
             <option value="">
@@ -243,9 +253,14 @@ export function EstateContactsPanel({
         </div>
         <button
           type="button"
-          disabled={!selectedContactId || busy || availableContacts.length === 0}
+          disabled={!canLink}
+          aria-disabled={!canLink}
           onClick={handleLink}
-          className="rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-60"
+          className={cx(
+            "rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-slate-950",
+            "hover:bg-sky-400 disabled:opacity-60",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+          )}
         >
           {linking ? "Linking…" : "Link contact"}
         </button>
@@ -286,8 +301,13 @@ export function EstateContactsPanel({
                 <button
                   type="button"
                   disabled={busy}
+                  aria-disabled={busy}
                   onClick={() => handleUnlink(c._id)}
-                  className="text-[11px] text-slate-400 hover:text-red-400 disabled:opacity-60"
+                  className={cx(
+                    "text-[11px] text-slate-400",
+                    "hover:text-red-400 disabled:opacity-60",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
+                  )}
                 >
                   {unlinkingId === c._id ? "Removing…" : "Remove"}
                 </button>

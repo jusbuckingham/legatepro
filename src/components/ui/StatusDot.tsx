@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
-
 import { cn } from "@/lib/utils";
 
+/** Supported status dot colors */
 export type StatusDotColor = "green" | "yellow" | "red" | "gray";
+/** Supported status dot sizes */
 export type StatusDotSize = "sm" | "md";
 
 export interface StatusDotProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -42,8 +43,6 @@ export const StatusDot = React.forwardRef<HTMLDivElement, StatusDotProps>(
     },
     ref
   ) => {
-    const accessibleName = label ?? srLabel;
-
     return (
       <div
         ref={ref}
@@ -51,16 +50,16 @@ export const StatusDot = React.forwardRef<HTMLDivElement, StatusDotProps>(
         {...props}
       >
         <span
-          aria-hidden={accessibleName ? true : undefined}
+          aria-hidden="true"
           className={cn(
             "shrink-0 rounded-full",
             SIZE_MAP[size],
-            COLOR_MAP[color]
+            COLOR_MAP[color],
           )}
         />
 
         {label ? (
-          <span className="text-xs text-slate-300">{label}</span>
+          <span className="text-xs text-muted-foreground">{label}</span>
         ) : srLabel ? (
           <span className="sr-only">{srLabel}</span>
         ) : null}
@@ -70,3 +69,5 @@ export const StatusDot = React.forwardRef<HTMLDivElement, StatusDotProps>(
 );
 
 StatusDot.displayName = "StatusDot";
+
+export default StatusDot;
