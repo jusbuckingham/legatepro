@@ -1,6 +1,8 @@
 import { connectToDatabase } from "@/lib/db";
 import EstateEvent, { type EstateEventType } from "@/models/EstateEvent";
 
+type MetaRecord = Record<string, unknown>;
+
 function truncateText(value: unknown, max = 180): string | undefined {
   if (typeof value !== "string") return undefined;
   const v = value.trim();
@@ -17,7 +19,7 @@ export type LogNoteEventInput = {
   noteId: string;
   action: NoteEventAction;
   bodyPreview?: string | null;
-  meta?: Record<string, unknown>;
+  meta?: MetaRecord;
 };
 
 function noteEventType(action: NoteEventAction): EstateEventType {
@@ -52,8 +54,10 @@ function noteEventSummary(action: NoteEventAction): string {
       return "Note pinned";
     case "UNPINNED":
       return "Note unpinned";
-    default:
-      return "Note event";
+    default: {
+      const _never: never = action;
+      return _never;
+    }
   }
 }
 
@@ -61,7 +65,7 @@ function noteEventSummary(action: NoteEventAction): string {
  * Convenience logger for note actions so we keep type/summary/detail consistent.
  * Routes can call this instead of hand-rolling event strings.
  */
-export async function logNoteEvent(input: LogNoteEventInput) {
+export async function logNoteEvent(input: LogNoteEventInput): Promise<void> {
   const { ownerId, estateId, noteId, action, bodyPreview, meta } = input;
 
   const detail = truncateText(bodyPreview, 220);
@@ -87,7 +91,7 @@ export type LogDocumentEventInput = {
   documentId: string;
   action: DocumentEventAction;
   labelPreview?: string | null;
-  meta?: Record<string, unknown>;
+  meta?: MetaRecord;
 };
 
 function documentEventType(action: DocumentEventAction): EstateEventType {
@@ -113,8 +117,10 @@ function documentEventSummary(action: DocumentEventAction): string {
       return "Document updated";
     case "DELETED":
       return "Document deleted";
-    default:
-      return "Document event";
+    default: {
+      const _never: never = action;
+      return _never;
+    }
   }
 }
 
@@ -122,7 +128,7 @@ function documentEventSummary(action: DocumentEventAction): string {
  * Convenience logger for document actions so we keep type/summary/detail consistent.
  * Routes can call this instead of hand-rolling event strings.
  */
-export async function logDocumentEvent(input: LogDocumentEventInput) {
+export async function logDocumentEvent(input: LogDocumentEventInput): Promise<void> {
   const { ownerId, estateId, documentId, action, labelPreview, meta } = input;
 
   const detail = truncateText(labelPreview, 220);
@@ -148,7 +154,7 @@ export type LogEstateEventInput = {
   type: EstateEventType | LegacyEstateEventType;
   summary: string;
   detail?: string | null;
-  meta?: Record<string, unknown>;
+  meta?: MetaRecord;
 };
 
 function normalizeEstateEventType(type: EstateEventType | LegacyEstateEventType): EstateEventType {
@@ -158,7 +164,7 @@ function normalizeEstateEventType(type: EstateEventType | LegacyEstateEventType)
   return type;
 }
 
-export async function logEstateEvent(input: LogEstateEventInput) {
+export async function logEstateEvent(input: LogEstateEventInput): Promise<void> {
   const { ownerId, estateId, type, summary, detail, meta } = input;
   const normalizedType = normalizeEstateEventType(type);
 
@@ -184,14 +190,14 @@ export type EstateEventRow = {
   type: EstateEventType;
   summary: string;
   detail?: string | null;
-  meta?: Record<string, unknown>;
+  meta?: MetaRecord;
   createdAt?: Date;
 };
 
 export type GetEstateEventsOptions = {
   estateId: string;
   ownerId?: string;
-  types?: EstateEventType[];
+  types?: readonly EstateEventType[];
   limit?: number;
   cursor?: string; // createdAt ISO string (exclusive)
 };
@@ -200,7 +206,9 @@ export type GetEstateEventsOptions = {
  * Read helper for activity timelines.
  * - Cursor pagination is based on createdAt (descending)
  */
-export async function getEstateEvents(options: GetEstateEventsOptions) {
+export async function getEstateEvents(
+  options: GetEstateEventsOptions,
+): Promise<{ rows: EstateEventRow[]; nextCursor: string | null }> {
   const { estateId, ownerId, types, cursor } = options;
 
   const limitRaw = options.limit ?? 25;
@@ -244,10 +252,18 @@ export async function getEstateEvents(options: GetEstateEventsOptions) {
 
     const metaValue =
       d.meta && typeof d.meta === "object" && !Array.isArray(d.meta)
-        ? (d.meta as Record<string, unknown>)
+        ? (d.meta as MetaRecord)
         : undefined;
 
-    const createdAtValue = d.createdAt instanceof Date ? d.createdAt : undefined;
+    const createdAtValue =
+      d.createdAt instanceof Date
+        ? d.createdAt
+        : typeof d.createdAt === "string" || typeof d.createdAt === "number"
+        ? (() => {
+            const dt = new Date(d.createdAt);
+            return Number.isNaN(dt.getTime()) ? undefined : dt;
+          })()
+        : undefined;
 
     return {
       id,
@@ -262,7 +278,9 @@ export async function getEstateEvents(options: GetEstateEventsOptions) {
   });
 
   const nextCursor =
-    rows.length > 0 ? rows[rows.length - 1].createdAt?.toISOString() : null;
+    rows.length > 0
+      ? rows[rows.length - 1].createdAt?.toISOString() ?? null
+      : null;
 
   return { rows, nextCursor };
 }

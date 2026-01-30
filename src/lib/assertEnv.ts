@@ -1,5 +1,5 @@
 // src/lib/assertEnv.ts
-// Centralized environment variable validation for server-side code.
+// Centralized environment variable validation for server-side runtime code.
 
 export type EnvSpec = {
   key: string;
@@ -9,7 +9,7 @@ export type EnvSpec = {
 };
 
 export class EnvError extends Error {
-  missing: string[];
+  public readonly missing: string[];
   constructor(message: string, missing: string[]) {
     super(message);
     this.name = "EnvError";
@@ -21,10 +21,13 @@ export class EnvError extends Error {
  * Throws an EnvError if required environment variables are missing.
  * Call this from server-only entry points (db/auth/webhooks).
  */
-export function assertEnv(specs: Array<string | EnvSpec>) {
-  const normalized: EnvSpec[] = specs.map((s) =>
-    typeof s === "string" ? { key: s, required: true } : { required: true, ...s },
-  );
+export function assertEnv(specs: Array<string | EnvSpec>): void {
+  const normalized: EnvSpec[] = specs.map((s) => {
+    if (typeof s === "string") {
+      return { key: s, required: true };
+    }
+    return { required: s.required !== false, key: s.key, hint: s.hint };
+  });
 
   const missing = normalized
     .filter((s) => s.required !== false)
@@ -54,7 +57,7 @@ export function assertEnv(specs: Array<string | EnvSpec>) {
 }
 
 /** Convenience accessor that guarantees a non-empty value at runtime. */
-export function env(key: string) {
+export function env(key: string): string {
   const v = process.env[key];
   if (!v || String(v).trim().length === 0) {
     throw new EnvError(`Missing required environment variable: ${key}`, [key]);

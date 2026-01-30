@@ -6,11 +6,11 @@ import { Estate } from "@/models/Estate";
 
 export type EstateRole = "OWNER" | "EDITOR" | "VIEWER";
 
-export const ROLE_RANK: Record<EstateRole, number> = {
+export const ROLE_RANK = {
   OWNER: 3,
   EDITOR: 2,
   VIEWER: 1,
-};
+} as const satisfies Record<EstateRole, number>;
 
 export function hasRole(args: {
   actual: EstateRole;
@@ -111,21 +111,21 @@ function toIdString(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value === "number") return String(value);
 
-  if (isRecord(value) && typeof value.toString === "function") {
-    const maybe = value.toString();
-    if (typeof maybe === "string") return maybe;
+  if (isRecord(value) && typeof (value as { toString?: unknown }).toString === "function") {
+    const maybe = String(value);
+    if (maybe !== "[object Object]") return maybe;
   }
 
   return "";
 }
 
-function toObjectId(id: string) {
+function toObjectId(id: string): mongoose.Types.ObjectId | null {
   return mongoose.Types.ObjectId.isValid(id)
     ? new mongoose.Types.ObjectId(id)
     : null;
 }
 
-function arrayContainsUserId(arr: unknown[] | undefined, userId: string): boolean {
+function arrayContainsUserId(arr: readonly unknown[] | undefined, userId: string): boolean {
   if (!Array.isArray(arr)) return false;
   return arr.some((v) => toIdString(v) === userId);
 }
@@ -163,7 +163,7 @@ function resolveRequiredRole(input: RequireEstateAccessInput): EstateRole | unde
  * - Returns `null` if unauthenticated (and no userId override) OR no access.
  */
 export async function getEstateAccess(
-  input: RequireEstateAccessInput
+  input: RequireEstateAccessInput,
 ): Promise<EstateAccess | null> {
   const estateId = input.estateId;
   const resolvedUserId = input.userId ?? (await auth())?.user?.id;
@@ -176,7 +176,7 @@ export async function getEstateAccess(
 
   type EstateModelLike = {
     findOne: (
-      filter: Record<string, unknown>
+      filter: Record<string, unknown>,
     ) => {
       lean: <T>() => Promise<T | null>;
     };
@@ -244,7 +244,7 @@ export async function getEstateAccess(
       role,
       isOwner: false,
       canEdit: hasRole({ actual: role, atLeast: "EDITOR" }),
-      canViewSensitive: role === "OWNER", // safe default (OWNER only)
+      canViewSensitive: false, // safe default (OWNER only; collaborators never treated as OWNER)
     };
   }
 
@@ -281,7 +281,7 @@ export async function getEstateAccess(
  * Always returns a result (never null), so pages can render permission-aware UI.
  */
 export async function requireEstateAccess(
-  input: RequireEstateAccessInput
+  input: RequireEstateAccessInput,
 ): Promise<RequireEstateAccessResult> {
   const estateId = input.estateId;
   const resolvedUserId = input.userId ?? (await auth())?.user?.id;
@@ -344,7 +344,7 @@ export async function requireEstateAccess(
 
 /** Convenience helper for routes/actions that must enforce edit privileges. */
 export async function requireEstateEditAccess(
-  input: RequireEstateAccessInput
+  input: RequireEstateAccessInput,
 ): Promise<RequireEstateAccessResult> {
   // Ensure edit access is enforced even if callers forget to pass a role.
   const access = await requireEstateAccess({
@@ -375,14 +375,14 @@ export async function requireEstateEditAccess(
 
 /** @deprecated Use `requireEstateAccess` */
 export async function requireViewer(
-  input: RequireEstateAccessInput
+  input: RequireEstateAccessInput,
 ): Promise<RequireEstateAccessResult> {
   return requireEstateAccess(input);
 }
 
 /** @deprecated Use `requireEstateEditAccess` */
 export async function requireEditor(
-  input: RequireEstateAccessInput
+  input: RequireEstateAccessInput,
 ): Promise<RequireEstateAccessResult> {
   return requireEstateEditAccess(input);
 }

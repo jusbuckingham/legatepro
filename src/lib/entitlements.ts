@@ -23,6 +23,30 @@ export type EntitlementsUser = {
 };
 
 /**
+ * Valid plan IDs for validation.
+ */
+const VALID_PLAN_IDS = ["free", "pro"] as const;
+
+/**
+ * Valid subscription statuses for validation.
+ */
+const VALID_STATUSES = ["free", "active", "trialing", "past_due", "canceled"] as const;
+
+/**
+ * Helper to validate PlanId strings.
+ */
+function isValidPlanId(value: unknown): value is PlanId {
+  return typeof value === "string" && (VALID_PLAN_IDS as readonly string[]).includes(value);
+}
+
+/**
+ * Helper to validate SubscriptionStatus strings.
+ */
+function isValidSubscriptionStatus(value: unknown): value is SubscriptionStatus {
+  return typeof value === "string" && (VALID_STATUSES as readonly string[]).includes(value);
+}
+
+/**
  * Coerce a loose DB/user snapshot into the strict EntitlementsUser shape.
  * This avoids repeating `as unknown as ...` casts across routes.
  */
@@ -31,11 +55,13 @@ export function toEntitlementsUser(
 ): EntitlementsUser {
   const u = user ?? {};
 
-  const subscriptionPlanIdRaw =
-    typeof u.subscriptionPlanId === "string" ? u.subscriptionPlanId : null;
+  const subscriptionPlanIdRaw = isValidPlanId(u.subscriptionPlanId)
+    ? u.subscriptionPlanId
+    : null;
 
-  const subscriptionStatusRaw =
-    typeof u.subscriptionStatus === "string" ? u.subscriptionStatus : null;
+  const subscriptionStatusRaw = isValidSubscriptionStatus(u.subscriptionStatus)
+    ? u.subscriptionStatus
+    : null;
 
   const stripeCustomerIdRaw =
     typeof u.stripeCustomerId === "string" ? u.stripeCustomerId : null;
@@ -48,12 +74,8 @@ export function toEntitlementsUser(
     email: typeof u.email === "string" ? u.email : undefined,
 
     // DB values are strings; normalize to our narrow unions.
-    subscriptionPlanId: subscriptionPlanIdRaw
-      ? (subscriptionPlanIdRaw as PlanId)
-      : null,
-    subscriptionStatus: subscriptionStatusRaw
-      ? (subscriptionStatusRaw as SubscriptionStatus)
-      : null,
+    subscriptionPlanId: subscriptionPlanIdRaw,
+    subscriptionStatus: subscriptionStatusRaw,
 
     stripeCustomerId: stripeCustomerIdRaw,
     stripeSubscriptionId: stripeSubscriptionIdRaw,
@@ -85,9 +107,9 @@ export type Entitlements = {
 
 // Consider "active" only when the subscription is in good standing.
 // NOTE: We intentionally do NOT include "past_due" here.
-const ACTIVE_STATUSES = new Set<SubscriptionStatus>(["active", "trialing"]);
+const ACTIVE_STATUSES = Object.freeze(new Set<SubscriptionStatus>(["active", "trialing"]));
 
-const PLAN_LIMITS: Record<PlanId, Entitlements["limits"]> = {
+const PLAN_LIMITS = {
   free: {
     estates: 1,
     collaboratorsPerEstate: 0,
@@ -98,9 +120,9 @@ const PLAN_LIMITS: Record<PlanId, Entitlements["limits"]> = {
     collaboratorsPerEstate: 10,
     storageMb: 10_000,
   },
-};
+} as const satisfies Record<PlanId, Entitlements["limits"]>;
 
-const PLAN_FEATURES: Record<PlanId, Entitlements["features"]> = {
+const PLAN_FEATURES = {
   free: {
     exports: false,
     advancedReports: false,
@@ -111,24 +133,32 @@ const PLAN_FEATURES: Record<PlanId, Entitlements["features"]> = {
     advancedReports: true,
     collaboratorInvites: true,
   },
-};
+} as const satisfies Record<PlanId, Entitlements["features"]>;
 
+/**
+ * Normalize a plan ID, defaulting to 'free' for invalid inputs.
+ */
 function normalizePlanId(planId: unknown): PlanId {
-  return planId === "pro" ? "pro" : "free";
+  if (planId === "pro") return "pro";
+  if (planId === "free") return "free";
+  return "free";
 }
 
+/**
+ * Normalize a subscription status, returning null for invalid inputs.
+ */
 function normalizeStatus(status: unknown): SubscriptionStatus | null {
-  // Treat missing/invalid as "no subscription" (free gating).
-  if (!status) return null;
-  const s = String(status);
-
-  if (s === "free") return "free";
-  if (s === "active") return "active";
-  if (s === "trialing") return "trialing";
-  if (s === "past_due") return "past_due";
-  if (s === "canceled") return "canceled";
-
-  return null;
+  if (typeof status !== "string") return null;
+  switch (status) {
+    case "free":
+    case "active":
+    case "trialing":
+    case "past_due":
+    case "canceled":
+      return status;
+    default:
+      return null;
+  }
 }
 
 /**

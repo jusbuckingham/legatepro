@@ -1,5 +1,3 @@
-
-
 /**
  * Readiness Copilot prompting helpers.
  *
@@ -67,22 +65,29 @@ function clamp(n: number, min: number, max: number): number {
 }
 
 function escapeForJsonString(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t");
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\"/g, "\\\"")
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t");
 }
 
+const READINESS_PLAN_SYSTEM_PROMPT_LINES: readonly string[] = [
+  "You are LegatePro Readiness Copilot.",
+  "Your job: turn readiness signals into a short, prioritized plan the user can execute.",
+  "Return STRICT JSON only. No markdown. No commentary.",
+  "Rules:",
+  "- Output must match the provided JSON schema exactly.",
+  "- Steps must be actionable verbs (Add, Create, Review, Collect, Verify, Pay, Notify, etc.).",
+  "- Keep titles short; details optional but helpful.",
+  "- Use the provided hrefs; do NOT invent routes.",
+  "- Prefer fixing HIGH severity first, then MEDIUM, then LOW.",
+  "- If there are zero signals, return 2-3 general steps.",
+];
+
 export function buildReadinessPlanSystemPrompt(): string {
-  return [
-    "You are LegatePro Readiness Copilot.",
-    "Your job: turn readiness signals into a short, prioritized plan the user can execute.",
-    "Return STRICT JSON only. No markdown. No commentary.",
-    "Rules:",
-    "- Output must match the provided JSON schema exactly.",
-    "- Steps must be actionable verbs (Add, Create, Review, Collect, Verify, Pay, Notify, etc.).",
-    "- Keep titles short; details optional but helpful.",
-    "- Use the provided hrefs; do NOT invent routes.",
-    "- Prefer fixing HIGH severity first, then MEDIUM, then LOW.",
-    "- If there are zero signals, return 2-3 general steps.",
-  ].join("\n");
+  return READINESS_PLAN_SYSTEM_PROMPT_LINES.join("\n");
 }
 
 export function buildReadinessPlanUserPrompt(input: ReadinessPlanPromptInput): string {
@@ -127,7 +132,7 @@ export function buildReadinessPlanUserPrompt(input: ReadinessPlanPromptInput): s
       properties: `${input.context.estateBasePath}/properties#add-property`,
       contacts: `${input.context.estateBasePath}/contacts#add-contact`,
       invoices: `${input.context.estateBasePath}/invoices#add-invoice`,
-      expenses: `${input.context.estateBasePath}/invoices#add-expense`,
+      expenses: `${input.context.estateBasePath}/expenses#add-expense`,
     },
     outputSchema: schema,
   };
@@ -149,7 +154,7 @@ export function buildReadinessPlanMessages(input: ReadinessPlanPromptInput): Cha
   return [
     { role: "system", content: buildReadinessPlanSystemPrompt() },
     { role: "user", content: buildReadinessPlanUserPrompt(input) },
-  ];
+  ] as const;
 }
 
 export function safeParseReadinessPlan(jsonText: string): ReadinessPlan | null {

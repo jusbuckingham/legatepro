@@ -1,5 +1,6 @@
 // src/lib/db.ts
 import mongoose, { Mongoose } from "mongoose";
+mongoose.set("strictQuery", true);
 import { assertEnv } from "@/lib/assertEnv";
 
 // Shape of our cached connection
@@ -54,10 +55,11 @@ export async function connectToDatabase(): Promise<Mongoose> {
     cached.promise = mongoose
       .connect(uri, {
         dbName: "legatepro",
-        autoIndex: true,
+        autoIndex: process.env.NODE_ENV !== "production",
       })
       .then((mongooseInstance) => mongooseInstance)
       .catch((err) => {
+        cached.promise = null;
         console.error("❌ MongoDB connection error:", err);
         throw err;
       });
@@ -73,7 +75,7 @@ export async function connectToDatabase(): Promise<Mongoose> {
 // - Preserves other fields
 export type MongoSerialized<T> = Omit<T, "_id" | "__v"> & { id: string };
 
-export function serializeMongoDoc(input: unknown): Record<string, unknown> {
+export function serializeMongoDoc<T = Record<string, unknown>>(input: unknown): T & { id?: string } {
   // Mongoose `transform` typically provides a plain object, but we keep this defensive
   // so it also works with mongoose documents.
   const maybeDoc = input as { toObject?: () => unknown } | null | undefined;
@@ -99,5 +101,5 @@ export function serializeMongoDoc(input: unknown): Record<string, unknown> {
   delete out._id;
   delete out.__v;
 
-  return out;
+  return out as T & { id?: string };
 }

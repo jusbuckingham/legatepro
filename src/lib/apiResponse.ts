@@ -13,30 +13,36 @@ export type ApiErr = {
 
 export type ApiResult<T> = ApiOk<T> | ApiErr;
 
-export function jsonOk<T>(data: T, init?: ResponseInit) {
-  return NextResponse.json({ ok: true, data } satisfies ApiOk<T>, {
+export function jsonOk<T>(data: T, init?: ResponseInit): NextResponse {
+  const payload: ApiOk<T> = { ok: true, data };
+  return NextResponse.json(payload, {
+    ...init,
     status: init?.status ?? 200,
-    headers: init?.headers,
   });
 }
 
-export function jsonErr(error: string, status = 400, code?: string, init?: ResponseInit) {
+export function jsonErr(
+  error: string,
+  status = 400,
+  code?: string,
+  init?: ResponseInit,
+): NextResponse {
   const payload: ApiErr = { ok: false, error, ...(code ? { code } : {}) };
   return NextResponse.json(payload, {
+    ...init,
     status,
-    headers: init?.headers,
   });
 }
 
-export function jsonUnauthorized(message = "Unauthorized") {
+export function jsonUnauthorized(message = "Unauthorized"): NextResponse {
   return jsonErr(message, 401, "UNAUTHORIZED");
 }
 
-export function jsonForbidden(message = "Forbidden") {
+export function jsonForbidden(message = "Forbidden"): NextResponse {
   return jsonErr(message, 403, "FORBIDDEN");
 }
 
-export function jsonNotFound(message = "Not found") {
+export function jsonNotFound(message = "Not found"): NextResponse {
   return jsonErr(message, 404, "NOT_FOUND");
 }
 
@@ -49,13 +55,21 @@ export function noStoreHeaders(extra?: HeadersInit): HeadersInit {
   };
 }
 
-export function safeErrorMessage(err: unknown, fallback = "Unexpected error") {
+export function safeErrorMessage(err: unknown, fallback = "Unexpected error"): string {
   if (err instanceof Error) return err.message || fallback;
   if (typeof err === "string") return err;
+
+  if (err && typeof err === "object") {
+    const maybeMessage = (err as { message?: unknown }).message;
+    if (typeof maybeMessage === "string" && maybeMessage.trim().length > 0) {
+      return maybeMessage;
+    }
+  }
+
   return fallback;
 }
 
-export function requireObjectIdLike(id: string | null | undefined) {
+export function requireObjectIdLike(id: string | null | undefined): boolean {
   // Avoid importing mongoose into every route; this is a lightweight check.
   // Mongo ObjectId is 24 hex chars.
   if (!id) return false;

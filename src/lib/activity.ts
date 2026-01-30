@@ -25,7 +25,9 @@ export interface ActivityDocument {
   updatedAt: Date;
 }
 
-function registerActivityModel(): Model<ActivityDocument> {
+type ActivityModel = Model<ActivityDocument>;
+
+function registerActivityModel(): ActivityModel {
   const existing = mongoose.models.Activity as Model<ActivityDocument> | undefined;
   if (existing) return existing;
 
@@ -41,7 +43,11 @@ function registerActivityModel(): Model<ActivityDocument> {
       action: { type: String, required: true, default: "UNKNOWN" },
       message: { type: String, required: true, default: "" },
 
-      entityId: { type: mongoose.Schema.Types.ObjectId, required: false, index: true },
+      entityId: {
+        type: mongoose.Schema.Types.ObjectId,
+        required: false,
+        index: true,
+      },
       entityType: { type: String, required: false, index: true },
 
       // Optional fields that some pages may add for nicer UI
@@ -61,7 +67,7 @@ function registerActivityModel(): Model<ActivityDocument> {
   return mongoose.model<ActivityDocument>("Activity", ActivitySchema);
 }
 
-async function getActivityModel(): Promise<Model<ActivityDocument>> {
+function getActivityModel(): ActivityModel {
   // Ensure a stable model exists (registered here or elsewhere).
   return registerActivityModel();
 }
@@ -93,7 +99,12 @@ function normalizeKind(kind: string, action: string, entityType?: string): Activ
   if (e.includes("note")) return "NOTE";
   if (e.includes("document") || e.includes("doc")) return "DOCUMENT";
   if (e.includes("contact")) return "CONTACT";
-  if (e.includes("collab") || e.includes("invite") || e.includes("collaborator")) return "COLLAB";
+  if (
+    e.includes("collab") ||
+    e.includes("invite") ||
+    e.includes("collaborator")
+  )
+    return "COLLAB";
 
   // Otherwise infer from kind/action
   if (k.includes("task") || a.includes("task")) return "TASK";
@@ -274,7 +285,7 @@ function toActivityItem(doc: ActivityLean): ActivityItem {
  * Returns cursor-based pagination: newest first.
  */
 export async function fetchActivityFeed(
-  input: FetchActivityInput
+  input: FetchActivityInput,
 ): Promise<FetchActivityResult> {
   const limit = Math.max(1, Math.min(input.limit ?? 25, 100));
   const cursor = decodeCursor(input.cursor);
@@ -325,7 +336,7 @@ export async function fetchActivityFeed(
         }
       : {};
 
-  const Activity = await getActivityModel();
+  const Activity = getActivityModel();
 
   const docs = await Activity.find(
     {
@@ -412,7 +423,7 @@ export type LogActivityInput = {
 export async function logActivity(input: LogActivityInput): Promise<{ id: string }> {
   await connectToDatabase();
 
-  const Activity = await getActivityModel();
+  const Activity = getActivityModel();
 
   const resolvedActorId =
     input.actorId ?? (input.userId ? String(input.userId) : undefined) ?? (input.ownerId ? String(input.ownerId) : undefined);

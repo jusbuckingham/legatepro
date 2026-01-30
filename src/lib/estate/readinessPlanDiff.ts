@@ -1,9 +1,9 @@
-
+type Severity = "low" | "medium" | "high";
 
 export type PlanStepSnapshot = {
   id: string;
   title: string;
-  severity: "low" | "medium" | "high";
+  severity: Severity;
   href?: string;
   kind?: "missing" | "risk" | "general";
 };
@@ -28,7 +28,7 @@ export type PlanDiff = {
   totalChanges: number;
 };
 
-function severityRank(sev: string): number {
+function severityRank(sev: Severity): number {
   switch (sev) {
     case "high":
       return 3;
@@ -36,8 +36,6 @@ function severityRank(sev: string): number {
       return 2;
     case "low":
       return 1;
-    default:
-      return 0;
   }
 }
 
@@ -47,7 +45,7 @@ export function snapshotFromPlan(plan: {
   steps: Array<{
     id: string;
     title: string;
-    severity: "low" | "medium" | "high";
+    severity: Severity;
     href?: string;
     kind?: "missing" | "risk" | "general";
   }>;
@@ -72,7 +70,7 @@ export function diffPlans(
     steps: Array<{
       id: string;
       title: string;
-      severity: "low" | "medium" | "high";
+      severity: Severity;
       href?: string;
       kind?: "missing" | "risk" | "general";
     }>;
@@ -89,13 +87,7 @@ export function diffPlans(
     };
   }
 
-  const curSteps: PlanStepSnapshot[] = (current.steps ?? []).map((s) => ({
-    id: s.id,
-    title: s.title,
-    severity: s.severity,
-    href: s.href,
-    kind: s.kind,
-  }));
+  const curSteps = snapshotFromPlan(current).steps;
 
   const prevSteps = previous?.steps ?? [];
 
@@ -124,7 +116,9 @@ export function diffPlans(
   }
 
   for (const [id, prev] of prevMap.entries()) {
-    if (!curMap.has(id)) removed.push(prev);
+    if (!curMap.has(id)) {
+      removed.push(prev);
+    }
   }
 
   added.sort(

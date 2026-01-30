@@ -2,14 +2,14 @@ import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
 /**
- * Utility helpers for classNames and formatting.
+ * Utility helpers for class names, formatting, and fetch ergonomics.
  * - `cn` merges Tailwind and conditional class names (shadcn-style).
  * - `formatCurrency` formats numbers as USD currency.
  * - `formatDate` formats dates as locale date strings.
  */
 
 export function formatCurrency(value: number): string {
-  if (typeof value !== "number" || Number.isNaN(value)) return "$0.00";
+  if (!Number.isFinite(value)) return "$0.00";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
@@ -25,7 +25,7 @@ export function formatDate(
   return d.toLocaleDateString("en-US");
 }
 
-export function cn(...inputs: ClassValue[]) {
+export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
 }
 
@@ -35,7 +35,9 @@ export function cn(...inputs: ClassValue[]) {
  * Why: `await res.json()` can throw (empty body, non-JSON, etc). This helper keeps
  * callers from sprinkling `catch(() => ...)` everywhere.
  */
-export async function safeJson<T = unknown>(res: Response): Promise<T | null> {
+export async function safeJson<T = unknown>(
+  res: Response,
+): Promise<T | null> {
   try {
     // Some APIs return empty bodies on errors; guard the common case.
     const text = await res.text();

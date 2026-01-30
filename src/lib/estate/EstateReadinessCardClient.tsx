@@ -38,7 +38,14 @@ type ReadinessPlan = {
   steps: ReadinessPlanStep[];
 };
 
-type ReadinessPlanApiResponse = { ok: true; plan: ReadinessPlan } | { ok: false; error?: string };
+
+type ModuleKey = "documents" | "tasks" | "properties" | "contacts" | "invoices";
+
+const JSON_HEADERS = { accept: "application/json" } as const;
+
+type ReadinessPlanApiResponse =
+  | { ok: true; plan: ReadinessPlan }
+  | { ok: false; error?: string };
 
 const MODULES: Array<{
   key: keyof EstateReadinessResult["breakdown"];
@@ -50,7 +57,6 @@ const MODULES: Array<{
   { key: "contacts", label: "Contacts" },
   { key: "finances", label: "Finances" },
 ];
-
 
 const PLAN_TTL_MS = 24 * 60 * 60 * 1000;
 const PLAN_SNAPSHOT_STORAGE_PREFIX = "legatepro:readinessPlanSnapshot:";
@@ -211,15 +217,7 @@ function actionHrefForSignal(estateId: string, signalKey: string): string {
   return looksMissing ? `${estateBase}/documents#add-document` : `${estateBase}/documents`;
 }
 
-function moduleFromHref(
-  href: string | undefined | null,
-):
-  | "documents"
-  | "tasks"
-  | "properties"
-  | "contacts"
-  | "invoices"
-  | null {
+function moduleFromHref(href: string | undefined | null): ModuleKey | null {
   if (!href) return null;
   if (href.includes("/documents")) return "documents";
   if (href.includes("/tasks")) return "tasks";
@@ -229,16 +227,7 @@ function moduleFromHref(
   return null;
 }
 
-
-function moduleFromText(
-  title: string,
-):
-  | "documents"
-  | "tasks"
-  | "properties"
-  | "contacts"
-  | "invoices"
-  | null {
+function moduleFromText(title: string): ModuleKey | null {
   const t = title.toLowerCase();
   if (
     t.includes("document") ||
@@ -282,7 +271,7 @@ function moduleFromText(
 function resolvedHrefForPlanStep(
   estateId: string,
   href: string | undefined | null,
-  title: string,
+  title: string
 ): string {
   if (href && typeof href === "string" && href.trim().length > 0) return href;
   // Fallback: reuse the existing signal routing heuristic.
@@ -466,7 +455,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
       try {
         const res = await fetch(endpoint, {
           method: "GET",
-          headers: { accept: "application/json" },
+          headers: JSON_HEADERS,
           cache: "no-store",
           signal: opts?.signal,
         });
@@ -531,7 +520,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
       try {
         const res = await fetch(`${planEndpoint}${opts?.refresh ? "?refresh=1" : ""}`, {
           method: "GET",
-          headers: { accept: "application/json" },
+          headers: JSON_HEADERS,
           cache: "no-store",
         });
 
@@ -685,7 +674,7 @@ export default function EstateReadinessCardClient(props: { estateId: string }) {
   const preferredPlanModules = useMemo(() => {
     // Use topActions as the signal for “what to do next”.
     // Convert each signal key into a module by reusing the same routing heuristic.
-    const order: Array<"documents" | "tasks" | "properties" | "contacts" | "invoices"> = [];
+    const order: ModuleKey[] = [];
 
     for (const s of topActions) {
       const href = actionHrefForSignal(estateId, s.key);

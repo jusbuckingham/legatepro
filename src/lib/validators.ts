@@ -4,12 +4,12 @@
 import { connectToDatabase } from "@/lib/db";
 import { Estate, type EstateRole, type EstateCollaborator } from "@/models/Estate";
 
-export type EstateAccess = {
+export type EstateAccess = Readonly<{
   estateId: string;
   role: EstateRole;
   canEdit: boolean;
   canViewSensitive: boolean;
-};
+}>;
 
 export function isEstateRole(value: unknown): value is EstateRole {
   return value === "OWNER" || value === "EDITOR" || value === "VIEWER";
@@ -32,7 +32,7 @@ export function canViewSensitiveEstateData(role: EstateRole): boolean {
  */
 export async function getEstateAccess(
   estateId: string,
-  userId: string
+  userId: string,
 ): Promise<EstateAccess | null> {
   await connectToDatabase();
 
@@ -51,7 +51,9 @@ export async function getEstateAccess(
 
   const collaborators = estate.collaborators ?? [];
 
-  const match = collaborators.find((c) => c.userId === userId);
+  const match = collaborators.find(
+    (c) => typeof c.userId === "string" && c.userId === userId,
+  );
   if (!match || !isEstateRole(match.role)) return null;
 
   return {
@@ -63,11 +65,11 @@ export async function getEstateAccess(
 }
 
 /**
- * Convenience helper that throws a 403-style error you can map to NextResponse.json.
+ * Convenience helper that throws a 403-style error (map to NextResponse.json).
  */
 export async function requireEstateAccess(
   estateId: string,
-  userId: string
+  userId: string,
 ): Promise<EstateAccess> {
   const access = await getEstateAccess(estateId, userId);
   if (!access) {
