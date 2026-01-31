@@ -1,12 +1,18 @@
 // src/app/api/utilities/route.ts
 // Utility accounts API for LegatePro
 
-import { NextRequest, NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import mongoose from "mongoose";
 
 import { auth } from "@/lib/auth";
+import { jsonOk, noStoreHeaders, safeErrorMessage } from "@/lib/apiResponse";
 import { connectToDatabase } from "@/lib/db";
 import { UtilityAccount } from "@/models/UtilityAccount";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+const NO_STORE = { headers: noStoreHeaders() } as const;
 
 function escapeRegex(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -36,7 +42,7 @@ export async function GET(request: NextRequest) {
     const session = await auth();
     const ownerId = session?.user?.id;
     if (!ownerId) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      return jsonOk({ ok: false, error: "Unauthorized" }, 401, NO_STORE.headers);
     }
 
     await connectToDatabase();
@@ -46,11 +52,11 @@ export async function GET(request: NextRequest) {
     const propertyId = searchParams.get("propertyId");
 
     if (estateId && !isValidObjectId(estateId)) {
-      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
+      return jsonOk({ ok: false, error: "Invalid estateId" }, 400, NO_STORE.headers);
     }
 
     if (propertyId && !isValidObjectId(propertyId)) {
-      return NextResponse.json({ ok: false, error: "Invalid propertyId" }, { status: 400 });
+      return jsonOk({ ok: false, error: "Invalid propertyId" }, 400, NO_STORE.headers);
     }
 
     const type = searchParams.get("type")?.trim() ?? "";
@@ -84,12 +90,13 @@ export async function GET(request: NextRequest) {
       .lean()
       .exec();
 
-    return NextResponse.json({ ok: true, data: { utilities } }, { status: 200 });
+    return jsonOk({ ok: true, data: { utilities } }, 200, NO_STORE.headers);
   } catch (error) {
-    console.error("GET /api/utilities error", error);
-    return NextResponse.json(
+    console.error("GET /api/utilities error", safeErrorMessage(error));
+    return jsonOk(
       { ok: false, error: "Unable to load utility accounts" },
-      { status: 500 }
+      500,
+      NO_STORE.headers,
     );
   }
 }
@@ -101,19 +108,17 @@ export async function POST(request: NextRequest) {
     const session = await auth();
     const ownerId = session?.user?.id;
     if (!ownerId) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      return jsonOk({ ok: false, error: "Unauthorized" }, 401, NO_STORE.headers);
     }
 
     await connectToDatabase();
 
-    let body: unknown = null;
-    try {
-      body = await request.json();
-    } catch {
-      return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    const body: unknown = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return jsonOk({ ok: false, error: "Invalid JSON" }, 400, NO_STORE.headers);
     }
 
-    const raw = (body ?? {}) as Record<string, unknown>;
+    const raw = body as Record<string, unknown>;
 
     const estateId = asTrimmedString(raw.estateId);
     const propertyId = asOptionalTrimmedString(raw.propertyId);
@@ -129,19 +134,19 @@ export async function POST(request: NextRequest) {
     const notes = asOptionalTrimmedString(raw.notes);
 
     if (!estateId) {
-      return NextResponse.json({ ok: false, error: "estateId is required" }, { status: 400 });
+      return jsonOk({ ok: false, error: "estateId is required" }, 400, NO_STORE.headers);
     }
 
     if (!isValidObjectId(estateId)) {
-      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
+      return jsonOk({ ok: false, error: "Invalid estateId" }, 400, NO_STORE.headers);
     }
 
     if (propertyId && !isValidObjectId(propertyId)) {
-      return NextResponse.json({ ok: false, error: "Invalid propertyId" }, { status: 400 });
+      return jsonOk({ ok: false, error: "Invalid propertyId" }, 400, NO_STORE.headers);
     }
 
     if (!providerName) {
-      return NextResponse.json({ ok: false, error: "providerName is required" }, { status: 400 });
+      return jsonOk({ ok: false, error: "providerName is required" }, 400, NO_STORE.headers);
     }
 
     const utility = await UtilityAccount.create({
@@ -160,12 +165,13 @@ export async function POST(request: NextRequest) {
       notes,
     });
 
-    return NextResponse.json({ ok: true, data: { utility } }, { status: 201 });
+    return jsonOk({ ok: true, data: { utility } }, 201, NO_STORE.headers);
   } catch (error) {
-    console.error("POST /api/utilities error", error);
-    return NextResponse.json(
+    console.error("POST /api/utilities error", safeErrorMessage(error));
+    return jsonOk(
       { ok: false, error: "Unable to create utility account" },
-      { status: 500 }
+      500,
+      NO_STORE.headers,
     );
   }
 }

@@ -34,6 +34,10 @@ function toObjectId(id: string) {
     : null;
 }
 
+function isValidObjectIdString(id: unknown): id is string {
+  return typeof id === "string" && mongoose.Types.ObjectId.isValid(id);
+}
+
 function toIdString(value: unknown): string {
   if (value == null) return "";
   if (typeof value === "string") return value;
@@ -130,6 +134,8 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
+  await connectToDatabase();
+
   const access = await getEstateAccess({
     estateId,
     userId: session.user.id,
@@ -147,14 +153,12 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
 
-  if (!body?.userId || !isAssignableRole(body.role)) {
+  if (!isValidObjectIdString(body?.userId) || !isAssignableRole(body.role)) {
     return NextResponse.json(
-      { error: "Missing/invalid userId or role (EDITOR|VIEWER)" },
+      { ok: false, error: "Missing/invalid userId or role (EDITOR|VIEWER)" },
       { status: 400 }
     );
   }
-
-  await connectToDatabase();
 
   const estate = await Estate.findById(estateObjectId);
   if (!estate) {
@@ -166,7 +170,7 @@ export async function POST(
   // Prevent adding the owner as an explicit collaborator
   if (estateOwnerId && body.userId === estateOwnerId) {
     return NextResponse.json(
-      { error: "Owner already has access" },
+      { ok: false, error: "Owner already has access" },
       { status: 400 }
     );
   }
@@ -251,6 +255,8 @@ export async function PATCH(
     return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
+  await connectToDatabase();
+
   const access = await getEstateAccess({
     estateId,
     userId: session.user.id,
@@ -268,14 +274,12 @@ export async function PATCH(
     return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
 
-  if (!body?.userId || !isAssignableRole(body.role)) {
+  if (!isValidObjectIdString(body?.userId) || !isAssignableRole(body.role)) {
     return NextResponse.json(
-      { error: "Missing/invalid userId or role (EDITOR|VIEWER)" },
+      { ok: false, error: "Missing/invalid userId or role (EDITOR|VIEWER)" },
       { status: 400 }
     );
   }
-
-  await connectToDatabase();
 
   const estate = await Estate.findById(estateObjectId);
   if (!estate) {
@@ -287,7 +291,7 @@ export async function PATCH(
   const collab = estate.collaborators?.find((c) => idsEqual(c.userId, body.userId));
   if (!collab) {
     return NextResponse.json(
-      { error: "Collaborator not found" },
+      { ok: false, error: "Collaborator not found" },
       { status: 404 }
     );
   }
@@ -339,6 +343,8 @@ export async function DELETE(
     return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
+  await connectToDatabase();
+
   const access = await getEstateAccess({
     estateId,
     userId: session.user.id,
@@ -356,18 +362,16 @@ export async function DELETE(
     return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
 
-  if (!body?.userId) {
-    return NextResponse.json({ ok: false, error: "Missing userId" }, { status: 400 });
+  if (!isValidObjectIdString(body?.userId)) {
+    return NextResponse.json({ ok: false, error: "Missing/invalid userId" }, { status: 400 });
   }
 
   if (body.userId === session.user.id) {
     return NextResponse.json(
-      { error: "Cannot remove yourself" },
+      { ok: false, error: "Cannot remove yourself" },
       { status: 400 }
     );
   }
-
-  await connectToDatabase();
 
   const estate = await Estate.findById(estateObjectId);
   if (!estate) {

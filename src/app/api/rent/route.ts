@@ -4,60 +4,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 
-import { auth } from "../../../lib/auth";
-import { connectToDatabase, serializeMongoDoc } from "../../../lib/db";
-import { RentPayment } from "../../../models/RentPayment";
-import { User } from "../../../models/User";
-import {
-  EntitlementError,
-  requirePro,
-  type EntitlementsUser,
-  type PlanId,
-  type SubscriptionStatus,
-} from "../../../lib/entitlements";
-import { getEstateAccess } from "../../../lib/estateAccess";
+import { auth } from "@/lib/auth";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
+import { noStoreHeaders, safeErrorMessage } from "@/lib/apiResponse";
+import { EntitlementError, requirePro, toEntitlementsUser } from "@/lib/entitlements";
+import { getEstateAccess } from "@/lib/estateAccess";
 
-type RentPaymentLean = {
-  _id: unknown;
-  estateId: unknown;
-  propertyId: unknown;
-  tenantName: unknown;
-  paymentDate: unknown;
-  amount: unknown;
-  notes?: unknown;
-  isPaid: unknown;
-  [key: string]: unknown;
-};
+import { RentPayment } from "@/models/RentPayment";
+import { User } from "@/models/User";
 
-const noStore = { "cache-control": "no-store" } as const;
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-function isValidObjectId(id: string) {
+const NO_STORE = { headers: noStoreHeaders() } as const;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isValidObjectId(id: string): boolean {
   return Types.ObjectId.isValid(id);
 }
 
 function escapeRegex(input: string) {
   // Escape regex special characters for safe use in $regex
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-// Stripe-aligned subscription statuses. We coerce through SubscriptionStatus to keep EntitlementsUser strongly typed.
-const KNOWN_SUBSCRIPTION_STATUSES = new Set<SubscriptionStatus>([
-  "active",
-  "trialing",
-  "past_due",
-  "canceled",
-  "incomplete",
-  "incomplete_expired",
-  "unpaid",
-  "paused",
-].map((s) => s as SubscriptionStatus));
-
-function coerceSubscriptionStatus(value: unknown): SubscriptionStatus | null | undefined {
-  if (value === null) return null;
-  if (typeof value !== "string") return undefined;
-  return KNOWN_SUBSCRIPTION_STATUSES.has(value as SubscriptionStatus)
-    ? (value as SubscriptionStatus)
-    : undefined;
 }
 
 /** ------------------------------------------------------------------------
@@ -75,7 +46,7 @@ export async function GET(request: NextRequest) {
     const session = await auth();
     const ownerId = session?.user?.id;
     if (!ownerId) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401, headers: noStore });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401, headers: NO_STORE.headers });
     }
 
     await connectToDatabase();
@@ -86,11 +57,11 @@ export async function GET(request: NextRequest) {
     const propertyId = searchParams.get("propertyId") ?? undefined;
 
     if (estateId && !isValidObjectId(estateId)) {
-      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400, headers: noStore });
+      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400, headers: NO_STORE.headers });
     }
 
     if (propertyId && !isValidObjectId(propertyId)) {
-      return NextResponse.json({ ok: false, error: "Invalid propertyId" }, { status: 400, headers: noStore });
+      return NextResponse.json({ ok: false, error: "Invalid propertyId" }, { status: 400, headers: NO_STORE.headers });
     }
 
     const paid = searchParams.get("paid") ?? undefined;
@@ -105,7 +76,7 @@ export async function GET(request: NextRequest) {
     if (estateId) {
       const access = await getEstateAccess({ estateId, session });
       if (!access) {
-        return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403, headers: noStore });
+        return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403, headers: NO_STORE.headers });
       }
       filter.estateId = estateId;
     } else {
@@ -124,7 +95,7 @@ export async function GET(request: NextRequest) {
       if (from) {
         const d = new Date(from);
         if (Number.isNaN(d.getTime())) {
-          return NextResponse.json({ ok: false, error: "Invalid from date" }, { status: 400, headers: noStore });
+          return NextResponse.json({ ok: false, error: "Invalid from date" }, { status: 400, headers: NO_STORE.headers });
         }
         dateFilter.$gte = d;
       }
@@ -132,7 +103,7 @@ export async function GET(request: NextRequest) {
       if (to) {
         const d = new Date(to);
         if (Number.isNaN(d.getTime())) {
-          return NextResponse.json({ ok: false, error: "Invalid to date" }, { status: 400, headers: noStore });
+          return NextResponse.json({ ok: false, error: "Invalid to date" }, { status: 400, headers: NO_STORE.headers });
         }
         dateFilter.$lte = d;
       }
@@ -179,12 +150,12 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({ ok: true, data: { payments } }, { status: 200, headers: noStore });
+    return NextResponse.json({ ok: true, data: { payments } }, { status: 200, headers: NO_STORE.headers });
   } catch (error) {
-    console.error("GET /api/rent error", error);
+    console.error("GET /api/rent error", safeErrorMessage(error));
     return NextResponse.json(
       { ok: false, error: "Unable to load rent records" },
-      { status: 500, headers: noStore }
+      { status: 500, headers: NO_STORE.headers }
     );
   }
 }
@@ -206,7 +177,7 @@ export async function POST(request: NextRequest) {
     const session = await auth();
     const ownerId = session?.user?.id;
     if (!ownerId) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401, headers: noStore });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401, headers: NO_STORE.headers });
     }
 
     await connectToDatabase();
@@ -214,39 +185,24 @@ export async function POST(request: NextRequest) {
     // Billing enforcement: creating rent payments is Pro-only
     const user = await User.findById(ownerId).lean().exec();
     if (!user) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401, headers: noStore });
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401, headers: NO_STORE.headers });
     }
 
     try {
-      const planIdRaw = (user as { subscriptionPlanId?: unknown }).subscriptionPlanId;
-      const statusRaw = (user as { subscriptionStatus?: unknown }).subscriptionStatus;
-
-      const entUser: EntitlementsUser = {
-        subscriptionPlanId:
-          typeof planIdRaw === "string"
-            ? (planIdRaw as PlanId)
-            : planIdRaw === null
-              ? null
-              : undefined,
-        subscriptionStatus: coerceSubscriptionStatus(statusRaw),
-      };
-
-      requirePro(entUser);
+      requirePro(toEntitlementsUser(user));
     } catch (e) {
       if (e instanceof EntitlementError) {
         return NextResponse.json(
           { ok: false, error: "Pro subscription required", code: e.code },
-          { status: 402, headers: noStore },
+          { status: 402, headers: NO_STORE.headers },
         );
       }
       throw e;
     }
 
-    let body: unknown = null;
-    try {
-      body = await request.json();
-    } catch {
-      return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400, headers: noStore });
+    const body: unknown = await request.json().catch(() => null);
+    if (!isPlainObject(body)) {
+      return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400, headers: NO_STORE.headers });
     }
 
     const {
@@ -257,48 +213,48 @@ export async function POST(request: NextRequest) {
       amount,
       notes,
       isPaid,
-    } = (body ?? {}) as Record<string, unknown>;
+    } = body;
 
     // --- Validation ---
     if (!estateId)
-      return NextResponse.json({ ok: false, error: "estateId is required" }, { status: 400, headers: noStore });
+      return NextResponse.json({ ok: false, error: "estateId is required" }, { status: 400, headers: NO_STORE.headers });
 
     if (!isValidObjectId(String(estateId))) {
-      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400, headers: noStore });
+      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400, headers: NO_STORE.headers });
     }
 
     // Security: ensure the user can access this estate before writing rent data
     const access = await getEstateAccess({ estateId: String(estateId), session });
-    if (!access) {
-      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403, headers: noStore });
+    if (!access || !access.canEdit) {
+      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403, headers: NO_STORE.headers });
     }
 
     if (!propertyId)
       return NextResponse.json(
         { ok: false, error: "propertyId is required" },
-        { status: 400, headers: noStore }
+        { status: 400, headers: NO_STORE.headers }
       );
 
     if (!isValidObjectId(String(propertyId))) {
-      return NextResponse.json({ ok: false, error: "Invalid propertyId" }, { status: 400, headers: noStore });
+      return NextResponse.json({ ok: false, error: "Invalid propertyId" }, { status: 400, headers: NO_STORE.headers });
     }
 
     if (!tenantName)
       return NextResponse.json(
         { ok: false, error: "tenantName is required" },
-        { status: 400, headers: noStore }
+        { status: 400, headers: NO_STORE.headers }
       );
 
     if (!paymentDate)
       return NextResponse.json(
         { ok: false, error: "paymentDate is required" },
-        { status: 400, headers: noStore }
+        { status: 400, headers: NO_STORE.headers }
       );
 
     if (amount == null || Number.isNaN(Number(amount)))
       return NextResponse.json(
         { ok: false, error: "Valid amount is required" },
-        { status: 400, headers: noStore }
+        { status: 400, headers: NO_STORE.headers }
       );
 
     // --- Parse paymentDate safely (avoid `new Date({})`) ---
@@ -316,7 +272,7 @@ export async function POST(request: NextRequest) {
     if (!parsedPaymentDate) {
       return NextResponse.json(
         { ok: false, error: "paymentDate must be a valid date" },
-        { status: 400, headers: noStore }
+        { status: 400, headers: NO_STORE.headers }
       );
     }
 
@@ -336,13 +292,25 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(
       { ok: true, data: { payment: serialized } },
-      { status: 201, headers: noStore }
+      { status: 201, headers: NO_STORE.headers }
     );
   } catch (error) {
-    console.error("POST /api/rent error", error);
+    console.error("POST /api/rent error", safeErrorMessage(error));
     return NextResponse.json(
       { ok: false, error: "Unable to create rent record" },
-      { status: 500, headers: noStore }
+      { status: 500, headers: NO_STORE.headers }
     );
   }
 }
+
+type RentPaymentLean = {
+  _id: unknown;
+  estateId: unknown;
+  propertyId: unknown;
+  tenantName: unknown;
+  paymentDate: unknown;
+  amount: unknown;
+  notes?: unknown;
+  isPaid: unknown;
+  [key: string]: unknown;
+};

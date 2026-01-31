@@ -1,7 +1,7 @@
 // src/app/api/properties/[propertyId]/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
-import { isValidObjectId } from "mongoose";
+import { Types } from "mongoose";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
@@ -29,7 +29,15 @@ function json(
   body: Record<string, unknown>,
   opts: { status: number; headers?: HeadersInit } = { status: 200 },
 ): NextResponse {
-  const headers = opts.headers ? new Headers(opts.headers) : buildHeaders();
+  const headers = buildHeaders();
+
+  if (opts.headers) {
+    const override = new Headers(opts.headers);
+    override.forEach((value, key) => {
+      headers.set(key, value);
+    });
+  }
+
   return NextResponse.json(body, { status: opts.status, headers });
 }
 
@@ -79,7 +87,7 @@ function cleanObjectId(value: unknown): string | undefined {
   const s = value.trim();
   if (!s) return undefined;
   if (s.length !== 24) return undefined;
-  return isValidObjectId(s) ? s : undefined;
+  return Types.ObjectId.isValid(s) ? s : undefined;
 }
 
 const MAX_JSON_BODY_BYTES = 25_000;
@@ -367,12 +375,13 @@ export async function DELETE(
 
     const url = new URL(request.url);
     const estateIdRaw = url.searchParams.get("estateId");
-    const estateId = estateIdRaw ? cleanObjectId(estateIdRaw) : undefined;
 
-    if (!estateId) {
+    if (!estateIdRaw) {
       return json({ ok: false, error: "Estate ID is required" }, { status: 400, headers });
     }
-    if (estateIdRaw && !estateId) {
+
+    const estateId = cleanObjectId(estateIdRaw);
+    if (!estateId) {
       return json({ ok: false, error: "Invalid Estate ID" }, { status: 400, headers });
     }
 

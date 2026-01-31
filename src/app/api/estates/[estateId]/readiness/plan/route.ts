@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import mongoose from "mongoose";
 import { createHash } from "crypto";
 
 import { auth } from "@/lib/auth";
@@ -14,9 +15,15 @@ import { Estate } from "@/models/Estate";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+const NO_STORE_HEADERS = { "Cache-Control": "no-store" } as const;
+
 const AI_PROVIDER = process.env.OPENAI_API_KEY ? "openai" : null;
 
 const PLAN_TTL_MS = 24 * 60 * 60 * 1000;
+
+function isObjectIdLike(value: string): boolean {
+  return mongoose.Types.ObjectId.isValid(value);
+}
 
 function safeIsoDate(value: unknown): Date | null {
   if (typeof value !== "string") return null;
@@ -417,12 +424,21 @@ export async function GET(
 ) {
   try {
     const { estateId } = await context.params;
+    if (!isObjectIdLike(estateId)) {
+      return NextResponse.json(
+        { ok: false, error: "invalid_estate_id" },
+        { status: 400, headers: NO_STORE_HEADERS },
+      );
+    }
     const url = new URL(_req.url);
     const refresh = url.searchParams.get("refresh") === "1";
 
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+      return NextResponse.json(
+        { ok: false, error: "unauthorized" },
+        { status: 401, headers: NO_STORE_HEADERS },
+      );
     }
 
     await connectToDatabase();
@@ -460,7 +476,10 @@ export async function GET(
 
           if (!cachedHash) {
             const normalized = normalizeCachedPlan(estateId, existingPlan);
-            return NextResponse.json({ ok: true, plan: normalized ?? existingPlan }, { status: 200 });
+            return NextResponse.json(
+              { ok: true, plan: normalized ?? existingPlan },
+              { status: 200, headers: NO_STORE_HEADERS },
+            );
           }
 
           const readinessNow = (await getEstateReadiness(estateId)) as unknown as EstateReadinessLike;
@@ -469,7 +488,10 @@ export async function GET(
 
           if (hashNow === cachedHash) {
             const normalized = normalizeCachedPlan(estateId, existingPlan);
-            return NextResponse.json({ ok: true, plan: normalized ?? existingPlan }, { status: 200 });
+            return NextResponse.json(
+              { ok: true, plan: normalized ?? existingPlan },
+              { status: 200, headers: NO_STORE_HEADERS },
+            );
           }
           // If hash differs, fall through to regenerate.
         }
@@ -516,9 +538,15 @@ export async function GET(
       { new: false },
     );
 
-    return NextResponse.json({ ok: true, plan }, { status: 200 });
+    return NextResponse.json(
+      { ok: true, plan },
+      { status: 200, headers: NO_STORE_HEADERS },
+    );
   } catch (err) {
     console.error("readiness plan error", err);
-    return NextResponse.json({ ok: false, error: "server_error" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: "server_error" },
+      { status: 500, headers: NO_STORE_HEADERS },
+    );
   }
 }

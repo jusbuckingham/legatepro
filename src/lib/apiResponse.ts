@@ -13,37 +13,41 @@ export type ApiErr = {
 
 export type ApiResult<T> = ApiOk<T> | ApiErr;
 
-export function jsonOk<T>(data: T, init?: ResponseInit): NextResponse {
+export function jsonOk<T>(
+  data: T,
+  status = 200,
+  headers?: HeadersInit,
+): NextResponse {
   const payload: ApiOk<T> = { ok: true, data };
   return NextResponse.json(payload, {
-    ...init,
-    status: init?.status ?? 200,
+    status,
+    headers,
   });
 }
 
 export function jsonErr(
   error: string,
   status = 400,
+  headers?: HeadersInit,
   code?: string,
-  init?: ResponseInit,
 ): NextResponse {
   const payload: ApiErr = { ok: false, error, ...(code ? { code } : {}) };
   return NextResponse.json(payload, {
-    ...init,
     status,
+    headers,
   });
 }
 
 export function jsonUnauthorized(message = "Unauthorized"): NextResponse {
-  return jsonErr(message, 401, "UNAUTHORIZED");
+  return jsonErr(message, 401, undefined, "UNAUTHORIZED");
 }
 
 export function jsonForbidden(message = "Forbidden"): NextResponse {
-  return jsonErr(message, 403, "FORBIDDEN");
+  return jsonErr(message, 403, undefined, "FORBIDDEN");
 }
 
 export function jsonNotFound(message = "Not found"): NextResponse {
-  return jsonErr(message, 404, "NOT_FOUND");
+  return jsonErr(message, 404, undefined, "NOT_FOUND");
 }
 
 export function noStoreHeaders(extra?: HeadersInit): HeadersInit {

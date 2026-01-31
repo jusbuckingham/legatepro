@@ -26,18 +26,18 @@ type EstateNoteLean = {
   updatedAt?: Date | string | null;
 };
 
-function toObjectId(id: string) {
-  return mongoose.Types.ObjectId.isValid(id)
-    ? new mongoose.Types.ObjectId(id)
-    : null;
+function isValidObjectIdString(id: unknown): id is string {
+  return typeof id === "string" && mongoose.Types.ObjectId.isValid(id);
+}
+
+function toObjectId(id: unknown) {
+  return isValidObjectIdString(id) ? new mongoose.Types.ObjectId(id) : null;
 }
 
 function getRoleFromAccess(access: unknown): EstateRole | undefined {
   if (!access || typeof access !== "object") return undefined;
   const role = (access as Record<string, unknown>).role;
-  return role === "OWNER" || role === "EDITOR" || role === "VIEWER"
-    ? role
-    : undefined;
+  return role === "OWNER" || role === "EDITOR" || role === "VIEWER" ? role : undefined;
 }
 
 async function safeJson(
@@ -62,17 +62,15 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { estateId, noteId } = await params;
 
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { ok: false, error: "Unauthorized" },
-        { status: 401 }
-      );
+    const estateObjectId = toObjectId(estateId);
+    const noteObjectId = toObjectId(noteId);
+    if (!estateObjectId || !noteObjectId) {
+      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
 
-    const noteObjectId = toObjectId(noteId);
-    if (!noteObjectId) {
-      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     await connectToDatabase();
@@ -80,7 +78,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     // Any estate member can view notes (VIEWER is read-only).
     await requireEstateAccess({ estateId, userId: session.user.id });
 
-    const note = await EstateNote.findOne({ _id: noteObjectId, estateId })
+    const note = await EstateNote.findOne({ _id: noteObjectId, estateId: estateObjectId })
       .lean<EstateNoteLean>()
       .exec();
 
@@ -91,10 +89,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ ok: true, note }, { status: 200 });
   } catch (error) {
     console.error("[GET /api/estates/[estateId]/notes/[noteId]] Error:", error);
-    return NextResponse.json(
-      { ok: false, error: "Failed to fetch note" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: "Failed to fetch note" }, { status: 500 });
   }
 }
 
@@ -102,17 +97,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const { estateId, noteId } = await params;
 
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { ok: false, error: "Unauthorized" },
-        { status: 401 }
-      );
+    const estateObjectId = toObjectId(estateId);
+    const noteObjectId = toObjectId(noteId);
+    if (!estateObjectId || !noteObjectId) {
+      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
 
-    const noteObjectId = toObjectId(noteId);
-    if (!noteObjectId) {
-      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     await connectToDatabase();
@@ -127,7 +120,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const parsed = await safeJson(request);
-    if (!parsed.ok || !parsed.value || typeof parsed.value !== "object") {
+    if (
+      !parsed.ok ||
+      !parsed.value ||
+      typeof parsed.value !== "object" ||
+      Array.isArray(parsed.value)
+    ) {
       return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
     }
 
@@ -160,13 +158,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     if (Object.keys(updates).length === 0) {
-      return NextResponse.json(
-        { ok: false, error: "No valid fields provided" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "No valid fields provided" }, { status: 400 });
     }
 
-    const existing = await EstateNote.findOne({ _id: noteObjectId, estateId })
+    const existing = await EstateNote.findOne({ _id: noteObjectId, estateId: estateObjectId })
       .lean<EstateNoteLean>()
       .exec();
 
@@ -175,7 +170,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const updated = await EstateNote.findOneAndUpdate(
-      { _id: noteObjectId, estateId },
+      { _id: noteObjectId, estateId: estateObjectId },
       updates,
       { new: true, runValidators: true }
     )
@@ -201,6 +196,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           meta: {
             noteId,
             pinned: Boolean(updated.pinned),
+            actorId: session.user.id,
           },
         });
       }
@@ -215,20 +211,18 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           meta: {
             noteId,
             updatedFields,
+            actorId: session.user.id,
           },
         });
       }
     } catch (e) {
-      console.error("[logEstateEvent NOTE_*] Error:", e);
+      console.warn("[logEstateEvent NOTE_*] Error:", e);
     }
 
     return NextResponse.json({ ok: true, note: updated }, { status: 200 });
   } catch (error) {
     console.error("[PATCH /api/estates/[estateId]/notes/[noteId]] Error:", error);
-    return NextResponse.json(
-      { ok: false, error: "Failed to update note" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: "Failed to update note" }, { status: 500 });
   }
 }
 
@@ -236,17 +230,15 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
     const { estateId, noteId } = await params;
 
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { ok: false, error: "Unauthorized" },
-        { status: 401 }
-      );
+    const estateObjectId = toObjectId(estateId);
+    const noteObjectId = toObjectId(noteId);
+    if (!estateObjectId || !noteObjectId) {
+      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
     }
 
-    const noteObjectId = toObjectId(noteId);
-    if (!noteObjectId) {
-      return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
     await connectToDatabase();
@@ -261,7 +253,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     const deleted = await EstateNote.findOneAndDelete({
       _id: noteObjectId,
-      estateId,
+      estateId: estateObjectId,
     })
       .lean<EstateNoteLean>()
       .exec();
@@ -280,18 +272,16 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
         meta: {
           noteId,
           wasPinned: Boolean(deleted.pinned),
+          actorId: session.user.id,
         },
       });
     } catch (e) {
-      console.error("[logEstateEvent NOTE_DELETED] Error:", e);
+      console.warn("[logEstateEvent NOTE_DELETED] Error:", e);
     }
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (error) {
     console.error("[DELETE /api/estates/[estateId]/notes/[noteId]] Error:", error);
-    return NextResponse.json(
-      { ok: false, error: "Failed to delete note" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: "Failed to delete note" }, { status: 500 });
   }
 }

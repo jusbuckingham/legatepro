@@ -1,9 +1,10 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
-import { logActivity } from "@/lib/activity";
-import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
+import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
+import { logEstateEvent } from "@/lib/estateEvents";
 import {
   EstateTask,
   type EstateTaskDocument,
@@ -15,92 +16,6 @@ type RouteContext = {
     estateId: string;
   }>;
 };
-
-type AccessOk = { userId: string };
-
-function toObjectId(id: string) {
-  return mongoose.Types.ObjectId.isValid(id)
-    ? new mongoose.Types.ObjectId(id)
-    : null;
-}
-
-function isResponse(value: unknown): value is Response {
-  if (!value || typeof value !== "object") return false;
-  const v = value as Record<string, unknown>;
-  return (
-    typeof v.status === "number" &&
-    typeof v.headers !== "undefined" &&
-    v.headers !== null
-  );
-}
-
-function extractUserId(value: unknown): string | null {
-  if (!value || typeof value !== "object") return null;
-
-  const v = value as Record<string, unknown>;
-
-  const directCandidates = [v.userId, v.viewerId, v.ownerId];
-  for (const c of directCandidates) {
-    if (typeof c === "string" && c) return c;
-  }
-
-  const session = v.session;
-  if (session && typeof session === "object") {
-    const user = (session as Record<string, unknown>).user;
-    if (user && typeof user === "object") {
-      const id = (user as Record<string, unknown>).id;
-      if (typeof id === "string" && id) return id;
-    }
-  }
-
-  const user = v.user;
-  if (user && typeof user === "object") {
-    const id = (user as Record<string, unknown>).id;
-    if (typeof id === "string" && id) return id;
-  }
-
-  return null;
-}
-
-async function requireAccess(
-  estateId: string,
-  mode: "viewer" | "editor",
-): Promise<AccessOk | Response> {
-  const fn = mode === "editor" ? requireEstateEditAccess : requireEstateAccess;
-
-  // We intentionally treat the result as unknown because these helpers have evolved
-  // and we want the route to be resilient.
-  const result = (await fn({ estateId })) as unknown;
-
-  // Some helpers return a Response/NextResponse directly.
-  if (isResponse(result)) return result;
-
-  // Some helpers return an object wrapper that contains a Response.
-  if (result && typeof result === "object") {
-    const obj = result as Record<string, unknown>;
-    const r = obj.res ?? obj.response;
-    if (isResponse(r)) return r;
-  }
-
-  const userId = extractUserId(result);
-  if (!userId) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-
-  return { userId };
-}
-
-const ALLOWED_STATUSES: TaskStatus[] = [
-  "NOT_STARTED",
-  "IN_PROGRESS",
-  "DONE",
-];
-
-function parseStatus(raw: unknown): TaskStatus | undefined {
-  if (typeof raw !== "string") return undefined;
-  const upper = raw.toUpperCase() as TaskStatus;
-  return ALLOWED_STATUSES.includes(upper) ? upper : undefined;
-}
 
 type EstateTaskLean = {
   _id: unknown;
@@ -117,22 +32,80 @@ type EstateTaskLean = {
   updatedAt?: Date;
 };
 
+const ALLOWED_STATUSES: TaskStatus[] = ["NOT_STARTED", "IN_PROGRESS", "DONE"];
+
+function toObjectId(id: string) {
+  return mongoose.Types.ObjectId.isValid(id)
+    ? new mongoose.Types.ObjectId(id)
+    : null;
+}
+
+function isResponse(value: unknown): value is Response {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.status === "number" && "headers" in v;
+}
+
+function parseStatus(raw: unknown): TaskStatus | undefined {
+  if (typeof raw !== "string") return undefined;
+  const upper = raw.toUpperCase() as TaskStatus;
+  return ALLOWED_STATUSES.includes(upper) ? upper : undefined;
+}
+
+async function requireAccess(
+  estateId: string,
+  userId: string,
+  mode: "viewer" | "editor",
+): Promise<Response | true> {
+  const fn = mode === "editor" ? requireEstateEditAccess : requireEstateAccess;
+
+  // Helpers have evolved; treat as unknown and gracefully handle Response returns.
+  const result = (await fn({ estateId, userId })) as unknown;
+  if (isResponse(result)) return result;
+
+  // Some helpers wrap the response.
+  if (result && typeof result === "object") {
+    const obj = result as Record<string, unknown>;
+    const r = obj.res ?? obj.response;
+    if (isResponse(r)) return r;
+  }
+
+  return true;
+}
+
+function serializeTask(t: EstateTaskLean) {
+  return {
+    id: String(t._id),
+    estateId: String(t.estateId),
+    ownerId: String(t.ownerId),
+    title: t.title,
+    description: t.description ?? null,
+    status: t.status,
+    dueDate: t.dueDate ?? null,
+    completedAt: t.completedAt ?? null,
+    relatedDocumentId: t.relatedDocumentId ?? null,
+    relatedInvoiceId: t.relatedInvoiceId ?? null,
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+  };
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: RouteContext,
 ): Promise<Response> {
-  const { estateId } = await params;
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
 
+  const { estateId } = await params;
   if (!estateId) {
     return NextResponse.json(
       { error: "Missing estateId in route params" },
       { status: 400 },
     );
   }
-
-  // Enforce estate access (collaborators allowed)
-  const access = await requireAccess(estateId, "viewer");
-  if (isResponse(access)) return access;
 
   const estateObjectId = toObjectId(estateId);
   if (!estateObjectId) {
@@ -141,36 +114,27 @@ export async function GET(
 
   await connectToDatabase();
 
+  const access = await requireAccess(estateId, session.user.id, "viewer");
+  if (access instanceof Response) return access;
+
   const tasks = await EstateTask.find({ estateId: estateObjectId })
     .sort({ createdAt: -1 })
     .lean<EstateTaskLean[]>()
     .exec();
 
-  return NextResponse.json(
-    tasks.map((t: EstateTaskLean) => ({
-      id: String(t._id),
-      estateId: String(t.estateId),
-      ownerId: String(t.ownerId),
-      title: t.title,
-      description: t.description ?? null,
-      status: t.status,
-      dueDate: t.dueDate ?? null,
-      completedAt: t.completedAt ?? null,
-      relatedDocumentId: t.relatedDocumentId ?? null,
-      relatedInvoiceId: t.relatedInvoiceId ?? null,
-      createdAt: t.createdAt,
-      updatedAt: t.updatedAt,
-    })),
-    { status: 200 },
-  );
+  return NextResponse.json(tasks.map(serializeTask), { status: 200 });
 }
 
 export async function POST(
   req: NextRequest,
   { params }: RouteContext,
 ): Promise<Response> {
-  const { estateId } = await params;
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
 
+  const { estateId } = await params;
   if (!estateId) {
     return NextResponse.json(
       { error: "Missing estateId in route params" },
@@ -178,50 +142,34 @@ export async function POST(
     );
   }
 
-  // Enforce estate access + edit permission
-  const access = await requireAccess(estateId, "editor");
-  if (isResponse(access)) return access;
-
   const estateObjectId = toObjectId(estateId);
-  const ownerObjectId = toObjectId(access.userId);
-
+  const ownerObjectId = toObjectId(session.user.id);
   if (!estateObjectId || !ownerObjectId) {
     return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
   await connectToDatabase();
 
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json(
-      { error: "Invalid JSON body" },
-      { status: 400 },
-    );
+  const access = await requireAccess(estateId, session.user.id, "editor");
+  if (access instanceof Response) return access;
+
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  if (
-    !body ||
-    typeof body !== "object" ||
-    typeof (body as { title?: unknown }).title !== "string" ||
-    !(body as { title: string }).title.trim()
-  ) {
-    return NextResponse.json(
-      { error: "Title is required" },
-      { status: 400 },
-    );
+  const titleRaw = (body as { title?: unknown }).title;
+  if (typeof titleRaw !== "string" || !titleRaw.trim()) {
+    return NextResponse.json({ error: "Title is required" }, { status: 400 });
   }
 
   const {
-    title,
     description,
     dueDate,
     status: rawStatus,
     relatedDocumentId,
     relatedInvoiceId,
   } = body as {
-    title: string;
     description?: string;
     dueDate?: string | null;
     status?: string;
@@ -234,40 +182,40 @@ export async function POST(
   let parsedDueDate: Date | undefined;
   if (dueDate) {
     const d = new Date(dueDate);
-    if (!Number.isNaN(d.getTime())) {
-      parsedDueDate = d;
-    }
+    if (!Number.isNaN(d.getTime())) parsedDueDate = d;
   }
 
   const taskDoc: EstateTaskDocument = await EstateTask.create({
     estateId: estateObjectId,
     ownerId: ownerObjectId,
-    title: title.trim(),
-    description: description?.trim() || undefined,
+    title: titleRaw.trim(),
+    description: typeof description === "string" ? description.trim() || undefined : undefined,
     status,
     dueDate: parsedDueDate,
     relatedDocumentId: relatedDocumentId || undefined,
     relatedInvoiceId: relatedInvoiceId || undefined,
   });
 
-  // Activity log: task created
+  // Best-effort estate event log
   try {
-    await logActivity({
+    await logEstateEvent({
+      ownerId: session.user.id,
       estateId: String(estateObjectId),
-      kind: "TASK",
-      action: "created",
-      entityId: String(taskDoc._id),
-      message: `Task created: ${String(taskDoc.title ?? "Untitled")}`,
-      snapshot: {
+      type: "TASK_CREATED",
+      summary: "Task created",
+      detail: `Task created: ${String(taskDoc.title ?? "Untitled")}`,
+      meta: {
+        taskId: String(taskDoc._id),
         title: taskDoc.title ?? null,
         status: taskDoc.status ?? null,
         dueDate: taskDoc.dueDate ?? null,
         relatedDocumentId: taskDoc.relatedDocumentId ?? null,
         relatedInvoiceId: taskDoc.relatedInvoiceId ?? null,
+        actorId: session.user.id,
       },
     });
   } catch {
-    // Don't block task creation if activity logging fails
+    // Do not block creation on logging failure
   }
 
   return NextResponse.json(

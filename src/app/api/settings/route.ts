@@ -1,10 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import {
   WorkspaceSettings,
   type InvoiceTermsCode,
 } from "@/models/WorkspaceSettings";
+import { jsonErr, jsonOk, noStoreHeaders } from "@/lib/apiResponse";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 type SettingsUpdatePayload = {
   firmName?: string | null;
@@ -39,9 +43,11 @@ function serialize(settings: InstanceType<typeof WorkspaceSettings>) {
 }
 
 export async function GET() {
+  const headersNoStore = noStoreHeaders();
+
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    return jsonErr("Unauthorized", 401, headersNoStore, "UNAUTHORIZED");
   }
 
   await connectToDatabase();
@@ -57,20 +63,20 @@ export async function GET() {
     await settings.save();
   }
 
-  return NextResponse.json(serialize(settings));
+  return jsonOk(serialize(settings), 200, headersNoStore);
 }
 
 export async function PUT(req: NextRequest) {
+  const headersNoStore = noStoreHeaders();
+
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    return jsonErr("Unauthorized", 401, headersNoStore, "UNAUTHORIZED");
   }
 
-  let payload: SettingsUpdatePayload;
-  try {
-    payload = (await req.json()) as SettingsUpdatePayload;
-  } catch {
-    return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+  const payload = (await req.json().catch(() => null)) as SettingsUpdatePayload | null;
+  if (!payload || typeof payload !== "object") {
+    return jsonErr("Invalid JSON", 400, headersNoStore, "BAD_REQUEST");
   }
 
   await connectToDatabase();
@@ -112,12 +118,8 @@ export async function PUT(req: NextRequest) {
     update.firmCountry = firmCountry ?? undefined;
   }
 
-  if (
-    typeof defaultHourlyRateCents === "number" ||
-    defaultHourlyRateCents === null
-  ) {
-    update.defaultHourlyRateCents =
-      defaultHourlyRateCents ?? undefined;
+  if (typeof defaultHourlyRateCents === "number" || defaultHourlyRateCents === null) {
+    update.defaultHourlyRateCents = defaultHourlyRateCents ?? undefined;
   }
 
   if (typeof defaultInvoiceTerms === "string") {
@@ -134,5 +136,5 @@ export async function PUT(req: NextRequest) {
     { new: true, upsert: true },
   );
 
-  return NextResponse.json(serialize(settings));
+  return jsonOk(serialize(settings), 200, headersNoStore);
 }

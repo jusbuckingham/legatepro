@@ -115,27 +115,55 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ documentI
     notes?: string | null;
   };
 
-  const update: Record<string, unknown> = {};
+  const $set: Record<string, unknown> = {};
+  const $unset: Record<string, "" | 1> = {};
 
   if (typeof typed.label === "string") {
     const v = typed.label.trim();
     if (!v) {
-      return NextResponse.json({ ok: false, error: "label cannot be empty" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "label cannot be empty" },
+        { status: 400 },
+      );
     }
-    update.label = v;
+    $set.label = v;
   }
 
-  if (typed.subject !== undefined) update.subject = normalizeSubject(typed.subject);
-  if (typed.sensitivity !== undefined) update.sensitivity = normalizeSensitivity(typed.sensitivity);
+  if (typed.subject !== undefined) {
+    $set.subject = normalizeSubject(typed.subject);
+  }
+
+  if (typed.sensitivity !== undefined) {
+    $set.sensitivity = normalizeSensitivity(typed.sensitivity);
+  }
 
   if (typed.url !== undefined) {
     const v = typeof typed.url === "string" ? typed.url.trim() : "";
-    update.url = v || undefined;
+    if (v.length) {
+      $set.url = v;
+    } else {
+      $unset.url = 1;
+    }
   }
 
   if (typed.notes !== undefined) {
     const v = typeof typed.notes === "string" ? typed.notes.trim() : "";
-    update.notes = v || undefined;
+    if (v.length) {
+      $set.notes = v;
+    } else {
+      $unset.notes = 1;
+    }
+  }
+
+  const update: Record<string, unknown> = {};
+  if (Object.keys($set).length) update.$set = $set;
+  if (Object.keys($unset).length) update.$unset = $unset;
+
+  if (Object.keys(update).length === 0) {
+    return NextResponse.json(
+      { ok: false, error: "No valid fields to update" },
+      { status: 400 },
+    );
   }
 
   const updated = await EstateDocument.findOneAndUpdate(

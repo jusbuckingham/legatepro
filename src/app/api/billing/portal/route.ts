@@ -15,6 +15,19 @@ import {
 } from "@/lib/apiResponse";
 import { User } from "@/models/User";
 
+type LeanUser = {
+  _id: unknown;
+  email?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  stripeCustomerId?: string | null;
+};
+
+function getUserFullName(user: LeanUser): string | undefined {
+  const parts = [user.firstName ?? "", user.lastName ?? ""].map((s) => s.trim()).filter(Boolean);
+  return parts.length ? parts.join(" ") : undefined;
+}
+
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
@@ -76,7 +89,7 @@ function isProd(): boolean {
   );
 }
 
-function getStripe() {
+function getStripe(): Stripe {
   assertEnv([
     {
       key: "STRIPE_SECRET_KEY",
@@ -162,15 +175,13 @@ export async function POST(req: NextRequest) {
   const rl = checkRateLimit(clientKey);
   if (!rl.ok) {
     headers.set("Retry-After", String(rl.retryAfterSeconds));
-    return jsonErr("Too many requests. Please try again shortly.", 429, "RATE_LIMITED", {
-      headers,
-    });
+    return jsonErr("Too many requests. Please try again shortly.", 429, headers);
   }
 
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return jsonErr("Unauthorized", 401, "UNAUTHORIZED", { headers });
+      return jsonErr("Unauthorized", 401, headers);
     }
 
     // Add per-user rate limit key for better protection (in addition to the coarse bucket above).
@@ -180,50 +191,40 @@ export async function POST(req: NextRequest) {
       return jsonErr(
         "Too many requests. Please try again shortly.",
         429,
-        "RATE_LIMITED",
-        { headers },
+        headers,
       );
     }
 
     await connectToDatabase();
 
-    const user = await User.findById(session.user.id).lean().exec();
-    if (!user) return jsonErr("User not found", 404, "NOT_FOUND", { headers });
+    const userDoc = (await User.findById(session.user.id).lean().exec()) as LeanUser | null;
+    if (!userDoc) return jsonErr("User not found", 404, headers);
 
     const stripe = getStripe();
 
-    let stripeCustomerId = (user as unknown as { stripeCustomerId?: string | null })
-      .stripeCustomerId;
+    let stripeCustomerId = userDoc.stripeCustomerId ?? null;
 
     // If the user hasn't created a Stripe customer yet, create one now.
     if (!stripeCustomerId) {
       const customer = await stripe.customers.create({
-        email: (user as unknown as { email?: string | null }).email || undefined,
-        name:
-          [
-            (user as unknown as { firstName?: string | null }).firstName,
-            (user as unknown as { lastName?: string | null }).lastName,
-          ]
-            .filter(Boolean)
-            .join(" ") || undefined,
+        email: userDoc.email || undefined,
+        name: getUserFullName(userDoc),
         metadata: {
-          userId: idToString((user as unknown as { _id?: unknown })._id),
+          userId: idToString(userDoc._id),
         },
       });
 
       stripeCustomerId = customer.id;
 
       await User.updateOne(
-        { _id: (user as unknown as { _id?: unknown })._id },
+        { _id: userDoc._id },
         { $set: { stripeCustomerId } },
       ).exec();
     }
 
     // Guard against corrupted/invalid values
     if (!stripeCustomerId || !/^cus_[A-Za-z0-9]+$/.test(stripeCustomerId)) {
-      return jsonErr("Billing is not configured for this user.", 409, "BILLING_NOT_READY", {
-        headers,
-      });
+      return jsonErr("Billing is not configured for this user.", 409, headers);
     }
 
     const returnUrl = getPortalReturnUrl();
@@ -234,7 +235,7 @@ export async function POST(req: NextRequest) {
         : `Invalid return URL configuration (check NEXT_PUBLIC_BASE_URL/NEXTAUTH_URL/VERCEL_URL or STRIPE_PORTAL_RETURN_URL): ${
             process.env.STRIPE_PORTAL_RETURN_URL || getAppUrl()
           }`;
-      return jsonErr(message, 500, "CONFIG_ERROR", { headers });
+      return jsonErr(message, 500, headers);
     }
 
     // NOTE: Stripe Billing Portal must be enabled in the Stripe Dashboard.
@@ -253,23 +254,17 @@ export async function POST(req: NextRequest) {
       if (msg.toLowerCase().includes("no such customer")) {
         try {
           const customer = await stripe.customers.create({
-            email: (user as unknown as { email?: string | null }).email || undefined,
-            name:
-              [
-                (user as unknown as { firstName?: string | null }).firstName,
-                (user as unknown as { lastName?: string | null }).lastName,
-              ]
-                .filter(Boolean)
-                .join(" ") || undefined,
+            email: userDoc.email || undefined,
+            name: getUserFullName(userDoc),
             metadata: {
-              userId: idToString((user as unknown as { _id?: unknown })._id),
+              userId: idToString(userDoc._id),
             },
           });
 
           stripeCustomerId = customer.id;
 
           await User.updateOne(
-            { _id: (user as unknown as { _id?: unknown })._id },
+            { _id: userDoc._id },
             { $set: { stripeCustomerId } },
           ).exec();
 
@@ -282,13 +277,12 @@ export async function POST(req: NextRequest) {
           return jsonErr(
             "Unable to open customer portal",
             500,
-            "INTERNAL_ERROR",
-            { headers },
+            headers,
           );
         }
       } else {
         console.error("POST /api/billing/portal error:", msg);
-        return jsonErr("Unable to open customer portal", 500, "INTERNAL_ERROR", { headers });
+        return jsonErr("Unable to open customer portal", 500, headers);
       }
     }
 
@@ -296,14 +290,13 @@ export async function POST(req: NextRequest) {
       return jsonErr(
         "Unable to create customer portal session",
         500,
-        "INTERNAL_ERROR",
-        { headers },
+        headers,
       );
     }
 
-    return jsonOk({ url: portal.url }, { headers });
+    return jsonOk({ url: portal.url }, 200, headers);
   } catch (error) {
     console.error("POST /api/billing/portal error:", safeErrorMessage(error));
-    return jsonErr("Unable to open customer portal", 500, "INTERNAL_ERROR", { headers });
+    return jsonErr("Unable to open customer portal", 500, headers);
   }
 }

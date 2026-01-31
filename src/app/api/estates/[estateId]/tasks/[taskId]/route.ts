@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
-import { Task } from "@/models/Task";
+import mongoose from "mongoose";
+import { auth } from "@/lib/auth";
+import { connectToDatabase } from "@/lib/db";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
+import { logEstateEvent } from "@/lib/estateEvents";
+import {
+  EstateTask,
+  type EstateTaskDocument,
+  type TaskStatus,
+} from "@/models/EstateTask";
 
 type RouteParams = {
   estateId: string;
@@ -11,15 +17,31 @@ type RouteParams = {
 
 type RouteContext = { params: Promise<RouteParams> };
 
-type AccessResult = {
-  userId?: string;
-  estateId?: string;
-  role?: string;
-  permission?: string;
+type EstateTaskLean = {
+  _id: unknown;
+  estateId: unknown;
+  ownerId: unknown;
+  title: string;
+  description?: string | null;
+  status: TaskStatus;
+  dueDate?: Date | null;
+  completedAt?: Date | null;
+  relatedDocumentId?: string | null;
+  relatedInvoiceId?: string | null;
+  createdAt?: Date;
+  updatedAt?: Date;
 };
 
+const ALLOWED_STATUSES: TaskStatus[] = ["NOT_STARTED", "IN_PROGRESS", "DONE"];
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 function isResponse(value: unknown): value is Response {
-  return typeof Response !== "undefined" && value instanceof Response;
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.status === "number" && "headers" in v;
 }
 
 function pickResponse(value: unknown): Response | null {
@@ -33,216 +55,326 @@ function pickResponse(value: unknown): Response | null {
   return null;
 }
 
-async function requireAccess(opts: { estateId: string; mode: "view" | "edit" }) {
+async function requireAccess(opts: {
+  estateId: string;
+  userId: string;
+  mode: "view" | "edit";
+}): Promise<Response | true> {
   const fn = opts.mode === "edit" ? requireEstateEditAccess : requireEstateAccess;
-  const out = await fn({ estateId: opts.estateId });
+  const out = (await fn({ estateId: opts.estateId, userId: opts.userId })) as unknown;
 
   const maybeRes = pickResponse(out);
-  if (maybeRes) return { ok: false as const, res: maybeRes };
+  if (maybeRes) return maybeRes;
 
-  // If your helper returns a structured object, we pass it through.
-  return { ok: true as const, data: out as AccessResult };
+  return true;
 }
 
-type UpdateTaskBody = {
-  subject?: string;
-  description?: string;
-  status?: string;
-  priority?: string;
-  date?: string;
-  notes?: string;
-};
-
-function getStr(obj: unknown, key: string): string | undefined {
-  if (!obj || typeof obj !== "object") return undefined;
-  const v = (obj as Record<string, unknown>)[key];
-  return typeof v === "string" ? v : undefined;
+function toObjectId(id: string): mongoose.Types.ObjectId | null {
+  return mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : null;
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object") return null;
-  return value as Record<string, unknown>;
+function parseStatus(raw: unknown): TaskStatus | undefined {
+  if (typeof raw !== "string") return undefined;
+  const upper = raw.toUpperCase() as TaskStatus;
+  return ALLOWED_STATUSES.includes(upper) ? upper : undefined;
 }
 
-type ActivityKind = Parameters<typeof logActivity>[0]["kind"];
-const TASK_KIND = "TASK" as const satisfies ActivityKind;
+function serializeTask(t: EstateTaskLean) {
+  return {
+    id: String(t._id),
+    estateId: String(t.estateId),
+    ownerId: String(t.ownerId),
+    title: t.title,
+    description: t.description ?? null,
+    status: t.status,
+    dueDate: t.dueDate ?? null,
+    completedAt: t.completedAt ?? null,
+    relatedDocumentId: t.relatedDocumentId ?? null,
+    relatedInvoiceId: t.relatedInvoiceId ?? null,
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+  };
+}
 
 export async function GET(_req: NextRequest, { params }: RouteContext) {
-  const { estateId, taskId } = await params;
-
-  // Viewer access is sufficient to read tasks
-  const access = await requireAccess({ estateId, mode: "view" });
-  if (!access.ok) return access.res;
-
-  await connectToDatabase();
-
-  const taskRaw = await Task.findOne({ _id: taskId, estateId }).lean().exec();
-  const taskRec = asRecord(taskRaw);
-
-  if (!taskRec) {
-    return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
-  }
-
-  const task = serializeMongoDoc(taskRec);
-
-  return NextResponse.json({ ok: true, task }, { status: 200 });
-}
-
-/**
- * Shared update logic used by both PUT and POST so the UI can hit this
- * endpoint with either verb.
- */
-async function updateTask(req: NextRequest, { params }: RouteContext) {
-  const { estateId, taskId } = await params;
-
-  // Owner/Editor required to modify tasks
-  const access = await requireAccess({ estateId, mode: "edit" });
-  if (!access.ok) return access.res;
-
-  const userId = access.data.userId;
-  if (!userId) {
+  const session = await auth();
+  if (!session?.user?.id) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
+  const { estateId, taskId } = await params;
+
+  const estateObjectId = toObjectId(estateId);
+  const taskObjectId = toObjectId(taskId);
+  if (!estateObjectId || !taskObjectId) {
+    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+  }
+
   await connectToDatabase();
 
-  let body: UpdateTaskBody;
+  const access = await requireAccess({ estateId, userId: session.user.id, mode: "view" });
+  if (access instanceof Response) return access;
 
-  try {
-    body = (await req.json()) as UpdateTaskBody;
-  } catch {
+  const task = await EstateTask.findOne({ _id: taskObjectId, estateId: estateObjectId })
+    .lean<EstateTaskLean | null>()
+    .exec();
+
+  if (!task) {
+    return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({ ok: true, task: serializeTask(task) }, { status: 200 });
+}
+
+type UpdateTaskBody = {
+  title?: string;
+  description?: string;
+  status?: string;
+  dueDate?: string | null;
+  completedAt?: string | null;
+  relatedDocumentId?: string | null;
+  relatedInvoiceId?: string | null;
+};
+
+/**
+ * Shared update logic used by both PUT and POST so older UI calls still work.
+ */
+async function updateTask(req: NextRequest, { params }: RouteContext) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { estateId, taskId } = await params;
+
+  const estateObjectId = toObjectId(estateId);
+  const taskObjectId = toObjectId(taskId);
+  if (!estateObjectId || !taskObjectId) {
+    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+  }
+
+  const raw = await req.json().catch(() => null);
+  if (!isPlainObject(raw)) {
     return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
   }
 
-  // Load before-state for comparison / logging
-  const beforeRaw = await Task.findOne({ _id: taskId, estateId }).lean().exec();
-  const beforeRec = asRecord(beforeRaw);
-  const before = beforeRec ? serializeMongoDoc(beforeRec) : null;
+  const body = raw as UpdateTaskBody;
+
+  const update: Partial<
+    Pick<
+      EstateTaskDocument,
+      | "title"
+      | "description"
+      | "status"
+      | "dueDate"
+      | "completedAt"
+      | "relatedDocumentId"
+      | "relatedInvoiceId"
+    >
+  > = {};
+
+  if (body.title !== undefined) {
+    if (typeof body.title !== "string" || !body.title.trim()) {
+      return NextResponse.json({ ok: false, error: "Title is required" }, { status: 400 });
+    }
+    update.title = body.title.trim();
+  }
+
+  if (body.description !== undefined) {
+    if (typeof body.description === "string") update.description = body.description.trim();
+  }
+
+  const parsedStatus = parseStatus(body.status);
+  if (parsedStatus) {
+    update.status = parsedStatus;
+    if (parsedStatus === "DONE" && body.completedAt === undefined) {
+      update.completedAt = new Date();
+    }
+  }
+
+  if (body.dueDate !== undefined) {
+    if (body.dueDate === null || body.dueDate === "") {
+      update.dueDate = null;
+    } else if (typeof body.dueDate === "string") {
+      const d = new Date(body.dueDate);
+      if (!Number.isNaN(d.getTime())) update.dueDate = d;
+    }
+  }
+
+  if (body.completedAt !== undefined) {
+    if (body.completedAt === null || body.completedAt === "") {
+      update.completedAt = null;
+    } else if (typeof body.completedAt === "string") {
+      const d = new Date(body.completedAt);
+      if (!Number.isNaN(d.getTime())) update.completedAt = d;
+    }
+  }
+
+  if (body.relatedDocumentId !== undefined) {
+    if (body.relatedDocumentId === null) update.relatedDocumentId = null;
+    else if (typeof body.relatedDocumentId === "string") {
+      update.relatedDocumentId = body.relatedDocumentId.trim() || null;
+    }
+  }
+
+  if (body.relatedInvoiceId !== undefined) {
+    if (body.relatedInvoiceId === null) update.relatedInvoiceId = null;
+    else if (typeof body.relatedInvoiceId === "string") {
+      update.relatedInvoiceId = body.relatedInvoiceId.trim() || null;
+    }
+  }
+
+  if (Object.keys(update).length === 0) {
+    return NextResponse.json(
+      { ok: false, error: "No valid fields provided" },
+      { status: 400 },
+    );
+  }
+
+  await connectToDatabase();
+
+  const access = await requireAccess({ estateId, userId: session.user.id, mode: "edit" });
+  if (access instanceof Response) return access;
+
+  // Load before-state
+  const before = await EstateTask.findOne({ _id: taskObjectId, estateId: estateObjectId })
+    .lean<EstateTaskLean | null>()
+    .exec();
 
   if (!before) {
     return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
 
-  const update: Record<string, unknown> = {};
+  const prevStatus = before.status ? String(before.status) : null;
+  const prevTitle = before.title ? String(before.title) : null;
+  const prevDueDate = before.dueDate ?? null;
 
-  if (body.subject !== undefined) update.subject = body.subject;
-  if (body.description !== undefined) update.description = body.description;
-  if (body.status !== undefined) update.status = body.status;
-  if (body.priority !== undefined) update.priority = body.priority;
-  if (body.notes !== undefined) update.notes = body.notes;
-
-  if (body.date !== undefined) {
-    const parsed = new Date(body.date);
-    if (!Number.isNaN(parsed.getTime())) {
-      update.date = parsed;
-    }
-  }
-
-  // Optionally track completion timestamp
-  if (body.status === "DONE") {
-    update.completedAt = new Date();
-  }
-
-  const updatedRaw = await Task.findOneAndUpdate(
-    { _id: taskId, estateId },
+  const updated = await EstateTask.findOneAndUpdate(
+    { _id: taskObjectId, estateId: estateObjectId },
     { $set: update },
-    { new: true }
+    { new: true, runValidators: true }
   )
-    .lean()
+    .lean<EstateTaskLean | null>()
     .exec();
-  const updatedRec = asRecord(updatedRaw);
 
-  if (!updatedRec) {
+  if (!updated) {
     return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
 
-  const updated = serializeMongoDoc(updatedRec);
+  const nextStatus = updated.status ? String(updated.status) : null;
+  const nextTitle = updated.title ? String(updated.title) : null;
+  const nextDueDate = updated.dueDate ?? null;
 
-  // Activity logging
-  const prevStatus = getStr(before, "status");
-  const nextStatus = getStr(updated, "status");
-  const title = getStr(updated, "title") ?? getStr(updated, "subject");
+  const didStatusChange = prevStatus !== nextStatus;
 
-  const snapshotBase = {
-    taskId: String(taskId),
-    title,
-    actorId: userId,
-  } satisfies Record<string, unknown>;
-
-  if (prevStatus !== nextStatus) {
-    await logActivity({
-      estateId,
-      kind: TASK_KIND,
-      action: "STATUS_CHANGED",
-      entityId: String(taskId),
-      message: `Task status changed: ${prevStatus ?? ""} → ${nextStatus ?? ""}`,
-      snapshot: {
-        ...snapshotBase,
-        from: prevStatus ?? null,
-        to: nextStatus ?? null,
-      },
-    });
-  } else {
-    await logActivity({
-      estateId,
-      kind: TASK_KIND,
-      action: "UPDATED",
-      entityId: String(taskId),
-      message: "Task updated",
-      snapshot: {
-        ...snapshotBase,
-      },
-    });
+  try {
+    if (didStatusChange) {
+      await logEstateEvent({
+        ownerId: session.user.id,
+        estateId,
+        type: "TASK_STATUS_CHANGED",
+        summary: "Task status changed",
+        detail: `Task ${taskId} status changed`,
+        meta: {
+          taskId,
+          previousStatus: prevStatus,
+          status: nextStatus,
+          previousTitle: prevTitle,
+          title: nextTitle,
+          previousDueDate: prevDueDate,
+          dueDate: nextDueDate,
+          actorId: session.user.id,
+        },
+      });
+    } else {
+      await logEstateEvent({
+        ownerId: session.user.id,
+        estateId,
+        type: "TASK_UPDATED",
+        summary: "Task updated",
+        detail: `Task ${taskId} updated`,
+        meta: {
+          taskId,
+          previousTitle: prevTitle,
+          title: nextTitle,
+          previousDueDate: prevDueDate,
+          dueDate: nextDueDate,
+          actorId: session.user.id,
+        },
+      });
+    }
+  } catch (e) {
+    console.warn(
+      "[PATCH/PUT/POST /api/estates/[estateId]/tasks/[taskId]] Failed to log estate event:",
+      e
+    );
   }
 
-  return NextResponse.json({ ok: true, task: updated }, { status: 200 });
+  return NextResponse.json({ ok: true, task: serializeTask(updated) }, { status: 200 });
 }
 
 export async function PUT(req: NextRequest, ctx: RouteContext) {
   return updateTask(req, ctx);
 }
 
-// ✅ This supports older UI calls that POST updates
+// ✅ Supports older UI calls that POST updates
 export async function POST(req: NextRequest, ctx: RouteContext) {
   return updateTask(req, ctx);
 }
 
 export async function DELETE(_req: NextRequest, { params }: RouteContext) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
   const { estateId, taskId } = await params;
 
-  // Owner/Editor required to delete tasks
-  const access = await requireAccess({ estateId, mode: "edit" });
-  if (!access.ok) return access.res;
-
-  const userId = access.data.userId;
-  if (!userId) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const estateObjectId = toObjectId(estateId);
+  const taskObjectId = toObjectId(taskId);
+  if (!estateObjectId || !taskObjectId) {
+    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
   await connectToDatabase();
 
-  const deletedRaw = await Task.findOneAndDelete({ _id: taskId, estateId }).lean().exec();
-  const deletedRec = asRecord(deletedRaw);
+  const access = await requireAccess({ estateId, userId: session.user.id, mode: "edit" });
+  if (access instanceof Response) return access;
 
-  if (!deletedRec) {
+  const deleted = await EstateTask.findOneAndDelete({
+    _id: taskObjectId,
+    estateId: estateObjectId,
+  })
+    .lean<EstateTaskLean | null>()
+    .exec();
+
+  if (!deleted) {
     return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
 
-  const deleted = serializeMongoDoc(deletedRec);
-  const title = getStr(deleted, "title") ?? getStr(deleted, "subject");
-
-  await logActivity({
-    estateId,
-    kind: TASK_KIND,
-    action: "DELETED",
-    entityId: String(taskId),
-    message: "Task deleted",
-    snapshot: {
-      taskId: String(taskId),
-      title,
-      actorId: userId,
-    },
-  });
+  try {
+    await logEstateEvent({
+      ownerId: session.user.id,
+      estateId,
+      type: "TASK_DELETED",
+      summary: "Task deleted",
+      detail: `Task ${taskId} deleted`,
+      meta: {
+        taskId,
+        title: deleted.title ?? null,
+        status: deleted.status ?? null,
+        dueDate: deleted.dueDate ?? null,
+        actorId: session.user.id,
+      },
+    });
+  } catch (e) {
+    console.warn(
+      "[DELETE /api/estates/[estateId]/tasks/[taskId]] Failed to log estate event:",
+      e
+    );
+  }
 
   return NextResponse.json({ ok: true }, { status: 200 });
 }
+
+export const dynamic = "force-dynamic";

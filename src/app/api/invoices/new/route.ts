@@ -1,49 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import mongoose from "mongoose";
 
-import { authOptions } from "@/auth.config";
 import { connectToDatabase } from "@/lib/db";
 import { EntitlementError, requirePro, toEntitlementsUser } from "@/lib/entitlements";
+import { auth } from "@/lib/auth";
+import { getEstateAccess } from "@/lib/estateAccess";
 
-import * as UserModule from "@/models/User";
-import * as InvoiceModule from "@/models/Invoice";
+import { User } from "@/models/User";
+import { Invoice } from "@/models/Invoice";
 
-type ModelWithFindById = {
-  findById: (id: string) => { lean: () => Promise<unknown> };
-};
+const NO_STORE_HEADERS = { "Cache-Control": "no-store" } as const;
 
-type ModelWithCreate = {
-  create: (doc: Record<string, unknown>) => Promise<unknown>;
-};
-
-function getUserModel(): ModelWithFindById {
-  const mod = UserModule as unknown as {
-    default?: ModelWithFindById;
-    User?: ModelWithFindById;
-  };
-  const m = mod.default ?? mod.User;
-  if (!m) throw new Error("User model not found");
-  return m;
+function isValidObjectId(id: string): boolean {
+  return mongoose.Types.ObjectId.isValid(id);
 }
-
-function getInvoiceModel(): ModelWithCreate {
-  const mod = InvoiceModule as unknown as {
-    default?: ModelWithCreate;
-    Invoice?: ModelWithCreate;
-  };
-  const m = mod.default ?? mod.Invoice;
-  if (!m) throw new Error("Invoice model not found");
-  return m;
-}
-
-const headersNoStore = new Headers({ "cache-control": "no-store" });
 
 function jsonOk(data: unknown, status = 200) {
-  return NextResponse.json({ ok: true, data }, { status, headers: headersNoStore });
+  return NextResponse.json({ ok: true, data }, { status, headers: NO_STORE_HEADERS });
 }
 
 function jsonErr(error: string, status = 400, code = "BAD_REQUEST") {
-  return NextResponse.json({ ok: false, error, code }, { status, headers: headersNoStore });
+  return NextResponse.json({ ok: false, error, code }, { status, headers: NO_STORE_HEADERS });
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -68,34 +45,32 @@ function toSafeString(value: unknown): string {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await auth();
     const userId = session?.user?.id;
 
     if (!userId) {
       return jsonErr("Unauthorized", 401, "UNAUTHORIZED");
     }
 
-    let payload: unknown;
-    try {
-      payload = await request.json();
-    } catch {
+    const raw = await request.json().catch(() => null);
+
+    if (!isPlainObject(raw)) {
       return jsonErr("Invalid JSON", 400, "BAD_REQUEST");
     }
 
-    if (!isPlainObject(payload)) {
-      return jsonErr("Invalid JSON", 400, "BAD_REQUEST");
-    }
-
-    const body = sanitizeObject(payload);
-    const estateId = toSafeString((body as Record<string, unknown>).estateId);
+    const body = sanitizeObject(raw);
+    const estateId = toSafeString(body.estateId);
 
     if (!estateId) {
       return jsonErr("estateId is required", 400, "BAD_REQUEST");
     }
 
+    if (!isValidObjectId(estateId)) {
+      return jsonErr("Invalid estateId", 400, "BAD_REQUEST");
+    }
+
     await connectToDatabase();
 
-    const User = getUserModel();
     const user = await User.findById(userId).lean();
 
     if (!user) {
@@ -118,7 +93,15 @@ export async function POST(request: NextRequest) {
       throw e;
     }
 
-    const Invoice = getInvoiceModel();
+    const access = await getEstateAccess({
+      estateId,
+      userId,
+      atLeastRole: "EDITOR",
+    });
+
+    if (!access || !access.canEdit) {
+      return jsonErr("Forbidden", 403, "FORBIDDEN");
+    }
 
     // Build the create payload, but explicitly strip ownership fields that should never be client-controlled.
     const doc: Record<string, unknown> = {

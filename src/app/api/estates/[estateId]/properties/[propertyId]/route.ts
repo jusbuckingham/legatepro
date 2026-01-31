@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Types } from "mongoose";
+import mongoose from "mongoose";
 
+import { auth } from "@/lib/auth";
 import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
+import { logEstateEvent } from "@/lib/estateEvents";
 import { EstateProperty } from "@/models/EstateProperty";
 
 export const dynamic = "force-dynamic";
@@ -24,34 +27,38 @@ type PropertyUpdateBody = Partial<{
   notes: string;
 }>;
 
-const isValidObjectId = (value: string) => Types.ObjectId.isValid(value);
+function isValidObjectIdString(id: unknown): id is string {
+  return typeof id === "string" && mongoose.Types.ObjectId.isValid(id);
+}
+
+function toObjectId(id: unknown) {
+  return isValidObjectIdString(id) ? new mongoose.Types.ObjectId(id) : null;
+}
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: RouteParams
 ): Promise<NextResponse> {
   const { estateId, propertyId } = await params;
 
-  if (!estateId || !propertyId) {
-    return NextResponse.json(
-      { ok: false, error: "Missing estateId or propertyId" },
-      { status: 400 }
-    );
+  const estateObjectId = toObjectId(estateId);
+  const propertyObjectId = toObjectId(propertyId);
+  if (!estateObjectId || !propertyObjectId) {
+    return NextResponse.json({ ok: false, error: "Invalid estateId or propertyId" }, { status: 400 });
   }
 
-  if (!isValidObjectId(estateId) || !isValidObjectId(propertyId)) {
-    return NextResponse.json(
-      { ok: false, error: "Invalid estateId or propertyId" },
-      { status: 400 }
-    );
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   try {
     await connectToDatabase();
+    await requireEstateAccess({ estateId, userId: session.user.id });
 
     const property = await EstateProperty.findOne({
-      _id: propertyId,
-      estateId,
+      _id: propertyObjectId,
+      estateId: estateObjectId,
     })
       .lean()
       .exec();
@@ -80,24 +87,27 @@ export async function PATCH(
 ): Promise<NextResponse> {
   const { estateId, propertyId } = await params;
 
-  if (!estateId || !propertyId) {
-    return NextResponse.json(
-      { ok: false, error: "Missing estateId or propertyId" },
-      { status: 400 }
-    );
+  const estateObjectId = toObjectId(estateId);
+  const propertyObjectId = toObjectId(propertyId);
+  if (!estateObjectId || !propertyObjectId) {
+    return NextResponse.json({ ok: false, error: "Invalid estateId or propertyId" }, { status: 400 });
   }
 
-  if (!isValidObjectId(estateId) || !isValidObjectId(propertyId)) {
-    return NextResponse.json(
-      { ok: false, error: "Invalid estateId or propertyId" },
-      { status: 400 }
-    );
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   try {
     await connectToDatabase();
 
-    const body = (await req.json()) as PropertyUpdateBody;
+    const raw = await req.json().catch(() => null);
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return NextResponse.json({ ok: false, error: "Invalid request body" }, { status: 400 });
+    }
+    const body = raw as PropertyUpdateBody;
+
+    await requireEstateEditAccess({ estateId, userId: session.user.id });
 
     // sanitize + restrict update fields
     const update: PropertyUpdateBody = {};
@@ -157,7 +167,7 @@ export async function PATCH(
     }
 
     const updated = await EstateProperty.findOneAndUpdate(
-      { _id: propertyId, estateId },
+      { _id: propertyObjectId, estateId: estateObjectId },
       update,
       { new: true, runValidators: true }
     )
@@ -168,6 +178,26 @@ export async function PATCH(
       return NextResponse.json(
         { ok: false, error: "Property not found" },
         { status: 404 }
+      );
+    }
+
+    try {
+      await logEstateEvent({
+        ownerId: session.user.id,
+        estateId,
+        type: "PROPERTY_UPDATED",
+        summary: "Property updated",
+        detail: `Updated property ${propertyId}`,
+        meta: {
+          propertyId,
+          updatedFields: Object.keys(update),
+          actorId: session.user.id,
+        },
+      });
+    } catch (e) {
+      console.warn(
+        "[PATCH /api/estates/[estateId]/properties/[propertyId]] Failed to log event:",
+        e
       );
     }
 
@@ -191,26 +221,24 @@ export async function DELETE(
 ): Promise<NextResponse> {
   const { estateId, propertyId } = await params;
 
-  if (!estateId || !propertyId) {
-    return NextResponse.json(
-      { ok: false, error: "Missing estateId or propertyId" },
-      { status: 400 }
-    );
+  const estateObjectId = toObjectId(estateId);
+  const propertyObjectId = toObjectId(propertyId);
+  if (!estateObjectId || !propertyObjectId) {
+    return NextResponse.json({ ok: false, error: "Invalid estateId or propertyId" }, { status: 400 });
   }
 
-  if (!isValidObjectId(estateId) || !isValidObjectId(propertyId)) {
-    return NextResponse.json(
-      { ok: false, error: "Invalid estateId or propertyId" },
-      { status: 400 }
-    );
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   try {
     await connectToDatabase();
+    await requireEstateEditAccess({ estateId, userId: session.user.id });
 
     const deleted = await EstateProperty.findOneAndDelete({
-      _id: propertyId,
-      estateId,
+      _id: propertyObjectId,
+      estateId: estateObjectId,
     })
       .lean()
       .exec();
@@ -219,6 +247,25 @@ export async function DELETE(
       return NextResponse.json(
         { ok: false, error: "Property not found" },
         { status: 404 }
+      );
+    }
+
+    try {
+      await logEstateEvent({
+        ownerId: session.user.id,
+        estateId,
+        type: "PROPERTY_DELETED",
+        summary: "Property deleted",
+        detail: `Deleted property ${propertyId}`,
+        meta: {
+          propertyId,
+          actorId: session.user.id,
+        },
+      });
+    } catch (e) {
+      console.warn(
+        "[DELETE /api/estates/[estateId]/properties/[propertyId]] Failed to log event:",
+        e
       );
     }
 

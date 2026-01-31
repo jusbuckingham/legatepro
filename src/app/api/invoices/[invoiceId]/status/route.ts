@@ -4,12 +4,14 @@ import { Types } from "mongoose";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { getEstateAccess } from "@/lib/estateAccess";
-import { Invoice, type InvoiceStatus } from "@/models/Invoice";
-import { Estate } from "@/models/Estate";
-import { User } from "@/models/User";
 import { EntitlementError, requirePro, toEntitlementsUser } from "@/lib/entitlements";
 import { logEstateEvent } from "@/lib/estateEvents";
 import { logActivity } from "@/lib/activity";
+
+import { Invoice, type InvoiceStatus } from "@/models/Invoice";
+import { Estate } from "@/models/Estate";
+import { User } from "@/models/User";
+
 import {
   jsonErr,
   jsonOk,
@@ -19,6 +21,7 @@ import {
 } from "@/lib/apiResponse";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 type RouteParams = {
   invoiceId: string;
@@ -27,6 +30,10 @@ type RouteParams = {
 type RouteContext = {
   params: Promise<RouteParams>;
 };
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
 
 function idToString(value: unknown): string | null {
   if (value == null) return null;
@@ -66,26 +73,30 @@ function friendlyStatus(status: string | null | undefined): string {
 export async function PATCH(req: NextRequest, ctx: RouteContext): Promise<Response> {
   const headers = noStoreHeaders();
   const session = await auth();
+
   if (!session?.user?.id) {
-    return jsonErr("Unauthorized", 401, "UNAUTHORIZED", { headers });
+    return jsonErr("Unauthorized", 401, headers, "UNAUTHORIZED");
   }
 
   const { invoiceId } = await ctx.params;
 
   if (!requireObjectIdLike(invoiceId)) {
-    return jsonErr("Invalid invoiceId", 400, "BAD_REQUEST", { headers });
+    return jsonErr("Invalid invoiceId", 400, headers, "BAD_REQUEST");
   }
 
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return jsonErr("Invalid JSON body", 400, "BAD_REQUEST", { headers });
+  const raw = await req.json().catch(() => null);
+  if (!isPlainObject(raw)) {
+    return jsonErr("Invalid JSON body", 400, headers, "BAD_REQUEST");
   }
 
-  const nextStatus = normalizeStatus((body as { status?: unknown })?.status);
+  const nextStatus = normalizeStatus(raw.status);
   if (!nextStatus) {
-    return jsonErr("Invalid status. Use DRAFT | SENT | PAID | VOID", 400, "BAD_REQUEST", { headers });
+    return jsonErr(
+      "Invalid status. Use DRAFT | SENT | PAID | VOID",
+      400,
+      headers,
+      "BAD_REQUEST",
+    );
   }
 
   await connectToDatabase();
@@ -93,22 +104,21 @@ export async function PATCH(req: NextRequest, ctx: RouteContext): Promise<Respon
   // Billing enforcement: changing invoice status is Pro-only
   const user = await User.findById(session.user.id).lean().exec();
   if (!user) {
-    return jsonErr("Unauthorized", 401, "UNAUTHORIZED", { headers });
+    return jsonErr("Unauthorized", 401, headers, "UNAUTHORIZED");
   }
 
   try {
     requirePro(toEntitlementsUser(user));
   } catch (e) {
     if (e instanceof EntitlementError) {
-      return jsonErr("Pro subscription required", 402, e.code, { headers });
+      return jsonErr("Pro subscription required", 402, headers, e.code);
     }
     throw e;
   }
 
   const invoice = await Invoice.findById(new Types.ObjectId(invoiceId));
-
   if (!invoice) {
-    return jsonErr("Invoice not found", 404, "NOT_FOUND", { headers });
+    return jsonErr("Invoice not found", 404, headers, "NOT_FOUND");
   }
 
   const access = await getEstateAccess({
@@ -117,8 +127,9 @@ export async function PATCH(req: NextRequest, ctx: RouteContext): Promise<Respon
     atLeastRole: "EDITOR",
   });
 
+  // Hide existence if user lacks access
   if (!access || !access.canEdit) {
-    return jsonErr("Invoice not found", 404, "NOT_FOUND", { headers });
+    return jsonErr("Invoice not found", 404, headers, "NOT_FOUND");
   }
 
   const previousStatusRaw = invoice.status ? String(invoice.status).toUpperCase() : null;
@@ -133,7 +144,8 @@ export async function PATCH(req: NextRequest, ctx: RouteContext): Promise<Respon
         status: nextStatus,
         message: "Status unchanged",
       },
-      { headers },
+      200,
+      headers,
     );
   }
 
@@ -210,6 +222,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext): Promise<Respon
       estateId: estateIdStr,
       status: nextStatus,
     },
-    { headers },
+    200,
+    headers,
   );
 }

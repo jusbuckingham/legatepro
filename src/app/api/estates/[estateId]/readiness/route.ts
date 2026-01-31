@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import mongoose from "mongoose";
 
 import { auth } from "@/lib/auth";
 import { requireEstateAccess } from "@/lib/estateAccess";
@@ -8,8 +9,10 @@ import { Estate } from "@/models/Estate";
 
 export const dynamic = "force-dynamic";
 
+const NO_STORE_HEADERS = { "Cache-Control": "no-store" } as const;
+
 function isObjectIdLike(value: string): boolean {
-  return /^[a-fA-F0-9]{24}$/.test(value);
+  return mongoose.Types.ObjectId.isValid(value);
 }
 
 function severityRank(severity: string): number {
@@ -64,16 +67,16 @@ export async function GET(
   const estateId = params?.estateId;
 
   if (!estateId || typeof estateId !== "string") {
-    return NextResponse.json({ ok: false, error: "INVALID_ESTATE_ID" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "INVALID_ESTATE_ID" }, { status: 400, headers: NO_STORE_HEADERS });
   }
 
   if (!isObjectIdLike(estateId)) {
-    return NextResponse.json({ ok: false, error: "INVALID_ESTATE_ID" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "INVALID_ESTATE_ID" }, { status: 400, headers: NO_STORE_HEADERS });
   }
 
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401, headers: NO_STORE_HEADERS });
   }
 
   const getEstateReadiness = resolveReadinessFn();
@@ -86,7 +89,7 @@ export async function GET(
           ? { message: "Could not resolve readiness function export from /lib/estate/readiness" }
           : null),
       },
-      { status: 500 },
+      { status: 500, headers: NO_STORE_HEADERS },
     );
   }
 
@@ -102,7 +105,7 @@ export async function GET(
         : null;
 
     if (!readiness) {
-      return NextResponse.json({ ok: false, error: "READINESS_UNAVAILABLE" }, { status: 500 });
+      return NextResponse.json({ ok: false, error: "READINESS_UNAVAILABLE" }, { status: 500, headers: NO_STORE_HEADERS });
     }
 
     const signals =
@@ -166,17 +169,17 @@ export async function GET(
       { new: false },
     );
 
-    return NextResponse.json({ ok: true, readiness: orderedReadiness }, { status: 200 });
+    return NextResponse.json({ ok: true, readiness: orderedReadiness }, { status: 200, headers: NO_STORE_HEADERS });
   } catch (err) {
     const message = err instanceof Error ? err.message : "UNKNOWN_ERROR";
     const lower = message.toLowerCase();
 
     if (lower.includes("forbidden") || lower.includes("unauthorized") || lower.includes("not authorized")) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403, headers: NO_STORE_HEADERS });
     }
 
     if (lower.includes("not found")) {
-      return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404, headers: NO_STORE_HEADERS });
     }
 
     return NextResponse.json(
@@ -185,7 +188,7 @@ export async function GET(
         error: "SERVER_ERROR",
         ...(process.env.NODE_ENV === "development" ? { message } : null),
       },
-      { status: 500 },
+      { status: 500, headers: NO_STORE_HEADERS },
     );
   }
 }

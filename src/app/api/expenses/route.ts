@@ -3,17 +3,53 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
-import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
-import { Expense } from "@/models/Expense";
 import { auth } from "@/lib/auth";
+import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
+import { Expense } from "@/models/Expense";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+const NO_STORE_HEADERS = { "Cache-Control": "no-store" } as const;
 
 function toObjectId(id: string) {
   return mongoose.Types.ObjectId.isValid(id)
     ? new mongoose.Types.ObjectId(id)
     : null;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isResponse(value: unknown): value is Response {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.status === "number" && "headers" in v;
+}
+
+function pickResponse(value: unknown): Response | null {
+  if (!value) return null;
+  if (isResponse(value)) return value;
+  if (typeof value === "object") {
+    const v = value as Record<string, unknown>;
+    const r = (v.res ?? v.response) as unknown;
+    if (isResponse(r)) return r;
+  }
+  return null;
+}
+
+async function enforceEstate(opts: {
+  estateId: string;
+  userId: string;
+  mode: "viewer" | "editor";
+}): Promise<Response | true> {
+  const fn = opts.mode === "editor" ? requireEstateEditAccess : requireEstateAccess;
+  const out = (await fn({ estateId: opts.estateId, userId: opts.userId })) as unknown;
+  const maybe = pickResponse(out);
+  if (maybe) return maybe;
+  return true;
 }
 
 // GET /api/expenses
@@ -27,12 +63,18 @@ function toObjectId(id: string) {
 export async function GET(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { ok: false, error: "Unauthorized" },
+      { status: 401, headers: NO_STORE_HEADERS },
+    );
   }
 
   const ownerObjectId = toObjectId(session.user.id);
   if (!ownerObjectId) {
-    return NextResponse.json({ ok: false, error: "Invalid user id" }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "Invalid user id" },
+      { status: 400, headers: NO_STORE_HEADERS },
+    );
   }
 
   try {
@@ -53,8 +95,24 @@ export async function GET(request: NextRequest) {
     if (estateId) {
       const estateObjectId = toObjectId(estateId);
       if (!estateObjectId) {
-        return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
+        return NextResponse.json(
+          { ok: false, error: "Invalid estateId" },
+          { status: 400, headers: NO_STORE_HEADERS },
+        );
       }
+
+      // Ensure the user has at least viewer access to this estate
+      const access = await enforceEstate({
+        estateId,
+        userId: session.user.id,
+        mode: "viewer",
+      });
+      if (access instanceof Response) {
+        const cloned = new Response(access.body, access);
+        cloned.headers.set("Cache-Control", "no-store");
+        return cloned;
+      }
+
       filter.estateId = estateObjectId;
     }
 
@@ -98,12 +156,15 @@ export async function GET(request: NextRequest) {
 
     const expenses = expensesRaw.map((e) => serializeMongoDoc(e));
 
-    return NextResponse.json({ ok: true, expenses }, { status: 200 });
+    return NextResponse.json(
+      { ok: true, expenses },
+      { status: 200, headers: NO_STORE_HEADERS },
+    );
   } catch (error) {
     console.error("GET /api/expenses error", error);
     return NextResponse.json(
       { ok: false, error: "Unable to load expenses" },
-      { status: 500 }
+      { status: 500, headers: NO_STORE_HEADERS },
     );
   }
 }
@@ -127,25 +188,30 @@ interface CreateExpensePayload {
 export async function POST(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { ok: false, error: "Unauthorized" },
+      { status: 401, headers: NO_STORE_HEADERS },
+    );
   }
 
   const ownerObjectId = toObjectId(session.user.id);
   if (!ownerObjectId) {
-    return NextResponse.json({ ok: false, error: "Invalid user id" }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "Invalid user id" },
+      { status: 400, headers: NO_STORE_HEADERS },
+    );
   }
 
   try {
-    await connectToDatabase();
-
-    const body = (await request.json()) as Partial<CreateExpensePayload> | null;
-
-    if (!body) {
+    const raw = await request.json().catch(() => null);
+    if (!isPlainObject(raw)) {
       return NextResponse.json(
         { ok: false, error: "Request body is required" },
-        { status: 400 }
+        { status: 400, headers: NO_STORE_HEADERS },
       );
     }
+
+    const body = raw as Partial<CreateExpensePayload>;
 
     const {
       estateId,
@@ -162,29 +228,61 @@ export async function POST(request: NextRequest) {
     } = body;
 
     if (!estateId) {
-      return NextResponse.json({ ok: false, error: "estateId is required" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "estateId is required" },
+        { status: 400, headers: NO_STORE_HEADERS },
+      );
     }
 
     const estateObjectId = toObjectId(estateId);
     if (!estateObjectId) {
-      return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "Invalid estateId" },
+        { status: 400, headers: NO_STORE_HEADERS },
+      );
     }
 
     if (!date) {
-      return NextResponse.json({ ok: false, error: "date is required" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "date is required" },
+        { status: 400, headers: NO_STORE_HEADERS },
+      );
     }
 
     const parsedDate = new Date(date);
     if (Number.isNaN(parsedDate.getTime())) {
-      return NextResponse.json({ ok: false, error: "date must be a valid ISO date" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "date must be a valid ISO date" },
+        { status: 400, headers: NO_STORE_HEADERS },
+      );
     }
 
-    if (!description) {
-      return NextResponse.json({ ok: false, error: "description is required" }, { status: 400 });
+    if (!description || typeof description !== "string" || !description.trim()) {
+      return NextResponse.json(
+        { ok: false, error: "description is required" },
+        { status: 400, headers: NO_STORE_HEADERS },
+      );
     }
 
     if (amount == null || Number.isNaN(Number(amount))) {
-      return NextResponse.json({ ok: false, error: "A valid amount is required" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "A valid amount is required" },
+        { status: 400, headers: NO_STORE_HEADERS },
+      );
+    }
+
+    await connectToDatabase();
+
+    // Creating expenses is an edit-level operation.
+    const access = await enforceEstate({
+      estateId,
+      userId: session.user.id,
+      mode: "editor",
+    });
+    if (access instanceof Response) {
+      const cloned = new Response(access.body, access);
+      cloned.headers.set("Cache-Control", "no-store");
+      return cloned;
     }
 
     const expense = await Expense.create({
@@ -192,7 +290,7 @@ export async function POST(request: NextRequest) {
       estateId: estateObjectId,
       date: parsedDate,
       category: category || "OTHER",
-      description,
+      description: description.trim(),
       amount: Number(amount),
       payee,
       notes,
@@ -204,12 +302,15 @@ export async function POST(request: NextRequest) {
 
     const expenseOut = serializeMongoDoc(expense.toObject());
 
-    return NextResponse.json({ ok: true, expense: expenseOut }, { status: 201 });
+    return NextResponse.json(
+      { ok: true, expense: expenseOut },
+      { status: 201, headers: NO_STORE_HEADERS },
+    );
   } catch (error) {
     console.error("POST /api/expenses error", error);
     return NextResponse.json(
       { ok: false, error: "Unable to create expense" },
-      { status: 500 }
+      { status: 500, headers: NO_STORE_HEADERS },
     );
   }
 }

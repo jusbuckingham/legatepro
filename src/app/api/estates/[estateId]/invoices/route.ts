@@ -6,6 +6,8 @@ import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import { Invoice, type InvoiceStatus } from "@/models/Invoice";
+import { logEstateEvent } from "@/lib/estateEvents";
+import type { EstateEventType } from "@/models/EstateEvent";
 import mongoose from "mongoose";
 
 type RouteParams = {
@@ -22,8 +24,8 @@ interface CreateInvoiceBody {
   status?: InvoiceStatus;
 }
 
-function toObjectId(id: string) {
-  return mongoose.Types.ObjectId.isValid(id)
+function toObjectId(id: unknown) {
+  return typeof id === "string" && mongoose.Types.ObjectId.isValid(id)
     ? new mongoose.Types.ObjectId(id)
     : null;
 }
@@ -91,7 +93,11 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
     await connectToDatabase();
 
-    const body = (await req.json()) as Partial<CreateInvoiceBody>;
+    const raw = await req.json().catch(() => null);
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return jsonError("Invalid request body", 400);
+    }
+    const body = raw as Partial<CreateInvoiceBody>;
 
     const errors: string[] = [];
 
@@ -134,6 +140,22 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       dueDate,
       status,
     });
+
+    try {
+      await logEstateEvent({
+        ownerId: session.user.id,
+        estateId,
+        type: "INVOICE_CREATED" as const as EstateEventType,
+        summary: "Invoice created",
+        detail: `Created invoice ${String((invoice as { _id?: unknown })._id ?? "")}`,
+        meta: {
+          invoiceId: String((invoice as { _id?: unknown })._id ?? ""),
+          actorId: session.user.id,
+        },
+      });
+    } catch (e) {
+      console.warn("[POST /api/estates/[estateId]/invoices] Failed to log event:", e);
+    }
 
     return NextResponse.json({ ok: true, invoice }, { status: 201 });
   } catch (error) {

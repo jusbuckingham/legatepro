@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
@@ -64,8 +65,8 @@ function isExpired(invite: EstateInvite): boolean {
   return invite.expiresAt.getTime() <= Date.now();
 }
 
-function isValidObjectId(id: string): boolean {
-  return /^[a-f\d]{24}$/i.test(id);
+function isValidObjectId(id: unknown): id is string {
+  return typeof id === "string" && mongoose.Types.ObjectId.isValid(id);
 }
 
 function normalizeToken(token: string): string {
@@ -158,47 +159,7 @@ export async function POST(
     }
 
     // Add or update collaborator
-    const existing = (estate.collaborators ?? []).find((c) => c.userId === session.user.id);
-
-    if (existing) {
-      // Upgrade/downgrade role only if different
-      if (existing.role !== invite.role) {
-        const previousRole = existing.role;
-        existing.role = invite.role;
-
-        await logEstateEvent({
-          ownerId: estate.ownerId,
-          estateId: estate.id,
-          type: "COLLABORATOR_ROLE_CHANGED",
-          summary: "Collaborator role updated",
-          detail: `Updated ${userEmail} from ${previousRole} to ${invite.role}`,
-          meta: {
-            userId: session.user.id,
-            previousRole,
-            role: invite.role,
-          },
-        });
-      }
-    } else {
-      estate.collaborators = estate.collaborators ?? [];
-      estate.collaborators.push({
-        userId: session.user.id,
-        role: invite.role,
-        addedAt: now,
-      });
-
-      await logEstateEvent({
-        ownerId: estate.ownerId,
-        estateId: estate.id,
-        type: "COLLABORATOR_ADDED",
-        summary: "Collaborator added",
-        detail: `Accepted invite: ${userEmail} as ${invite.role}`,
-        meta: {
-          userId: session.user.id,
-          role: invite.role,
-        },
-      });
-    }
+    // Removed in-memory mutation block per instructions.
 
     // Mark invite accepted (atomic) to prevent double-accept races
     const acceptRes = await Estate.updateOne(
@@ -245,18 +206,103 @@ export async function POST(
       );
     }
 
-    await logEstateEvent({
-      ownerId: estate.ownerId,
-      estateId: estate.id,
-      type: "COLLABORATOR_ADDED",
-      summary: "Invite accepted",
-      detail: `${userEmail} accepted an invite (link)`,
-      meta: {
-        userId: session.user.id,
-        email: inviteEmail,
-        role: invite.role,
-      },
-    });
+    // Persist collaborator membership/role.
+    // 1) Try to update an existing collaborator entry
+    const updateExisting = await Estate.updateOne(
+      { _id: estateId, "collaborators.userId": session.user.id },
+      { $set: { "collaborators.$.role": invite.role } }
+    );
+
+    let collaboratorAdded = false;
+    let previousRole: string | undefined;
+
+    if (updateExisting.matchedCount === 0) {
+      // 2) No collaborator entry exists; push a new one
+      await Estate.updateOne(
+        { _id: estateId },
+        {
+          $push: {
+            collaborators: {
+              userId: session.user.id,
+              role: invite.role,
+              addedAt: now,
+            },
+          },
+        }
+      );
+      collaboratorAdded = true;
+    } else {
+      // Derive previous role from the earlier read
+      const existingCollab = (estate.collaborators ?? []).find((c) => c.userId === session.user.id);
+      previousRole = existingCollab?.role;
+    }
+
+    // Best-effort event logging
+    try {
+      if (collaboratorAdded) {
+        await logEstateEvent({
+          ownerId: estate.ownerId,
+          estateId: estate.id,
+          type: "COLLABORATOR_INVITE_ACCEPTED",
+          summary: "Collaborator invite accepted",
+          detail: `${userEmail} accepted a collaborator invite`,
+          meta: {
+            userId: session.user.id,
+            email: inviteEmail,
+            role: invite.role,
+            actorId: session.user.id,
+          },
+        });
+      } else if (previousRole && previousRole !== invite.role) {
+        // Log acceptance and the resulting role change as two distinct events.
+        await logEstateEvent({
+          ownerId: estate.ownerId,
+          estateId: estate.id,
+          type: "COLLABORATOR_INVITE_ACCEPTED",
+          summary: "Collaborator invite accepted",
+          detail: `${userEmail} accepted a collaborator invite`,
+          meta: {
+            userId: session.user.id,
+            email: inviteEmail,
+            role: invite.role,
+            actorId: session.user.id,
+          },
+        });
+
+        await logEstateEvent({
+          ownerId: estate.ownerId,
+          estateId: estate.id,
+          type: "COLLABORATOR_ROLE_CHANGED",
+          summary: "Collaborator role updated",
+          detail: `Updated ${userEmail} from ${previousRole} to ${invite.role}`,
+          meta: {
+            userId: session.user.id,
+            previousRole,
+            role: invite.role,
+            actorId: session.user.id,
+          },
+        });
+      } else {
+        await logEstateEvent({
+          ownerId: estate.ownerId,
+          estateId: estate.id,
+          type: "COLLABORATOR_INVITE_ACCEPTED",
+          summary: "Collaborator invite accepted",
+          detail: `${userEmail} accepted a collaborator invite`,
+          meta: {
+            userId: session.user.id,
+            email: inviteEmail,
+            role: invite.role,
+            actorId: session.user.id,
+          },
+        });
+      }
+    } catch (e) {
+      console.warn(
+        "[POST /api/estates/[estateId]/invites/[token]/accept] Failed to log event:",
+        e
+      );
+    }
 
     return json(
       {

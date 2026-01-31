@@ -80,14 +80,20 @@ function normalizeTags(value: unknown, maxTags = 25, maxLen = 32): string[] {
     : [];
 
   const out: string[] = [];
+  const seen = new Set<string>();
+
   for (const t of raw) {
     const v = t.trim().toLowerCase();
     if (!v) continue;
     if (v.length > maxLen) continue;
-    if (out.includes(v)) continue;
+    if (seen.has(v)) continue;
+
+    seen.add(v);
     out.push(v);
+
     if (out.length >= maxTags) break;
   }
+
   return out;
 }
 
@@ -328,6 +334,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           documentId,
           updatedFields: Object.keys(filteredUpdates),
           isSensitive: Boolean((updated as EstateDocumentLean | null | undefined)?.isSensitive),
+          actorId: session.user.id,
         },
       });
     } catch (error) {
@@ -336,6 +343,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ ok: true, document: updated }, { status: 200 });
   } catch (error) {
+    if (typeof error === "object" && error !== null && "name" in error) {
+      const name = (error as { name?: unknown }).name;
+      if (name === "ValidationError") {
+        return NextResponse.json(
+          { ok: false, error: "Invalid document fields" },
+          { status: 400 }
+        );
+      }
+    }
     console.error("[PATCH /api/estates/[estateId]/documents/[documentId]] Error:", error);
     return NextResponse.json(
       { ok: false, error: "Failed to update document" },
@@ -393,6 +409,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
         meta: {
           documentId,
           wasSensitive: Boolean((deleted as EstateDocumentLean | null | undefined)?.isSensitive),
+          actorId: session.user.id,
         },
       });
     } catch (error) {

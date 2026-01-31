@@ -20,6 +20,10 @@ type DocumentItem = {
   updatedAt?: string;
 };
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function normalizeSensitivity(raw: unknown): "LOW" | "MEDIUM" | "HIGH" {
   if (typeof raw !== "string") return "LOW";
   const up = raw.toUpperCase();
@@ -54,7 +58,12 @@ function docToItem(doc: unknown): DocumentItem {
     label: getString("label") ?? "Document",
     subject: getString("subject") ?? "OTHER",
     sensitivity: normalizeSensitivity(d.sensitivity),
-    tags: Array.isArray(d.tags) ? (d.tags as unknown[]).filter((t): t is string => typeof t === "string") : [],
+    tags: Array.isArray(d.tags)
+      ? (d.tags as unknown[])
+          .filter((t): t is string => typeof t === "string")
+          .map((t) => t.trim())
+          .filter((t) => t.length > 0)
+      : [],
     url: getString("url") ?? null,
     notes: getString("notes") ?? null,
     createdAt: getDateIso("createdAt"),
@@ -74,17 +83,18 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url);
   const estateId = url.searchParams.get("estateId")?.trim() ?? "";
-  const q = url.searchParams.get("q")?.trim() ?? "";
-  const subject = url.searchParams.get("subject")?.trim() ?? "";
-  const sensitivity = url.searchParams.get("sensitivity")?.trim() ?? "";
-  const tag = url.searchParams.get("tag")?.trim() ?? "";
+  const qRaw = url.searchParams.get("q")?.trim() ?? "";
+  const subjectRaw = url.searchParams.get("subject")?.trim() ?? "";
+  const sensitivityRaw = url.searchParams.get("sensitivity")?.trim() ?? "";
+  const tagRaw = url.searchParams.get("tag")?.trim() ?? "";
+
+  const q = qRaw.slice(0, 200);
+  const subject = subjectRaw.trim();
+  const sensitivity = sensitivityRaw.trim();
+  const tag = tagRaw.slice(0, 64).trim();
 
   if (!estateId) {
-    // For now: documents are estate-scoped in LegatePro.
-    return NextResponse.json(
-      { ok: false, error: "estateId is required" },
-      { status: 400 }
-    );
+    return NextResponse.json({ ok: false, error: "estateId is required" }, { status: 400 });
   }
 
   await connectToDatabase();
@@ -94,7 +104,7 @@ export async function GET(req: NextRequest) {
   const query: Record<string, unknown> = { estateId };
 
   if (subject && subject.toUpperCase() !== "ALL") {
-    query.subject = subject;
+    query.subject = normalizeSubject(subject);
   }
   if (sensitivity && sensitivity.toUpperCase() !== "ALL") {
     query.sensitivity = normalizeSensitivity(sensitivity);
@@ -104,17 +114,20 @@ export async function GET(req: NextRequest) {
     query.tags = tag.toLowerCase();
   }
   if (q) {
-    // label + notes + url quick search
+    const pattern = new RegExp(escapeRegex(q), "i");
+
+    // label + notes + url + fileName + tags quick search
     query.$or = [
-      { label: { $regex: q, $options: "i" } },
-      { notes: { $regex: q, $options: "i" } },
-      { url: { $regex: q, $options: "i" } },
-      { fileName: { $regex: q, $options: "i" } },
-      { tags: { $regex: q, $options: "i" } },
+      { label: pattern },
+      { notes: pattern },
+      { url: pattern },
+      { fileName: pattern },
+      { tags: pattern },
     ];
   }
 
   const docs = await EstateDocument.find(query)
+    .select("_id estateId label subject sensitivity tags url notes fileName createdAt updatedAt")
     .sort({ createdAt: -1 })
     .limit(100)
     .lean()

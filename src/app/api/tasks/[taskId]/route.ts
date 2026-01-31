@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
+import { logEstateEvent } from "@/lib/estateEvents";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import {
   EstateTask,
@@ -20,6 +21,18 @@ const ALLOWED_STATUSES: TaskStatus[] = [
   "IN_PROGRESS",
   "DONE",
 ];
+
+function isValidObjectIdString(id: unknown): id is string {
+  return typeof id === "string" && mongoose.Types.ObjectId.isValid(id);
+}
+
+function toObjectId(id: unknown): mongoose.Types.ObjectId | null {
+  return isValidObjectIdString(id) ? new mongoose.Types.ObjectId(id) : null;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
 
 function parseStatus(raw: unknown): TaskStatus | undefined {
   if (typeof raw !== "string") return undefined;
@@ -66,7 +79,15 @@ export async function GET(
     );
   }
 
-  const task = (await EstateTask.findById(taskId)) as EstateTaskDocument | null;
+  const taskObjectId = toObjectId(taskId);
+  if (!taskObjectId) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid taskId" },
+      { status: 400 }
+    );
+  }
+
+  const task = (await EstateTask.findById(taskObjectId)) as EstateTaskDocument | null;
   if (!task) {
     return NextResponse.json(
       { ok: false, error: "Task not found" },
@@ -108,20 +129,26 @@ export async function PATCH(
     );
   }
 
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
+  const taskObjectId = toObjectId(taskId);
+  if (!taskObjectId) {
     return NextResponse.json(
-      { ok: false, error: "Invalid JSON body" },
-      { status: 400 },
+      { ok: false, error: "Invalid taskId" },
+      { status: 400 }
     );
   }
 
-  if (!body || typeof body !== "object") {
+  const body = await req.json().catch(() => null);
+  if (body === null) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid JSON body" },
+      { status: 400 }
+    );
+  }
+
+  if (!isPlainObject(body)) {
     return NextResponse.json(
       { ok: false, error: "Body must be an object" },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
@@ -215,7 +242,7 @@ export async function PATCH(
     update.relatedInvoiceId = relatedInvoiceId.trim() ? relatedInvoiceId : null;
   }
 
-  const existingTask = (await EstateTask.findById(taskId)) as EstateTaskDocument | null;
+  const existingTask = (await EstateTask.findById(taskObjectId)) as EstateTaskDocument | null;
 
   if (!existingTask) {
     return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
@@ -245,41 +272,46 @@ export async function PATCH(
 
   const didStatusChange = previousStatus !== nextStatus;
 
-  // Activity log
+  // Activity log (best-effort)
   try {
     if (didStatusChange) {
-      await logActivity({
+      await logEstateEvent({
+        ownerId: session.user.id,
         estateId: String(existingTask.estateId),
-        kind: "TASK",
-        action: "status_changed",
-        entityId: String(existingTask._id),
-        message: `Task status changed: ${String(existingTask.title ?? "Untitled")}`,
-        snapshot: {
+        type: "TASK_STATUS_CHANGED",
+        summary: "Task status changed",
+        detail: `Task ${String(existingTask._id)} status changed`,
+        meta: {
+          taskId: String(existingTask._id),
           previousStatus,
-          newStatus: nextStatus,
+          status: nextStatus,
           previousTitle,
-          newTitle: nextTitle,
+          title: nextTitle,
           previousDueDate,
-          newDueDate: nextDueDate,
+          dueDate: nextDueDate,
+          actorId: session.user.id,
         },
       });
     } else {
-      await logActivity({
+      await logEstateEvent({
+        ownerId: session.user.id,
         estateId: String(existingTask.estateId),
-        kind: "TASK",
-        action: "updated",
-        entityId: String(existingTask._id),
-        message: `Task updated: ${String(existingTask.title ?? "Untitled")}`,
-        snapshot: {
+        type: "TASK_UPDATED",
+        summary: "Task updated",
+        detail: `Task ${String(existingTask._id)} updated`,
+        meta: {
+          taskId: String(existingTask._id),
           previousTitle,
-          newTitle: nextTitle,
+          title: nextTitle,
           previousDueDate,
-          newDueDate: nextDueDate,
+          dueDate: nextDueDate,
+          actorId: session.user.id,
         },
       });
     }
-  } catch {
-    // Don't block task updates if activity logging fails
+  } catch (e) {
+    // Don't block task updates if event logging fails
+    console.warn("[PATCH /api/tasks/[taskId]] Failed to log estate event:", e);
   }
 
   return NextResponse.json(
@@ -306,8 +338,15 @@ export async function DELETE(
       { status: 400 },
     );
   }
+  const taskObjectId = toObjectId(taskId);
+  if (!taskObjectId) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid taskId" },
+      { status: 400 }
+    );
+  }
 
-  const existingTask = (await EstateTask.findById(taskId)) as EstateTaskDocument | null;
+  const existingTask = (await EstateTask.findById(taskObjectId)) as EstateTaskDocument | null;
   if (!existingTask) {
     return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
@@ -321,28 +360,30 @@ export async function DELETE(
   if (access instanceof Response) {
     return access;
   }
-
-  const deleted = await EstateTask.findByIdAndDelete(taskId);
+  const deleted = await EstateTask.findByIdAndDelete(taskObjectId);
   if (!deleted) {
     return NextResponse.json({ ok: false, error: "Task not found" }, { status: 404 });
   }
 
-  // Activity log: task deleted
+  // Activity log (best-effort): task deleted
   try {
-    await logActivity({
+    await logEstateEvent({
+      ownerId: session.user.id,
       estateId: String(deleted.estateId),
-      kind: "TASK",
-      action: "deleted",
-      entityId: String(deleted._id),
-      message: `Task deleted: ${String(deleted.title ?? "Untitled")}`,
-      snapshot: {
+      type: "TASK_DELETED",
+      summary: "Task deleted",
+      detail: `Deleted task ${String(deleted._id)}`,
+      meta: {
+        taskId: String(deleted._id),
         title: deleted.title ?? null,
         status: deleted.status ?? null,
         dueDate: deleted.dueDate ?? null,
+        actorId: session.user.id,
       },
     });
-  } catch {
-    // Don't block task deletion if activity logging fails
+  } catch (e) {
+    // Don't block task deletion if event logging fails
+    console.warn("[DELETE /api/tasks/[taskId]] Failed to log estate event:", e);
   }
 
   return NextResponse.json(

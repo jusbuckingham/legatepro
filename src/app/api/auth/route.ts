@@ -6,6 +6,20 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const NO_STORE_HEADERS: HeadersInit = {
+  "Cache-Control": "no-store",
+};
+
+function json<T>(
+  body: T,
+  init: { status: number },
+): NextResponse {
+  return NextResponse.json(body, { status: init.status, headers: NO_STORE_HEADERS });
+}
+
 import { authOptions } from "@/lib/auth";
 import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { User } from "@/models/User";
@@ -18,14 +32,9 @@ export async function GET(): Promise<NextResponse> {
 
     const email = session?.user?.email ?? null;
     if (!email) {
-      return NextResponse.json(
+      return json(
         { ok: false, error: "Unauthorized" },
-        {
-          status: 401,
-          headers: {
-            "Cache-Control": "no-store",
-          },
-        }
+        { status: 401 }
       );
     }
 
@@ -44,25 +53,15 @@ export async function GET(): Promise<NextResponse> {
       subscriptionStatus: user?.subscriptionStatus ?? null,
     };
 
-    return NextResponse.json(
+    return json(
       { ok: true, data: { user: safeUser } },
-      {
-        status: 200,
-        headers: {
-          "Cache-Control": "no-store",
-        },
-      }
+      { status: 200 }
     );
   } catch (error) {
     console.error("GET /api/auth error", error);
-    return NextResponse.json(
+    return json(
       { ok: false, error: "Unable to load current user" },
-      {
-        status: 500,
-        headers: {
-          "Cache-Control": "no-store",
-        },
-      }
+      { status: 500 }
     );
   }
 }

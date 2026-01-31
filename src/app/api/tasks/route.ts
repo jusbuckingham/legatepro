@@ -5,6 +5,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { Task } from "@/models/Task";
 import { requireViewer, requireEditor } from "@/lib/estateAccess";
+import mongoose from "mongoose";
+
+const MAX_QUERY_LEN = 64;
+
+function escapeRegex(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isValidObjectIdString(id: unknown): id is string {
+  return typeof id === "string" && mongoose.Types.ObjectId.isValid(id);
+}
 
 interface CreateTaskBody {
   estateId?: string;
@@ -27,7 +42,7 @@ export async function GET(request: NextRequest) {
     const estateId = searchParams.get("estateId");
     const completed = searchParams.get("completed");
     const category = searchParams.get("category");
-    const q = searchParams.get("q")?.trim() ?? "";
+    const q = (searchParams.get("q")?.trim() ?? "").slice(0, MAX_QUERY_LEN);
 
     if (!estateId) {
       return NextResponse.json(
@@ -36,11 +51,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    if (!isValidObjectIdString(estateId)) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid estateId" },
+        { status: 400 }
+      );
+    }
+
+    await connectToDatabase();
+
     // Viewer access is sufficient to read tasks
     const access = await requireViewer({ estateId });
     if (access instanceof Response) return access;
-
-    await connectToDatabase();
 
     const filter: Record<string, unknown> = { estateId };
 
@@ -55,9 +77,10 @@ export async function GET(request: NextRequest) {
     }
 
     if (q) {
+      const safeQ = escapeRegex(q);
       filter.$or = [
-        { title: { $regex: q, $options: "i" } },
-        { notes: { $regex: q, $options: "i" } },
+        { title: { $regex: safeQ, $options: "i" } },
+        { notes: { $regex: safeQ, $options: "i" } },
       ];
     }
 
@@ -82,17 +105,23 @@ export async function GET(request: NextRequest) {
 // Creates a new task (Owner / Editor only)
 export async function POST(request: NextRequest) {
   try {
-    let body: CreateTaskBody;
-    try {
-      body = (await request.json()) as CreateTaskBody;
-    } catch {
+    const raw = await request.json().catch(() => null);
+    if (!isPlainObject(raw)) {
       return NextResponse.json(
         { ok: false, error: "Invalid JSON" },
         { status: 400 }
       );
     }
 
+    const body = raw as CreateTaskBody;
+
     const estateId = typeof body.estateId === "string" ? body.estateId.trim() : "";
+    if (estateId && !isValidObjectIdString(estateId)) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid estateId" },
+        { status: 400 }
+      );
+    }
     const title = typeof body.title === "string" ? body.title.trim() : "";
     const category = typeof body.category === "string" ? body.category.trim() : undefined;
     const notes = typeof body.notes === "string" ? body.notes.trim() : undefined;
@@ -113,10 +142,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    await connectToDatabase();
+
     const access = await requireEditor({ estateId });
     if (access instanceof Response) return access;
-
-    await connectToDatabase();
 
     let parsedDueDate: Date | undefined;
     if (typeof dueDate === "string" && dueDate.trim()) {

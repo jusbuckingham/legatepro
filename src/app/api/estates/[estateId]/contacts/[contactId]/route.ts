@@ -120,7 +120,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const filteredUpdates: Record<string, unknown> = {};
     for (const key of allowedFields) {
       if (key in updatesObj) {
-        filteredUpdates[key] = updatesObj[key];
+        const v = updatesObj[key];
+        // Avoid accidentally writing `undefined` into the document.
+        if (v !== undefined) {
+          filteredUpdates[key] = v;
+        }
       }
     }
 
@@ -137,7 +141,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         $or: [{ estateId: estateObjectId }, { estates: estateObjectId }],
       },
       filteredUpdates,
-      { new: true },
+      { new: true, runValidators: true },
     )
       .lean()
       .exec();
@@ -152,6 +156,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     if (isInvalidIdError(error)) {
       return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+    }
+    if (typeof error === "object" && error !== null && "name" in error) {
+      const name = (error as { name?: unknown }).name;
+      if (name === "ValidationError") {
+        return NextResponse.json(
+          { ok: false, error: "Invalid contact fields" },
+          { status: 400 }
+        );
+      }
     }
     console.error("[PATCH /api/estates/[estateId]/contacts/[contactId]] Error:", error);
     return NextResponse.json({ ok: false, error: "Failed to update contact" }, { status: 500 });

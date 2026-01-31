@@ -29,6 +29,8 @@ export type TimeEntryRecord = {
 
   hourlyRate?: number | null;
   billable: boolean;
+  billed: boolean;
+  billedAt?: Date | null;
   invoiced: boolean;
 
   createdAt: Date;
@@ -127,6 +129,15 @@ const TimeEntrySchema = new Schema<TimeEntryDocument>(
       type: Boolean,
       default: true,
     },
+    billed: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    billedAt: {
+      type: Date,
+      default: null,
+    },
     invoiced: {
       type: Boolean,
       default: false,
@@ -144,6 +155,9 @@ TimeEntrySchema.index({ ownerId: 1, estateId: 1, date: -1 });
 // Billing filters
 TimeEntrySchema.index({ estateId: 1, billable: 1, invoiced: 1, date: -1 });
 TimeEntrySchema.index({ ownerId: 1, billable: 1, invoiced: 1, date: -1 });
+// Billed state filters (pre-invoice locking / review)
+TimeEntrySchema.index({ estateId: 1, billed: 1, date: -1 });
+TimeEntrySchema.index({ ownerId: 1, billed: 1, date: -1 });
 
 TimeEntrySchema.virtual("hours").get(function (this: TimeEntryDocument) {
   if (typeof this.minutes !== "number" || Number.isNaN(this.minutes)) return 0;

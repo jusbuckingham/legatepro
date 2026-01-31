@@ -23,7 +23,56 @@ function parseTypes(value: string | null): EstateEventType[] | undefined {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  return raw.length > 0 ? (raw as EstateEventType[]) : undefined;
+  if (raw.length === 0) return undefined;
+
+  // De-dupe while preserving order
+  const seen = new Set<string>();
+  const out: EstateEventType[] = [];
+  for (const t of raw) {
+    if (seen.has(t)) continue;
+    seen.add(t);
+    out.push(t as EstateEventType);
+  }
+
+  return out;
+}
+
+function parseCursor(value: string | null): string | undefined {
+  if (!value) return undefined;
+  const v = value.trim();
+  if (!v) return undefined;
+
+  // Accept ISO timestamps that Date.parse can understand.
+  const ms = Date.parse(v);
+  if (!Number.isFinite(ms)) return undefined;
+
+  return v;
+}
+
+function mergeTypes(
+  repeated: string[],
+  csv: string | null
+): EstateEventType[] | undefined {
+  const fromRepeated =
+    repeated.length > 0
+      ? parseTypes(repeated.join(","))
+      : undefined;
+  const fromCsv = parseTypes(csv);
+
+  if (!fromRepeated && !fromCsv) return undefined;
+
+  const merged: EstateEventType[] = [];
+  const seen = new Set<string>();
+
+  for (const list of [fromRepeated ?? [], fromCsv ?? []]) {
+    for (const t of list) {
+      if (seen.has(t)) continue;
+      seen.add(t);
+      merged.push(t);
+    }
+  }
+
+  return merged.length > 0 ? merged : undefined;
 }
 
 /**
@@ -58,24 +107,26 @@ export async function GET(
   const { searchParams } = new URL(req.url);
 
   const limit = parseLimit(searchParams.get("limit"), 25);
-  const cursor = searchParams.get("cursor");
 
-  // Handle repeated types too: ?types=A&types=B
+  const cursorRaw = searchParams.get("cursor");
+  const cursor = parseCursor(cursorRaw);
+  if (cursorRaw && !cursor) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid cursor" },
+      { status: 400 }
+    );
+  }
+
+  // Supports both CSV (?types=A,B) and repeated params (?types=A&types=B)
   const typesRepeated = searchParams.getAll("types").filter(Boolean);
   const typesCsv = searchParams.get("types");
-  const types =
-    typesRepeated.length > 1
-      ? (typesRepeated as EstateEventType[])
-      : parseTypes(typesCsv);
+  const types = mergeTypes(typesRepeated, typesCsv);
 
   const { rows, nextCursor } = await getEstateEvents({
     estateId,
     types,
     limit,
-    cursor:
-      typeof cursor === "string" && cursor.trim().length > 0
-        ? cursor.trim()
-        : undefined,
+    cursor,
   });
 
   return NextResponse.json(
@@ -130,10 +181,14 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "Note is too long" }, { status: 400 });
   }
 
+  if (body.meta && typeof body.meta !== "object") {
+    return NextResponse.json({ ok: false, error: "Invalid meta" }, { status: 400 });
+  }
+
   await logEstateEvent({
     ownerId: session.user.id,
     estateId,
-    type: "NOTE_ADDED" as EstateEventType,
+    type: "NOTE_ADDED" as const as EstateEventType,
     summary: "Note added",
     detail: note,
     meta: body.meta,

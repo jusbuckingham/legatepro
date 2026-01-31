@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
 
 import { auth } from "@/lib/auth";
+import { noStoreHeaders, safeErrorMessage } from "@/lib/apiResponse";
 import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { Estate } from "@/models/Estate";
 import { EstateProperty } from "@/models/EstateProperty";
@@ -15,7 +16,7 @@ export const runtime = "nodejs";
 
 function headersNoStore(): HeadersInit {
   return {
-    "Cache-Control": "private, no-store, max-age=0",
+    ...noStoreHeaders(),
     // Basic hardening headers (safe for JSON API responses)
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "same-origin",
@@ -227,7 +228,7 @@ export async function GET(request: NextRequest) {
 
     return json({ ok: true, properties }, 200);
   } catch (error) {
-    console.error("GET /api/properties error", error);
+    console.error("GET /api/properties error", safeErrorMessage(error));
     return json({ ok: false, error: "Unable to load properties" }, 500);
   }
 }
@@ -251,10 +252,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let body: unknown = null;
-    try {
-      body = await request.json();
-    } catch {
+    const body: unknown = await request.json().catch(() => null);
+    if (body === null) {
       return json({ ok: false, error: "Invalid JSON" }, 400);
     }
 
@@ -351,7 +350,7 @@ export async function POST(request: NextRequest) {
 
     return json({ ok: true, property }, 201);
   } catch (error) {
-    console.error("POST /api/properties error", error);
+    console.error("POST /api/properties error", safeErrorMessage(error));
     return json({ ok: false, error: "Unable to create property" }, 500);
   }
 }

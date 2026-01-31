@@ -66,8 +66,8 @@ function checkRateLimit(key: string): { ok: true } | { ok: false; retryAfterSeco
 }
 
 // --- Utilities ---
-function toObjectId(id: string) {
-  return mongoose.Types.ObjectId.isValid(id)
+function toObjectId(id: unknown) {
+  return typeof id === "string" && mongoose.Types.ObjectId.isValid(id)
     ? new mongoose.Types.ObjectId(id)
     : null;
 }
@@ -288,13 +288,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ estateId: 
     );
   }
 
-  // Do not invite existing collaborators
-  const alreadyCollaborator = (result.estate.collaborators ?? []).some(
-    (c) => String(c.userId) && false,
-  );
   // NOTE: We can't reliably check collaborator email without a user lookup.
   // We skip this check intentionally; acceptance enforces email match.
-  void alreadyCollaborator;
 
   const origin = getOrigin(req);
 
@@ -323,23 +318,31 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ estateId: 
 
     await result.estate.save();
 
-    await logEstateEvent({
-      ownerId: result.estate.ownerId,
-      estateId: String(result.estate._id),
-      type: "COLLABORATOR_INVITE_SENT",
-      summary: "Collaborator invite link created",
-      detail: `Invite link created for ${email} (${role})`,
-      meta: {
-        email,
-        role,
-        token,
-        inviteUrl,
-        expiresAt: existing.expiresAt,
-        reused: true,
-        previousRole,
-        createdBy: String(session.user.id),
-      },
-    });
+    try {
+      await logEstateEvent({
+        ownerId: result.estate.ownerId,
+        estateId: String(result.estate._id),
+        type: "COLLABORATOR_INVITE_SENT",
+        summary: "Collaborator invite link created",
+        detail: `Invite link created for ${email} (${role})`,
+        meta: {
+          email,
+          role,
+          token,
+          inviteUrl,
+          expiresAt: existing.expiresAt,
+          reused: true,
+          previousRole,
+          createdBy: String(session.user.id),
+          actorId: String(session.user.id),
+        },
+      });
+    } catch (e) {
+      console.warn(
+        "[POST /api/estates/[estateId]/invites] Failed to log event (reused invite):",
+        e
+      );
+    }
 
     return json(
       {
@@ -369,22 +372,30 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ estateId: 
   result.estate.invites = invites;
   await result.estate.save();
 
-  await logEstateEvent({
-    ownerId: result.estate.ownerId,
-    estateId: String(result.estate._id),
-    type: "COLLABORATOR_INVITE_SENT",
-    summary: "Collaborator invite link created",
-    detail: `Invite link created for ${email} (${role})`,
-    meta: {
-      email,
-      role,
-      token,
-      inviteUrl,
-      expiresAt: defaultExpiresAt,
-      reused: false,
-      createdBy: String(session.user.id),
-    },
-  });
+  try {
+    await logEstateEvent({
+      ownerId: result.estate.ownerId,
+      estateId: String(result.estate._id),
+      type: "COLLABORATOR_INVITE_SENT",
+      summary: "Collaborator invite link created",
+      detail: `Invite link created for ${email} (${role})`,
+      meta: {
+        email,
+        role,
+        token,
+        inviteUrl,
+        expiresAt: defaultExpiresAt,
+        reused: false,
+        createdBy: String(session.user.id),
+        actorId: String(session.user.id),
+      },
+    });
+  } catch (e) {
+    console.warn(
+      "[POST /api/estates/[estateId]/invites] Failed to log event (new invite):",
+      e
+    );
+  }
 
   return json(
     {
@@ -480,20 +491,28 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ estateId
 
   await result.estate.save();
 
-  await logEstateEvent({
-    ownerId: result.estate.ownerId,
-    estateId: String(result.estate._id),
-    type: "COLLABORATOR_INVITE_REVOKED",
-    summary: "Collaborator invite revoked",
-    detail: `Invite revoked for ${target.email} (${target.role})`,
-    meta: {
-      email: target.email,
-      role: target.role,
-      token: target.token,
-      revokedAt: target.revokedAt,
-      revokedBy: session.user.id,
-    },
-  });
+  try {
+    await logEstateEvent({
+      ownerId: result.estate.ownerId,
+      estateId: String(result.estate._id),
+      type: "COLLABORATOR_INVITE_REVOKED",
+      summary: "Collaborator invite revoked",
+      detail: `Invite revoked for ${target.email} (${target.role})`,
+      meta: {
+        email: target.email,
+        role: target.role,
+        token: target.token,
+        revokedAt: target.revokedAt,
+        revokedBy: session.user.id,
+        actorId: String(session.user.id),
+      },
+    });
+  } catch (e) {
+    console.warn(
+      "[DELETE /api/estates/[estateId]/invites] Failed to log event:",
+      e
+    );
+  }
 
   return json(
     {

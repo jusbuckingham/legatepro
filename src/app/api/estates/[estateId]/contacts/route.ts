@@ -61,6 +61,7 @@ export async function POST(
   }
 
   // Permission: must be able to edit this estate (collaborators allowed if your helper supports it)
+  await connectToDatabase();
   await requireEstateEditAccess({ estateId });
 
   const estateObjectId = toObjectId(estateId);
@@ -68,8 +69,6 @@ export async function POST(
   if (!estateObjectId || !ownerObjectId) {
     return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
-
-  await connectToDatabase();
 
   let body: LinkBody;
   try {
@@ -81,7 +80,7 @@ export async function POST(
   const contactId = body.contactId;
   if (!contactId || typeof contactId !== "string") {
     return NextResponse.json(
-      { error: "Missing or invalid contactId" },
+      { ok: false, error: "Missing or invalid contactId" },
       { status: 400 }
     );
   }
@@ -188,6 +187,7 @@ export async function DELETE(
   }
 
   // Permission: must be able to edit this estate (collaborators allowed if your helper supports it)
+  await connectToDatabase();
   await requireEstateEditAccess({ estateId });
 
   const estateObjectId = toObjectId(estateId);
@@ -196,14 +196,12 @@ export async function DELETE(
     return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
 
-  await connectToDatabase();
-
   const url = new URL(req.url);
   const contactId = url.searchParams.get("contactId");
 
   if (!contactId || typeof contactId !== "string") {
     return NextResponse.json(
-      { error: "Missing contactId query parameter" },
+      { ok: false, error: "Missing contactId query parameter" },
       { status: 400 }
     );
   }

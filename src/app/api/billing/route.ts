@@ -3,18 +3,13 @@
 // - GET: returns current user's billing/subscription snapshot
 // - POST: creates a Stripe Checkout Session for a subscription
 
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { assertEnv } from "@/lib/assertEnv";
-import {
-  jsonErr,
-  jsonOk,
-  noStoreHeaders,
-  safeErrorMessage,
-} from "@/lib/apiResponse";
+import { noStoreHeaders, safeErrorMessage } from "@/lib/apiResponse";
 import { User } from "@/models/User";
 
 export const runtime = "nodejs";
@@ -71,6 +66,34 @@ function addSecurityHeaders(headers: Headers) {
   headers.set(
     "Permissions-Policy",
     "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+  );
+}
+
+function jsonOk<T>(data: T, init: { headers?: Headers; status?: number } = {}) {
+  return NextResponse.json(data, {
+    status: init.status ?? 200,
+    headers: init.headers,
+  });
+}
+
+function jsonErr(
+  message: string,
+  status = 400,
+  code = "BAD_REQUEST",
+  init: { headers?: Headers } = {},
+) {
+  return NextResponse.json(
+    {
+      ok: false,
+      error: {
+        message,
+        code,
+      },
+    },
+    {
+      status,
+      headers: init.headers,
+    },
   );
 }
 

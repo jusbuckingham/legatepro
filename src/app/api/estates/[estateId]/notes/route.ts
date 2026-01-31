@@ -21,6 +21,12 @@ const MAX_CATEGORY_LEN = 32;
 
 const MAX_BODY_PREVIEW_LEN = 500;
 
+const MAX_QUERY_LEN = 64;
+
+function escapeRegex(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function previewText(text: string, max: number): string {
   if (text.length <= max) return text;
   return text.slice(0, max).trimEnd() + "…";
@@ -29,8 +35,9 @@ function previewText(text: string, max: number): string {
 async function safeLogEvent(args: Parameters<typeof logEstateEvent>[0]) {
   try {
     await logEstateEvent(args);
-  } catch {
+  } catch (e) {
     // Never block the API response if event logging fails
+    console.warn("[notes] Failed to log estate event", e);
   }
 }
 
@@ -86,6 +93,8 @@ async function requireAccess(
   try {
     const input = { estateId, userId } as Parameters<typeof requireEstateAccess>[0];
 
+    await connectToDatabase();
+
     const result =
       mode === "edit" ? await requireEstateEditAccess(input) : await requireEstateAccess(input);
 
@@ -125,7 +134,7 @@ export async function GET(
     if (access instanceof NextResponse) return access;
 
     const { searchParams } = new URL(_req.url);
-    const q = searchParams.get("q")?.trim() ?? "";
+    const q = (searchParams.get("q")?.trim() ?? "").slice(0, MAX_QUERY_LEN);
     const category = searchParams.get("category")?.trim() ?? "";
     const pinnedParam = searchParams.get("pinned")?.trim() ?? "";
 
@@ -142,9 +151,10 @@ export async function GET(
     }
 
     if (isNonEmptyString(q)) {
+      const safeQ = escapeRegex(q);
       where.$or = [
-        { subject: { $regex: q, $options: "i" } },
-        { body: { $regex: q, $options: "i" } },
+        { subject: { $regex: safeQ, $options: "i" } },
+        { body: { $regex: safeQ, $options: "i" } },
       ];
     }
 
@@ -242,6 +252,7 @@ export async function POST(
       detail: subjectRaw,
       meta: {
         noteId: String(note._id),
+        actorId: access.userId,
         subject: subjectRaw,
         category: categoryUpper,
         pinned: Boolean(json.pinned),

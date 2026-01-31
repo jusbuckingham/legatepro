@@ -1,5 +1,3 @@
-
-
 import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
 
@@ -16,6 +14,10 @@ function toObjectId(id: string) {
   return mongoose.Types.ObjectId.isValid(id)
     ? new mongoose.Types.ObjectId(id)
     : null;
+}
+
+function isValidObjectIdString(id: unknown): id is string {
+  return typeof id === "string" && mongoose.Types.ObjectId.isValid(id);
 }
 
 function toIdString(value: unknown): string {
@@ -63,6 +65,10 @@ export async function PATCH(
   const estateObjectId = toObjectId(estateId);
   if (!estateObjectId) {
     return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+  }
+
+  if (!isValidObjectIdString(userId)) {
+    return NextResponse.json({ ok: false, error: "Invalid userId" }, { status: 400 });
   }
 
   await connectToDatabase();
@@ -131,7 +137,7 @@ export async function PATCH(
     type: "COLLABORATOR_ROLE_CHANGED",
     summary: "Collaborator role changed",
     detail: `Changed collaborator ${userId} from ${previousRole} to ${body.role}`,
-    meta: { userId, previousRole, role: body.role },
+    meta: { userId, previousRole, role: body.role, actorId: session.user.id },
   });
 
   return NextResponse.json(
@@ -159,6 +165,10 @@ export async function DELETE(
   const estateObjectId = toObjectId(estateId);
   if (!estateObjectId) {
     return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+  }
+
+  if (!isValidObjectIdString(userId)) {
+    return NextResponse.json({ ok: false, error: "Invalid userId" }, { status: 400 });
   }
 
   await connectToDatabase();
@@ -205,7 +215,7 @@ export async function DELETE(
     type: "COLLABORATOR_REMOVED",
     summary: "Collaborator removed",
     detail: `Removed collaborator ${userId}`,
-    meta: { userId, previousRole: removed.role },
+    meta: { userId, previousRole: removed.role, actorId: session.user.id },
   });
 
   return NextResponse.json(

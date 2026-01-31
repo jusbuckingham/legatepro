@@ -17,6 +17,26 @@ import {
   safeErrorMessage,
 } from "@/lib/apiResponse";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+const NO_STORE = { headers: noStoreHeaders() } as const;
+
+function withNoStore(res: Response): Response {
+  // Ensure helper responses (jsonUnauthorized/jsonNotFound/jsonForbidden) are no-store.
+  const next = new Response(res.body, res);
+  next.headers.set("Cache-Control", "no-store");
+  return next;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function toObjectId(id: string): mongoose.Types.ObjectId | null {
+  return mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : null;
+}
+
 type RouteParams = {
   invoiceId: string;
 };
@@ -87,7 +107,7 @@ function toEntitlementsUser(user: unknown): EntitlementsUser {
 export async function GET(_req: NextRequest, context: RouteContext) {
   const session = await auth();
   if (!session?.user?.id) {
-    return jsonUnauthorized();
+    return withNoStore(jsonUnauthorized());
   }
 
   await connectToDatabase();
@@ -95,12 +115,10 @@ export async function GET(_req: NextRequest, context: RouteContext) {
   const { invoiceId } = await context.params;
 
   if (!requireObjectIdLike(invoiceId)) {
-    return jsonErr("Invalid invoiceId", 400, "BAD_REQUEST", { headers: noStoreHeaders() });
+    return jsonErr("Invalid invoiceId", 400, NO_STORE.headers, "BAD_REQUEST");
   }
 
-  const invoiceObjectId = mongoose.Types.ObjectId.isValid(invoiceId)
-    ? new mongoose.Types.ObjectId(invoiceId)
-    : null;
+  const invoiceObjectId = toObjectId(invoiceId);
 
   const invoice = await Invoice.findOne({
     _id: invoiceObjectId ?? invoiceId,
@@ -109,7 +127,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
     .exec();
 
   if (!invoice) {
-    return jsonNotFound();
+    return withNoStore(jsonNotFound());
   }
 
   const access = await getEstateAccess({
@@ -119,7 +137,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
   });
 
   if (!access) {
-    return jsonNotFound();
+    return withNoStore(jsonNotFound());
   }
 
   return jsonOk(
@@ -137,7 +155,8 @@ export async function GET(_req: NextRequest, context: RouteContext) {
         lineItems: invoice.lineItems ?? [],
       },
     },
-    { headers: noStoreHeaders() },
+    200,
+    NO_STORE.headers,
   );
 }
 
@@ -149,7 +168,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
 export async function PUT(req: NextRequest, context: RouteContext) {
   const session = await auth();
   if (!session?.user?.id) {
-    return jsonUnauthorized();
+    return withNoStore(jsonUnauthorized());
   }
 
   await connectToDatabase();
@@ -157,21 +176,24 @@ export async function PUT(req: NextRequest, context: RouteContext) {
   // Billing enforcement: editing invoices is Pro-only
   const user = await User.findById(session.user.id).lean().exec();
   if (!user) {
-    return jsonUnauthorized();
+    return withNoStore(jsonUnauthorized());
   }
 
   try {
     requirePro(toEntitlementsUser(user));
   } catch (e) {
     if (e instanceof EntitlementError) {
-      return jsonErr("Pro subscription required", 402, e.code, {
-        headers: noStoreHeaders(),
-      });
+      return jsonErr("Pro subscription required", 402, NO_STORE.headers, e.code);
     }
     throw e;
   }
 
-  const body = (await req.json()) as {
+  const raw = await req.json().catch(() => null);
+  if (!isPlainObject(raw)) {
+    return jsonErr("Invalid JSON", 400, NO_STORE.headers, "BAD_REQUEST");
+  }
+
+  const body = raw as {
     status?: string;
     issueDate?: string | Date | null;
     dueDate?: string | Date | null;
@@ -185,7 +207,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
   const { invoiceId } = await context.params;
 
   if (!requireObjectIdLike(invoiceId)) {
-    return jsonErr("Invalid invoiceId", 400, "BAD_REQUEST", { headers: noStoreHeaders() });
+    return jsonErr("Invalid invoiceId", 400, NO_STORE.headers, "BAD_REQUEST");
   }
 
   const nextStatus = coerceStatus(status);
@@ -292,9 +314,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
   updateDoc.totalAmount = subtotalCents;
 
   try {
-    const invoiceObjectId = mongoose.Types.ObjectId.isValid(invoiceId)
-      ? new mongoose.Types.ObjectId(invoiceId)
-      : null;
+    const invoiceObjectId = toObjectId(invoiceId);
 
     const existing = await Invoice.findOne({
       _id: invoiceObjectId ?? invoiceId,
@@ -304,7 +324,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
       .exec();
 
     if (!existing) {
-      return jsonNotFound();
+      return withNoStore(jsonNotFound());
     }
 
     const access = await getEstateAccess({
@@ -314,7 +334,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
     });
 
     if (!access || !access.canEdit) {
-      return jsonForbidden();
+      return withNoStore(jsonForbidden());
     }
 
     const estateIdStr = String(existing.estateId);
@@ -335,7 +355,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
       .exec();
 
     if (!updated) {
-      return jsonNotFound();
+      return withNoStore(jsonNotFound());
     }
 
     const updatedDoc = updated as { estateId: unknown; _id: unknown };
@@ -350,13 +370,12 @@ export async function PUT(req: NextRequest, context: RouteContext) {
           estateId,
         },
       },
-      { headers: noStoreHeaders() },
+      200,
+      NO_STORE.headers,
     );
   } catch (err) {
     console.error("Error updating invoice:", safeErrorMessage(err));
-    return jsonErr("Failed to update invoice", 500, "INTERNAL_ERROR", {
-      headers: noStoreHeaders(),
-    });
+    return jsonErr("Failed to update invoice", 500, NO_STORE.headers, "INTERNAL_ERROR");
   }
 }
 
@@ -366,7 +385,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
 export async function DELETE(_req: NextRequest, context: RouteContext) {
   const session = await auth();
   if (!session?.user?.id) {
-    return jsonUnauthorized();
+    return withNoStore(jsonUnauthorized());
   }
 
   await connectToDatabase();
@@ -374,16 +393,14 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
   // Billing enforcement: deleting invoices is Pro-only
   const user = await User.findById(session.user.id).lean().exec();
   if (!user) {
-    return jsonUnauthorized();
+    return withNoStore(jsonUnauthorized());
   }
 
   try {
     requirePro(toEntitlementsUser(user));
   } catch (e) {
     if (e instanceof EntitlementError) {
-      return jsonErr("Pro subscription required", 402, e.code, {
-        headers: noStoreHeaders(),
-      });
+      return jsonErr("Pro subscription required", 402, NO_STORE.headers, e.code);
     }
     throw e;
   }
@@ -391,12 +408,10 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
   const { invoiceId } = await context.params;
 
   if (!requireObjectIdLike(invoiceId)) {
-    return jsonErr("Invalid invoiceId", 400, "BAD_REQUEST", { headers: noStoreHeaders() });
+    return jsonErr("Invalid invoiceId", 400, NO_STORE.headers, "BAD_REQUEST");
   }
 
-  const invoiceObjectId = mongoose.Types.ObjectId.isValid(invoiceId)
-    ? new mongoose.Types.ObjectId(invoiceId)
-    : null;
+  const invoiceObjectId = toObjectId(invoiceId);
 
   const existing = await Invoice.findOne({
     _id: invoiceObjectId ?? invoiceId,
@@ -406,7 +421,7 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
     .exec();
 
   if (!existing) {
-    return jsonNotFound();
+    return withNoStore(jsonNotFound());
   }
 
   const access = await getEstateAccess({
@@ -416,7 +431,7 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
   });
 
   if (!access || !access.canEdit) {
-    return jsonForbidden();
+    return withNoStore(jsonForbidden());
   }
 
   const estateIdStr = String(existing.estateId);
@@ -433,11 +448,12 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
     .exec();
 
   if (!deleted) {
-    return jsonNotFound();
+    return withNoStore(jsonNotFound());
   }
 
   return jsonOk(
     { success: true, id: String(deleted._id) },
-    { headers: noStoreHeaders() },
+    200,
+    NO_STORE.headers,
   );
 }

@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import { connectToDatabase } from "@/lib/db";
+import { logEstateEvent } from "@/lib/estateEvents";
+import type { EstateEventType } from "@/models/EstateEvent";
+import mongoose from "mongoose";
 import { Invoice } from "@/models/Invoice";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +31,14 @@ type UpdateInvoiceBody = {
   lineItems?: InvoiceLineItemInput[];
 };
 
+function isValidObjectIdString(id: unknown): id is string {
+  return typeof id === "string" && mongoose.Types.ObjectId.isValid(id);
+}
+
+function toObjectId(id: unknown): mongoose.Types.ObjectId | null {
+  return isValidObjectIdString(id) ? new mongoose.Types.ObjectId(id) : null;
+}
+
 function parseDate(value: unknown): Date | null {
   if (value == null) return null;
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
@@ -53,12 +64,17 @@ export async function GET(
   }
 
   const { estateId, invoiceId } = await params;
+  const estateObjectId = toObjectId(estateId);
+  const invoiceObjectId = toObjectId(invoiceId);
+  if (!estateObjectId || !invoiceObjectId) {
+    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+  }
   await connectToDatabase();
   await requireEstateAccess({ estateId, userId: session.user.id });
 
   const invoice = await Invoice.findOne({
-    _id: invoiceId,
-    estateId,
+    _id: invoiceObjectId,
+    estateId: estateObjectId,
   }).lean();
 
   if (!invoice) {
@@ -79,19 +95,23 @@ export async function PUT(
   }
 
   const { estateId, invoiceId } = await params;
+  const estateObjectId = toObjectId(estateId);
+  const invoiceObjectId = toObjectId(invoiceId);
+  if (!estateObjectId || !invoiceObjectId) {
+    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+  }
   await connectToDatabase();
   await requireEstateEditAccess({ estateId, userId: session.user.id });
 
-  let body: UpdateInvoiceBody;
-  try {
-    body = (await request.json()) as UpdateInvoiceBody;
-  } catch {
-    return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
+  const raw = await request.json().catch(() => null);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return NextResponse.json({ ok: false, error: "Invalid request body" }, { status: 400 });
   }
+  const body = raw as UpdateInvoiceBody;
 
   const invoice = await Invoice.findOne({
-    _id: invoiceId,
-    estateId,
+    _id: invoiceObjectId,
+    estateId: estateObjectId,
   });
 
   if (!invoice) {
@@ -156,6 +176,23 @@ export async function PUT(
   Object.assign(invoice, update);
   await invoice.save(); // pre-save hook will recompute totals
 
+  try {
+    await logEstateEvent({
+      ownerId: session.user.id,
+      estateId,
+      type: "INVOICE_UPDATED" as const as EstateEventType,
+      summary: "Invoice updated",
+      detail: `Updated invoice ${invoiceId}`,
+      meta: {
+        invoiceId,
+        updatedFields: Object.keys(update),
+        actorId: session.user.id,
+      },
+    });
+  } catch (e) {
+    console.warn("[PUT /api/estates/[estateId]/invoices/[invoiceId]] Failed to log event:", e);
+  }
+
   return NextResponse.json({ ok: true, invoice }, { status: 200 });
 }
 
@@ -170,16 +207,40 @@ export async function DELETE(
   }
 
   const { estateId, invoiceId } = await params;
+  const estateObjectId = toObjectId(estateId);
+  const invoiceObjectId = toObjectId(invoiceId);
+  if (!estateObjectId || !invoiceObjectId) {
+    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+  }
   await connectToDatabase();
   await requireEstateEditAccess({ estateId, userId: session.user.id });
 
   const deleted = await Invoice.findOneAndDelete({
-    _id: invoiceId,
-    estateId,
+    _id: invoiceObjectId,
+    estateId: estateObjectId,
   }).lean();
 
   if (!deleted) {
     return NextResponse.json({ ok: false, error: "Invoice not found" }, { status: 404 });
+  }
+
+  try {
+    await logEstateEvent({
+      ownerId: session.user.id,
+      estateId,
+      type: "INVOICE_DELETED" as const as EstateEventType,
+      summary: "Invoice deleted",
+      detail: `Deleted invoice ${invoiceId}`,
+      meta: {
+        invoiceId,
+        actorId: session.user.id,
+      },
+    });
+  } catch (e) {
+    console.warn(
+      "[DELETE /api/estates/[estateId]/invoices/[invoiceId]] Failed to log event:",
+      e
+    );
   }
 
   return NextResponse.json({ ok: true, deleted: true }, { status: 200 });

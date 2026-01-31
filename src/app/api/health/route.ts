@@ -1,4 +1,5 @@
 // src/app/api/health/route.ts
+
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import mongoose from "mongoose";
@@ -34,6 +35,12 @@ type HealthResponse = {
   };
 };
 
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, max-age=0",
+  Pragma: "no-cache",
+  Expires: "0",
+} as const;
+
 function labelMongooseState(state: number): string {
   // 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
   switch (state) {
@@ -54,6 +61,15 @@ function isProd(): boolean {
   return process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
 }
 
+function getVersion(): string | undefined {
+  if (isProd()) return undefined;
+  return (
+    process.env.VERCEL_GIT_COMMIT_SHA ||
+    process.env.NEXT_PUBLIC_APP_VERSION ||
+    undefined
+  );
+}
+
 async function withTimeout<T>(
   promise: Promise<T>,
   ms: number,
@@ -62,7 +78,9 @@ async function withTimeout<T>(
   let timeoutId: NodeJS.Timeout | undefined;
 
   const timeoutPromise = new Promise<T>((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
   });
 
   try {
@@ -72,6 +90,20 @@ async function withTimeout<T>(
   }
 }
 
+function applyResponseHeaders(res: NextResponse) {
+  // Prevent caching (important for uptime monitors).
+  res.headers.set("Cache-Control", NO_STORE_HEADERS["Cache-Control"]);
+  res.headers.set("Pragma", NO_STORE_HEADERS.Pragma);
+  res.headers.set("Expires", NO_STORE_HEADERS.Expires);
+
+  // Security headers.
+  res.headers.set("X-Content-Type-Options", "nosniff");
+  res.headers.set("Referrer-Policy", "same-origin");
+  res.headers.set("X-Frame-Options", "DENY");
+
+  return res;
+}
+
 export async function GET() {
   const start = Date.now();
   const timestamp = new Date().toISOString();
@@ -79,9 +111,10 @@ export async function GET() {
   // --- Env guardrails ---
   // Keep this list tight: only what would make the app unusable.
   const requiredEnv = ["MONGODB_URI"] as const;
-  const missing = requiredEnv.filter(
-    (k) => !process.env[k] || String(process.env[k]).trim().length === 0,
-  );
+  const missing = requiredEnv.filter((k) => {
+    const v = process.env[k];
+    return !v || String(v).trim().length === 0;
+  });
   const envOk = missing.length === 0;
 
   // --- DB check ---
@@ -90,8 +123,6 @@ export async function GET() {
     if (envOk) {
       await withTimeout(connectToDatabase(), 1500, "DB connect");
       dbOk = mongoose.connection.readyState === 1;
-    } else {
-      dbOk = false;
     }
   } catch {
     dbOk = false;
@@ -105,9 +136,12 @@ export async function GET() {
 
   if (stripeEnabled) {
     try {
+      // Prefer configured API version; otherwise let Stripe SDK default.
+      const apiVersion = process.env.STRIPE_API_VERSION;
       const stripe = new Stripe(String(stripeKey), {
-        // Keep in sync with the API version used elsewhere.
-        apiVersion: "2025-12-15.clover",
+        ...(apiVersion && String(apiVersion).trim().length > 0
+          ? { apiVersion: String(apiVersion) as Stripe.LatestApiVersion }
+          : {}),
       });
 
       // Lightweight auth check.
@@ -119,7 +153,6 @@ export async function GET() {
     }
   }
 
-  // --- Roll up ---
   const durationMs = Date.now() - start;
 
   // Status logic:
@@ -130,6 +163,7 @@ export async function GET() {
   if (!envOk || !dbOk) status = "error";
   else if (stripeEnabled && !stripeOk) status = "degraded";
 
+  // Keep the existing semantics: ok means fully healthy.
   const ok = status === "ok";
 
   const body: HealthResponse = {
@@ -137,7 +171,7 @@ export async function GET() {
     status,
     timestamp,
     durationMs,
-    version: isProd() ? undefined : process.env.VERCEL_GIT_COMMIT_SHA || process.env.NEXT_PUBLIC_APP_VERSION,
+    version: getVersion(),
     checks: {
       env: {
         ok: envOk,
@@ -156,17 +190,7 @@ export async function GET() {
     },
   };
 
-  const res = NextResponse.json(body, { status: ok ? 200 : status === "degraded" ? 200 : 500 });
-
-  // Prevent caching (important for uptime monitors).
-  res.headers.set("Cache-Control", "no-store, max-age=0");
-  res.headers.set("Pragma", "no-cache");
-  res.headers.set("Expires", "0");
-
-  // Security headers.
-  res.headers.set("X-Content-Type-Options", "nosniff");
-  res.headers.set("Referrer-Policy", "same-origin");
-  res.headers.set("X-Frame-Options", "DENY");
-
-  return res;
+  const httpStatus = ok ? 200 : status === "degraded" ? 200 : 500;
+  const res = NextResponse.json(body, { status: httpStatus });
+  return applyResponseHeaders(res);
 }

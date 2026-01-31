@@ -7,14 +7,26 @@ import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { Contact } from "@/models/Contact";
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeId(value: string | null | undefined): string | null {
+  const v = (value ?? "").trim();
+  return v.length > 0 ? v : null;
+}
+
+function buildOwnerOr(userId: string): Record<string, unknown>[] {
+  // Support both string IDs and legacy ObjectId storage.
+  const clauses: Record<string, unknown>[] = [{ ownerId: userId }];
+  if (mongoose.Types.ObjectId.isValid(userId)) {
+    clauses.push({ ownerId: new mongoose.Types.ObjectId(userId) });
+  }
+  return clauses;
+}
+
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-function toObjectId(id: string) {
-  return mongoose.Types.ObjectId.isValid(id)
-    ? new mongoose.Types.ObjectId(id)
-    : null;
-}
 
 // GET /api/contacts
 // Optional query params:
@@ -22,48 +34,48 @@ function toObjectId(id: string) {
 //   q: string         -> search by name, organization, role, or email
 export async function GET(request: NextRequest) {
   const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
+  const userId = session?.user?.id;
 
-  const ownerObjectId = toObjectId(session.user.id);
-  if (!ownerObjectId) {
-    return NextResponse.json({ ok: false, error: "Invalid user id" }, { status: 400 });
+  if (!userId) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   try {
     await connectToDatabase();
 
     const { searchParams } = new URL(request.url);
-    const estateId = searchParams.get("estateId");
-    const q = searchParams.get("q")?.trim() ?? "";
+    const estateId = normalizeId(searchParams.get("estateId"));
+
+    const qRaw = normalizeId(searchParams.get("q"));
+    const q = qRaw ? qRaw.slice(0, 120) : ""; // keep it small & predictable
 
     const filter: Record<string, unknown> = {
-      ownerId: ownerObjectId,
+      $or: buildOwnerOr(userId),
     };
 
     if (estateId) {
-      const estateObjectId = toObjectId(estateId);
-      if (!estateObjectId) {
-        return NextResponse.json({ ok: false, error: "Invalid estateId" }, { status: 400 });
+      // Contacts store linked estates as string IDs array in this project.
+      // If you only ever store ObjectId hex strings, this validation keeps things tidy.
+      if (!mongoose.Types.ObjectId.isValid(estateId)) {
+        return NextResponse.json(
+          { ok: false, error: "Invalid estateId" },
+          { status: 400 },
+        );
       }
-      // Contacts store linked estates as string IDs array in this project
-      filter.estates = String(estateObjectId);
+      filter.estates = estateId;
     }
 
     if (q) {
+      const pattern = new RegExp(escapeRegex(q), "i");
       filter.$or = [
-        { name: { $regex: q, $options: "i" } },
-        { organization: { $regex: q, $options: "i" } },
-        { roleOrRelationship: { $regex: q, $options: "i" } },
-        { email: { $regex: q, $options: "i" } },
+        { name: pattern },
+        { organization: pattern },
+        { roleOrRelationship: pattern },
+        { email: pattern },
       ];
     }
 
-    const contactsRaw = await Contact.find(filter)
-      .sort({ name: 1 })
-      .lean()
-      .exec();
+    const contactsRaw = await Contact.find(filter).sort({ name: 1 }).lean().exec();
 
     const contacts = contactsRaw.map((c) =>
       serializeMongoDoc(c as Record<string, unknown>),
@@ -74,7 +86,7 @@ export async function GET(request: NextRequest) {
     console.error("GET /api/contacts error", error);
     return NextResponse.json(
       { ok: false, error: "Unable to load contacts" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -87,10 +99,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  const ownerObjectId = toObjectId(session.user.id);
-  if (!ownerObjectId) {
-    return NextResponse.json({ ok: false, error: "Invalid user id" }, { status: 400 });
-  }
+  const ownerId = session.user.id;
 
   try {
     await connectToDatabase();
@@ -99,8 +108,8 @@ export async function POST(request: NextRequest) {
 
     if (!body) {
       return NextResponse.json(
-        { error: "Request body is required" },
-        { status: 400 }
+        { ok: false, error: "Request body is required" },
+        { status: 400 },
       );
     }
 
@@ -119,15 +128,15 @@ export async function POST(request: NextRequest) {
       notes,
     } = body;
 
-    if (!name || typeof name !== "string") {
+    if (!name || typeof name !== "string" || name.trim().length === 0) {
       return NextResponse.json(
-        { error: "Name is required for a contact" },
-        { status: 400 }
+        { ok: false, error: "Name is required for a contact" },
+        { status: 400 },
       );
     }
 
     const created = await Contact.create({
-      ownerId: ownerObjectId,
+      ownerId,
       category,
       name,
       organization,
@@ -155,7 +164,7 @@ export async function POST(request: NextRequest) {
     console.error("POST /api/contacts error", error);
     return NextResponse.json(
       { ok: false, error: "Unable to create contact" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -5,7 +5,6 @@ import { getEstateAccess } from "@/lib/estateAccess";
 import { EntitlementError, requireFeature, toEntitlementsUser } from "@/lib/entitlements";
 import {
   jsonErr,
-  jsonUnauthorized,
   noStoreHeaders,
   safeErrorMessage,
 } from "@/lib/apiResponse";
@@ -14,6 +13,9 @@ import { Types } from "mongoose";
 
 import { connectToDatabase } from "@/lib/db";
 import { RentPayment } from "@/models/RentPayment";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 interface RentPaymentDoc {
   _id: unknown;
@@ -68,14 +70,16 @@ export async function GET(request: NextRequest) {
 
   try {
     const session = await auth();
-    if (!session?.user?.id) return jsonUnauthorized();
+    if (!session?.user?.id) {
+      return jsonErr("Unauthorized", 401, headersNoStore, "UNAUTHORIZED");
+    }
 
 
     await connectToDatabase();
 
     const user = await User.findById(session.user.id).lean().exec();
     if (!user) {
-      return jsonErr("User not found", 404, "NOT_FOUND", { headers: headersNoStore });
+      return jsonErr("User not found", 404, headersNoStore, "NOT_FOUND");
     }
 
     try {
@@ -85,7 +89,7 @@ export async function GET(request: NextRequest) {
       );
     } catch (e) {
       if (e instanceof EntitlementError) {
-        return jsonErr("Pro subscription required", 402, e.code, { headers: headersNoStore });
+        return jsonErr("Pro subscription required", 402, headersNoStore, e.code);
       }
       throw e;
     }
@@ -94,7 +98,7 @@ export async function GET(request: NextRequest) {
     const estateId = searchParams.get("estateId");
 
     if (!estateId) {
-      return jsonErr("Missing estateId", 400, "BAD_REQUEST", { headers: headersNoStore });
+      return jsonErr("Missing estateId", 400, headersNoStore, "BAD_REQUEST");
     }
 
     // Security: ensure the user can access this estate before exporting data
@@ -106,7 +110,7 @@ export async function GET(request: NextRequest) {
     const denied = !access || flag === false;
 
     if (denied) {
-      return jsonErr("Forbidden", 403, "FORBIDDEN", { headers: headersNoStore });
+      return jsonErr("Forbidden", 403, headersNoStore, "FORBIDDEN");
     }
 
     // Pull all rent payments for this estate
@@ -202,8 +206,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("GET /api/rent/export error:", safeErrorMessage(error));
-    return jsonErr("Failed to export rent ledger", 500, "INTERNAL_ERROR", {
-      headers: headersNoStore,
-    });
+    return jsonErr("Failed to export rent ledger", 500, headersNoStore, "INTERNAL_ERROR");
   }
 }

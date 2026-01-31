@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { Types } from "mongoose";
+import { requireEstateAccess, requireEstateEditAccess } from "@/lib/estateAccess";
 import {
   TimeEntry,
   TIME_ENTRY_ACTIVITY_TYPES,
@@ -10,8 +11,43 @@ import {
 
 type RouteContext = { params: Promise<{ estateId: string }> };
 
+const NO_STORE_HEADERS = { "Cache-Control": "no-store" } as const;
+
 function isValidObjectId(value: string): boolean {
   return Types.ObjectId.isValid(value);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isResponse(value: unknown): value is Response {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.status === "number" && "headers" in v;
+}
+
+function pickResponse(value: unknown): Response | null {
+  if (!value) return null;
+  if (isResponse(value)) return value;
+  if (typeof value === "object") {
+    const v = value as Record<string, unknown>;
+    const r = (v.res ?? v.response) as unknown;
+    if (isResponse(r)) return r;
+  }
+  return null;
+}
+
+async function enforceEstateAccess(opts: {
+  estateId: string;
+  userId: string;
+  mode: "viewer" | "editor";
+}): Promise<Response | true> {
+  const fn = opts.mode === "editor" ? requireEstateEditAccess : requireEstateAccess;
+  const out = (await fn({ estateId: opts.estateId, userId: opts.userId })) as unknown;
+  const maybe = pickResponse(out);
+  if (maybe) return maybe;
+  return true;
 }
 
 function parseIsoDate(value: string | null): Date | null {
@@ -73,7 +109,7 @@ export async function GET(
   const session = await auth();
 
   if (!session?.user?.id) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401, headers: NO_STORE_HEADERS });
   }
 
   const { searchParams } = new URL(req.url);
@@ -81,16 +117,23 @@ export async function GET(
   if (!estateId) {
     return NextResponse.json(
       { ok: false, error: "Missing estateId" },
-      { status: 400 }
+      { status: 400, headers: NO_STORE_HEADERS }
     );
   }
 
   if (!isValidObjectId(estateId)) {
     return NextResponse.json(
       { ok: false, error: "Invalid estateId" },
-      { status: 400 }
+      { status: 400, headers: NO_STORE_HEADERS }
     );
   }
+
+  const access = await enforceEstateAccess({
+    estateId,
+    userId: session.user.id,
+    mode: "viewer",
+  });
+  if (access instanceof Response) return access as NextResponse;
 
   const from = searchParams.get("from");
   const to = searchParams.get("to");
@@ -99,10 +142,10 @@ export async function GET(
   const toDate = parseIsoDateEnd(to);
 
   if (from && !fromDate) {
-    return NextResponse.json({ ok: false, error: "from must be a valid ISO date" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "from must be a valid ISO date" }, { status: 400, headers: NO_STORE_HEADERS });
   }
   if (to && !toDate) {
-    return NextResponse.json({ ok: false, error: "to must be a valid ISO date" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "to must be a valid ISO date" }, { status: 400, headers: NO_STORE_HEADERS });
   }
 
   const query: Record<string, unknown> = {
@@ -152,12 +195,12 @@ export async function GET(
       };
     });
 
-    return NextResponse.json({ ok: true, entries }, { status: 200 });
+    return NextResponse.json({ ok: true, entries }, { status: 200, headers: NO_STORE_HEADERS });
   } catch (error) {
     console.error("[GET /api/estates/:estateId/time] Error:", error);
     return NextResponse.json(
       { ok: false, error: "Failed to load time entries" },
-      { status: 500 }
+      { status: 500, headers: NO_STORE_HEADERS }
     );
   }
 }
@@ -172,28 +215,43 @@ export async function POST(
   const session = await auth();
 
   if (!session?.user?.id) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401, headers: NO_STORE_HEADERS });
   }
 
   const { estateId } = await params;
   if (!estateId) {
     return NextResponse.json(
       { ok: false, error: "Missing estateId" },
-      { status: 400 }
+      { status: 400, headers: NO_STORE_HEADERS }
     );
   }
 
   if (!isValidObjectId(estateId)) {
     return NextResponse.json(
       { ok: false, error: "Invalid estateId" },
-      { status: 400 }
+      { status: 400, headers: NO_STORE_HEADERS }
     );
   }
+
+  const access = await enforceEstateAccess({
+    estateId,
+    userId: session.user.id,
+    mode: "editor",
+  });
+  if (access instanceof Response) return access as NextResponse;
 
   try {
     await connectToDatabase();
 
-    const body = (await req.json()) as {
+    const raw = await req.json().catch(() => null);
+    if (!isPlainObject(raw)) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid JSON body" },
+        { status: 400, headers: NO_STORE_HEADERS }
+      );
+    }
+
+    const body = raw as {
       date?: string;
       minutes?: number | string | null;
       hours?: number | string | null;
@@ -207,12 +265,12 @@ export async function POST(
     };
 
     if (!body.date) {
-      return NextResponse.json({ ok: false, error: "date is required" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "date is required" }, { status: 400, headers: NO_STORE_HEADERS });
     }
 
     const bodyDate = parseIsoDate(body.date);
     if (!bodyDate) {
-      return NextResponse.json({ ok: false, error: "date must be a valid ISO date" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "date must be a valid ISO date" }, { status: 400, headers: NO_STORE_HEADERS });
     }
 
     // Normalise minutes: allow client to send either minutes or hours
@@ -226,7 +284,7 @@ export async function POST(
     if (!minutes || Number.isNaN(minutes) || minutes <= 0) {
       return NextResponse.json(
         { ok: false, error: "A positive number of minutes or hours is required" },
-        { status: 400 }
+        { status: 400, headers: NO_STORE_HEADERS }
       );
     }
 
@@ -238,14 +296,14 @@ export async function POST(
     if (!Number.isFinite(hourlyRate) || hourlyRate < 0) {
       return NextResponse.json(
         { ok: false, error: "hourlyRate must be a non-negative number" },
-        { status: 400 }
+        { status: 400, headers: NO_STORE_HEADERS }
       );
     }
 
     if (body.taskId && !isValidObjectId(body.taskId)) {
       return NextResponse.json(
         { ok: false, error: "taskId must be a valid ObjectId" },
-        { status: 400 }
+        { status: 400, headers: NO_STORE_HEADERS }
       );
     }
 
@@ -299,12 +357,12 @@ export async function POST(
       amount: amountCreated,
     };
 
-    return NextResponse.json({ ok: true, entry }, { status: 201 });
+    return NextResponse.json({ ok: true, entry }, { status: 201, headers: NO_STORE_HEADERS });
   } catch (error) {
     console.error("[POST /api/estates/:estateId/time] Error:", error);
     return NextResponse.json(
       { ok: false, error: "Failed to create time entry" },
-      { status: 500 }
+      { status: 500, headers: NO_STORE_HEADERS }
     );
   }
 }

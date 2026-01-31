@@ -148,15 +148,17 @@ async function updateUserSubscription(params: {
 
   if (!Object.keys(query).length) return;
 
-  await User.updateOne(
-    query,
-    {
-      $set: {
-        subscriptionPlanId: planId,
-        subscriptionStatus,
-      },
-    },
-  ).exec();
+  const set: Record<string, unknown> = {
+    subscriptionPlanId: planId,
+    subscriptionStatus,
+  };
+
+  // If we know the Stripe customer id, store it so future webhook events can match.
+  if (stripeCustomerId) {
+    set.stripeCustomerId = stripeCustomerId;
+  }
+
+  await User.updateOne(query, { $set: set }).exec();
 }
 
 async function handleCheckoutSessionCompleted(
@@ -190,7 +192,11 @@ async function handleSubscriptionChange(subscription: Stripe.Subscription): Prom
   const status = normalizeStatus(subscription.status);
   const planId = inferPlanIdFromSubscription(subscription);
 
-  await updateUserSubscription({ stripeCustomerId, subscriptionStatus: status, planId });
+  await updateUserSubscription({
+    stripeCustomerId,
+    subscriptionStatus: status,
+    planId,
+  });
 }
 
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription): Promise<void> {
@@ -222,13 +228,20 @@ export async function POST(request: NextRequest): Promise<Response> {
       return json({ ok: false, error: "Missing Stripe signature" }, { status: 400, headers });
     }
 
-    const rawBody = await request.text();
+    const contentType = request.headers.get("content-type") ?? "";
+    // Stripe typically sends application/json; tolerate charset variants.
+    if (contentType && !contentType.toLowerCase().includes("application/json")) {
+      // Don’t hard-fail: some proxies can rewrite content-type. We only warn.
+      console.warn("[stripe:webhook] unexpected content-type:", contentType);
+    }
+
+    const rawBodyBuffer = Buffer.from(await request.arrayBuffer());
     const stripe = getStripe();
     const secret = process.env.STRIPE_WEBHOOK_SECRET as string;
 
     let event: Stripe.Event;
     try {
-      event = stripe.webhooks.constructEvent(rawBody, signature, secret);
+      event = stripe.webhooks.constructEvent(rawBodyBuffer, signature, secret);
     } catch (err) {
       console.warn("[stripe:webhook] signature verification failed:", safeErrorMessage(err));
       return json({ ok: false, error: "Invalid signature" }, { status: 400, headers });

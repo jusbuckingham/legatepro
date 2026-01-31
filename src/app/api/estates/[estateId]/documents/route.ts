@@ -50,6 +50,11 @@ function isFiniteNonNegativeNumber(n: unknown): n is number {
   return typeof n === "number" && Number.isFinite(n) && n >= 0;
 }
 
+function clampNonNegativeNumber(n: number, max: number): number {
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(n, max);
+}
+
 function normalizeTags(value: unknown, maxTags = 25, maxLen = 32): string[] {
   const raw: string[] = Array.isArray(value)
     ? value.filter((t: unknown): t is string => typeof t === "string")
@@ -58,14 +63,20 @@ function normalizeTags(value: unknown, maxTags = 25, maxLen = 32): string[] {
       : [];
 
   const out: string[] = [];
+  const seen = new Set<string>();
+
   for (const t of raw) {
     const v = t.trim().toLowerCase();
     if (!v) continue;
     if (v.length > maxLen) continue;
-    if (out.includes(v)) continue;
+    if (seen.has(v)) continue;
+
+    seen.add(v);
     out.push(v);
+
     if (out.length >= maxTags) break;
   }
+
   return out;
 }
 
@@ -138,7 +149,7 @@ export async function GET(
 
     const subject = normalizeSubject(searchParams.get("subject"));
 
-    const tagRaw = (searchParams.get("tag") ?? "").trim();
+    const tagRaw = (searchParams.get("tag") ?? "").trim().slice(0, 64);
     const tag = tagRaw ? tagRaw.toLowerCase() : "";
 
     const sensitiveParam = searchParams.get("sensitive");
@@ -243,7 +254,8 @@ export async function POST(
 
     const fileName = typeof b.fileName === "string" ? b.fileName.trim().slice(0, 255) : "";
     const fileType = typeof b.fileType === "string" ? b.fileType.trim().slice(0, 64) : "";
-    const fileSizeBytes = isFiniteNonNegativeNumber(b.fileSizeBytes) ? b.fileSizeBytes : 0;
+    const fileSizeBytesRaw = isFiniteNonNegativeNumber(b.fileSizeBytes) ? b.fileSizeBytes : 0;
+    const fileSizeBytes = clampNonNegativeNumber(fileSizeBytesRaw, 5 * 1024 * 1024 * 1024);
 
     if (!label) {
       return NextResponse.json({ ok: false, error: "Label is required" }, { status: 400 });

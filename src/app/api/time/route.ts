@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+
 import { auth } from "@/lib/auth";
+import { noStoreHeaders, jsonErr, jsonOk, safeErrorMessage } from "@/lib/apiResponse";
 import { connectToDatabase } from "@/lib/db";
 import { TimeEntry } from "@/models/TimeEntry";
 
@@ -21,6 +23,9 @@ type TimeEntryDocLean = {
 };
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+const NO_STORE = { headers: noStoreHeaders() } as const;
 
 function toStringId(value: unknown): string {
   if (typeof value === "string") return value;
@@ -42,7 +47,7 @@ function isHtmlFormPost(req: NextRequest): boolean {
 function redirectWithError(req: NextRequest, message: string): NextResponse {
   const url = new URL("/app/time/new", req.url);
   url.searchParams.set("error", message);
-  return NextResponse.redirect(url, { status: 303 });
+  return NextResponse.redirect(url, { status: 303, headers: NO_STORE.headers });
 }
 
 // GET /api/time?estateId=...
@@ -50,7 +55,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      return jsonErr("Unauthorized", 401, NO_STORE.headers, "UNAUTHORIZED");
     }
 
     const { searchParams } = new URL(req.url);
@@ -85,13 +90,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       updatedAt: doc.updatedAt.toISOString(),
     }));
 
-    return NextResponse.json({ ok: true, entries }, { status: 200 });
+    return jsonOk({ ok: true, entries }, 200, NO_STORE.headers);
   } catch (error) {
-    console.error("[GET /api/time] Error:", error);
-    return NextResponse.json(
-      { ok: false, error: "Failed to load time entries" },
-      { status: 500 },
-    );
+    console.error("[GET /api/time] Error:", safeErrorMessage(error));
+    return jsonErr("Failed to load time entries", 500, NO_STORE.headers, "INTERNAL_ERROR");
   }
 }
 
@@ -110,7 +112,7 @@ async function parseTimePostBody(
   const contentType = req.headers.get("content-type") || "";
 
   if (contentType.includes("application/json")) {
-    const json = (await req.json()) as Record<string, unknown>;
+    const json = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     return {
       estateId: json.estateId as string | undefined,
       taskId: json.taskId as string | undefined,
@@ -162,7 +164,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      return jsonErr("Unauthorized", 401, NO_STORE.headers, "UNAUTHORIZED");
     }
 
     await connectToDatabase();
@@ -174,18 +176,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     if (date && date.trim() !== "" && !parseOptionalDate(date)) {
       if (wantsRedirect) return redirectWithError(req, "Date must be valid.");
-      return NextResponse.json(
-        { ok: false, error: "date must be a valid ISO date" },
-        { status: 400 },
-      );
+      return jsonOk({ ok: false, error: "date must be a valid ISO date" }, 400, NO_STORE.headers);
     }
 
     if (!estateId) {
       if (wantsRedirect) return redirectWithError(req, "Please select an estate.");
-      return NextResponse.json(
-        { ok: false, error: "Missing estateId" },
-        { status: 400 },
-      );
+      return jsonOk({ ok: false, error: "Missing estateId" }, 400, NO_STORE.headers);
     }
 
     // Compute total minutes from hours + minutes fields
@@ -202,18 +198,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (wantsRedirect) {
         return redirectWithError(req, "Hours/minutes must be valid numbers.");
       }
-      return NextResponse.json(
-        { ok: false, error: "Hours/minutes must be valid numbers." },
-        { status: 400 },
-      );
+      return jsonOk({ ok: false, error: "Hours/minutes must be valid numbers." }, 400, NO_STORE.headers);
     }
 
     if (hoursNumber < 0 || minutesNumber < 0) {
       if (wantsRedirect) return redirectWithError(req, "Hours/minutes cannot be negative.");
-      return NextResponse.json(
-        { ok: false, error: "Hours/minutes cannot be negative." },
-        { status: 400 },
-      );
+      return jsonOk({ ok: false, error: "Hours/minutes cannot be negative." }, 400, NO_STORE.headers);
     }
 
     const totalMinutes =
@@ -223,22 +213,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (wantsRedirect) {
         return redirectWithError(req, "Please provide a positive amount of time.");
       }
-      return NextResponse.json(
+      return jsonOk(
         {
           ok: false,
           error: "Please provide a positive amount of time (hours and/or minutes).",
         },
-        { status: 400 },
+        400,
+        NO_STORE.headers,
       );
     }
 
     const rateNumber = parseOptionalFiniteNumber(rate);
     if (rate && rate.trim() !== "" && typeof rateNumber !== "number") {
       if (wantsRedirect) return redirectWithError(req, "Rate must be a valid number.");
-      return NextResponse.json(
-        { ok: false, error: "Rate must be a valid number." },
-        { status: 400 },
-      );
+      return jsonOk({ ok: false, error: "Rate must be a valid number." }, 400, NO_STORE.headers);
     }
 
     const entryDoc = await TimeEntry.create({
@@ -274,17 +262,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const url = new URL("/app/time", req.url);
       url.searchParams.set("created", "1");
       url.searchParams.set("estateId", estateId);
-      return NextResponse.redirect(url, { status: 303 });
+      return NextResponse.redirect(url, { status: 303, headers: NO_STORE.headers });
     }
 
-    return NextResponse.json({ ok: true, entry }, { status: 201 });
+    return jsonOk({ ok: true, entry }, 201, NO_STORE.headers);
   } catch (error) {
-    console.error("Error creating time entry:", error);
+    console.error("[POST /api/time] Error:", safeErrorMessage(error));
     const message =
       error instanceof Error && error.message
         ? error.message
         : "Failed to create time entry";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    return jsonOk({ ok: false, error: message }, 500, NO_STORE.headers);
   }
 }
 
@@ -293,7 +281,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      return jsonErr("Unauthorized", 401, NO_STORE.headers, "UNAUTHORIZED");
     }
 
     const { searchParams } = new URL(req.url);
@@ -301,9 +289,10 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     const estateId = searchParams.get("estateId");
 
     if (!id || id.trim() === "") {
-      return NextResponse.json(
+      return jsonOk(
         { ok: false, error: "Missing id for time entry to delete" },
-        { status: 400 },
+        400,
+        NO_STORE.headers,
       );
     }
 
@@ -321,18 +310,12 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     const deleted = await TimeEntry.findOneAndDelete(deleteQuery).lean().exec();
 
     if (!deleted) {
-      return NextResponse.json(
-        { ok: false, error: "Time entry not found" },
-        { status: 404 },
-      );
+      return jsonOk({ ok: false, error: "Time entry not found" }, 404, NO_STORE.headers);
     }
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return jsonOk({ ok: true }, 200, NO_STORE.headers);
   } catch (error) {
-    console.error("[DELETE /api/time] Error:", error);
-    return NextResponse.json(
-      { ok: false, error: "Failed to delete time entry" },
-      { status: 500 },
-    );
+    console.error("[DELETE /api/time] Error:", safeErrorMessage(error));
+    return jsonErr("Failed to delete time entry", 500, NO_STORE.headers, "INTERNAL_ERROR");
   }
 }

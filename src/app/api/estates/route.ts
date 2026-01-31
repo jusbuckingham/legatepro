@@ -3,8 +3,7 @@ import { NextRequest } from "next/server";
 
 import { auth } from "@/lib/auth";
 import { connectToDatabase, serializeMongoDoc } from "@/lib/db";
-import { Estate } from "@/models/Estate";
-import { User } from "@/models/User";
+import { buildEstateAccessOr } from "@/lib/estateAccess";
 import { logEstateEvent } from "@/lib/estateEvents";
 import {
   jsonErr,
@@ -12,6 +11,8 @@ import {
   noStoreHeaders,
   safeErrorMessage,
 } from "@/lib/apiResponse";
+import { Estate } from "@/models/Estate";
+import { User } from "@/models/User";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -91,8 +92,8 @@ async function readJsonBody(
       res: jsonErr(
         "Content-Type must be application/json",
         415,
+        headers,
         "UNSUPPORTED_MEDIA_TYPE",
-        { headers },
       ),
     };
   }
@@ -102,9 +103,7 @@ async function readJsonBody(
     if (raw.length > MAX_JSON_BODY_BYTES) {
       return {
         ok: false,
-        res: jsonErr("Request body too large", 413, "PAYLOAD_TOO_LARGE", {
-          headers,
-        }),
+        res: jsonErr("Request body too large", 413, headers, "PAYLOAD_TOO_LARGE"),
       };
     }
 
@@ -113,20 +112,62 @@ async function readJsonBody(
   } catch {
     return {
       ok: false,
-      res: jsonErr("Invalid JSON", 400, "BAD_REQUEST", { headers }),
+      res: jsonErr("Invalid JSON", 400, headers, "BAD_REQUEST"),
     };
   }
 }
 
+function parsePositiveInt(
+  value: string | null,
+  fallback: number,
+  max: number,
+): number {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(Math.floor(parsed), max);
+}
+
+function asRecord(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+}
+
+function asStringOrNull(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  return s ? s : null;
+}
+
+function idToString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+
+  if (value && typeof value === "object") {
+    // Prefer _id if present
+    const maybeId = (value as { _id?: unknown })._id;
+    if (maybeId && typeof maybeId === "object" && typeof (maybeId as { toString?: unknown }).toString === "function") {
+      const s = String(maybeId);
+      return s === "[object Object]" ? "" : s;
+    }
+
+    if (typeof (value as { toString?: unknown }).toString === "function") {
+      const s = String(value);
+      return s === "[object Object]" ? "" : s;
+    }
+  }
+
+  return String(value ?? "");
+}
+
 /* ----------------------------------- GET ---------------------------------- */
 
-export async function GET(req: NextRequest) {
+export async function GET(req: NextRequest): Promise<Response> {
   const headers = headersNoStore();
   addSecurityHeaders(headers);
 
   const session = await auth();
   if (!session?.user?.id) {
-    return jsonErr("Unauthorized", 401, "UNAUTHORIZED", { headers });
+    return jsonErr("Unauthorized", 401, headers, "UNAUTHORIZED");
   }
 
   const url = new URL(req.url);
@@ -135,19 +176,13 @@ export async function GET(req: NextRequest) {
   const statusParam = url.searchParams.get("status");
 
   const compact = compactParam === "1" || compactParam === "true";
-  let limit = 500;
-  if (limitParam !== null) {
-    const parsedLimit = parseInt(limitParam, 10);
-    if (!isNaN(parsedLimit)) {
-      limit = Math.min(Math.max(parsedLimit, 1), 1000);
-    }
-  }
+  const limit = parsePositiveInt(limitParam, 500, 1000);
   const statusFilter = (statusParam ?? "all").toLowerCase();
 
   try {
     await connectToDatabase();
 
-    const query: Record<string, unknown> = { ownerId: session.user.id };
+    const query: Record<string, unknown> = { $or: buildEstateAccessOr(session.user.id) };
     if (statusFilter === "open") {
       query.status = "OPEN";
     } else if (statusFilter === "closed") {
@@ -159,28 +194,6 @@ export async function GET(req: NextRequest) {
       .limit(limit)
       .lean()
       .exec()) as unknown[];
-
-    const asRecord = (v: unknown): Record<string, unknown> =>
-      v && typeof v === "object" ? (v as Record<string, unknown>) : {};
-
-    const asStringOrNull = (v: unknown): string | null => {
-      if (typeof v !== "string") return null;
-      const s = v.trim();
-      return s ? s : null;
-    };
-
-    const idToString = (id: unknown): string => {
-      if (typeof id === "string") return id;
-      if (typeof id === "number") return String(id);
-      if (id && typeof id === "object" && "toString" in id) {
-        const fn = (id as { toString?: unknown }).toString;
-        if (typeof fn === "function") {
-          const out = fn.call(id);
-          if (typeof out === "string") return out;
-        }
-      }
-      return String(id ?? "");
-    };
 
     const estateCompact = (e: unknown) => {
       const rec = asRecord(e);
@@ -205,31 +218,33 @@ export async function GET(req: NextRequest) {
     if (!compact) {
       return jsonOk(
         { estates: estatesRaw.map(serializeMongoDoc) },
-        { headers },
+        200,
+        headers,
       );
     } else {
       return jsonOk(
         {
           estates: estatesRaw.map(estateCompact),
         },
-        { headers },
+        200,
+        headers,
       );
     }
   } catch (error) {
     console.error("[GET /api/estates]", safeErrorMessage(error));
-    return jsonErr("Failed to fetch estates", 500, "INTERNAL_ERROR", { headers });
+    return jsonErr("Failed to fetch estates", 500, headers, "INTERNAL_ERROR");
   }
 }
 
 /* ----------------------------------- POST --------------------------------- */
 
-export async function POST(req: NextRequest) {
+export async function POST(req: NextRequest): Promise<Response> {
   const headers = headersNoStore();
   addSecurityHeaders(headers);
 
   const session = await auth();
   if (!session?.user?.id) {
-    return jsonErr("Unauthorized", 401, "UNAUTHORIZED", { headers });
+    return jsonErr("Unauthorized", 401, headers, "UNAUTHORIZED");
   }
 
   const parsed = await readJsonBody(req, headers);
@@ -240,7 +255,7 @@ export async function POST(req: NextRequest) {
 
     const user = await User.findById(session.user.id).lean().exec();
     if (!user) {
-      return jsonErr("User not found", 404, "NOT_FOUND", { headers });
+      return jsonErr("User not found", 404, headers, "NOT_FOUND");
     }
 
     const plan = getUserPlanSnapshot(user);
@@ -262,8 +277,8 @@ export async function POST(req: NextRequest) {
         return jsonErr(
           "Free plan supports 1 estate. Upgrade to Pro to create more.",
           402,
+          headers,
           "PAYMENT_REQUIRED",
-          { headers },
         );
       }
     }
@@ -284,18 +299,14 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       console.warn("[ESTATE_CREATED] log failed:", safeErrorMessage(err));
     }
-    // Return a 201 Created with our no-store + security headers.
-    headers.set("Content-Type", "application/json; charset=utf-8");
 
-    return new Response(
-      JSON.stringify({ ok: true, estate: serializeMongoDoc(estateDoc) }),
-      {
-        status: 201,
-        headers,
-      },
+    return jsonOk(
+      { estate: serializeMongoDoc(estateDoc) },
+      201,
+      headers,
     );
   } catch (error) {
     console.error("[POST /api/estates]", safeErrorMessage(error));
-    return jsonErr("Failed to create estate", 500, "INTERNAL_ERROR", { headers });
+    return jsonErr("Failed to create estate", 500, headers, "INTERNAL_ERROR");
   }
 }
